@@ -34,13 +34,13 @@ Dark Speak (or another enhanced client).
 
 ## Beta 2
 - [ ] Add good/popular suggestions/ideas
-- [ ] Implement support for multiple IS's in one client
+- [ ] Implement support for multiple ID's in one client
 - [ ] Research how to configure an existing Tor Server seamlessly with the hidden service
 - [ ] Package the application. Make sure it's easy to get started.
 
 ## Beta 3
 - [ ] Add good/popular suggestions/ideas
-- [ ] Implement proxy (master node) functionality, so that we can have several clients running for one ID.
+- [ ] Implement proxy (master node) functionality, so that we can have several clients running with one ID.
 
 ## Release version 1
 - [ ] Fix all known bugs.
