@@ -296,23 +296,26 @@ the messages.
 
 Speculative...
 
+```
 Alice -- [ ping ] --> Bob
 Bob -- [pong ] --> Alice
 Alice -- [ client ] --> Bob
 Alice -- [ version ] --> Bob
 Alice -- [ add_me ] --> Bob
 Bob --> [ Msg: Was added ] --> Alice
+```
 
 ## A client initiates a conversation with an existing contact
 
 Speculative...
 
+```
 Alice -- [ ping ] --> Bob
 Bob -- [pong ] --> Alice
 Alice -- [ client ] --> Bob
 Alice -- [ version ] --> Bob
 Bob --> [ Msg: Was added ] --> Alice
-
+```
 
 ## A client transfers a file to an existing contact
 
