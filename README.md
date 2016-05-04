@@ -7,8 +7,8 @@ Secure Instant Messenger based on the legacy Tor Chat protocol.
 To make the most Secure and Private Communication Platform for citizens, in the History of the World.
 
 # Planned features
-- Secure Instant Messaging (Legacy Tot Chat)
-- File Transfer (Legacy Tot Chat)
+- Secure Instant Messaging (Legacy Tor Chat)
+- File Transfer (Legacy Tor Chat)
 - Proxy service (allow darkspeak on several devices simultaneously with the same ID)
 - Nice looking graphical interface on Linux, OS/X and Windows
 - Android version
