@@ -305,6 +305,8 @@ Alice -- [ add_me ] --> Bob
 Bob --> [ Msg: Was added ] --> Alice
 ```
 
+TBD: See what goes on in a real conversation
+
 ## A client initiates a conversation with an existing contact
 
 Speculative...
@@ -317,6 +319,9 @@ Alice -- [ version ] --> Bob
 Bob --> [ Msg: Was added ] --> Alice
 ```
 
+TBD: See what goes on in a real conversation
+
+
 ## A client transfers a file to an existing contact
 
-
+TBD
