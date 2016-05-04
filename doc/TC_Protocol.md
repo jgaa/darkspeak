@@ -268,23 +268,23 @@ Anything the receiver don't understand
 # Security considerations
 
 There are no size-limits on messages, rate-limits on how many messages a peer
-(or the worls) can send, and no way to detect if Alice or Bob has been
+(or the world) can send, and no way to detect if Alice or Bob has been
 compromized. There is also no connection limit. Such limits must be
 offered in the UI and enforced in the client.
 
 Contacts (buddies) seems to be added automatically, something that opens up
 for DoS attacs by sending a huge number of add_me messages from a bot-net. 
 
-There are no filters to allow only known buddies, or whitelisted buddies to connect.
+There are no filters to allow only known buddies, or white-listed buddies to connect.
 We need to add both.
 
-UTF-8 unicod filenames may pose a threat to the receiver, as the files 
+UTF-8 unicode filenames may pose a threat to the receiver, as the files 
 may masquerade as having different locations/names than they actually do. They
 may also try to exploit vulnerabilities on the UTF-8 decoder. We need some kind of
 sanity check to make sure that files are only written to the intended destination
 folder, and a check to make sure that the encoding is valid.
 
-UTF-8 envoded messages are vulnerable to UTF-8 decoder vulnerabilities. We need
+UTF-8 encoded messages are vulnerable to UTF-8 decoder vulnerabilities. We need
 to make sure that the encoding is valid, and look for known exploit patterns in
 the messages. 
 
