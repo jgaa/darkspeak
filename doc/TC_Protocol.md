@@ -263,7 +263,7 @@ Anything the receiver don't understand
 - Bob sends a ping message with a hard-to-guess cookie to Alices hidden Tor
     Service.
 - Alice Sends a pong message to Bob, repeating the cookie. Since only Alice can
-    know the cookie, Bob nwo trust Alive to be Alice.
+    know the cookie, Bob now trust Alice to be Alice.
 
 # Security considerations
 
