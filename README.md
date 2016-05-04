@@ -1,10 +1,14 @@
 # DarkSpeak
 
-Secure Instant Messenger based on the legacy Tor Chat protocol
+Secure Instant Messenger based on the legacy Tor Chat protocol.
+
+# Mission Statement
+
+To make the most Secure and Private Communication Platform for citizens, in the History of the World.
 
 # Planned features
-- Secure Instant Messaging
-- File Transfer
+- Secure Instant Messaging (Legacy Tot Chat)
+- File Transfer (Legacy Tot Chat)
 - Proxy service (allow darkspeak on several devices simultaneously with the same ID)
 - Nice looking graphical interface on Linux, OS/X and Windows
 - Android version
@@ -19,10 +23,13 @@ Dark Speak (or another enhanced client).
 
 - Improved security in the client to prevent DoS attacks, memory overflow etc.
 - Better authentication of peers (to make it harder or impossible to impersonate a person).
+- Another layer of PKS p2p strong encryption and secure authentication.
+- Emergency flag to indicate that the conversation is compromized (for example by 
+    physical presenc of an adversary).
 
 # Roadmap
 ## Beta 1
-- [ ] Document the legacy Tor Chat protocol
+- [x] ~~Document the legacy Tor Chat protocol~~
 - [ ] Implement a library that speaks the TC protocol
  - [ ] Core functionality
  - [ ] Unit tests
