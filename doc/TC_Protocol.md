@@ -41,7 +41,10 @@ on the other's buddy list. Since a client can also connect for
 the purpose of joining a chat room without automatically appearing 
 on the buddy list this message is needed.
     
+
+```
 Command: add_me
+```
 
 TC will automaticall add the buddy to the buddy-list and reply with
 a chat message: "<- has added you"
@@ -50,7 +53,9 @@ a chat message: "<- has added you"
 
 Transmits the name of the client software. Usually sent after the pong
 
+```
 Command: client "software_name"|
+```
 
 ## filedata
 
@@ -66,7 +71,9 @@ this number is only a wild guess and might need some tuning)
 
 Start is "block start position in bytes". (File offset?)
 
+```
 Command: filedata <transfer_cookie> <blob (fixed size)> <hash> <start>
+```
 
 ## filedata_error
 
@@ -78,7 +85,9 @@ send this message whenever it wants the the transfer restart at a certain positi
 
 Start is file offset to resume the transfer.
 
+```
 Command: filedata_error <transfer_cookie> <start>
+```
 
 ## filedata_ok
 
@@ -89,7 +98,9 @@ blocks.
 
 Start is "block start position in bytes". (File offset?)
 
+```
 Command: filedata_ok <transfer_cookie> <start>
+```
 
 ## filename
 
@@ -101,7 +112,9 @@ Each transfer has a unique cookie, made up by the sender.
 
 The file-name is UTF-8 encoded.
 
+```
 Command: filename <transfer_cookie> <file_size> <block_size> "filename"
+```
 
 ## file_stop_sending
 
@@ -110,13 +123,17 @@ a file sender must react to this message by stopping the file sending,
 the GUI should notify the user that the receiver has canceled. This
 message usually occurs when a file receiver clicks the cancel button.
 
+```
 Command: file_stop_sending <cookie>
+```
 
 ## message                                                                                                                                                               
 
 this is a normal text message. Text is encoded UTF-8
 
+```
 Command: message "text"
+```
 
 TC will reply with a Chat message explaining that the message
 was not delivered if the sender is not in the buddy list.
@@ -127,7 +144,9 @@ A ping message consists of sender address and a random string (cookie).
 It must be answered with a pong message containing the same cookie to so that 
 the other side can undoubtedly identify the connection
 
+```
 Command: ping <tc-id> <cookie>
+```
 
 TC implements a check to see if incoming connections try to fake ping
 messages - that is, try different tc_id values on the same connection.
@@ -146,7 +165,9 @@ service.
 
 ## pong 
 
+```
 Command: pong cookie
+```
 
 Incoming pong messages are used to identify and authenticate
 incoming connections. Basically we send out pings and see which
@@ -163,7 +184,9 @@ the uncompessed 64*64*24bit image. Avatar messages can
 be completely omitted but IF they are sent then the correct 
 order is first the alpha and then this one
 
+```
 Command: profile_avatar blob
+```
 
 ## profile_avatar_alpha
 
@@ -180,13 +203,17 @@ Command profile_avatar_alpha blob
 
 Optional command
 
+```
 Command: profile_name "Name"
+```
 
 ## profile_text
 
 Optional command
 
+```
 Command: profile_name "Text"
+```
 
 ## remove_me
 
@@ -196,7 +223,9 @@ automatically add itself again and cause annoyance. When removing
 a buddy first send this message before disconnecting or the other
 client will never know about it and add itself again next time
 
+```
 Command: remove_me
+```
 
 ## status
 
@@ -208,14 +237,18 @@ connection, immediately on every status change or at least
 once every 120 seconds. Allowed values for the data are
 "avalable", "away", "xa", other values are not defined yet.
 
+```
 Command: status "available" | "away" | "xa"
+```
 
 ## version
 
 Transmits the version number of the client software. Usually sent after 
 the 'client' message
 
+```
 Command: 
+```
 
 # Replies
 ## not_implemented
