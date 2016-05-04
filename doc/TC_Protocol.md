@@ -54,7 +54,7 @@ a chat message: "<- has added you"
 Transmits the name of the client software. Usually sent after the pong
 
 ```
-Command: client "software_name"|
+Command: client "software_name"
 ```
 
 ## filedata
