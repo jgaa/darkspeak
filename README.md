@@ -12,9 +12,10 @@ To make the most Secure and Private Communication Platform for citizens, in the 
 - Proxy service (allow darkspeak on several devices simultaneously with the same ID)
 - Nice looking graphical interface on Linux, OS/X and Windows
 - Android version
+- IOS version
 - Groups (like in Skype - several participants in one chat)
 
-# Encahcements over the original Tor Chat
+# Enhancements over the original Tor Chat
 
 Dark Speak will remain backwards compatible with the original Tor Chat
 protocol. However, it will implement some extra guards to protect the
@@ -25,7 +26,7 @@ Dark Speak (or another enhanced client).
 - Better authentication of peers (to make it harder or impossible to impersonate a person).
 - Another layer of PKS p2p strong encryption and secure authentication.
 - Emergency flag to indicate that the conversation is compromized (for example by 
-    physical presenc of an adversary).
+    the physical presenc of an adversary).
 
 # Roadmap
 ## Beta 1
@@ -37,7 +38,8 @@ Dark Speak (or another enhanced client).
 - [ ] Implement GUI for Linux
 - [ ] Implement GUI for Windows
 - [ ] Implement GUI for OS/X
-- [ ] Implement GUI for Android
+- [ ] Implement GUI for Android\
+- [ ] Implement GUI for IOS
 
 ## Beta 2
 - [ ] Add good/popular suggestions/ideas
