@@ -1,0 +1,35 @@
+Development todo's
+
+ v Define API for TC protocol layer
+ v Read up on Hidden Tor Services
+ ~ Read up on how to open outgoing connections trough Tor (probably socks5...)
+ v Set up a Tor Server wirth a hiddens service to test with
+ - Implement ImManager layer (Quick implementation)
+    - Implemenst API
+    - Keep track of config
+    - Keeps buddy-list
+ - Implement protocol layer
+    - Make a Connection object
+        - Outgoing connections
+        - Listening and accepting incoming connections
+    - Make a Peer object
+        Keeps track of connections, timeouts, state
+    - Make an Engine object to keep track of the Peers
+        - Add counters for incoming connections and requests
+
+ - Implement generic send request method
+    - Encoding
+    - Decoding
+    - Sanety checks
+ - Implement ping
+ - Implement pong
+ - Implement general incoming request handler
+
+ - Implement the Api for local use (no proxy)
+    - Storage of objects (sqlite? json files?)
+    - Start up, go online
+    - Connect to peer
+    - Handle connection request from peers
+    - Send message
+    - Implement all remaining TC legacy commands
+

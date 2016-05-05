@@ -25,7 +25,7 @@ Dark Speak (or another enhanced client).
 - Improved security in the client to prevent DoS attacks, memory overflow etc.
 - Better authentication of peers (to make it harder or impossible to impersonate a person).
 - Another layer of PKS p2p strong encryption and secure authentication.
-- Emergency flag to indicate that the conversation is compromized (for example by 
+- Emergency flag to indicate that the conversation is compromized (for example by
     the physical presenc of an adversary).
 
 # Roadmap
@@ -38,7 +38,7 @@ Dark Speak (or another enhanced client).
 - [ ] Implement GUI for Linux
 - [ ] Implement GUI for Windows
 - [ ] Implement GUI for OS/X
-- [ ] Implement GUI for Android\
+- [ ] Implement GUI for Android
 - [ ] Implement GUI for IOS
 
 ## Beta 2
@@ -58,4 +58,3 @@ Dark Speak (or another enhanced client).
 # Links
  - The reference implementation of [TorChat](https://github.com/prof7bit/TorChat).
  - Partially description of the [TC protocol](https://www.meebey.net/research/torchat_protocol/).
- 

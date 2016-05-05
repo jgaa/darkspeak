@@ -1,0 +1,11 @@
+; Private file needed to run tests
+
+; Service definition for one hidden service.
+; This corresponds to a hidden service definition in /etc/torrc
+service {
+    ; This is a real Tor Hidden Service hostname without the .onion postfix.
+    dark_id ""
+    ; hostname "127.0.0.1"
+    ; port 11009
+}
+
