@@ -3,6 +3,8 @@
 This document is based on other peoples research in this area, and on
 my own examination of the original Tor Chat Source Code.
 
+The description here is not entirely correct. TBD: Correct it!
+
 # Credits
 - Original Source Code [TorChat](https://github.com/prof7bit/TorChat).
 - Mirco Bauer [TC Protocol](https://www.meebey.net/research/torchat_protocol/)
@@ -14,7 +16,7 @@ my own examination of the original Tor Chat Source Code.
 - The protocol is line based: command [sp] payload [lf]
 - lf = 0x0a
 - ''command'' may only consist of characters [a..z] or _
-- If an incoming message with an unknown command is received do nothing and just reply with "not_implemented"
+- If an incoming message with an unknown command is receido nothing and just reply with "not_implemented"
 
 - Criteria for valid TC ID:
 ```Python
@@ -27,7 +29,7 @@ def isValidAddress(self):
         return True
 ```
 
-Incoming messages have the blob encoded in LF format. This is decoded to binary data 
+Incoming messages have the blob encoded in LF format. This is decoded to binary data
 when the message is received.
 
 TC originally instantiates a class for each incoming message, and then "executes" it.
@@ -36,11 +38,11 @@ The default implementation is to reply "not implemented".
 # Commands
 ## add_me
 
-This must be sent after connection if you are (or want to be) 
-on the other's buddy list. Since a client can also connect for 
-the purpose of joining a chat room without automatically appearing 
+This must be sent after connection if you are (or want to be)
+on the other's buddy list. Since a client can also connect for
+the purpose of joining a chat room without automatically appearing
 on the buddy list this message is needed.
-    
+
 
 ```
 Command: add_me
@@ -78,8 +80,8 @@ Command: filedata <transfer_cookie> <blob (fixed size)> <hash> <start>
 ## filedata_error
 
 This is sent instead of filedata_ok when the hash was wrong or the block start
-was later than what we would have expected (entire blocks have been skipped/lost 
-due to temporary disconnect). A file sender must react to this message by 
+was later than what we would have expected (entire blocks have been skipped/lost
+due to temporary disconnect). A file sender must react to this message by
 restarting the file transmission at the offset given in start. A file receiver will
 send this message whenever it wants the the transfer restart at a certain position.
 
@@ -127,7 +129,7 @@ message usually occurs when a file receiver clicks the cancel button.
 Command: file_stop_sending <cookie>
 ```
 
-## message                                                                                                                                                               
+## message
 
 this is a normal text message. Text is encoded UTF-8
 
@@ -140,8 +142,8 @@ was not delivered if the sender is not in the buddy list.
 
 ## ping
 
-A ping message consists of sender address and a random string (cookie). 
-It must be answered with a pong message containing the same cookie to so that 
+A ping message consists of sender address and a random string (cookie).
+It must be answered with a pong message containing the same cookie to so that
 the other side can undoubtedly identify the connection
 
 ```
@@ -153,17 +155,17 @@ messages - that is, try different tc_id values on the same connection.
 Since the TC protocol is peer-to peer, a legitimate client will only
 ping using one <tc-id>, namely it's private TOR secret service id.
 
-TC also search all active connections to see if there is already a connection 
+TC also search all active connections to see if there is already a connection
 from the <tc-id>. If there is, the message is regarded as fake. In this case,
 it also sends a "not_implemented double connection" message to the existing
 peer.
 
-When TC receives a ping message, it put the connection in a temporary 
-conntion-list and reply with pong, unless we have already sent a pong 
+When TC receives a ping message, it put the connection in a temporary
+conntion-list and reply with pong, unless we have already sent a pong
 and there has not been a problem with the connection to the peers hidden
 service.
 
-## pong 
+## pong
 
 ```
 Command: pong cookie
@@ -180,8 +182,8 @@ buddy.
 
 ## profile_avatar
 
-the uncompessed 64*64*24bit image. Avatar messages can 
-be completely omitted but IF they are sent then the correct 
+the uncompessed 64*64*24bit image. Avatar messages can
+be completely omitted but IF they are sent then the correct
 order is first the alpha and then this one
 
 ```
@@ -229,11 +231,11 @@ Command: remove_me
 
 ## status
 
-transmit the status, this MUST be sent every 120 seconds 
+transmit the status, this MUST be sent every 120 seconds
 or the client may trigger a timeout and close the connection.
 When receiving this message the client will update the status
 icon of the buddy, it will be transmitted after the pong upon
-connection, immediately on every status change or at least 
+connection, immediately on every status change or at least
 once every 120 seconds. Allowed values for the data are
 "avalable", "away", "xa", other values are not defined yet.
 
@@ -243,11 +245,11 @@ Command: status "available" | "away" | "xa"
 
 ## version
 
-Transmits the version number of the client software. Usually sent after 
+Transmits the version number of the client software. Usually sent after
 the 'client' message
 
 ```
-Command: 
+Command: version "version"
 ```
 
 # Replies
@@ -273,12 +275,12 @@ compromized. There is also no connection limit. Such limits must be
 offered in the UI and enforced in the client.
 
 Contacts (buddies) seems to be added automatically, something that opens up
-for DoS attacs by sending a huge number of add_me messages from a bot-net. 
+for DoS attacs by sending a huge number of add_me messages from a bot-net.
 
 There are no filters to allow only known buddies, or white-listed buddies to connect.
 We need to add both.
 
-UTF-8 unicode filenames may pose a threat to the receiver, as the files 
+UTF-8 unicode filenames may pose a threat to the receiver, as the files
 may masquerade as having different locations/names than they actually do. They
 may also try to exploit vulnerabilities on the UTF-8 decoder. We need some kind of
 sanity check to make sure that files are only written to the intended destination
@@ -286,7 +288,7 @@ folder, and a check to make sure that the encoding is valid.
 
 UTF-8 encoded messages are vulnerable to UTF-8 decoder vulnerabilities. We need
 to make sure that the encoding is valid, and look for known exploit patterns in
-the messages. 
+the messages.
 
 
 # Work-flows

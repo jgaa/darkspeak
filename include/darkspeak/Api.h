@@ -26,7 +26,7 @@ public:
     virtual ~Api() = default;
 
     /*! What data to store regarding our buddy */
-    enum class AnonymityLevel {
+    enum class AnonymityLevel : int {
 
         /// Our default level - Maps to NORMAL unless otherwise specified.
         DEFAULT,
@@ -58,14 +58,14 @@ public:
     };
 
     /*! The presence or availability of someone */
-    enum class Presence {
+    enum class Presence : int {
         OFF_LINE,
         CONNECTING,
         ON_LINE,
     };
 
-    enum class Status {
-        OFF_LINE,
+    enum class Status : int {
+        OFF_LINE, // maps to xa in legacy TC
         AVAILABLE,
         BUSY,
         AWAY,
@@ -115,6 +115,21 @@ public:
              * larger than NORMAL.
              */
             bool store_conversations = false;
+
+            AnonymityLevel GetCurrentAnonymity() const noexcept {
+                return static_cast<AnonymityLevel>(std::max(
+                    static_cast<int>(anonymity),
+                    static_cast<int>(required_anonymity)));
+            }
+
+            bool CanBeSaved() const noexcept {
+                return static_cast<int>(GetCurrentAnonymity())
+                    <= static_cast<int>(AnonymityLevel::HIGH);
+            }
+
+            bool CanBeLogged() const noexcept {
+                return CanBeSaved();
+            }
         };
 
         using buddy_def_t = Buddy::Info;
@@ -133,6 +148,11 @@ public:
         /*! Get a string that the UI can use to list the buddy
          */
         virtual std::string GetUiName() const = 0;
+
+        /*! Returns true if the buddy has the auto_connect flag */
+        virtual bool HasAutoConnect() const = 0;
+
+        virtual bool CanBeLogged() const = 0;
 
         /*! Connect to the buddy.
          *
@@ -169,23 +189,39 @@ public:
         virtual void Delete() = 0;
     };
 
+    /*! Information about the local user.
+     */
+    struct Info {
+        std::string id;
+        Status status = Status::OFF_LINE;
+        std::string profile_name;
+        std::string profile_text;
+    };
+
     using buddy_list_t = std::deque<Buddy::ptr_t>;
 
     /*! Get a complete list of all our buddies
      */
-    virtual std::vector<buddy_list_t> GetBuddies() = 0;
+    virtual buddy_list_t GetBuddies() = 0;
 
     /*! Manually add a buddy to the buddy listb
      */
-    virtual Buddy::ptr_t AddBuddy(Buddy::Info def) = 0;
+    virtual Buddy::ptr_t AddBuddy(const Buddy::Info& def) = 0;
+
+    /*! Remove a buddy
+     *
+     */
+    virtual void RemoveBuddy(const std::string& id) = 0;
 
 
     /*! Start the secret Tor service and listen for incoming connections.
      *
      * Connect all buddies with auto_connect set.
      *
+     *
+     *
      */
-    virtual void GoOnline() = 0;
+    virtual void GoOnline(const Info& my_info) = 0;
 
     /*! Close all connections and stop listening for incoming calls.
      *

@@ -5,7 +5,26 @@
 service {
     ; This is a real Tor Hidden Service hostname without the .onion postfix.
     dark_id ""
-    ; hostname "127.0.0.1"
-    ; port 11009
+
+    ; Local address. This is where Tor will connect to us with incoming connections.
+    hostname "127.0.0.1"
+    port 11009
+
+    ; Name of the data-file for test buddies
+    buddy_file = "buddies.data"
+
+    ; Threads in the thread-pool.
+    ; Please note that one TC id use only one IO thread. More threads does
+    ; not really make sense until we support multiple id's
+    io_threads = 3
 }
 
+; Connection details for the outbound Tor Socks 5 endpoint
+; We can use local or remote servers - but please be advised that
+; the connection between us and Tor is TCP with no encryption. If you
+; plan to use an external Tor server for real sessions, you should consider
+; to protect the connection with VPN or ssh tunnels.
+tor {
+    hostname "127.0.0.1"
+    port 9050
+}

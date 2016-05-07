@@ -2,6 +2,9 @@ project(libdarkspeak)
 set(ACTUAL_SOURCES
         ImManager.cpp
         BuddyImpl.cpp
+        TorChatEngine.cpp
+        TorChatConnection.cpp
+        Connection.cpp
     )
 set(HEADERS
    ${DARKSPEAK_ROOT_DIR}/darkspeak/Api.h
@@ -18,4 +21,3 @@ endif()
 
 add_library(darkspeak_api ${SOURCES})
 set_target_properties(darkspeak_api PROPERTIES DEBUG_OUTPUT_NAME darkspeak_apiD)
-#target_link_libraries(darkspeak_api ${DEFAULT_LIBRARIES} sqlpp11-connector-sqlite3 sqlite3 wfde)

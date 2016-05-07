@@ -26,13 +26,23 @@ int main(int argc, char **argv) {
     log_engine.AddHandler(make_shared<war::log::LogToStream>(
         clog, "console", log::LL_DEBUG));
 
-    LOG_INFO << "devel_tests starting up wityh cwd='"
+    LOG_INFO << "devel_tests starting up with cwd='"
         << boost::filesystem::current_path().string()
         << "'";
 
     auto manager = std::make_shared<impl::ImManager>("testing.conf");
 
-    manager->GoOnline();
+    Api::Info me;
+    auto config = manager->GetConfig();
+    me.id = config.get<string>("service.dark_id");
+    me.profile_name = config.get("profile.name", "");
+    me.profile_text = config.get("profile.text", "");
+    me.status = Api::Status::AWAY;
+    manager->GoOnline(me);
+
+    string ttt;
+
+    cin >> ttt; // wait
 
     return 0;
 }

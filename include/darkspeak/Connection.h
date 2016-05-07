@@ -1,9 +1,14 @@
 #pragma once
 
 #include <memory>
+#include <vector>
+#include <iostream>
+
+#include "tasks/WarPipeline.h"
+#include "war_error_handling.h"
 
 #include <boost/asio.hpp>
-#include <boost/asio/yield.hpp>
+#include <boost/asio/spawn.hpp>
 
 namespace darkspeak {
 
@@ -14,6 +19,7 @@ class Connection
 public:
     using ptr_t = std::shared_ptr<Connection>;
     using endpoint_t = boost::asio::ip::tcp::endpoint;
+    using write_buffers_t = std::vector<boost::asio::const_buffer>;
 
     /*! Basically a wrapper around a boost::asio TCP socket
      *
@@ -49,6 +55,12 @@ public:
         virtual void AsyncShutdown(boost::asio::yield_context& yield) = 0;
     };
 
+    Connection(war::Pipeline& pipeline)
+    : pipeline_{pipeline}
+    {
+    }
+
+
     /*! Create an outbound connection
      *
      * \param address The address we want to connect to,
@@ -56,15 +68,33 @@ public:
      *
      * \param proxy Socks5 proxy to use for this connection.
      */
-    void Connect(std::string address, endpoint_t proxy);
+    void Connect(std::string address, endpoint_t proxy,
+                 boost::asio::yield_context& yield);
 
     bool IsConnected() const noexcept;
 
-    /*! Get the connection instance.
+    /*! Get the Socket instance.
      *
-     * \exception Throws if there is no instance
+     * \exception war::ExceptionMissingInternalObject if there is no instance
      */
-    Socket& GetConnection();
+    Socket& GetSocket() {
+        if (!socket_) {
+            WAR_THROW_T(war::ExceptionMissingInternalObject, "No socket");
+        }
+        return *socket_;
+    }
+
+    war::Pipeline& GetPipeline() { return pipeline_; }
+
+protected:
+    void SetSocket(Socket::ptr_t socket) {
+        socket_ = socket;
+    }
+
+    Socket::ptr_t socket_;
+    war::Pipeline& pipeline_;
 };
 
 } //namespace
+
+std::ostream& operator << (std::ostream& o, const boost::asio::ip::tcp::socket& v);

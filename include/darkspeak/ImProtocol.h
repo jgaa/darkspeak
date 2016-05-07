@@ -2,9 +2,13 @@
 
 #include <string>
 #include <memory>
+#include <functional>
+
+#include "tasks/WarPipeline.h"
+
 #include <boost/asio.hpp>
-#include <boost/asio/yield.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/property_tree/ptree.hpp>
 
 #include "darkspeak/Api.h"
 
@@ -23,12 +27,13 @@ namespace darkspeak {
  * So this interface must work optimally with TC, without
  * putting restraints on future IM protocols.
  *
- * There should be only one instance of one particular implementation
- * of this interface at any time.
  */
 class ImProtocol
 {
 public:
+    using ptr_t = std::shared_ptr<ImProtocol>;
+    using get_pipeline_fn_t = std::function<war::Pipeline&()>;
+
     /// Message
     struct Message {
         std::string text;
@@ -102,22 +107,38 @@ public:
         /*! Some other event happened that the user may want to know about.
          */
         virtual void OnOtherEvent() = 0;
+
+        /*! Listening for incoming connections */
+        virtual void OnListening() = 0;
+
+        /*! Shutdown Complete. All connections are closed */
+        virtual void OnShutdownComplete() = 0;
     };
 
     virtual ~ImProtocol() = default;
 
     /*! Connect to a peer.
      *
-     * When Connect returns, we are connected.
+     * Start to asynchrouneosly connect to a peer.
+     *
+     * The result will be signalled trough the OnBuddyStateChange
+     * signal handler. If the state is connected the call succeeded,
+     * if it is offline, it failed.
      *
      * \exception WarError derived exceptions on errors.
+     * \exception std::error derived exceptions if hostname/port
+     *          configuration is wrong.
      */
-    virtual void Connect(Buddy::ptr_t& buddy,
-                         boost::asio::yield_context& yield) = 0;
+    virtual void Connect(Api::Buddy::ptr_t buddy) = 0;
+
+    /*! Set the infor regarding the user.
+     *
+     * The user inputs the data in the UI
+     */
+    virtual void SetInfo(const Api::Info& info) = 0;
 
 
-    virtual void SendMessage(Buddy& buddy, const Message& msg,
-                             boost::asio::yield_context& yield) = 0;
+    virtual void SendMessage(Api::Buddy& buddy, const Message& msg) = 0;
 
     /*! Starts a file transfer.
      *
@@ -127,9 +148,12 @@ public:
      * \param monitor Information sharing from the transfer to the
      *          initiator.
      */
-    virtual void SendFile(Buddy& buddy, const File& file,
-        FileMonitor::ptr_t monitor,
-        boost::asio::yield_context& yield) = 0;
+    virtual void SendFile(Api::Buddy& buddy, const File& file,
+        FileMonitor::ptr_t monitor) = 0;
+
+
+    /*! Disconnect a buddy */
+    virtual void Disconnect(Api::Buddy& buddy) = 0;
 
     /*! Set the event monitor to receive events from this instance
      *
@@ -137,7 +161,14 @@ public:
     virtual void SetMonitor(EventMonitor::ptr_t monitor) = 0;
 
     /*! Start listening for incoming connections */
-    virtual void Listen() = 0;
+    virtual void Listen(boost::asio::ip::tcp::endpoint endpoint) = 0;
+
+    /*! Close all connections, stop listening */
+    virtual void Shutdown() = 0;
+
+    /*! Create an instance of the implemnetation of the protocol */
+    static ptr_t CreateProtocol(get_pipeline_fn_t fn,
+                                const boost::property_tree::ptree& properties);
 };
 
 
