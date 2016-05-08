@@ -32,7 +32,7 @@ Dark Speak (or another enhanced client).
 ## Beta 1
 - [x] ~~Document the legacy Tor Chat protocol~~
 - [ ] Implement a library that speaks the TC protocol
- - [ ] Core functionality
+ - [ ] Core functionality (work in progress)
  - [ ] Unit tests
  - [ ] Functional tests
 - [ ] Implement GUI for Linux

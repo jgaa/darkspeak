@@ -3,6 +3,7 @@
 
 #include "log/WarLog.h"
 
+#include "darkspeak/darkspeak_impl.h"
 #include "darkspeak/BuddyImpl.h"
 #include "darkspeak/ImManager.h"
 #include "darkspeak/ImProtocol.h"
@@ -39,13 +40,11 @@ std::shared_ptr< ImProtocol > BuddyImpl::GetProtocol()
 }
 
 
-
 bool BuddyImpl::HasAutoConnect() const
 {
     LOCK;
     return info_.auto_connect;
 }
-
 
 void BuddyImpl::Connect()
 {
@@ -72,6 +71,13 @@ void BuddyImpl::Disconnect()
     GetProtocol()->Disconnect(*this);
 }
 
+std::string BuddyImpl::GetId() const
+{
+    LOCK;
+    return info_.id;
+}
+
+
 Api::Buddy::Info BuddyImpl::GetInfo() const
 {
     LOCK;
@@ -96,11 +102,26 @@ std::string BuddyImpl::GetUiName() const
     return info_.id;
 }
 
-void BuddyImpl::SendMessage(const std::string& msg)
+Api::Buddy::MessageSendResult
+BuddyImpl::SendMessage(const std::string& msg)
 {
     ImProtocol::Message message;
-    message.text = msg;
-    GetProtocol()->SendMessage(*this, message);
+
+    try {
+        message.text = msg;
+        GetProtocol()->SendMessage(*this, message);
+        return Api::Buddy::MessageSendResult::SENT;
+    } catch(const ExceptionNotConnected& ex) {
+        // Save the message
+        LOG_DEBUG << "The message could not be delivered. Adding it to queue.";
+        {
+            std::lock_guard<std::mutex> lock(mq_mutex_);
+            outgoing_message_queue_.push_back(msg);
+        }
+        return Api::Buddy::MessageSendResult::SENT;
+    }
+
+    //return Api::Buddy::MessageSendResult::FAILED;
 }
 
 void BuddyImpl::SetInfo(Buddy::Info info)
@@ -109,9 +130,53 @@ void BuddyImpl::SetInfo(Buddy::Info info)
     info_ = info;
 }
 
-void BuddyImpl::RegisterEventHandler()
-{
 
+void BuddyImpl::OnStateChange(Api::Status status)
+{
+    {
+        LOCK;
+        if (status == status_) {
+            return;
+        }
+
+        status_ = status;
+    }
+
+    SendQueuedMessage();
+}
+
+void BuddyImpl::OnOtherEvent(const EventMonitor::Event& event)
+{
+    if (event.type == EventMonitor::Event::Type::MESSAGE_TRANSMITTED) {
+        SendQueuedMessage();
+    }
+}
+
+
+/* Send one message. When we are notified that the message is transferred,
+ * the notification handler will call us again.
+ */
+void BuddyImpl::SendQueuedMessage()
+{
+    {
+        LOCK;
+        if (status_ != Api::Status::AVAILABLE) {
+                return;
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(mq_mutex_);
+    if (!outgoing_message_queue_.empty()) {
+        try {
+            LOG_DEBUG << "Trying to send one message from the outqueue.";
+            ImProtocol::Message message;
+            message.text = outgoing_message_queue_.front();
+            GetProtocol()->SendMessage(*this, message);
+            outgoing_message_queue_.pop_front();
+        } catch (const ExceptionNotConnected& ex) {
+
+        }
+    }
 }
 
 

@@ -14,6 +14,9 @@
 
 namespace darkspeak {
 
+
+class EventMonitor;
+
 /*! \class ImProtocol ImProtocol.h darkspeak/ImProtocol.h
  *
  * General interface to an abstract IM protocol.
@@ -69,52 +72,6 @@ public:
         virtual std::string GetFileId() = 0;
     };
 
-    /*! Interface to get incoming events
-     *
-     */
-    class EventMonitor {
-    public:
-        using ptr_t =  std::shared_ptr<EventMonitor>;
-
-        /*! Incoming connection from someone
-         *
-         * \return True if you want to proceed with the connection
-         */
-        virtual bool OnIncomingConnecction() = 0;
-
-        /*! Someone requests to be added as a buddy
-         *
-         * \return true if the buddy was added
-         */
-        virtual bool OnAddNewBuddy() = 0;
-
-        /*! A buddy's state was changed
-         *
-         */
-        virtual void OnBuddyStateChange() = 0;
-
-        /*! An incoming message has arrived
-         */
-        virtual void OnIncomingMessafe() = 0;
-
-        /*! Someone requests to send us a file
-         *
-         * \return FileMonitor pointer if we want to receive the file
-         *      else nullptr.
-         */
-        virtual FileMonitor::ptr_t OnIncomingFile() = 0;
-
-        /*! Some other event happened that the user may want to know about.
-         */
-        virtual void OnOtherEvent() = 0;
-
-        /*! Listening for incoming connections */
-        virtual void OnListening() = 0;
-
-        /*! Shutdown Complete. All connections are closed */
-        virtual void OnShutdownComplete() = 0;
-    };
-
     virtual ~ImProtocol() = default;
 
     /*! Connect to a peer.
@@ -158,7 +115,7 @@ public:
     /*! Set the event monitor to receive events from this instance
      *
      */
-    virtual void SetMonitor(EventMonitor::ptr_t monitor) = 0;
+    virtual void SetMonitor(std::shared_ptr<EventMonitor> monitor) = 0;
 
     /*! Start listening for incoming connections */
     virtual void Listen(boost::asio::ip::tcp::endpoint endpoint) = 0;

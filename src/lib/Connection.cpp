@@ -100,5 +100,10 @@ bool Connection::IsConnected() const noexcept {
     return false;
 }
 
+void Connection::Close()
+{
+    GetSocket().Close();
+}
+
 
 } // darkspeak

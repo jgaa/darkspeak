@@ -13,21 +13,28 @@
 using namespace std;
 using namespace war;
 
+std::ostream& operator << (std::ostream& o, const darkspeak::impl::TorChatConnection& v) {
+    return o << "{connection: " << v.GetName() << '}';
+}
+
 namespace darkspeak {
 namespace impl {
 
-TorChatConnection::TorChatConnection(war::Pipeline& pipeline)
-: Connection(pipeline)
+TorChatConnection::TorChatConnection(std::string name, war::Pipeline& pipeline)
+: Connection(pipeline), name_{move(name)}
 {
     SetSocket(make_shared<SocketImpl>(pipeline.GetIoService()));
+    LOG_DEBUG << *this << " now communicates trough " << GetSocket().GetSocket();
 }
 
 TorChatConnection::TorChatConnection(
+    std::string name,
     war::Pipeline& pipeline,
     std::shared_ptr< boost::asio::ip::tcp::socket > socket)
-: Connection(pipeline)
+: Connection(pipeline), name_{move(name)}
 {
     SetSocket(make_shared<SocketImpl>(socket));
+    LOG_DEBUG << *this << " now communicates trough " << GetSocket().GetSocket();
 }
 
 boost::string_ref TorChatConnection::GetLine(boost::asio::yield_context& yield)
@@ -40,7 +47,7 @@ boost::string_ref TorChatConnection::GetLine(boost::asio::yield_context& yield)
 
     // Rearrange the buffer if required
     if (!remaining_data_.empty()) {
-        LOG_TRACE4_FN << "Rearranging input buffer - have "
+        LOG_TRACE4_FN << *this << " Rearranging input buffer - have "
             << remaining_data_.size()
             << " bytes left over since last time: "
             << remaining_data_.to_string();
@@ -56,7 +63,7 @@ boost::string_ref TorChatConnection::GetLine(boost::asio::yield_context& yield)
             {&read_buffer_[0], total_bytes_read},
             line, remaining_data_)) {
 
-            LOG_TRACE4_FN << "Found complete line in remains: " << line.to_string();
+            LOG_TRACE4_FN << *this << " Found complete line in remains: " << line.to_string();
             return line;
         }
     }
@@ -73,7 +80,7 @@ boost::string_ref TorChatConnection::GetLine(boost::asio::yield_context& yield)
             {&read_buffer_[0], total_bytes_read},
             line, remaining_data_)) {
 
-            LOG_TRACE4_FN << "Found complete line in remains: " << line.to_string();
+            LOG_TRACE4_FN << *this << " Found complete line in remains: " << line.to_string();
             return line;
         }
 
@@ -94,7 +101,7 @@ boost::string_ref TorChatConnection::GetLine(boost::asio::yield_context& yield)
 bool TorChatConnection::GetLineFromBuffer(
     boost::string_ref buffer,
     boost::string_ref& line,
-    boost::string_ref& remaining) {
+    boost::string_ref& remaining) const {
 
     auto pos = buffer.find(0x0a);
     if (pos != buffer.npos) {
@@ -105,7 +112,8 @@ bool TorChatConnection::GetLineFromBuffer(
 
         remaining = {&buffer[0] + pos, remaining_bytes};
 
-        LOG_TRACE4_FN << "Received line: " << log::Esc(line.to_string())
+        LOG_TRACE4_FN << *this
+            << " Received line: " << log::Esc(line.to_string())
             << ". Have " << remaining.size()
             << " bytes left in the buffer: "
             << log::Esc(remaining.to_string());
@@ -125,8 +133,7 @@ void TorChatConnection::SendLine(string line,
                                                         line.size()),
                                                         yield);
 
-    LOG_DEBUG << "Sent line: " << log::Esc(line);
-    LOG_TRACE4_FN << "Sent line: " << log::Esc(line);
+    LOG_DEBUG << *this  << " Sent line: " << log::Esc(line);
 }
 
 void TorChatConnection::Encode(std::string& blob)

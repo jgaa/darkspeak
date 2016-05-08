@@ -5,6 +5,7 @@ set(ACTUAL_SOURCES
         TorChatEngine.cpp
         TorChatConnection.cpp
         Connection.cpp
+        TorChatPeer.cpp
     )
 set(HEADERS
    ${DARKSPEAK_ROOT_DIR}/darkspeak/Api.h

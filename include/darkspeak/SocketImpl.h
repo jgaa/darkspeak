@@ -61,6 +61,11 @@ public:
         // Do nothing.
     }
 
+    void Close() override {
+        if (socket_ && socket_->is_open()) {
+            socket_->close();
+        }
+    }
 
 private:
     std::shared_ptr<boost::asio::ip::tcp::socket> socket_;

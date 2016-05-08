@@ -5,12 +5,15 @@
 #include <deque>
 #include <vector>
 #include <chrono>
+#include <iostream>
 
 #include <boost/filesystem.hpp>
 
 namespace darkspeak {
 
 using path_t = boost::filesystem::path;
+
+class EventMonitor;
 
 /*! \class Api Api.h darkspeak/Api.h
  *
@@ -74,8 +77,13 @@ public:
 
     class Buddy {
     public:
-
         using ptr_t = std::shared_ptr<Buddy>;
+
+        enum class MessageSendResult {
+            SENT,
+            QUEEUED,
+            FAILED
+        };
 
         virtual ~Buddy() = default;
 
@@ -134,6 +142,9 @@ public:
 
         using buddy_def_t = Buddy::Info;
 
+        /*! Get the id */
+        virtual std::string GetId() const = 0;
+
         /*! Get the current information
          */
         virtual Info GetInfo() const = 0;
@@ -161,16 +172,7 @@ public:
         virtual void Connect() = 0;
 
         /*! Send a utf-8 encoded text message */
-        virtual void SendMessage(const std::string& msg) = 0;
-
-        /*! Register an event handler
-         *
-         * The event handler will be notified about changes in the
-         * buddy's state, incoming messages and incoming files.
-         *
-         * \todo: Define the interface
-         */
-        virtual void RegisterEventHandler() = 0;
+        virtual MessageSendResult SendMessage(const std::string& msg) = 0;
 
         /*! Disconnect from the buddy
          *
@@ -187,6 +189,7 @@ public:
          * saved information is deleted.
          */
         virtual void Delete() = 0;
+
     };
 
     /*! Information about the local user.
@@ -234,6 +237,12 @@ public:
      */
     virtual void Disconnect(bool local_only = true) = 0;
 
+    /*! Register an event-monitor to receive notifications.
+     *
+     */
+    virtual void SetMonitor(std::shared_ptr<EventMonitor> monitor) = 0;
+
+
     /*! Panic button.
      *
      * All buddy's that are connected will be notified that we pressed
@@ -246,7 +255,10 @@ public:
      *          all data-files will be erased also there. That means that
      *          all buddy's, conversation logs, - everything will be deleted.
      */
-    virtual void Panic(std::string message, bool erase_data) = 0;
+    virtual void Panic(std::string message, bool erase_data) = 0; // TODO: Implement
 };
 
 } //namespace
+
+std::ostream& operator << (std::ostream& o, const darkspeak::Api::Status& v);
+std::ostream& operator << (std::ostream& o, const darkspeak::Api::Presence& v);

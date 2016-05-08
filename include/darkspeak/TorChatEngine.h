@@ -6,12 +6,15 @@
 
 #include "war_error_handling.h"
 
+#include "darkspeak/darkspeak.h"
 #include "darkspeak/ImProtocol.h"
+#include "darkspeak/EventMonitor.h"
 
 namespace darkspeak {
 namespace impl {
 
 class TorChatPeer;
+class TorChatConnection;
 
 /*! Tor Chat Protocol implementation
  *
@@ -21,13 +24,6 @@ class TorChatEngine : public ImProtocol
 {
 public:
     struct Request;
-    struct ExceptionNotAllowed : public war::ExceptionBase {};
-    struct ExceptionDisconnectNow : public war::ExceptionBase {};
-
-    enum class Direction {
-        INCOMING,
-        OUTGOING
-    };
 
     struct Command {
         using cmd_fn_t =  std::function<void (const Request&)>;
@@ -92,7 +88,7 @@ public:
     void SendFile(Api::Buddy& buddy, const File& file,
         FileMonitor::ptr_t monitor) override;
     void Disconnect(Api::Buddy& buddy) override;
-    void SetMonitor(EventMonitor::ptr_t monitor) override;
+    void SetMonitor(std::shared_ptr<EventMonitor> monitor) override;
     void Listen(boost::asio::ip::tcp::endpoint endpoint) override;
     void Shutdown() override;
 
@@ -103,14 +99,13 @@ private:
     void Accept(boost::asio::ip::tcp::endpoint endpoint,
         boost::asio::yield_context ctx);
 
-    void ConnectToPeer(TorChatPeer& peer, war::Pipeline& pipeline,
+    void ConnectToPeer(TorChatPeer& peer,
                        boost::asio::yield_context& yield);
 
-    void OnAccepted(war::Pipeline& pipeline,
-                    std::shared_ptr< boost::asio::ip::tcp::socket > socket,
+    void OnAccepted(std::shared_ptr< boost::asio::ip::tcp::socket > socket,
                     boost::asio::yield_context yield);
 
-    std::vector<EventMonitor::ptr_t> GetMonitors();
+    std::vector<std::shared_ptr<EventMonitor>> GetMonitors();
 
     bool VerifyPing(boost::string_ref line, std::string& id,
                     std::string& cookie);
@@ -128,11 +123,22 @@ private:
 
     // For spawn
     void StartConnectToPeer(std::string& peer_id,
-                            war::Pipeline& pipeline,
                             boost::asio::yield_context yield);
 
     std::shared_ptr<TorChatPeer> GetPeer(const std::string& id);
 
+    std::shared_ptr<TorChatConnection> CreateConnection(
+        Direction direction,
+        std::shared_ptr< boost::asio::ip::tcp::socket > socket = nullptr) const;
+
+    // Event handlers
+    bool EmitEventIncomingConnection(const EventMonitor::ConnectionInfo& info);
+    bool EmitEventAddNewBuddy(const EventMonitor::BuddyInfo& info);
+    void EmitEventBuddyStateUpdate(const EventMonitor::BuddyInfo& info);
+    void EmitEventIncomingMessage(const EventMonitor::Message& msg);
+    void EmitOtherEvent(const EventMonitor::Event& event);
+
+    // Requests
     void OnAddMe(const Request& req);
     void OnClient(const Request& req);
     void OnFileData(const Request& req);
@@ -140,6 +146,7 @@ private:
     void OnFileDataOk(const Request& req);
     void OnFilename(const Request& req);
     void OnFileStopSending(const Request& req);
+    void OnMessage(const Request& req);
     void OnPing(const Request& req);
     void OnPong(const Request& req);
     void OnProfileAvatar(const Request& req);
@@ -154,7 +161,8 @@ private:
     bool DoSendStatus(TorChatPeer& peer, boost::asio::yield_context& yield);
     bool DoSend(const std::string& command,
                 std::initializer_list<std::string> args,
-                TorChatPeer& peer, boost::asio::yield_context& yield);
+                TorChatPeer& peer, boost::asio::yield_context& yield,
+                Direction direction = Direction::OUTGOING);
     static const std::string& ToString(Api::Status status);
 
     boost::asio::ip::tcp::endpoint GetTorEndpoint() const;
@@ -175,3 +183,5 @@ private:
 } // impl
 } // darkspeak
 
+std::ostream& operator << (std::ostream& o,
+                           const darkspeak::impl::TorChatEngine::Command::Valid& v);

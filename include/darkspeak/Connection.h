@@ -53,6 +53,9 @@ public:
             boost::asio::yield_context& yield) = 0;
 
         virtual void AsyncShutdown(boost::asio::yield_context& yield) = 0;
+
+        virtual void Close() = 0;
+
     };
 
     Connection(war::Pipeline& pipeline)
@@ -72,6 +75,8 @@ public:
                  boost::asio::yield_context& yield);
 
     bool IsConnected() const noexcept;
+
+     void Close();
 
     /*! Get the Socket instance.
      *

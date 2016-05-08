@@ -11,9 +11,10 @@
 #include <boost/asio.hpp>
 #include <boost/asio/spawn.hpp>
 
+#include "darkspeak/darkspeak_impl.h"
 #include "darkspeak/Api.h"
 #include "darkspeak/TorChatConnection.h"
-
+#include "darkspeak/EventMonitor.h"
 
 namespace darkspeak {
 namespace impl {
@@ -29,13 +30,15 @@ public:
         CONNECTING,
         AUTENTICATING,
         AUTHENTICATED,
-        READY
+        READY,
+        DONE
     };
     using ptr_t = std::shared_ptr<TorChatPeer>;
 
     TorChatPeer(const std::string id)
     :id_{id}
     {
+        info.buddy_id = id_;
     }
 
     TorChatConnection::ptr_t GetInConnection() {
@@ -79,15 +82,18 @@ public:
         return state_;
     }
 
-    void SetState(State state) {
+    void SetState(State state);
 
-        LOG_DEBUG_FN << "Setting state " << static_cast<int>(state)
-            << ", old stat was " << static_cast<int>(state_);
+    bool UpgradeState(State state) {
 
-        state_ = state;
+        if (compare_enum(state_,state) < 0) {
+            SetState(state);
+            return true;
+        }
+        return false;
     }
 
-    const std::string& GetId() {
+    const std::string& GetId() const {
 
         return id_;
     }
@@ -162,11 +168,14 @@ public:
         got_pong_ = true;
     }
 
-    std::string software_name;
-    std::string software_version;
-    std::string profile_name;
-    std::string profile_text;
-    std::string status_text;
+    void Close() {
+        if (conn_in_) conn_in_->Close();
+        if (conn_out_) conn_out_->Close();
+        SetState(State::DONE);
+    }
+
+    EventMonitor::BuddyInfo info;
+    Direction initiative = Direction::INCOMING;
 
 private:
     bool SetConnection(TorChatConnection::ptr_t& existing,
@@ -209,3 +218,7 @@ private:
 
 } // impl
 } // darkspeak
+
+std::ostream& operator << (std::ostream& o, const darkspeak::impl::TorChatPeer& v);
+std::ostream& operator << (std::ostream& o,
+                           const darkspeak::impl::TorChatPeer::State& v);

@@ -14,11 +14,31 @@
 
 #include "darkspeak/darkspeak_impl.h"
 #include "darkspeak/ImManager.h"
-#include "darkspeak/BuddyImpl.h"
 #include "darkspeak/ImProtocol.h"
+#include "darkspeak/BuddyImpl.h"
 
 using namespace std;
 using namespace war;
+
+std::ostream& operator << (std::ostream& o, const darkspeak::Direction& v) {
+    static const array<string, 2> names = { "INCOMING", "OUTGOING" };
+
+    return o << names.at(static_cast<int>(v));
+}
+
+std::ostream& operator << (std::ostream& o, const darkspeak::Api::Status& v) {
+    static const array<string, 5> names
+        = { "OFF_LINE", "AVAILABLE", "BUSY", "AWAY", "LONG_TIME_AWAY" };
+
+    return o << names.at(static_cast<int>(v));
+}
+
+std::ostream& operator << (std::ostream& o, const darkspeak::Api::Presence& v) {
+    static const array<string, 3> names = { "OFF_LINE", "CONNECTING", "ON_LINE" };
+
+    return o << names.at(static_cast<int>(v));
+}
+
 
 #define LOCK std::lock_guard<std::mutex> lock(mutex_);
 
@@ -77,6 +97,8 @@ ImManager::ImManager(path_t conf_file)
         return threadpool_->GetAnyPipeline();
     }, config_);
     LoadBuddies();
+    event_monitor_ = make_shared<Events>(*this);
+    protocol_->SetMonitor(event_monitor_);
 }
 
 ImManager::~ImManager()
@@ -236,6 +258,179 @@ void ImManager::SaveBuddies()
 void ImManager::Connect(Api::Buddy::ptr_t buddy)
 {
     protocol_->Connect(move(buddy));
+}
+
+BuddyImpl::ptr_t ImManager::GetBuddy(const string& id)
+{
+    LOCK;
+    auto it = buddies_.find(id);
+    if (it != buddies_.end()) {
+        return it->second;
+    }
+
+    return {};
+}
+
+bool ImManager::HaveBuddy(const string& id) const
+{
+    LOCK;
+    return buddies_.find(id) != buddies_.end();
+}
+
+
+//////////////// Events //////////////
+
+void ImManager::SetMonitor(shared_ptr<EventMonitor> monitor)
+{
+    LOCK;
+    event_monitors_.push_back(monitor);
+}
+
+
+vector<shared_ptr<EventMonitor>> ImManager::GetMonitors()
+{
+    vector<shared_ptr<EventMonitor>> list;
+
+    LOCK;
+    auto prev = event_monitors_.end();
+    for(auto it = event_monitors_.begin(); it != event_monitors_.end();) {
+        auto ptr = it->lock();
+        if (!ptr) {
+            // dead monitor
+            event_monitors_.erase(it);
+            it = prev;
+            if (it == event_monitors_.end()) {
+                it = event_monitors_.begin();
+            } else {
+                ++it;
+            }
+        } else {
+            list.push_back(move(ptr));
+            prev = it;
+            ++it;
+        }
+    }
+
+    return list;
+}
+
+
+bool ImManager::Events::OnIncomingConnection(const EventMonitor::ConnectionInfo& info)
+{
+    for(auto& monitor : manager_.GetMonitors()) {
+        if (!monitor->OnIncomingConnection(info)) {
+            LOG_DEBUG_FN << "Connect from (potential) buddy " << info.buddy_id
+                << " was denied.";
+            return false;
+        }
+    }
+
+    // TODO: Add blacklist
+
+    LOG_DEBUG_FN << "Approving connect from (potential) buddy " << info.buddy_id;
+    return true;
+}
+
+
+bool ImManager::Events::OnAddNewBuddy(const EventMonitor::BuddyInfo& info)
+{
+    for(auto& monitor : manager_.GetMonitors()) {
+        if (!monitor->OnAddNewBuddy(info)) {
+            LOG_DEBUG_FN << "Adding a buddy " << info.buddy_id
+                << " was denied.";
+            return false;
+        }
+    }
+
+    if (manager_.HaveBuddy(info.buddy_id)) {
+        return true;
+    }
+
+    if (manager_.GetConfigValue("settings.auto_accept_buddies", true)) {
+
+        LOG_DEBUG_FN << "Adding incoming buddy " << info.buddy_id;
+
+        Buddy::Info buddy;
+        buddy.id = info.buddy_id;
+        buddy.first_contact = buddy.last_seen = buddy.created_time = time(nullptr);
+        buddy.profile_name = info.profile_name;
+        buddy.profile_text = info.profile_text;
+        manager_.AddBuddy(buddy);
+
+        OnNewBuddyAdded(info);
+        return true;
+    }
+
+    return false;
+}
+
+
+void ImManager::Events::OnNewBuddyAdded(const EventMonitor::BuddyInfo& info)
+{
+    for(auto& monitor : manager_.GetMonitors()) {
+        monitor->OnNewBuddyAdded(info);
+    }
+}
+
+void ImManager::Events::OnBuddyStateUpdate(const EventMonitor::BuddyInfo& info)
+{
+    auto buddy = manager_.GetBuddy(info.buddy_id);
+    if (!buddy) {
+        WAR_THROW_T(ExceptionDisconnectNow, "Nonexistant buddy");
+    }
+
+    if (buddy->GetStatus() != info.status) {
+        buddy->OnStateChange(info.status);
+    }
+
+    for(auto& monitor : manager_.GetMonitors()) {
+        monitor->OnBuddyStateUpdate(info);
+    }
+}
+
+void ImManager::Events::OnIncomingMessage(const EventMonitor::Message& message)
+{
+    LOG_DEBUG << "Incoming message from " << log::Esc(message.buddy_id)
+        << ": " << log::Esc(message.message);
+
+    for(auto& monitor : manager_.GetMonitors()) {
+        monitor->OnIncomingMessage(message);
+    }
+}
+
+void ImManager::Events::OnIncomingFile(const EventMonitor::FileInfo& file)
+{
+    for(auto& monitor : manager_.GetMonitors()) {
+        monitor->OnIncomingFile(file);
+    }
+}
+
+void ImManager::Events::OnOtherEvent(const EventMonitor::Event& event)
+{
+    for(auto& monitor : manager_.GetMonitors()) {
+        monitor->OnOtherEvent(event);
+    }
+
+    if (!event.buddy_id.empty()) {
+        auto buddy = manager_.GetBuddy(event.buddy_id);
+        if (buddy) {
+            buddy->OnOtherEvent(event);
+        }
+    }
+}
+
+void ImManager::Events::OnListening(const EventMonitor::ListeningInfo& endpoint)
+{
+    for(auto& monitor : manager_.GetMonitors()) {
+        monitor->OnListening(endpoint);
+    }
+}
+
+void ImManager::Events::OnShutdownComplete(const EventMonitor::ShutdownInfo& info)
+{
+    for(auto& monitor : manager_.GetMonitors()) {
+        monitor->OnShutdownComplete(info);
+    }
 }
 
 

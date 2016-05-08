@@ -28,8 +28,10 @@ public:
     struct ExceptionBufferFull : public war::ExceptionBase {};
     struct ExceptionTooFragmented : public war::ExceptionBase {};
 
-    TorChatConnection(war::Pipeline& pipeline);
-    TorChatConnection(war::Pipeline& pipeline,
+    TorChatConnection(std::string name,
+                      war::Pipeline& pipeline);
+    TorChatConnection(std::string name,
+                      war::Pipeline& pipeline,
                       std::shared_ptr<boost::asio::ip::tcp::socket> socket);
 
     /*! Asynchronously get one line from the peer */
@@ -44,15 +46,22 @@ public:
     void Encode(std::string& blob);
     void Decode(std::string& blob);
 
+    const std::string& GetName() const noexcept {
+        return name_;
+    }
+
 private:
-    static bool GetLineFromBuffer(boost::string_ref buffer,
+    bool GetLineFromBuffer(boost::string_ref buffer,
                                   boost::string_ref& line,
-                                  boost::string_ref& remaining);
+                                  boost::string_ref& remaining) const;
 
     std::array<char, 4096> read_buffer_;
     boost::string_ref remaining_data_;
     static const std::size_t max_fragments_in_one_line_ = 16;
+    const std::string name_;
 };
 
 } // impl
 } // darkspeak
+
+std::ostream& operator << (std::ostream& o, const darkspeak::impl::TorChatConnection& v);

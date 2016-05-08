@@ -40,8 +40,22 @@ int main(int argc, char **argv) {
     me.status = Api::Status::AWAY;
     manager->GoOnline(me);
 
-    string ttt;
+    auto test_buddy = config.get("connect_test.buddy.id", "");
+    if (!test_buddy.empty()) {
+        Api::Buddy::Info b;
+        b.id = test_buddy;
+        b.auto_connect = true;
+        auto buddy = manager->AddBuddy(b);
+        buddy->Connect();
+        buddy->SendMessage("=============.");
+        buddy->SendMessage("I am testing connect.");
+        buddy->SendMessage("I am testing queuing.");
+        buddy->SendMessage("I am testing more queuing.");
+        buddy->SendMessage("I am testing spamming.");
+        buddy->SendMessage("This is the last message I will\nsend in this connection.");
+    }
 
+    string ttt;
     cin >> ttt; // wait
 
     return 0;
