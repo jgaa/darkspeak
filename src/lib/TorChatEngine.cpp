@@ -382,7 +382,7 @@ void TorChatEngine::ProcessRequests(weak_ptr< TorChatPeer > weak_peer,
         }
 
         if (!conn || !conn->IsConnected()) {
-            LOG_TRACE1_FN << "The connection is gone. Exiting request loop.";
+            LOG_TRACE1_FN << "The peer is gone. Exiting request loop.";
             return;
         }
 
@@ -390,7 +390,7 @@ void TorChatEngine::ProcessRequests(weak_ptr< TorChatPeer > weak_peer,
         auto req = conn->GetLine(yield);
 
         peer = weak_peer.lock();
-        if (!peer) {
+        if (!peer || (peer->GetState() == TorChatPeer::State::DONE)) {
             continue; // exit
         }
 
