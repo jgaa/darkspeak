@@ -20,8 +20,10 @@ std::ostream& operator << (std::ostream& o,
 }
 
 namespace darkspeak {
+namespace impl {
 
-void impl::TorChatPeer::SetState(impl::TorChatPeer::State state)
+
+void TorChatPeer::SetState(impl::TorChatPeer::State state)
 {
     LOG_DEBUG_FN << "Setting state " << state
         << ", old stat was " << state_;
@@ -29,5 +31,20 @@ void impl::TorChatPeer::SetState(impl::TorChatPeer::State state)
     state_ = state;
 }
 
+void TorChatPeer::Close()
+{
+    LOG_DEBUG_FN << "Closing " << *this;
+    SetState(State::DONE);
 
+    if (conn_in_) {
+        conn_in_->Close();
+    }
+
+    if (conn_out_) {
+        conn_out_->Close();
+    }
+}
+
+
+} // impl
 } // darkspeak

@@ -168,11 +168,7 @@ public:
         got_pong_ = true;
     }
 
-    void Close() {
-        if (conn_in_) conn_in_->Close();
-        if (conn_out_) conn_out_->Close();
-        SetState(State::DONE);
-    }
+    void Close();
 
     EventMonitor::BuddyInfo info;
     Direction initiative = Direction::INCOMING;

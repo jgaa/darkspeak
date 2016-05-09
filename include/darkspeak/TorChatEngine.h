@@ -137,6 +137,7 @@ private:
     void EmitEventBuddyStateUpdate(const EventMonitor::BuddyInfo& info);
     void EmitEventIncomingMessage(const EventMonitor::Message& msg);
     void EmitOtherEvent(const EventMonitor::Event& event);
+    void EmitShutdownComplete(const EventMonitor::ShutdownInfo& info);
 
     // Requests
     void OnAddMe(const Request& req);

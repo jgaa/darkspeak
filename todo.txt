@@ -2,7 +2,7 @@ Development todo's
 
  - Implement protocol layer
     ~ Make an Engine object to keep track of the Peers
-        - Add counters for incoming connections and requests
+        v Add counters for incoming connections and requests
     v Implement outbound connection
 
     ~ Make a Peer object

@@ -560,7 +560,26 @@ void TorChatEngine::SendFile(Api::Buddy& buddy, const ImProtocol::File& file, Im
 
 void TorChatEngine::Shutdown()
 {
-    assert(false && "Not implemented");
+    pipeline_.Post({[&]() {
+
+        LOG_NOTICE << "Shutting down " << local_info_.id;
+        local_info_.status = Api::Status::OFF_LINE;
+
+        // Stop the listening socket
+        LOG_TRACE1_FN << "Closing listener.";
+        if (acceptor_) {
+            acceptor_->close();
+        }
+
+        LOG_TRACE1_FN << "Removing peers.";
+        while (!peers_.empty()) {
+            auto peer = peers_.begin()->second;
+            peer->Close();
+            peers_.erase(peers_.begin());
+        }
+
+    // Close all peers
+    }, "Shutting down TorChatEngine"});
 }
 
 TorChatEngine::Request TorChatEngine::Parse(boost::string_ref request) const
@@ -909,6 +928,14 @@ void TorChatEngine::EmitOtherEvent(const EventMonitor::Event& event)
         monitor->OnOtherEvent(event);
     }
 }
+
+void TorChatEngine::EmitShutdownComplete(const EventMonitor::ShutdownInfo& info)
+{
+    for(auto& monitor : GetMonitors()) {
+        monitor->OnShutdownComplete(info);
+    }
+}
+
 
 
 } // impl
