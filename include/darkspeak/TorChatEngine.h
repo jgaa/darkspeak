@@ -163,6 +163,8 @@ private:
                 std::initializer_list<std::string> args,
                 TorChatPeer& peer, boost::asio::yield_context& yield,
                 Direction direction = Direction::OUTGOING);
+    boost::string_ref GetLine(TorChatConnection& conn,
+                              boost::asio::yield_context& yield);
     static const std::string& ToString(Api::Status status);
 
     boost::asio::ip::tcp::endpoint GetTorEndpoint() const;
@@ -176,8 +178,8 @@ private:
     std::size_t connect_timeout_ = 1000 * 60 * 2; // 2 minutes in milliseconds
     std::map<std::string, std::shared_ptr<TorChatPeer>> peers_;
     std::map<std::string, Command> commands_;
-
     Api::Info local_info_;
+    Stat current_stats_;
 };
 
 } // impl

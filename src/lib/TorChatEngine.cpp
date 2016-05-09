@@ -232,6 +232,7 @@ void TorChatEngine::Accept(boost::asio::ip::tcp::endpoint endpoint,
         acceptor_->async_accept(*socket, yield[ec]);
 
         if (!ec) {
+            ++current_stats_.num_incoming_connections;
             LOG_DEBUG << "Incoming connection: " << *socket;
             try {
                 boost::asio::spawn(
@@ -264,6 +265,16 @@ TorChatEngine::CreateConnection(
     return make_shared<TorChatConnection>(name, pipeline_);
 }
 
+boost::string_ref TorChatEngine::GetLine(TorChatConnection& conn,
+                                         boost::asio::yield_context& yield)
+{
+    auto rval = conn.GetLine(yield);
+    ++current_stats_.packets_received;
+    current_stats_.bytes_received += rval.size();
+    return rval;
+}
+
+
 void TorChatEngine::OnAccepted(
     shared_ptr< boost::asio::ip::tcp::socket > socket,
     boost::asio::yield_context yield)
@@ -275,7 +286,7 @@ void TorChatEngine::OnAccepted(
          * get the greeting ping
          */
         auto timer = IoTimer::Create(connect_timeout_, in_conn);
-        auto ping_line = in_conn->GetLine(yield);
+        auto ping_line = GetLine(*in_conn, yield);
 
         string id, cookie;
         if (!VerifyPing(ping_line, id, cookie)) {
@@ -387,8 +398,7 @@ void TorChatEngine::ProcessRequests(weak_ptr< TorChatPeer > weak_peer,
         }
 
         peer.reset(); // Release reference while we wait for IO
-        auto req = conn->GetLine(yield);
-
+        auto req = GetLine(*conn, yield);
         peer = weak_peer.lock();
         if (!peer || (peer->GetState() == TorChatPeer::State::DONE)) {
             continue; // exit
@@ -490,6 +500,7 @@ void TorChatEngine::ConnectToPeer(TorChatPeer& peer,
     auto timer = IoTimer::Create(connect_timeout_, outbound);
     auto onion_host = peer.GetId() + ".onion";
     outbound->Connect(onion_host, GetTorEndpoint(), yield);
+    ++current_stats_.num_outgoing_connections;
     if (peer.GetOutConnection()->IsConnected()) {
         peer.UpgradeState(TorChatPeer::State::AUTENTICATING);
     }
@@ -645,6 +656,7 @@ void TorChatEngine::OnFileStopSending(const TorChatEngine::Request& req)
 
 void TorChatEngine::OnMessage(const TorChatEngine::Request& req)
 {
+    ++current_stats_.messages_received;
     EventMonitor::Message msg;
     msg.buddy_id = req.peer->GetId();
     msg.message = move(req.params.at(0));
@@ -731,7 +743,8 @@ bool TorChatEngine::DoSend(const string& command,
         buffer << ' ' << arg;
     }
 
-    conn->SendLine(buffer.str(), yield);
+    current_stats_.bytes_sent += conn->SendLine(buffer.str(), yield);
+    ++current_stats_.messages_sent;
     return true;
 }
 

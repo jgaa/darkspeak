@@ -50,6 +50,17 @@ public:
         std::string error_description;
     };
 
+    struct Stat {
+        uint64_t num_incoming_connections = 0;
+        uint64_t num_outgoing_connections = 0;
+        uint64_t packets_sent = 0;
+        uint64_t packets_received = 0;
+        uint64_t messages_sent = 0;
+        uint64_t messages_received = 0;
+        uint64_t bytes_sent = 0;
+        uint64_t bytes_received = 0;
+    };
+
     /*! Interface to monitor a file transfer.
      *
      */

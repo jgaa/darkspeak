@@ -40,8 +40,10 @@ public:
     /*! Send the line.
      *
      * Appends newline and encodes the data
+     *
+     * \return bytes sent
      */
-    void SendLine(std::string line, boost::asio::yield_context& yield);
+    std::size_t SendLine(std::string line, boost::asio::yield_context& yield);
 
     void Encode(std::string& blob);
     void Decode(std::string& blob);

@@ -123,7 +123,7 @@ bool TorChatConnection::GetLineFromBuffer(
     return false;
 }
 
-void TorChatConnection::SendLine(string line,
+size_t TorChatConnection::SendLine(string line,
                                  boost::asio::yield_context& yield)
 {
     Encode(line);
@@ -134,6 +134,7 @@ void TorChatConnection::SendLine(string line,
                                                         yield);
 
     LOG_DEBUG << *this  << " Sent line: " << log::Esc(line);
+    return line.size();
 }
 
 void TorChatConnection::Encode(std::string& blob)
