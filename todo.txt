@@ -1,35 +1,15 @@
 Development todo's
 
- - Implement protocol layer
-    ~ Make an Engine object to keep track of the Peers
-        v Add counters for incoming connections and requests
-    v Implement outbound connection
+BUGS:
+ - We disconnect from peers (socket time out, check trace logs)
 
-    v Make a Peer object
-        v Keeps track of connections, timeouts, state
-            ~ Identify where and define timeouts
-                ~ Keep-alive (use random time interval between 3 - 120 seconds)
-                v Retry connect (start rapidly, gradually slow down phase)
-                v Incoming keep-alive (disconnect after 3 idle minutes)
-            ~! Implement
-
- - TC protocol:
-    - Implement generic send request method
-        v Encoding
-        v Decoding
-        - Sanity checks
-    - ***Generate cryptographically safe cookie
+TODO:
+ - Finish Peer object
+    - Generate cryptographically safe cookie
+    - Use random intervals for status
 
  - Implement the Api for local use (no proxy)
-    v Implement event notifications from the TC layer
-    v Implement the full connect work-flow:
-        [pong/add_me] --> notification +
-                                       |
-                      <-- allow_buddy--+
-    - Queue incoming messages before the peer is approved
-    v Queue outgoing messages when they can't be sent.
     - Implement file transfer
     - Implement avatar
-
 
  - Implement a simple GUI using QT QML.
