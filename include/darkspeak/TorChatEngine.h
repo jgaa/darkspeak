@@ -1,6 +1,7 @@
 #pragma once
 
 #include <future>
+#include <chrono>
 
 #include <boost/property_tree/ptree.hpp>
 
@@ -20,7 +21,8 @@ class TorChatConnection;
  *
  * One instance will handle one hidden service (TC id)
  */
-class TorChatEngine : public ImProtocol
+class TorChatEngine : public ImProtocol,
+    public std::enable_shared_from_this<TorChatEngine>
 {
 public:
     struct Request;
@@ -91,13 +93,17 @@ public:
     void SetMonitor(std::shared_ptr<EventMonitor> monitor) override;
     void Listen(boost::asio::ip::tcp::endpoint endpoint) override;
     void Shutdown() override;
+    void StartMonitor();
 
 private:
+    void SpawnConnect(const std::string& buddy_id);
+
     void Listen_(boost::asio::ip::tcp::endpoint endpoint,
                  std::promise<void>& promise);
 
     void Accept(boost::asio::ip::tcp::endpoint endpoint,
-        boost::asio::yield_context ctx);
+                std::weak_ptr<boost::asio::ip::tcp::acceptor> weak_acceptor,
+                boost::asio::yield_context yield);
 
     void ConnectToPeer(TorChatPeer& peer,
                        boost::asio::yield_context& yield);
@@ -130,6 +136,29 @@ private:
     std::shared_ptr<TorChatConnection> CreateConnection(
         Direction direction,
         std::shared_ptr< boost::asio::ip::tcp::socket > socket = nullptr) const;
+
+    static void MonitorPeers(std::weak_ptr<TorChatEngine> weak_engine,
+                      boost::asio::yield_context yield);
+
+    auto GetNewKeepAliveTime() {
+        // TODO: Use random interval
+        return std::make_unique<std::chrono::steady_clock::time_point>(
+            std::chrono::steady_clock::now() + std::chrono::seconds(100));
+    }
+
+    auto GetNewStatusTimeout() {
+        return std::make_unique<std::chrono::steady_clock::time_point>(
+            std::chrono::steady_clock::now() + std::chrono::seconds(130));
+    }
+
+    std::unique_ptr<std::chrono::steady_clock::time_point>
+    GetNewReconnectTime(TorChatPeer& peer);
+
+    std::shared_ptr<TorChatPeer>CreatePeer(const std::string& id);
+
+    void Reconnect(const std::shared_ptr<TorChatPeer>& peer);
+
+    void CheckPeers(boost::asio::yield_context& yield);
 
     // Event handlers
     bool EmitEventIncomingConnection(const EventMonitor::ConnectionInfo& info);
@@ -173,7 +202,7 @@ private:
     Request Parse(boost::string_ref request) const;
 
     std::vector<std::weak_ptr<EventMonitor>> event_monitors_;
-    std::unique_ptr<boost::asio::ip::tcp::acceptor> acceptor_;
+    std::shared_ptr<boost::asio::ip::tcp::acceptor> acceptor_;
     war::Pipeline& pipeline_;
     boost::property_tree::ptree config_;
     std::size_t connect_timeout_ = 1000 * 60 * 2; // 2 minutes in milliseconds

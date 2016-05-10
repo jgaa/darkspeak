@@ -4,6 +4,7 @@
 #include <vector>
 #include <iostream>
 #include <mutex>
+#include <chrono>
 
 #include "war_error_handling.h"
 #include "log/WarLog.h"
@@ -172,6 +173,10 @@ public:
 
     EventMonitor::BuddyInfo info;
     Direction initiative = Direction::INCOMING;
+    std::unique_ptr<std::chrono::steady_clock::time_point> next_keep_alive_time;
+    std::unique_ptr<std::chrono::steady_clock::time_point> received_status_timeout;
+    std::unique_ptr<std::chrono::steady_clock::time_point> retry_connect_time;
+    unsigned reconnect_count = 0;
 
 private:
     bool SetConnection(TorChatConnection::ptr_t& existing,

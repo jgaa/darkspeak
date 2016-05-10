@@ -33,6 +33,10 @@ void TorChatPeer::SetState(impl::TorChatPeer::State state)
 
 void TorChatPeer::Close()
 {
+    if (compare_enum(state_, State::AUTHENTICATED) < 0) {
+        peers_cookie.clear(); // We did not get a valid pong
+    }
+
     LOG_DEBUG_FN << "Closing " << *this;
     SetState(State::DONE);
 
@@ -43,6 +47,13 @@ void TorChatPeer::Close()
     if (conn_out_) {
         conn_out_->Close();
     }
+
+    sent_ping_ = false;
+    sent_ping_ = false;
+    got_ping_ = false;
+    got_pong_ = false;
+
+    info.status = Api::Status::OFF_LINE;
 }
 
 

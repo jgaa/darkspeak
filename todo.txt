@@ -5,20 +5,20 @@ Development todo's
         v Add counters for incoming connections and requests
     v Implement outbound connection
 
-    ~ Make a Peer object
-        - Keeps track of connections, timeouts, state
-            - Identify where and define timeouts
-                - Keep-alive (use random time interval between 3 - 120 seconds)
-                - Retry connect (start rapidly, gradually slow down phase)
-                - Incoming keep-alive (disconnect after 3 idle minutes)
-            - Implement
+    v Make a Peer object
+        v Keeps track of connections, timeouts, state
+            ~ Identify where and define timeouts
+                ~ Keep-alive (use random time interval between 3 - 120 seconds)
+                v Retry connect (start rapidly, gradually slow down phase)
+                v Incoming keep-alive (disconnect after 3 idle minutes)
+            ~! Implement
 
  - TC protocol:
     - Implement generic send request method
         v Encoding
         v Decoding
         - Sanity checks
-    - Generate cryptographically safe cookie
+    - ***Generate cryptographically safe cookie
 
  - Implement the Api for local use (no proxy)
     v Implement event notifications from the TC layer
