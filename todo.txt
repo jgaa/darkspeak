@@ -5,7 +5,6 @@ BUGS:
 
 TODO:
  - Finish Peer object
-    - Generate cryptographically safe cookie
     - Use random intervals for status
 
  - Implement the Api for local use (no proxy)

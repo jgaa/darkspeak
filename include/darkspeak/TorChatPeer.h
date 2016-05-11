@@ -40,6 +40,7 @@ public:
     :id_{id}
     {
         info.buddy_id = id_;
+        InitCookie();
     }
 
     TorChatConnection::ptr_t GetInConnection() {
@@ -179,6 +180,8 @@ public:
     unsigned reconnect_count = 0;
 
 private:
+    void InitCookie();
+
     bool SetConnection(TorChatConnection::ptr_t& existing,
         TorChatConnection::ptr_t conn) {
 
@@ -209,7 +212,7 @@ private:
     TorChatConnection::ptr_t conn_in_; // Incoming connection
     TorChatConnection::ptr_t conn_out_; // Outgoing connection
     std::string peers_cookie;
-    std::string my_cookie = "veryveryverysecret1234567890"; // FIXME
+    std::string my_cookie;
     State state_ = State::UNINTIALIZED;
     bool sent_ping_ = false;
     bool sent_pong_ = false;

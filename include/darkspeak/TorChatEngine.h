@@ -140,11 +140,8 @@ private:
     static void MonitorPeers(std::weak_ptr<TorChatEngine> weak_engine,
                       boost::asio::yield_context yield);
 
-    auto GetNewKeepAliveTime() {
-        // TODO: Use random interval
-        return std::make_unique<std::chrono::steady_clock::time_point>(
-            std::chrono::steady_clock::now() + std::chrono::seconds(100));
-    }
+    std::unique_ptr<std::chrono::steady_clock::time_point>
+    GetNewKeepAliveTime();
 
     auto GetNewStatusTimeout() {
         return std::make_unique<std::chrono::steady_clock::time_point>(
@@ -159,6 +156,8 @@ private:
     void Reconnect(const std::shared_ptr<TorChatPeer>& peer);
 
     void CheckPeers(boost::asio::yield_context& yield);
+    void CheckPeer(const std::shared_ptr<TorChatPeer>& peer,
+                   boost::asio::yield_context& yield);
 
     // Event handlers
     bool EmitEventIncomingConnection(const EventMonitor::ConnectionInfo& info);
@@ -210,6 +209,7 @@ private:
     std::map<std::string, Command> commands_;
     Api::Info local_info_;
     Stat current_stats_;
+    std::mt19937 random_generator_;
 };
 
 } // impl

@@ -1,4 +1,6 @@
 
+#include <random>
+
 #include "darkspeak/darkspeak.h"
 #include "darkspeak/TorChatPeer.h"
 
@@ -55,6 +57,22 @@ void TorChatPeer::Close()
 
     info.status = Api::Status::OFF_LINE;
 }
+
+void TorChatPeer::InitCookie()
+{
+    static const std::string alphabet{"0123456789qwertyuiopasdfghjklzxcvbnm"
+        "QWERTYUIOPASDFGHJKLZXCVBNM-_"};
+
+    std::random_device device;
+    std::mt19937 generator(device());
+    std::uniform_int_distribution< int > distribution(0, alphabet.size() -1);
+
+    for(int i = 0; i < 200; ++i) {
+        my_cookie.push_back(alphabet[distribution(generator)]);
+    }
+}
+
+
 
 
 } // impl

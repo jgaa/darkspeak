@@ -47,7 +47,7 @@ namespace impl {
 
 TorChatEngine::TorChatEngine(ImProtocol::get_pipeline_fn_t fn,
     const boost::property_tree::ptree& config)
-: pipeline_{fn()}, config_{config}
+: pipeline_{fn()}, config_{config}, random_generator_{std::random_device()()}
 {
     commands_ = {
         {"", {Command::Verb::UNKNOWN}},
@@ -373,6 +373,7 @@ void TorChatEngine::OnAccepted(
 
         // Enter event loop in this context
         peer.reset();
+        timer.reset();
         ProcessRequests(weak_peer, Direction::INCOMING, yield);
 
     } WAR_CATCH_ALL_EF(return);
@@ -533,6 +534,8 @@ void TorChatEngine::ConnectToPeer(TorChatPeer& peer,
     if (peer.GetReceivedPing()) {
         DoSendPong(peer, yield);
     }
+
+    timer->Cancel();
 }
 
 
@@ -1015,51 +1018,60 @@ void TorChatEngine::CheckPeers(boost::asio::yield_context& yield)
 {
     for(auto& it : peers_) {
         auto& peer = it.second;
-        const auto now = std::chrono::steady_clock::now();
-
-        // Handle reconnects for unreachable peers
-        if (!peer->HaveInConnection() && !peer->HaveOutConnection()) {
-            if (!peer->retry_connect_time) {
-                peer->retry_connect_time = GetNewReconnectTime(*peer);
-            }
-        }
-
-        if (peer->retry_connect_time
-            && (*peer->retry_connect_time <= now)) {
-            if ((peer->GetState() == TorChatPeer::State::READY)
-                && peer->HaveInConnection()
-                && peer->HaveOutConnection()) {
-                LOG_DEBUG_FN << "The peer " << *peer
-                    << " has an expired reconnect timer enabled. However the "
-                    << "connection seems OK, so I'm cancelling the timer.";
-                peer->retry_connect_time.reset();
-            } else {
-                Reconnect(peer);
-                continue;
-            }
-        }
-
-        // Check inbound keep-alive for established connections
-        if (peer->GetState() == TorChatPeer::State::READY) {
-            assert(peer->received_status_timeout);
-            if (*peer->received_status_timeout <= now) {
-                assert(peer->reconnect_count == 0);
-                Reconnect(peer);
-                continue;
-            }
-        }
-
-        // Send keep-alive (status)
-        if (peer->next_keep_alive_time) {
-            if (*peer->next_keep_alive_time <= now) {
-                DoSendStatus(*peer, yield);
-            }
-        }
-
-        // Check if we have to re-try an outgoing connection
-        // TODO: Implement
+        try {
+            CheckPeer(peer, yield);
+        } WAR_CATCH_ALL_LOG(peer);
     }
 }
+
+void TorChatEngine::CheckPeer(const std::shared_ptr<TorChatPeer>& peer,
+                              boost::asio::yield_context& yield)
+{
+    const auto now = std::chrono::steady_clock::now();
+
+    // Handle reconnects for unreachable peers
+    if (!peer->HaveInConnection() && !peer->HaveOutConnection()) {
+        if (!peer->retry_connect_time) {
+            peer->retry_connect_time = GetNewReconnectTime(*peer);
+        }
+    }
+
+    if (peer->retry_connect_time
+        && (*peer->retry_connect_time <= now)) {
+        if ((peer->GetState() == TorChatPeer::State::READY)
+            && peer->HaveInConnection()
+            && peer->HaveOutConnection()) {
+            LOG_DEBUG_FN << "The peer " << *peer
+                << " has an expired reconnect timer enabled. However the "
+                << "connection seems OK, so I'm cancelling the timer.";
+            peer->retry_connect_time.reset();
+        } else {
+            Reconnect(peer);
+            return;
+        }
+    }
+
+    // Check inbound keep-alive for established connections
+    if (peer->GetState() == TorChatPeer::State::READY) {
+        assert(peer->received_status_timeout);
+        if (*peer->received_status_timeout <= now) {
+            assert(peer->reconnect_count == 0);
+            Reconnect(peer);
+            return;
+        }
+    }
+
+    // Send keep-alive (status)
+    if (peer->next_keep_alive_time) {
+        if (*peer->next_keep_alive_time <= now) {
+            DoSendStatus(*peer, yield);
+        }
+    }
+
+    // Check if we have to re-try an outgoing connection
+    // TODO: Implement
+}
+
 
 void TorChatEngine::Reconnect(const shared_ptr< TorChatPeer >& peer)
 {
@@ -1082,6 +1094,19 @@ TorChatEngine::GetNewReconnectTime(TorChatPeer& peer)
 
     return std::make_unique<std::chrono::steady_clock::time_point>(
         std::chrono::steady_clock::now() + std::chrono::seconds(seconds));
+}
+
+
+unique_ptr< chrono::steady_clock::time_point >
+TorChatEngine::GetNewKeepAliveTime()
+{
+    std::uniform_int_distribution< int > distribution(5,110);
+    const auto seconds = distribution(random_generator_);
+    LOG_TRACE4_FN << "Next status update in " << seconds << " seconds.";
+
+    return std::make_unique<std::chrono::steady_clock::time_point>(
+        std::chrono::steady_clock::now()
+        + std::chrono::seconds(seconds));
 }
 
 
