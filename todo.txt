@@ -4,9 +4,6 @@ BUGS:
  - We disconnect from peers (socket time out, check trace logs)
 
 TODO:
- - Finish Peer object
-    - Use random intervals for status
-
  - Implement the Api for local use (no proxy)
     - Implement file transfer
     - Implement avatar
