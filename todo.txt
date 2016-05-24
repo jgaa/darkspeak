@@ -3,7 +3,7 @@ Development todo's
 BUGS:
   - Connection status-icon
   - Contact status not being updated
-  - We lose connectivity after a while
+  v We lose connectivity after a while
   - Edit data does not save the data
   - When a contact is edited, we must trigger an event in the contact-list so it gets updated
   - We don't get the profile info from the remote side in Edit dialog
