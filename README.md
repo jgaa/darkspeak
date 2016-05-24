@@ -28,6 +28,13 @@ Dark Speak (or another enhanced client).
 - Emergency flag to indicate that the conversation is compromized (for example by
     the physical presenc of an adversary).
 
+# Current State
+The project is under heavy development. I'm building a GUI based on QT Quick.
+I hope that I can use basically the same GUI source code on all target platforms.
+So far it looks promising. (The learning curve for QT Quicks is steeper the I expected,
+but the GUI is slowly becoming usable)
+
+
 # Roadmap
 ## Beta 1
 - [x] ~~Document the legacy Tor Chat protocol~~
@@ -35,7 +42,7 @@ Dark Speak (or another enhanced client).
  - [ ] Core functionality (work in progress)
  - [ ] Unit tests
  - [ ] Functional tests
-- [ ] Implement GUI for Linux
+- [ ] Implement GUI for Linux (work in progress)
 - [ ] Implement GUI for Windows
 - [ ] Implement GUI for OS/X
 - [ ] Implement GUI for Android
