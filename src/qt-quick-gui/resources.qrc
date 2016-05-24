@@ -1,0 +1,20 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qml/main.qml</file>
+        <file>images/anon_contact_48x48.png</file>
+        <file>images/Connected-32.png</file>
+        <file>images/Connecting-32.png</file>
+        <file>images/Disconnected-32.png</file>
+        <file>images/Disconnecting-32.png</file>
+        <file>qml/AddContactDlg.qml</file>
+        <file>qml/ContactDelegate.qml</file>
+        <file>qml/MainToolBar.qml</file>
+        <file>qml/ContactsListView.qml</file>
+        <file>qml/ChatView.qml</file>
+        <file>images/Back-32.png</file>
+        <file>images/Sent-32.png</file>
+        <file>qml/EditBuddy.qml</file>
+        <file>qml/DataTextRo.qml</file>
+        <file>qml/DataText.qml</file>
+    </qresource>
+</RCC>

@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
         << boost::filesystem::current_path().string()
         << "'";
 
-    auto manager = std::make_shared<impl::ImManager>("testing.conf");
+    auto manager = impl::ImManager::CreateInstance("testing.conf");
 
     Api::Info me;
     auto config = manager->GetConfig();

@@ -16,6 +16,7 @@
 #include "darkspeak/ImManager.h"
 #include "darkspeak/ImProtocol.h"
 #include "darkspeak/BuddyImpl.h"
+#include "darkspeak/weak_container.h"
 
 using namespace std;
 using namespace war;
@@ -81,13 +82,23 @@ struct InfoData {
 };
 
 ImManager::ImManager(path_t conf_file)
+: conf_file_{conf_file}
+{
+}
+
+ImManager::~ImManager()
+{
+    SaveBuddies();
+}
+
+void ImManager::Init()
 {
     // Read the configuration
-    if (boost::filesystem::exists(conf_file)) {
-        boost::property_tree::read_info(conf_file.string(), config_);
+    if (boost::filesystem::exists(conf_file_)) {
+        boost::property_tree::read_info(conf_file_.string(), config_);
     } else {
-        LOG_ERROR << "File " << log::Esc(conf_file.string()) << " don't exist.";
-        WAR_THROW_T(ExceptionNotFound, conf_file.string());
+        LOG_ERROR << "File " << log::Esc(conf_file_.string()) << " don't exist.";
+        WAR_THROW_T(ExceptionNotFound, conf_file_.string());
     }
 
     threadpool_ = make_unique<war::Threadpool>(
@@ -101,10 +112,6 @@ ImManager::ImManager(path_t conf_file)
     protocol_->SetMonitor(event_monitor_);
 }
 
-ImManager::~ImManager()
-{
-    SaveBuddies();
-}
 
 Api::Buddy::ptr_t ImManager::AddBuddy(const Buddy::Info& def)
 {
@@ -179,6 +186,8 @@ void ImManager::GoOnline(const Info& my_info)
     const auto hostname = config_.get("service.hostname", "127.0.0.1");
     const auto port = config_.get<unsigned short>("service.hostname", 11009);
 
+
+
     boost::asio::ip::tcp::endpoint endpoint{
         boost::asio::ip::address::from_string(hostname), port};
 
@@ -200,7 +209,7 @@ void ImManager::GoOnline(const Info& my_info)
     }
 }
 
-void ImManager::Panic(std::__cxx11::string message, bool erase_data)
+void ImManager::Panic(std::string message, bool erase_data)
 {
     assert(false && "Not implemented");
 }
@@ -222,9 +231,10 @@ void ImManager::LoadBuddies()
             << log::Esc(path.string());
 
         LOCK;
+        std::weak_ptr<ImManager> weak_mgr = shared_from_this();
         assert(buddies_.empty());
         for(auto& d : data.data) {
-            buddies_[d.id] = make_shared<BuddyImpl>(d, shared_from_this());
+            buddies_[d.id] = make_shared<BuddyImpl>(d, weak_mgr);
         }
     }
 }
@@ -289,29 +299,8 @@ void ImManager::SetMonitor(shared_ptr<EventMonitor> monitor)
 
 vector<shared_ptr<EventMonitor>> ImManager::GetMonitors()
 {
-    vector<shared_ptr<EventMonitor>> list;
-
     LOCK;
-    auto prev = event_monitors_.end();
-    for(auto it = event_monitors_.begin(); it != event_monitors_.end();) {
-        auto ptr = it->lock();
-        if (!ptr) {
-            // dead monitor
-            event_monitors_.erase(it);
-            it = prev;
-            if (it == event_monitors_.end()) {
-                it = event_monitors_.begin();
-            } else {
-                ++it;
-            }
-        } else {
-            list.push_back(move(ptr));
-            prev = it;
-            ++it;
-        }
-    }
-
-    return list;
+    return GetValidObjects<EventMonitor>(event_monitors_);
 }
 
 
@@ -393,6 +382,17 @@ void ImManager::Events::OnIncomingMessage(const EventMonitor::Message& message)
     LOG_DEBUG << "Incoming message from " << log::Esc(message.buddy_id)
         << ": " << log::Esc(message.message);
 
+    if (!message.buddy_id.empty()) {
+        auto buddy = manager_.GetBuddy(message.buddy_id);
+        if (buddy) {
+            auto msg = make_shared<Api::Message>(
+                Api::Message::Direction::INCOMING,
+                Api::Message::Status::RECEIVED,
+                message.message);
+            buddy->OnMessageReceived(msg);
+        }
+    }
+
     for(auto& monitor : manager_.GetMonitors()) {
         monitor->OnIncomingMessage(message);
     }
@@ -407,15 +407,15 @@ void ImManager::Events::OnIncomingFile(const EventMonitor::FileInfo& file)
 
 void ImManager::Events::OnOtherEvent(const EventMonitor::Event& event)
 {
-    for(auto& monitor : manager_.GetMonitors()) {
-        monitor->OnOtherEvent(event);
-    }
-
     if (!event.buddy_id.empty()) {
         auto buddy = manager_.GetBuddy(event.buddy_id);
         if (buddy) {
             buddy->OnOtherEvent(event);
         }
+    }
+
+    for(auto& monitor : manager_.GetMonitors()) {
+        monitor->OnOtherEvent(event);
     }
 }
 
@@ -433,6 +433,19 @@ void ImManager::Events::OnShutdownComplete(const EventMonitor::ShutdownInfo& inf
     }
 }
 
+shared_ptr< ImManager > ImManager::CreateInstance(path_t conf_file)
+{
+    shared_ptr< ImManager > mgr{new ImManager(conf_file)};
+    mgr->Init();
+    return mgr;
+}
+
 
 } // impl
+
+shared_ptr<Api> Api::CreateInstance(path_t conf_file)
+{
+    return impl::ImManager::CreateInstance(conf_file);
+}
+
 } // darkspeak

@@ -9,6 +9,7 @@
 #include "darkspeak/TorChatConnection.h"
 #include "darkspeak/TorChatPeer.h"
 #include "darkspeak/IoTimer.h"
+#include "darkspeak/weak_container.h"
 
 using namespace std;
 using namespace war;
@@ -131,7 +132,7 @@ void TorChatEngine::Disconnect(Api::Buddy& buddy)
 
 
 void TorChatEngine::SendMessage(Api::Buddy& buddy,
-                                const ImProtocol::Message& msg)
+                                const Api::Message::ptr_t& msg)
 {
     auto id = buddy.GetId();
     auto peer = GetPeer(id);
@@ -145,10 +146,12 @@ void TorChatEngine::SendMessage(Api::Buddy& buddy,
             static const string message_verb{"message"};
             LOG_DEBUG << "Sending message to " << *peer;
 
-            DoSend(message_verb, {msg.text}, *peer, yield);
+            DoSend(message_verb, {msg->body}, *peer, yield);
+            msg->status = Api::Message::Status::SENT;
 
             EmitOtherEvent({peer->GetId(),
-                EventMonitor::Event::Type::MESSAGE_TRANSMITTED});
+                EventMonitor::Event::Type::MESSAGE_TRANSMITTED,
+                msg->uuid});
     });
 }
 
@@ -159,35 +162,18 @@ void TorChatEngine::SetMonitor(shared_ptr<EventMonitor> monitor)
 
 vector<shared_ptr<EventMonitor>> TorChatEngine::GetMonitors()
 {
-    vector<shared_ptr<EventMonitor>> list;
-
-    auto prev = event_monitors_.end();
-    for(auto it = event_monitors_.begin(); it != event_monitors_.end();) {
-        auto ptr = it->lock();
-        if (!ptr) {
-            // dead monitor
-            event_monitors_.erase(it);
-            it = prev;
-            if (it == event_monitors_.end()) {
-                it = event_monitors_.begin();
-            } else {
-                ++it;
-            }
-        } else {
-            list.push_back(move(ptr));
-            prev = it;
-            ++it;
-        }
-    }
-
-    return list;
+    return GetValidObjects<EventMonitor>(event_monitors_);
 }
-
 
 void TorChatEngine::Listen(boost::asio::ip::tcp::endpoint endpoint)
 {
     std::promise<void> promise;
     auto future = promise.get_future();
+
+    pipeline_.Post({[this]() {
+         EventMonitor::Event event;
+         event.type = EventMonitor::Event::Type::PROTOCOL_CONNECTING;
+    }, "Emitting Connecting state"});
 
     pipeline_.Dispatch({[this, endpoint, &promise]() {
         Listen_(endpoint, promise);
@@ -226,6 +212,12 @@ void TorChatEngine::Accept(boost::asio::ip::tcp::endpoint endpoint,
                            boost::asio::yield_context yield)
 {
     LOG_NOTICE << "Starting listening on " << endpoint;
+
+    {
+        EventMonitor::ListeningInfo endp;
+        endp.endpoint = endpoint;
+        EmitEventListening(endp);
+    }
 
     while(true) {
         auto acceptor = weak_acceptor.lock();
@@ -373,6 +365,7 @@ void TorChatEngine::OnAccepted(
 
         // Enter event loop in this context
         peer.reset();
+        timer->Cancel();
         timer.reset();
         ProcessRequests(weak_peer, Direction::INCOMING, yield);
 
@@ -507,7 +500,6 @@ void TorChatEngine::StartConnectToPeer(std::string& peer_id,
         peer->UpgradeState(TorChatPeer::State::CONNECTING);
         ConnectToPeer(*peer, yield);
         std::weak_ptr<TorChatPeer> weak_peer = peer;
-        peer->retry_connect_time = GetNewReconnectTime(*peer);
         peer.reset();
         ProcessRequests(weak_peer, Direction::OUTGOING, yield);
     } WAR_CATCH_ALL_E;
@@ -522,6 +514,7 @@ void TorChatEngine::ConnectToPeer(TorChatPeer& peer,
         return;
     }
 
+    peer.retry_connect_time = GetNewReconnectTime(peer);
     peer.UpgradeState(TorChatPeer::State::CONNECTING);
     auto timer = IoTimer::Create(connect_timeout_, outbound);
     auto onion_host = peer.GetId() + ".onion";
@@ -588,6 +581,11 @@ void TorChatEngine::SendFile(Api::Buddy& buddy, const ImProtocol::File& file, Im
 
 void TorChatEngine::Shutdown()
 {
+    pipeline_.Post({[this]() {
+         EventMonitor::Event event;
+         event.type = EventMonitor::Event::Type::PROTOCOL_DISCONNECTING;
+    }, "Emitting Disconnecting state"});
+
     pipeline_.Post({[&]() {
 
         LOG_NOTICE << "Shutting down " << local_info_.id;
@@ -745,7 +743,11 @@ void TorChatEngine::OnPong(const TorChatEngine::Request& req)
         WAR_THROW_T(ExceptionDisconnectNow, "Received pong with wrong cookie!");
     }
 
-    req.peer->UpgradeState(TorChatPeer::State::AUTHENTICATED);
+    if (req.peer->HasBeenReady()) {
+        req.peer->UpgradeState(TorChatPeer::State::READY);
+    } else {
+        req.peer->UpgradeState(TorChatPeer::State::AUTHENTICATED);
+    }
 
     // TODO: Set a timer for how long we will keep the connection berfore we
     //          get to READY state (status or add_me?)
@@ -772,7 +774,6 @@ void TorChatEngine::OnPong(const TorChatEngine::Request& req)
 
     req.peer->SetReceivedPong();
 
-    // TODO: Add event
 }
 
 bool TorChatEngine::DoSend(const string& command,
@@ -974,6 +975,14 @@ void TorChatEngine::EmitShutdownComplete(const EventMonitor::ShutdownInfo& info)
     }
 }
 
+void TorChatEngine::EmitEventListening(const EventMonitor::ListeningInfo& endpoint)
+{
+    for(auto& monitor : GetMonitors()) {
+        monitor->OnListening(endpoint);
+    }
+}
+
+
 
 void TorChatEngine::StartMonitor()
 {
@@ -1029,6 +1038,8 @@ void TorChatEngine::CheckPeer(const std::shared_ptr<TorChatPeer>& peer,
 {
     const auto now = std::chrono::steady_clock::now();
 
+    LOG_TRACE4_FN << "Examining " << *peer;
+
     // Handle reconnects for unreachable peers
     if (!peer->HaveInConnection() && !peer->HaveOutConnection()) {
         if (!peer->retry_connect_time) {
@@ -1046,6 +1057,11 @@ void TorChatEngine::CheckPeer(const std::shared_ptr<TorChatPeer>& peer,
                 << "connection seems OK, so I'm cancelling the timer.";
             peer->retry_connect_time.reset();
         } else {
+            LOG_DEBUG_FN << "The peer " << *peer
+                << " has an expired reconnect timer. "
+                << " State=" << peer->GetState()
+                << ", HaveInConnection=" << peer->HaveInConnection()
+                << ", HaveOutConnection=" <<  peer->HaveOutConnection();
             Reconnect(peer);
             return;
         }
@@ -1056,6 +1072,8 @@ void TorChatEngine::CheckPeer(const std::shared_ptr<TorChatPeer>& peer,
         assert(peer->received_status_timeout);
         if (*peer->received_status_timeout <= now) {
             assert(peer->reconnect_count == 0);
+            LOG_DEBUG_FN << "The peer " << *peer
+                << " has an expired status timer. Will reconnect now.";
             Reconnect(peer);
             return;
         }
@@ -1075,6 +1093,7 @@ void TorChatEngine::CheckPeer(const std::shared_ptr<TorChatPeer>& peer,
 
 void TorChatEngine::Reconnect(const shared_ptr< TorChatPeer >& peer)
 {
+    LOG_DEBUG_FN << "Reconecting peer " << *peer;
     peer->Close();
     peer->SetState(TorChatPeer::State::UNINTIALIZED);
     peer->initiative = Direction::OUTGOING;
@@ -1087,7 +1106,7 @@ unique_ptr< chrono::steady_clock::time_point >
 TorChatEngine::GetNewReconnectTime(TorChatPeer& peer)
 {
     unsigned seconds = std::min<unsigned int>(
-        peer.reconnect_count * 10, 60 * 15);
+        max<unsigned int>(1, peer.reconnect_count) * 20, 60 * 15);
 
     LOG_TRACE1_FN << "Reconnect time for " << peer
         << ": " << seconds << " seconds.";

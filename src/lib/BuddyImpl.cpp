@@ -7,6 +7,10 @@
 #include "darkspeak/BuddyImpl.h"
 #include "darkspeak/ImManager.h"
 #include "darkspeak/ImProtocol.h"
+#include "darkspeak/weak_container.h"
+
+using namespace std;
+using namespace war;
 
 #define LOCK std::lock_guard<std::mutex> lock(mutex_);
 
@@ -102,26 +106,30 @@ std::string BuddyImpl::GetUiName() const
     return info_.id;
 }
 
-Api::Buddy::MessageSendResult
-BuddyImpl::SendMessage(const std::string& msg)
+std::shared_ptr<Api::Message> BuddyImpl::SendMessage(const std::string& msg)
 {
-    ImProtocol::Message message;
+    auto message = make_shared<Api::Message>(
+        Api::Message::Direction::OUTGOING,
+        Api::Message::Status::QUEUED,
+        msg);
+
+    {
+        LOCK;
+        conversation_.push_back(message);
+    }
 
     try {
-        message.text = msg;
         GetProtocol()->SendMessage(*this, message);
-        return Api::Buddy::MessageSendResult::SENT;
     } catch(const ExceptionNotConnected& ex) {
         // Save the message
         LOG_DEBUG << "The message could not be delivered. Adding it to queue.";
         {
             std::lock_guard<std::mutex> lock(mq_mutex_);
-            outgoing_message_queue_.push_back(msg);
+            outgoing_message_queue_.push_back(message);
         }
-        return Api::Buddy::MessageSendResult::SENT;
     }
 
-    //return Api::Buddy::MessageSendResult::FAILED;
+    return message;
 }
 
 void BuddyImpl::SetInfo(Buddy::Info info)
@@ -143,14 +151,36 @@ void BuddyImpl::OnStateChange(Api::Status status)
     }
 
     SendQueuedMessage();
+
+    for(auto& monitor : GetMonitors()) {
+        monitor->OnStateChange(status);
+    }
 }
 
 void BuddyImpl::OnOtherEvent(const EventMonitor::Event& event)
 {
     if (event.type == EventMonitor::Event::Type::MESSAGE_TRANSMITTED) {
+        // TODO: Emit signal
         SendQueuedMessage();
     }
+
+    for(auto& monitor : GetMonitors()) {
+        monitor->OnOtherEvent(event);
+    }
 }
+
+void BuddyImpl::OnMessageReceived(const Api::Message::ptr_t& message)
+{
+    {
+        LOCK;
+        conversation_.push_back(message);
+    }
+
+    for(auto& monitor : GetMonitors()) {
+        monitor->OnMessageReceived(message);
+    }
+}
+
 
 
 /* Send one message. When we are notified that the message is transferred,
@@ -169,14 +199,46 @@ void BuddyImpl::SendQueuedMessage()
     if (!outgoing_message_queue_.empty()) {
         try {
             LOG_DEBUG << "Trying to send one message from the outqueue.";
-            ImProtocol::Message message;
-            message.text = outgoing_message_queue_.front();
+            auto message = outgoing_message_queue_.front();
             GetProtocol()->SendMessage(*this, message);
             outgoing_message_queue_.pop_front();
         } catch (const ExceptionNotConnected& ex) {
-
+            ; // Do nothing
         }
     }
+}
+
+Api::message_list_t BuddyImpl::GetMessages(const boost::uuids::uuid* after)
+{
+    if (after == nullptr) {
+        return conversation_;
+    }
+
+    bool found;
+    Api::message_list_t list;
+
+    LOCK;
+    for(auto msg: conversation_) {
+        if (msg->uuid == *after) {
+            found = true;
+        } else if (found) {
+            list.push_back(msg);
+        }
+    }
+
+    return list;
+}
+
+void BuddyImpl::SetMonitor(const weak_ptr<BuddyEventsMonitor> monitor)
+{
+    LOCK;
+    event_monitors_.push_back(monitor);
+}
+
+vector< shared_ptr< BuddyEventsMonitor > > BuddyImpl::GetMonitors()
+{
+    LOCK;
+    return GetValidObjects<BuddyEventsMonitor>(event_monitors_);
 }
 
 

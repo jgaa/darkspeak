@@ -3,6 +3,7 @@
 #include <mutex>
 #include "darkspeak/Api.h"
 #include "darkspeak/EventMonitor.h"
+#include "darkspeak/BuddyEventsMonitor.h"
 
 namespace darkspeak {
 
@@ -36,15 +37,18 @@ public:
     bool HasAutoConnect() const override;
     bool CanBeLogged() const override { return info_.CanBeLogged(); }
     void Connect() override;
-    Api::Buddy::MessageSendResult SendMessage(
-        const std::string& msg) override;
+    Api::Message::ptr_t SendMessage(const std::string& msg) override;
     void Disconnect() override;
     void Delete() override;
+    Api::message_list_t GetMessages(const boost::uuids::uuid* after = nullptr) override;
+    void SetMonitor(const std::weak_ptr<BuddyEventsMonitor> monitor) override;
 
     void OnStateChange(Api::Status status);
     void OnOtherEvent(const EventMonitor::Event& event);
+    void OnMessageReceived(const Api::Message::ptr_t& message);
 private:
     void SendQueuedMessage();
+    std::vector<std::shared_ptr<BuddyEventsMonitor>> GetMonitors();
 
     std::shared_ptr<ImManager> GetManager();
     std::shared_ptr<ImProtocol> GetProtocol();
@@ -55,7 +59,9 @@ private:
     Api::Presence precense_ = Api::Presence::OFF_LINE;
     std::weak_ptr<ImManager> manager_;
     mutable std::mutex mq_mutex_;
-    std::list<std::string> outgoing_message_queue_;
+    std::list<Api::Message::ptr_t> outgoing_message_queue_;
+    Api::message_list_t conversation_;
+    std::vector<std::weak_ptr<BuddyEventsMonitor>> event_monitors_;
 };
 
 } // impl

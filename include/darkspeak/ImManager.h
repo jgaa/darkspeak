@@ -47,7 +47,6 @@ public:
         ImManager& manager_;
     };
 
-    ImManager(path_t conf_file);
     ~ImManager();
 
     buddy_list_t GetBuddies() override;
@@ -74,9 +73,20 @@ public:
         return config_.get(key, def);
     }
 
+    template <typename T = std::string>
+    T GetConfigValue(std::string key) {
+        return config_.get<T>(key);
+    }
+
     std::vector<std::shared_ptr<EventMonitor>> GetMonitors();
 
     war::Threadpool& GetThreadpool() { return *threadpool_; }
+
+    static std::shared_ptr<ImManager> CreateInstance(path_t conf_file);
+
+protected:
+    void Init();
+    ImManager(path_t conf_file);
 
 private:
     void LoadBuddies();
@@ -91,6 +101,7 @@ private:
     std::vector<std::weak_ptr<EventMonitor>> event_monitors_;
     Info my_info_;
     std::shared_ptr<Events> event_monitor_;
+    path_t conf_file_;
 };
 
 } // impl

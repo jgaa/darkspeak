@@ -37,11 +37,6 @@ public:
     using ptr_t = std::shared_ptr<ImProtocol>;
     using get_pipeline_fn_t = std::function<war::Pipeline&()>;
 
-    /// Message
-    struct Message {
-        std::string text;
-    };
-
     struct File {
         path_t path;
     };
@@ -106,7 +101,8 @@ public:
     virtual void SetInfo(const Api::Info& info) = 0;
 
 
-    virtual void SendMessage(Api::Buddy& buddy, const Message& msg) = 0;
+    virtual void SendMessage(Api::Buddy& buddy,
+                             const Api::Message::ptr_t& msg) = 0;
 
     /*! Starts a file transfer.
      *

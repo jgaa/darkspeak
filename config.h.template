@@ -1,0 +1,3 @@
+#pragma once
+
+#cmakedefine WITH_QT_QUICK_GUI 1

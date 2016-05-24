@@ -1,4 +1,4 @@
-project(libdarkspeak)
+project(darkspeak_api)
 set(ACTUAL_SOURCES
         ImManager.cpp
         BuddyImpl.cpp
@@ -21,4 +21,9 @@ else()
 endif()
 
 add_library(darkspeak_api ${SOURCES})
+add_dependencies(darkspeak_api
+    war_base
+    war_log
+    war_tasks
+    )
 set_target_properties(darkspeak_api PROPERTIES DEBUG_OUTPUT_NAME darkspeak_apiD)

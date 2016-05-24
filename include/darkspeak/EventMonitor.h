@@ -3,7 +3,10 @@
 #include <memory>
 #include <future>
 
+#include <boost/asio.hpp>
+
 #include "darkspeak/Api.h"
+
 
 namespace darkspeak {
 
@@ -57,7 +60,9 @@ public:
     struct Event {
         enum class Type {
             UNKNOWN,
-            MESSAGE_TRANSMITTED
+            MESSAGE_TRANSMITTED,
+            PROTOCOL_CONNECTING,
+            PROTOCOL_DISCONNECTING
         };
 
         Event() = default;
@@ -66,8 +71,12 @@ public:
         Event(const std::string& buddyId, Type evType)
         : buddy_id{buddyId}, type{evType} {}
 
+        Event(const std::string& buddyId, Type evType, boost::uuids::uuid uuidVal)
+        : buddy_id{buddyId}, type{evType}, uuid{uuidVal} {}
+
         std::string buddy_id;
         Type type = Type::UNKNOWN;
+        boost::uuids::uuid uuid;
     };
 
     struct ListeningInfo {

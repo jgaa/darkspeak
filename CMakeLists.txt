@@ -9,8 +9,13 @@ if (NOT DEFINED DARKSPEAK_ROOT_DIR)
 endif()
 
 if (NOT DEFINED WITH_APIDOC)
-	option(WITH_APIDOC "Generate Doxygen documentation" ON)
+    option(WITH_APIDOC "Generate Doxygen documentation" ON)
 endif()
+
+if (NOT DEFINED WITH_QT_QUICK_GUI)
+    option(WITH_QT_QUICK_GUI "Enable Qt Quick GUI" ON)
+endif()
+
 
 if (NOT DEFINED DARKSPEAK_WITH_UNIT_TESTS)
 	option(DARKSPEAK_WITH_UNIT_TESTS "Enable Unit Testing" ON)

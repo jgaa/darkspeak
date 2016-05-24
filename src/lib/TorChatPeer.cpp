@@ -25,12 +25,24 @@ namespace darkspeak {
 namespace impl {
 
 
+TorChatPeer::State TorChatPeer::GetState() const
+{
+    LOG_TRACE4_FN << "State=" << state_
+       << ", has_been_ready_=" << has_been_ready_;
+    return state_;
+}
+
+
 void TorChatPeer::SetState(impl::TorChatPeer::State state)
 {
     LOG_DEBUG_FN << "Setting state " << state
         << ", old stat was " << state_;
 
     state_ = state;
+    if (state_ == State::READY) {
+        LOG_TRACE1_FN << "Setting has_been_ready_";
+        has_been_ready_ = true;
+    }
 }
 
 void TorChatPeer::Close()

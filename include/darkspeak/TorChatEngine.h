@@ -2,6 +2,7 @@
 
 #include <future>
 #include <chrono>
+#include <random>
 
 #include <boost/property_tree/ptree.hpp>
 
@@ -86,7 +87,7 @@ public:
     // IM protocol implementation
     void Connect(Api::Buddy::ptr_t buddy) override;
     void SetInfo(const Api::Info& info) override;
-    void SendMessage(Api::Buddy& buddy, const Message& msg) override;
+    void SendMessage(Api::Buddy& buddy, const Api::Message::ptr_t& msg) override;
     void SendFile(Api::Buddy& buddy, const File& file,
         FileMonitor::ptr_t monitor) override;
     void Disconnect(Api::Buddy& buddy) override;
@@ -166,6 +167,7 @@ private:
     void EmitEventIncomingMessage(const EventMonitor::Message& msg);
     void EmitOtherEvent(const EventMonitor::Event& event);
     void EmitShutdownComplete(const EventMonitor::ShutdownInfo& info);
+    void EmitEventListening(const EventMonitor::ListeningInfo& endpoint);
 
     // Requests
     void OnAddMe(const Request& req);

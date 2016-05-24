@@ -1,11 +1,50 @@
 Development todo's
 
 BUGS:
- - We disconnect from peers (socket time out, check trace logs)
+  - Connection status-icon
+  - Contact status not being updated
+  - We lose connectivity after a while
+  - Edit data does not save the data
+  - When a contact is edited, we must trigger an event in the contact-list so it gets updated
+  - We don't get the profile info from the remote side in Edit dialog
+  - We don't propagate client version
+
+Missing features:
+  - Status update from buddy
+  - Last seen not updated
+    - Also, need better formatting or "Never" if 0
+
+  - Do not show ID if we have no nickname
+  - Sort contacts
+    - Alphabetically
+    - By last chat date (incoming or outgoing message timestamp)
+  - Verify connection status by connecting to our self.
 
 TODO:
- - Implement the Api for local use (no proxy)
-    - Implement file transfer
-    - Implement avatar
+  - Finish Contact List:
+    v Select current
+    v Dbl click: Open chat window
+    - Right click: Pop up menu:
+        - Delete
+    - Migrate to SwipeView:
+        - Swipe left:
+            Open chat window
+        - Swipe right: Open Edit Buddy Dialog
+    - Show message icon if we have unread messages
+    - Show connection status for contacts (not connecting, connecting, connected)
 
- - Implement a simple GUI using QT QML.
+  - Chat window:
+    - Show status similar to the contact list
+    - Notifications regarding other events
+    - Edit buddy button
+
+  - Implement Settings
+    - Own info
+    - Tor Server settings
+
+  - Check if it works on Android
+  - Check if it works on Windows
+  - Check if it works on OS/X
+  - Check if it works on IOS
+
+  - Release beta!

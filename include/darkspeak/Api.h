@@ -6,14 +6,18 @@
 #include <vector>
 #include <chrono>
 #include <iostream>
+#include <atomic>
 
 #include <boost/filesystem.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
 
 namespace darkspeak {
 
 using path_t = boost::filesystem::path;
 
 class EventMonitor;
+class BuddyEventsMonitor;
 
 /*! \class Api Api.h darkspeak/Api.h
  *
@@ -74,6 +78,36 @@ public:
         AWAY,
         LONG_TIME_AWAY
     };
+
+    class Message {
+        public:
+        using ptr_t = std::shared_ptr<Message>;
+        using timestamp_t = std::chrono::system_clock::time_point;
+        enum class Direction {
+            OUTGOING,
+            INCOMING
+        };
+
+        enum class Status {
+            QUEUED,
+            SENT,
+            RECEIVED
+        };
+
+        Message(Direction dir, Status initialStatus, std::string content)
+        : direction(dir), body{std::move(content)}
+        {
+            status = initialStatus;
+        }
+
+        const timestamp_t timestamp = std::chrono::system_clock::now();
+        const boost::uuids::uuid uuid = boost::uuids::random_generator()();
+        const Direction direction;
+        std::atomic<Status> status;
+        const std::string body;
+    };
+
+    using message_list_t = std::deque<std::shared_ptr<Message>>;
 
     class Buddy {
     public:
@@ -171,8 +205,12 @@ public:
          */
         virtual void Connect() = 0;
 
-        /*! Send a utf-8 encoded text message */
-        virtual MessageSendResult SendMessage(const std::string& msg) = 0;
+        /*! Send a utf-8 encoded text message
+         *
+         * \returns Pointer to a Message instance. This can be queried regarding
+         *      the status of the message.
+         */
+        virtual Message::ptr_t SendMessage(const std::string& msg) = 0;
 
         /*! Disconnect from the buddy
          *
@@ -190,6 +228,23 @@ public:
          */
         virtual void Delete() = 0;
 
+        /*! Get the conversation.
+         *
+         * \param after If present, return messages after this uuid in the list.
+         *
+         *
+         * \note The conversation list maintained internally in the Buddy instance
+         *       may be cleand up based on maintainance policies (like max number of
+         *       messages to keep in memory, max time to live for messages in memory
+         *       etc.). This means that a Message pointer received in one call to
+         *       GetMessages() may or may not be returned if the merthod is
+         *       called again.
+         */
+        virtual message_list_t
+        GetMessages(const boost::uuids::uuid *after = nullptr) = 0;
+
+        /*! Register a monitor to receive notifications */
+        virtual void SetMonitor(const std::weak_ptr<BuddyEventsMonitor> monitor) = 0;
     };
 
     /*! Information about the local user.
@@ -256,6 +311,8 @@ public:
      *          all buddy's, conversation logs, - everything will be deleted.
      */
     virtual void Panic(std::string message, bool erase_data) = 0; // TODO: Implement
+
+    static std::shared_ptr<Api> CreateInstance(path_t conf_file);
 };
 
 } //namespace

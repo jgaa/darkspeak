@@ -79,10 +79,7 @@ public:
         return SetConnection(conn_out_, conn);
     }
 
-    State GetState() {
-
-        return state_;
-    }
+    State GetState() const;
 
     void SetState(State state);
 
@@ -170,6 +167,15 @@ public:
         got_pong_ = true;
     }
 
+    /*! Returns true if the peer has been in ready state.
+     * This means that the upper layer has approved the
+     * ID, and we don't have to wait for an add_me message
+     * to enter READY state.
+     */
+    bool HasBeenReady() const {
+        return has_been_ready_;
+    }
+
     void Close();
 
     EventMonitor::BuddyInfo info;
@@ -218,6 +224,7 @@ private:
     bool sent_pong_ = false;
     bool got_ping_ = false;
     bool got_pong_ = false;
+    bool has_been_ready_ = false;
 };
 
 } // impl
