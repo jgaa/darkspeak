@@ -94,6 +94,9 @@ int main(int argc, char *argv[])
         qmlRegisterUncreatableType<ChatMessagesModel>("com.jgaa.darkspeak", 1, 0, "ChatMessagesModel", no_create_message);
     }
 
+    qRegisterMetaType<darkspeak::Api::Message::ptr_t>("darkspeak::Api::Message::ptr_t");
+    qRegisterMetaType<std::string>("std::string");
+
     //{
     //    QString no_create_message = "ContactData is obtained from ContactsModel.";
     //    qmlRegisterUncreatableType<ContactData>("com.jgaa.darkspeak", 1, 0, "ContactData", no_create_message);

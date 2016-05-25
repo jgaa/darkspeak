@@ -14,8 +14,6 @@ ChatMessagesModel::ChatMessagesModel(ContactsModel& cm,
 {
     monitor_ = make_shared<EventsMonitor>(*this);
 
-    qRegisterMetaType<darkspeak::Api::Message::ptr_t>("darkspeak::Api::Message::ptr_t");
-
     connect(this,
             SIGNAL(MessageReceived(darkspeak::Api::Message::ptr_t)),
             this, SLOT(AddMessage(darkspeak::Api::Message::ptr_t)));

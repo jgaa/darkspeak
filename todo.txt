@@ -1,13 +1,14 @@
 Development todo's
 
 BUGS:
-  - Connection status-icon
-  - Contact status not being updated
-  v We lose connectivity after a while
+  - Contact status not being updated when we go off-line
+  - Contact Last seen not being updated
+  - Contact status must show "offline" when he is offline
   - Edit data does not save the data
   - When a contact is edited, we must trigger an event in the contact-list so it gets updated
   - We don't get the profile info from the remote side in Edit dialog
   - We don't propagate client version
+  - Messages queued when off-line is not sent.
 
 Missing features:
   - Status update from buddy
@@ -20,16 +21,19 @@ Missing features:
     - By last chat date (incoming or outgoing message timestamp)
   - Verify connection status by connecting to our self.
 
+REFACTOR:
+  - Make buddy object delegate and assign to buddy-list. Makes state changes
+    independent of the list itself.
+  - Buddy: Getters, setters and change notifications on all properties.
+  - Migrate to SwipeView:
+    - Swipe left:
+        Open chat window
+    - Swipe right: Open Edit Buddy Dialog
+
 TODO:
   - Finish Contact List:
-    v Select current
-    v Dbl click: Open chat window
     - Right click: Pop up menu:
         - Delete
-    - Migrate to SwipeView:
-        - Swipe left:
-            Open chat window
-        - Swipe right: Open Edit Buddy Dialog
     - Show message icon if we have unread messages
     - Show connection status for contacts (not connecting, connecting, connected)
 

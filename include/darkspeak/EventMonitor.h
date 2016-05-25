@@ -68,6 +68,10 @@ public:
         Event() = default;
         Event(const Event&) = default;
         Event(Event &&) = default;
+
+        Event(Type evType)
+        : type{evType} {}
+
         Event(const std::string& buddyId, Type evType)
         : buddy_id{buddyId}, type{evType} {}
 
@@ -134,3 +138,5 @@ public:
 };
 
 } // namespace
+
+std::ostream& operator << (std::ostream& o, const darkspeak::EventMonitor::Event::Type& v);

@@ -2,10 +2,13 @@
 
 #include "log/WarLog.h"
 
+#include "darkspeak/EventMonitor.h"
+
 #include "ContactsModel.h"
 #include "ChatMessagesModel.h"
 #include "ContactData.h"
 #include "darkspeak-gui.h"
+
 
 using namespace std;
 using namespace darkspeak;
@@ -17,6 +20,15 @@ ContactsModel::ContactsModel(Api& api, QObject *parent)
 {
     buddies_ = api_.GetBuddies();
     event_listener_ = make_shared<Events>(*this);
+
+    connect(this,
+            SIGNAL(onBuddyStateMayHaveChanged(std::string)),
+            this, SLOT(refreshBuddyState(std::string)));
+
+    connect(this,
+            SIGNAL(onBuddyMayHaveNewMessage(std::string)),
+            this, SLOT(refreshBuddyMessages(std::string)));
+
     api_.SetMonitor(event_listener_);
 }
 
@@ -164,12 +176,12 @@ void ContactsModel::Events::OnNewBuddyAdded(const EventMonitor::BuddyInfo &info)
 
 void ContactsModel::Events::OnBuddyStateUpdate(const EventMonitor::BuddyInfo &info)
 {
-    // TODO: Find buddy and propagate the state change
+    emit parent_.onBuddyStateMayHaveChanged(info.buddy_id);
 }
 
 void ContactsModel::Events::OnIncomingMessage(const EventMonitor::Message &message)
 {
-    // Notify the contact list entry.
+    emit parent_.onBuddyMayHaveNewMessage(message.buddy_id);
 }
 
 void ContactsModel::Events::OnIncomingFile(const EventMonitor::FileInfo &file)
@@ -179,6 +191,7 @@ void ContactsModel::Events::OnIncomingFile(const EventMonitor::FileInfo &file)
 
 void ContactsModel::Events::OnOtherEvent(const EventMonitor::Event &event)
 {
+    LOG_DEBUG_FN << "Got event " << event.type;
     switch(event.type) {
         case EventMonitor::Event::Type::PROTOCOL_CONNECTING:
             parent_.setOnlineStatus(OS_CONNECTING);
@@ -225,4 +238,30 @@ ContactData *ContactsModel::getContactData(int index)
     }
 
     return nullptr;
+}
+
+int ContactsModel::FindBuddy(const std::string& id)
+{
+    for(size_t i = 0; i < buddies_.size(); ++i) {
+        if (id.compare(buddies_[i]->GetId()) == 0) {
+            return i;
+        }
+    }
+
+    WAR_THROW_T(war::ExceptionNotFound, id);
+}
+
+
+void ContactsModel::refreshBuddyState(string id)
+{
+    try {
+        auto row = FindBuddy(id);
+        auto mi = index(0, row);
+        emit dataChanged(mi, mi);
+    } WAR_CATCH_NORMAL;
+}
+
+void ContactsModel::refreshBuddyMessages(string id)
+{
+    refreshBuddyState(id);
 }

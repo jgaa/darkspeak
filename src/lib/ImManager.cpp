@@ -40,6 +40,13 @@ std::ostream& operator << (std::ostream& o, const darkspeak::Api::Presence& v) {
     return o << names.at(static_cast<int>(v));
 }
 
+std::ostream& operator << (std::ostream& o, const darkspeak::EventMonitor::Event::Type& v) {
+    static const array<string, 4> names = { "UNKNOWN", "MESSAGE_TRANSMITTED",
+        "PROTOCOL_CONNECTING", "PROTOCOL_DISCONNECTING" };
+
+    return o << names.at(static_cast<int>(v));
+}
+
 
 #define LOCK std::lock_guard<std::mutex> lock(mutex_);
 
@@ -162,7 +169,11 @@ void ImManager::Disconnect(bool local_only)
 {
     assert(protocol_);
 
-    // TODO: Trigger event that we are disconnecting
+    EventMonitor::Event event{EventMonitor::Event::Type::PROTOCOL_DISCONNECTING};
+    for(auto& monitor : GetMonitors()) {
+        monitor->OnOtherEvent(event);
+    }
+
     protocol_->Shutdown();
 }
 
@@ -186,12 +197,15 @@ void ImManager::GoOnline(const Info& my_info)
     const auto hostname = config_.get("service.hostname", "127.0.0.1");
     const auto port = config_.get<unsigned short>("service.hostname", 11009);
 
-
-
     boost::asio::ip::tcp::endpoint endpoint{
         boost::asio::ip::address::from_string(hostname), port};
 
     LOG_NOTICE << "Starting listening for events on " << endpoint;
+
+    EventMonitor::Event event{EventMonitor::Event::Type::PROTOCOL_CONNECTING};
+    for(auto& monitor : GetMonitors()) {
+        monitor->OnOtherEvent(event);
+    }
 
     protocol_->SetInfo(my_info);
     protocol_->Listen(endpoint);

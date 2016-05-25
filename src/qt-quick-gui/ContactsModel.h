@@ -87,10 +87,18 @@ public slots:
     OnlineStatus getOnlineStatus() const;
     void setOnlineStatus(OnlineStatus status);
     QUrl getOnlineStatusIcon() const;
+    void refreshBuddyState(std::string id);
+    void refreshBuddyMessages(std::string id);
 
 signals: // signals can be emitted
     void onlineStatusChanged(const OnlineStatus &status);
     void onlineStatusIconChanged();
+    void onBuddyStateChanged(std::string id);
+    void onBuddyHasNewMessage(std::string id);
+
+    // Inter therad communication.
+    void onBuddyStateMayHaveChanged(std::string id);
+    void onBuddyMayHaveNewMessage(std::string id);
 
 
 protected:
@@ -100,6 +108,8 @@ private:
 //     QDateTime Convert(const std::time_t& when) const;
 //     QString Convert(const darkspeak::Api::Status& status) const;
 //     QString Convert(const darkspeak::Api::AnonymityLevel level) const;
+
+    int FindBuddy(const std::string& id);
 
     darkspeak::Api& api_;
     darkspeak::Api::buddy_list_t buddies_;

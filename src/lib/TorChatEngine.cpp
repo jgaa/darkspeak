@@ -605,6 +605,8 @@ void TorChatEngine::Shutdown()
             peers_.erase(peers_.begin());
         }
 
+        EmitShutdownComplete({});
+
     // Close all peers
     }, "Shutting down TorChatEngine"});
 }
