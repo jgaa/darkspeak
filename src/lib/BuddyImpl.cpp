@@ -21,7 +21,9 @@ BuddyImpl::BuddyImpl(const Buddy::Info& info,
     std::weak_ptr<ImManager> manager)
 : info_{info}, manager_{manager}
 {
-
+    if (info_.created_time == 0) {
+        info_.created_time = time(nullptr);
+    }
 }
 
 BuddyImpl::~BuddyImpl()

@@ -883,7 +883,7 @@ void TorChatEngine::OnStatus(const TorChatEngine::Request& req)
     static const std::map<string, Api::Status> status_map = {
         {"available", Api::Status::AVAILABLE},
         {"away", Api::Status::AWAY},
-        {"away", Api::Status::LONG_TIME_AWAY}
+        {"xa", Api::Status::LONG_TIME_AWAY}
     };
 
     auto state_name = req.params.at(0);

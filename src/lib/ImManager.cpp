@@ -132,11 +132,21 @@ Api::Buddy::ptr_t ImManager::AddBuddy(const Buddy::Info& def)
         WAR_THROW_T(war::ExceptionNoKeyValue, "id is required");
     }
 
-    LOCK;
-    auto buddy = make_shared<BuddyImpl>(def, shared_from_this());
+    std::shared_ptr<BuddyImpl> buddy;
+    {
+        LOCK;
+        buddy = make_shared<BuddyImpl>(def, shared_from_this());
+        WarMapAddUnique(buddies_, def.id, buddy);
+    }
+    EventMonitor::BuddyInfo bi;
+    bi.buddy_id = def.id;
+    bi.exists = EventMonitor::Existing::YES;
+    bi.profile_name = def.profile_name;
+    bi.profile_text = def.profile_text;
 
-    WarMapAddUnique(buddies_, def.id, buddy);
-    // TODO: Trigger event that the buddy was added
+    for(auto& m : GetMonitors()) {
+        m->OnNewBuddyAdded(bi);
+    }
 
     return buddy;
 }

@@ -11,7 +11,6 @@ BUGS:
   - Messages queued when off-line is not sent.
 
 Missing features:
-  - Status update from buddy
   - Last seen not updated
     - Also, need better formatting or "Never" if 0
 
@@ -22,8 +21,6 @@ Missing features:
   - Verify connection status by connecting to our self.
 
 REFACTOR:
-  - Make buddy object delegate and assign to buddy-list. Makes state changes
-    independent of the list itself.
   - Buddy: Getters, setters and change notifications on all properties.
   - Migrate to SwipeView:
     - Swipe left:

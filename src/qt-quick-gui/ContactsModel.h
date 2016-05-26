@@ -89,6 +89,8 @@ public slots:
     QUrl getOnlineStatusIcon() const;
     void refreshBuddyState(std::string id);
     void refreshBuddyMessages(std::string id);
+    void addBuddyToList(std::string id);
+    void deleteBuddyFromList(std::string id);
 
 signals: // signals can be emitted
     void onlineStatusChanged(const OnlineStatus &status);
@@ -99,7 +101,8 @@ signals: // signals can be emitted
     // Inter therad communication.
     void onBuddyStateMayHaveChanged(std::string id);
     void onBuddyMayHaveNewMessage(std::string id);
-
+    void onBuddyAdded(std::string id);
+    void onBuddyDeleted(std::string id);
 
 protected:
     // return the roles mapping to be used by QML
@@ -110,6 +113,7 @@ private:
 //     QString Convert(const darkspeak::Api::AnonymityLevel level) const;
 
     int FindBuddy(const std::string& id);
+    bool HaveBuddy(const std::string& id);
 
     darkspeak::Api& api_;
     darkspeak::Api::buddy_list_t buddies_;

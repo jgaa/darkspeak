@@ -29,6 +29,14 @@ ContactsModel::ContactsModel(Api& api, QObject *parent)
             SIGNAL(onBuddyMayHaveNewMessage(std::string)),
             this, SLOT(refreshBuddyMessages(std::string)));
 
+    connect(this,
+            SIGNAL(onBuddyAdded(std::string)),
+            this, SLOT(addBuddyToList(std::string)));
+
+    connect(this,
+            SIGNAL(onBuddyDeleted(std::string)),
+            this, SLOT(deleteBuddyFromList(std::string)));
+
     api_.SetMonitor(event_listener_);
 }
 
@@ -93,14 +101,8 @@ void ContactsModel::append(const QString &bid)
 {
     Api::Buddy::Info bi;
     bi.id = bid.toStdString();
-    bi.created_time = time(nullptr);
-
-    emit beginInsertRows(QModelIndex(), 0,
-                         static_cast<int>(buddies_.size()));
     LOG_DEBUG << "Adding buddy: " << log::Esc(bi.id);
     api_.AddBuddy(bi);
-    buddies_ = api_.GetBuddies();
-    emit endInsertRows();
 }
 
 void ContactsModel::remove(int index)
@@ -171,7 +173,19 @@ bool ContactsModel::Events::OnAddNewBuddy(const EventMonitor::BuddyInfo &info)
 
 void ContactsModel::Events::OnNewBuddyAdded(const EventMonitor::BuddyInfo &info)
 {
-    // Trigger list-refresh
+    /* We will get this event from the protocol lever when the buddy
+     * is cleared for communication. In that case, the
+     * info.exists will be != EventMonitor::Existing::YES
+     *
+     * Existing means that the buddy exists in the IM manager.
+     */
+
+    if (info.exists != EventMonitor::Existing::YES) {
+        return;
+    }
+
+    LOG_DEBUG_FN << "Buddy " << info.buddy_id << " is added in the manager.";
+    emit parent_.onBuddyAdded(info.buddy_id);
 }
 
 void ContactsModel::Events::OnBuddyStateUpdate(const EventMonitor::BuddyInfo &info)
@@ -264,4 +278,55 @@ void ContactsModel::refreshBuddyState(string id)
 void ContactsModel::refreshBuddyMessages(string id)
 {
     refreshBuddyState(id);
+}
+
+bool ContactsModel::HaveBuddy(const string& id)
+{
+    try {
+        FindBuddy(id);
+        return true;
+    } catch (war::ExceptionNotFound) {
+        ;
+    }
+
+    return false;
+}
+
+
+void ContactsModel::addBuddyToList(string id)
+{
+    LOG_DEBUG_FN << "Adding buddy " << id << "to the UI.";
+
+    // First make sure that we don't already have the buddy.
+    if (HaveBuddy(id)) {
+        return;
+    }
+
+    // We better add it to the same location as it is in the
+    // managers list.
+    auto base_list = api_.GetBuddies();
+    for(size_t i = 0; i < base_list.size(); ++i) {
+        if (id.compare(base_list[i]->GetId()) == 0) {
+            emit beginInsertRows(QModelIndex(), i, i);
+            buddies_ = base_list;
+            emit endInsertRows();
+            return;
+        }
+    }
+
+    LOG_ERROR_FN << "Could not find buddy " << id << " in the list";
+}
+
+void ContactsModel::deleteBuddyFromList(string id)
+{
+    int ix = 0;
+    try {
+        ix = FindBuddy(id);
+    }   catch(war::ExceptionNotFound) {
+        return;
+    }
+
+    emit beginRemoveRows(QModelIndex(), ix, ix);
+    buddies_.erase(buddies_.begin() + ix);
+    emit endRemoveRows();
 }
