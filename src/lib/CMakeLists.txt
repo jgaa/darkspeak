@@ -8,12 +8,12 @@ set(ACTUAL_SOURCES
         TorChatPeer.cpp
     )
 set(HEADERS
-   ${DARKSPEAK_ROOT_DIR}/darkspeak/Api.h
-   ${DARKSPEAK_ROOT_DIR}/darkspeak/ImManager.h
+   ${DARKSPEAK_ROOT_DIR}/include/darkspeak/Api.h
+   ${DARKSPEAK_ROOT_DIR}/include/darkspeak/ImManager.h
    )
 
 if (WIN32)
-    ADD_MSVC_PRECOMPILED_HEADER(${WARFTPD_ROOT_DIR}/include/warftpd/warftpd.h pch.cpp ACTUAL_SOURCES)
+    #ADD_MSVC_PRECOMPILED_HEADER(${WARFTPD_ROOT_DIR}/include/warftpd/warftpd.h pch.cpp ACTUAL_SOURCES)
     add_definitions(-DWARFTPD_PCH)
     set(SOURCES ${ACTUAL_SOURCES} pch.cpp ${HEADERS} ${RESFILES})
 else()
