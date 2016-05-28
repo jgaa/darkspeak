@@ -392,6 +392,10 @@ void ImManager::Events::OnBuddyStateUpdate(const EventMonitor::BuddyInfo& info)
         WAR_THROW_T(ExceptionDisconnectNow, "Nonexistant buddy");
     }
 
+    if (info.status != Api::Status::OFF_LINE) {
+        buddy->UpdateLastSeenTimestamp();
+    }
+
     if (buddy->GetStatus() != info.status) {
         buddy->OnStateChange(info.status);
     }
@@ -409,6 +413,7 @@ void ImManager::Events::OnIncomingMessage(const EventMonitor::Message& message)
     if (!message.buddy_id.empty()) {
         auto buddy = manager_.GetBuddy(message.buddy_id);
         if (buddy) {
+            buddy->UpdateLastSeenTimestamp();
             auto msg = make_shared<Api::Message>(
                 Api::Message::Direction::INCOMING,
                 Api::Message::Status::RECEIVED,

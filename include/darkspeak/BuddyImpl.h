@@ -46,6 +46,7 @@ public:
     void OnStateChange(Api::Status status);
     void OnOtherEvent(const EventMonitor::Event& event);
     void OnMessageReceived(const Api::Message::ptr_t& message);
+    void UpdateLastSeenTimestamp();
 private:
     void SendQueuedMessage();
     std::vector<std::shared_ptr<BuddyEventsMonitor>> GetMonitors();

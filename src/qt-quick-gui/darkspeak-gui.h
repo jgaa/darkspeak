@@ -9,14 +9,17 @@
 #include "darkspeak/Api.h"
 
 
-inline QDateTime Convert(const time_t &when)
+inline QString Convert(const time_t &when)
 {
+    if (when == 0) {
+        return "Never";
+    }
     QDateTime dt;
     dt.setTime_t(static_cast<uint>(when));
-    return dt;
+    return dt.toString(Qt::DefaultLocaleShortDate);
 }
 
-inline QDateTime Convert(const std::chrono::system_clock::time_point &when)
+inline QString Convert(const std::chrono::system_clock::time_point &when)
 {
     auto time_t_when = std::chrono::system_clock::to_time_t(when);
     return Convert(time_t_when);

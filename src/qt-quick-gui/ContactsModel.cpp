@@ -134,6 +134,7 @@ void ContactsModel::setOnlineStatus(ContactsModel::OnlineStatus status)
     if (online_status_ != status) {
         LOG_DEBUG_FN << "Changing status - emitting handlers.";
         online_status_ = status;
+        icache_.row = -1;
         emit onlineStatusChanged(status);
         emit onlineStatusIconChanged();
     }
@@ -196,6 +197,7 @@ void ContactsModel::Events::OnBuddyStateUpdate(const EventMonitor::BuddyInfo &in
 void ContactsModel::Events::OnIncomingMessage(const EventMonitor::Message &message)
 {
     emit parent_.onBuddyMayHaveNewMessage(message.buddy_id);
+    emit parent_.onBuddyStateMayHaveChanged(message.buddy_id);
 }
 
 void ContactsModel::Events::OnIncomingFile(const EventMonitor::FileInfo &file)
@@ -269,6 +271,7 @@ int ContactsModel::FindBuddy(const std::string& id)
 void ContactsModel::refreshBuddyState(string id)
 {
     try {
+        icache_.row = -1;
         auto row = FindBuddy(id);
         auto mi = index(0, row);
         emit dataChanged(mi, mi);

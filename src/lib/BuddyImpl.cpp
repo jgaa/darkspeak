@@ -244,6 +244,13 @@ vector< shared_ptr< BuddyEventsMonitor > > BuddyImpl::GetMonitors()
 }
 
 
+void BuddyImpl::UpdateLastSeenTimestamp()
+{
+    LOCK;
+    info_.last_seen = time(nullptr);
+}
+
+
 } // impl
 } // darkspeak
 
