@@ -105,6 +105,10 @@ Api::Presence BuddyImpl::GetPresence() const
 std::string BuddyImpl::GetUiName() const
 {
     LOCK;
+    if (!info_.our_nickname.empty())
+        return info_.our_nickname;
+    if (!info_.profile_name.empty())
+        return string("(") + info_.profile_name + ")";
     return info_.id;
 }
 

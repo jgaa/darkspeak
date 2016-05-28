@@ -99,7 +99,7 @@ Component {
 
                     Text {
                         id: contact_nickname
-                        text: "(" + nickname + ") "
+                        text: nickname
                         font.pointSize: 12
                         color: "steelblue"
                     }
@@ -107,7 +107,7 @@ Component {
                     Text {
                         anchors.bottom: contact_nickname.bottom
                         text: handle
-                        font.pointSize: 10
+                        font.pointSize: 8
                     }
                 }
 

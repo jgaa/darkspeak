@@ -36,9 +36,9 @@ private:
     Q_PROPERTY(bool canSave READ getCanSave NOTIFY canSaveChanged)
 
 public:
-    ContactData(QObject *parent = nullptr);
+    ContactData();
     ContactData(const std::shared_ptr<darkspeak::Api::Buddy>& buddy,
-                QObject *parent);
+                ContactsModel *parent);
 
     Q_INVOKABLE void save();
     Q_INVOKABLE void load();
@@ -96,5 +96,6 @@ private:
 
     // Private
     std::shared_ptr<darkspeak::Api::Buddy> buddy_;
+    ContactsModel *model_ = nullptr;
 };
 

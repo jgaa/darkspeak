@@ -24,20 +24,22 @@ Dialog {
                 wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                 height: 90
         }
-        Text { text: "Nickname" } DataText { text: buddy.ourNickname; Layout.fillWidth: true;}
-        Text { text: "Notes" } DataText { text: buddy.ourGeneralNotes;
+        Text { text: "Nickname" } DataText { id: nickname; text: buddy.ourNickname; Layout.fillWidth: true;}
+        Text { text: "Notes" } DataText { id: notes; text: buddy.ourGeneralNotes;
                 Layout.fillWidth: true; wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                 height: 90
         }
         Text { text: "Created" } DataTextRo { text: buddy.createdTime;Layout.fillWidth: true; }
         Text { text: "First contact" } DataTextRo { text: buddy.firstContact;Layout.fillWidth: true; }
-        //Text { text: "Last seen" } DataTextRo { text: buddy.createdTime }
+        Text { text: "Last seen" } DataTextRo { text: buddy.createdTime; Layout.fillWidth: true;  }
 
     }
 
     onButtonClicked: {
         if (clickedButton === StandardButton.Ok) {
             console.log("Saving buddy")
+            buddy.ourNickname = nickname.text
+            buddy.ourGeneralNotes = notes.text
             buddy.save()
 
         } else {

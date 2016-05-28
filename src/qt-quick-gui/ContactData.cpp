@@ -8,15 +8,15 @@ using namespace std;
 using namespace darkspeak;
 using namespace war;
 
-ContactData::ContactData(QObject *parent)
-: QObject (parent)
+ContactData::ContactData()
+: QObject (nullptr)
 {
 
 }
 
 ContactData::ContactData(const shared_ptr< Api::Buddy >& buddy,
-                         QObject *parent)
-: QObject(parent), buddy_{buddy}
+                         ContactsModel *parent)
+: QObject(parent), buddy_{buddy}, model_{parent}
 {
     load();
 }
@@ -57,6 +57,8 @@ void ContactData::save()
 
     buddy_->SetInfo(d);
     // TODO: Signal changes / save to file
+    WAR_ASSERT(model_);
+    emit model_->onBuddyStateMayHaveChanged(d.id);
 }
 
 
