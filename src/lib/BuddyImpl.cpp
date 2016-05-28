@@ -254,6 +254,14 @@ void BuddyImpl::UpdateLastSeenTimestamp()
     info_.last_seen = time(nullptr);
 }
 
+void BuddyImpl::Update(const EventMonitor::BuddyInfo& bi)
+{
+    LOCK;
+    info_.client = bi.client + " " + bi.client_version;
+    info_.profile_name = bi.profile_name;
+    info_.profile_text = bi.profile_text;
+}
+
 
 } // impl
 } // darkspeak

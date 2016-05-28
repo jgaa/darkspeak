@@ -32,6 +32,7 @@ Dialog {
         Text { text: "Created" } DataTextRo { text: buddy.createdTime;Layout.fillWidth: true; }
         Text { text: "First contact" } DataTextRo { text: buddy.firstContact;Layout.fillWidth: true; }
         Text { text: "Last seen" } DataTextRo { text: buddy.createdTime; Layout.fillWidth: true;  }
+        Text { text: "Client" } DataTextRo { text: buddy.client; Layout.fillWidth: true; }
 
     }
 

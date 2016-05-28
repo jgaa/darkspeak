@@ -34,6 +34,7 @@ private:
     Q_PROPERTY(AnonymityLevel anonymity READ getAnonymity WRITE setAnonymity NOTIFY anonymityChanged)
     Q_PROPERTY(AnonymityLevel requiredAnonymity READ getRequiredAnonymity NOTIFY requiredAnonymityChanged)
     Q_PROPERTY(bool canSave READ getCanSave NOTIFY canSaveChanged)
+    Q_PROPERTY(QString client READ getClient NOTIFY clientChanged)
 
 public:
     ContactData();
@@ -69,6 +70,8 @@ public slots:
 
     bool getCanSave() const;
 
+    QString getClient() const;
+
 signals:
     void handleChanged();
     void profileNameChanged();
@@ -80,6 +83,7 @@ signals:
     void anonymityChanged();
     void requiredAnonymityChanged();
     void canSaveChanged();
+    void clientChanged();
 
 private:
     // Visible data
@@ -88,6 +92,7 @@ private:
     QString profileText;
     QString ourNickname;
     QString ourGeneralNotes;
+    QString client;
     QDateTime createdTime;
     QDateTime firstContact;
     QDateTime lastSeen;

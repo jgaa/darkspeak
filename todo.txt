@@ -4,8 +4,8 @@ BUGS:
   v Contact status not being updated when we go off-line
   v Contact Last seen not being updated
   v Contact status must show "offline" when he is offline
-  - Edit data does not save the data
-  - When a contact is edited, we must trigger an event in the contact-list so it gets updated
+  v Edit data does not save the data
+  v When a contact is edited, we must trigger an event in the contact-list so it gets updated
   - We don't get the profile info from the remote side in Edit dialog
   - We don't propagate client version
   - Messages queued when off-line is not sent.
@@ -14,6 +14,15 @@ BUGS:
 Missing features:
   - Do not show ID if we have no nickname
   - Verify connection status by connecting to our self.
+  - Implement Settings
+    - Own info
+    - Tor Server settings
+  - Avatar icon
+    - Buddy's
+    - Our own
+        - Import / convert / display
+        - Send
+  - Tray icon
 
 REFACTOR:
   - Buddy: Getters, setters and change notifications on all properties.
@@ -30,10 +39,6 @@ TODO:
     - Show status similar to the contact list
     - Notifications regarding other events
     - Edit buddy button
-
-  - Implement Settings
-    - Own info
-    - Tor Server settings
 
 
   - Check if it works on Windows

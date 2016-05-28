@@ -396,6 +396,8 @@ void ImManager::Events::OnBuddyStateUpdate(const EventMonitor::BuddyInfo& info)
         buddy->UpdateLastSeenTimestamp();
     }
 
+    buddy->Update(info);
+
     if (buddy->GetStatus() != info.status) {
         buddy->OnStateChange(info.status);
     }

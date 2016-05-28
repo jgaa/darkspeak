@@ -30,6 +30,7 @@ void ContactData::load()
     profileText = d.profile_text.c_str();
     ourNickname = d.our_nickname.c_str();
     ourGeneralNotes = d.our_general_notes.c_str();
+    client = d.client.c_str();
     createdTime.setTime_t(d.created_time);
     firstContact.setTime_t(d.first_contact);
     lastSeen.setTime_t(d.last_seen);
@@ -118,6 +119,11 @@ QDateTime ContactData::getFirstContact() const
 QDateTime ContactData::getLastSeen() const
 {
     return lastSeen;
+}
+
+QString ContactData::getClient() const
+{
+    return client;
 }
 
 

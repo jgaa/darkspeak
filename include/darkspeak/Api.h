@@ -158,6 +158,10 @@ public:
              */
             bool store_conversations = false;
 
+
+            /*! The client software used by the buddy */
+            std::string client;
+
             AnonymityLevel GetCurrentAnonymity() const noexcept {
                 return static_cast<AnonymityLevel>(std::max(
                     static_cast<int>(anonymity),
