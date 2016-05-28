@@ -252,6 +252,9 @@ void BuddyImpl::UpdateLastSeenTimestamp()
 {
     LOCK;
     info_.last_seen = time(nullptr);
+    if (info_.first_contact == 0) {
+        info_.first_contact = info_.last_seen;
+    }
 }
 
 void BuddyImpl::Update(const EventMonitor::BuddyInfo& bi)
