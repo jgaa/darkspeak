@@ -72,7 +72,7 @@ public:
     };
 
     enum class Status : int {
-        OFF_LINE, // maps to xa in legacy TC
+        OFF_LINE,
         AVAILABLE,
         BUSY,
         AWAY,

@@ -6,8 +6,8 @@ BUGS:
   v Contact status must show "offline" when he is offline
   v Edit data does not save the data
   v When a contact is edited, we must trigger an event in the contact-list so it gets updated
-  - We don't get the profile info from the remote side in Edit dialog
-  - We don't propagate client version
+  v We don't get the profile info from the remote side in Edit dialog
+  v We don't propagate client version
   - Messages queued when off-line is not sent.
   - Cannot connect to our self
 

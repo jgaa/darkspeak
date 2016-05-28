@@ -196,8 +196,8 @@ void BuddyImpl::SendQueuedMessage()
 {
     {
         LOCK;
-        if (status_ != Api::Status::AVAILABLE) {
-                return;
+        if (status_ == Api::Status::OFF_LINE) {
+            return;
         }
     }
 
