@@ -141,6 +141,8 @@ private:
     static void MonitorPeers(std::weak_ptr<TorChatEngine> weak_engine,
                       boost::asio::yield_context yield);
 
+    void DisconnectPeer(TorChatPeer& peer);
+
     std::unique_ptr<std::chrono::steady_clock::time_point>
     GetNewKeepAliveTime();
 

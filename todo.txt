@@ -1,7 +1,7 @@
 Development todo's
 
 BUGS:
-  - Contact status not being updated when we go off-line
+  v Contact status not being updated when we go off-line
   - Contact Last seen not being updated
   - Contact status must show "offline" when he is offline
   - Edit data does not save the data
@@ -9,28 +9,23 @@ BUGS:
   - We don't get the profile info from the remote side in Edit dialog
   - We don't propagate client version
   - Messages queued when off-line is not sent.
+  - Cannot connect to our self
 
 Missing features:
   - Last seen not updated
     - Also, need better formatting or "Never" if 0
 
   - Do not show ID if we have no nickname
-  - Sort contacts
-    - Alphabetically
-    - By last chat date (incoming or outgoing message timestamp)
   - Verify connection status by connecting to our self.
 
 REFACTOR:
   - Buddy: Getters, setters and change notifications on all properties.
-  - Migrate to SwipeView:
-    - Swipe left:
-        Open chat window
-    - Swipe right: Open Edit Buddy Dialog
 
 TODO:
   - Finish Contact List:
     - Right click: Pop up menu:
         - Delete
+            - Confirmation dialog
     - Show message icon if we have unread messages
     - Show connection status for contacts (not connecting, connecting, connected)
 
@@ -43,9 +38,10 @@ TODO:
     - Own info
     - Tor Server settings
 
-  - Check if it works on Android
+
   - Check if it works on Windows
   - Check if it works on OS/X
+  - Check if it works on Android
   - Check if it works on IOS
 
   - Release beta!

@@ -124,10 +124,18 @@ void TorChatEngine::Disconnect(Api::Buddy& buddy)
     auto id = buddy.GetId();
     auto peer = GetPeer(id);
     if (peer) {
-        LOG_DEBUG << "Disconnecting " << *peer;
-        peer->Close();
-        peers_.erase(id);
+       DisconnectPeer(*peer);
     }
+}
+
+void TorChatEngine::DisconnectPeer(TorChatPeer& peer)
+{
+    LOG_DEBUG << "Disconnecting " << peer;
+    peer.Close();
+    peer.info.status = Api::Status::OFF_LINE;
+    peer.info.precense = Api::Presence::OFF_LINE;
+    EmitEventBuddyStateUpdate(peer.info);
+    peers_.erase(peer.GetId());
 }
 
 
@@ -497,6 +505,7 @@ void TorChatEngine::StartConnectToPeer(std::string& peer_id,
     }
 
     try {
+        peer->info.precense = Api::Presence::CONNECTING;
         peer->UpgradeState(TorChatPeer::State::CONNECTING);
         ConnectToPeer(*peer, yield);
         std::weak_ptr<TorChatPeer> weak_peer = peer;
@@ -601,8 +610,7 @@ void TorChatEngine::Shutdown()
         LOG_TRACE1_FN << "Removing peers.";
         while (!peers_.empty()) {
             auto peer = peers_.begin()->second;
-            peer->Close();
-            peers_.erase(peers_.begin());
+            DisconnectPeer(*peer);
         }
 
         EmitShutdownComplete({});
@@ -675,6 +683,7 @@ void TorChatEngine::OnAddMe(const TorChatEngine::Request& req)
     }
 
     req.peer->UpgradeState(TorChatPeer::State::READY);
+    req.peer->info.precense = Api::Presence::ON_LINE;
 }
 
 void TorChatEngine::OnFileData(const TorChatEngine::Request& req)
@@ -747,6 +756,7 @@ void TorChatEngine::OnPong(const TorChatEngine::Request& req)
 
     if (req.peer->HasBeenReady()) {
         req.peer->UpgradeState(TorChatPeer::State::READY);
+        req.peer->info.precense = Api::Presence::ON_LINE;
     } else {
         req.peer->UpgradeState(TorChatPeer::State::AUTHENTICATED);
     }
@@ -1099,6 +1109,8 @@ void TorChatEngine::Reconnect(const shared_ptr< TorChatPeer >& peer)
     peer->Close();
     peer->SetState(TorChatPeer::State::UNINTIALIZED);
     peer->initiative = Direction::OUTGOING;
+    peer->info.status = Api::Status::OFF_LINE;
+    peer->info.precense = Api::Presence::CONNECTING;
     SpawnConnect(peer->GetId());
     EmitEventBuddyStateUpdate(peer->info);
     ++peer->reconnect_count;
