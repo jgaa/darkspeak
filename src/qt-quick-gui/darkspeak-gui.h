@@ -29,7 +29,7 @@ inline QString Convert(const std::chrono::system_clock::time_point &when)
 inline QString Convert(const darkspeak::Api::Status &status)
 {
     if (status == darkspeak::Api::Status::OFF_LINE) {
-        return "Away";
+        return "Off-line";
     }
 
     if (status == darkspeak::Api::Status::AVAILABLE) {

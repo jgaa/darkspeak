@@ -2,7 +2,7 @@ Development todo's
 
 BUGS:
   v Contact status not being updated when we go off-line
-  - Contact Last seen not being updated
+  v Contact Last seen not being updated
   - Contact status must show "offline" when he is offline
   - Edit data does not save the data
   - When a contact is edited, we must trigger an event in the contact-list so it gets updated
@@ -12,9 +12,6 @@ BUGS:
   - Cannot connect to our self
 
 Missing features:
-  - Last seen not updated
-    - Also, need better formatting or "Never" if 0
-
   - Do not show ID if we have no nickname
   - Verify connection status by connecting to our self.
 

@@ -77,15 +77,15 @@ QVariant ContactsModel::data(const QModelIndex &index, int role) const
     case StatusColorRole:
         switch(buddies_[row]->GetStatus()) {
         case Api::Status::OFF_LINE: // maps to xa in legacy TC
-            return "dark red";
+            return "darkred";
         case Api::Status::AVAILABLE:
-            return "dark green";
+            return "limegreen";
         case Api::Status::BUSY:
-            return "orange";
+            return "darkred";
         case Api::Status::AWAY:
-            return "dark yellow";
+            return "orangered";
         case Api::Status::LONG_TIME_AWAY:
-            return "brown";
+            return "chocolate";
         }
         break;
     case StatusRole:
