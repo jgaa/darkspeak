@@ -359,7 +359,10 @@ void TorChatEngine::OnAccepted(
         peer->SetReceivedPing();
         std::weak_ptr<TorChatPeer> weak_peer = peer;
 
-        if (!peer->HaveOutConnection()) {
+        bool send_pong = false;
+        if (peer->HaveOutConnection()) {
+            send_pong = true;
+        } else {
             ConnectToPeer(*peer, yield);
 
             // Enter event loop in new context
@@ -375,7 +378,7 @@ void TorChatEngine::OnAccepted(
         peer.reset();
         timer->Cancel();
         timer.reset();
-        ProcessRequests(weak_peer, Direction::INCOMING, yield);
+        ProcessRequests(weak_peer, Direction::INCOMING, send_pong, yield);
 
     } WAR_CATCH_ALL_EF(return);
 }
@@ -395,12 +398,13 @@ void TorChatEngine::StartProcessingRequests(weak_ptr< TorChatPeer > weak_peer,
                                             boost::asio::yield_context yield)
 {
     try {
-        ProcessRequests(weak_peer, direction, yield);
+        ProcessRequests(weak_peer, direction, false, yield);
     } WAR_CATCH_ALL_E;
 }
 
 void TorChatEngine::ProcessRequests(weak_ptr< TorChatPeer > weak_peer,
                                     Direction direction,
+                                    bool sendPong,
                                     boost::asio::yield_context& yield)
 {
     static const string not_implemented{"not_implemented "};
@@ -410,6 +414,11 @@ void TorChatEngine::ProcessRequests(weak_ptr< TorChatPeer > weak_peer,
         if (!peer || (peer->GetState() == TorChatPeer::State::DONE)) {
             LOG_TRACE1_FN << "The peer is gone. Exiting request loop.";
             return;
+        }
+
+        if (sendPong) {
+            DoSendPong(*peer, yield);
+            sendPong = false;
         }
 
         TorChatConnection::ptr_t conn;
@@ -510,7 +519,7 @@ void TorChatEngine::StartConnectToPeer(std::string& peer_id,
         ConnectToPeer(*peer, yield);
         std::weak_ptr<TorChatPeer> weak_peer = peer;
         peer.reset();
-        ProcessRequests(weak_peer, Direction::OUTGOING, yield);
+        ProcessRequests(weak_peer, Direction::OUTGOING, false, yield);
     } WAR_CATCH_ALL_E;
 }
 
@@ -752,6 +761,11 @@ void TorChatEngine::OnPong(const TorChatEngine::Request& req)
 
     if (req.peer->GetMyCookie().compare(req.params.at(0)) != 0) {
         WAR_THROW_T(ExceptionDisconnectNow, "Received pong with wrong cookie!");
+    }
+
+    if (req.peer->GetState() == TorChatPeer::State::READY) {
+        LOG_DEBUG_FN << "We are already in READY state so I'm ignoring this pong.";
+        return;
     }
 
     if (req.peer->HasBeenReady()) {

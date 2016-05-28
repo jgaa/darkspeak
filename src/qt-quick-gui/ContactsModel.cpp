@@ -273,7 +273,8 @@ void ContactsModel::refreshBuddyState(string id)
     try {
         icache_.row = -1;
         auto row = FindBuddy(id);
-        auto mi = index(0, row);
+        auto mi = index(row, 0);
+        LOG_DEBUG_FN << "Refreshing " << id << " at index " << row;
         emit dataChanged(mi, mi);
     } WAR_CATCH_NORMAL;
 }

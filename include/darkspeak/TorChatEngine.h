@@ -119,7 +119,7 @@ private:
 
     void ProcessRequests(
         std::weak_ptr<TorChatPeer> weak_peer,
-        Direction direction,
+        Direction direction, bool sendPong,
         boost::asio::yield_context& yield);
 
     // For spawn

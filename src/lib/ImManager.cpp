@@ -228,6 +228,8 @@ void ImManager::GoOnline(const Info& my_info)
     for(auto& it : buddies_) {
         auto& buddy = it.second;
         if (buddy->HasAutoConnect()) {
+            LOG_DEBUG << "Connecting to " << log::Esc(buddy->GetUiName())
+                << " {id:" << buddy->GetId() << "}";
             protocol_->Connect(buddy);
         }
     }
