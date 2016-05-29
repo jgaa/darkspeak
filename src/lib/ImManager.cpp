@@ -89,31 +89,28 @@ struct InfoData {
 };
 
 ImManager::ImManager(path_t conf_file)
-: conf_file_{conf_file}
 {
+    config_ = make_shared<Config>(conf_file);
 }
 
 ImManager::~ImManager()
 {
     SaveBuddies();
+    if (config_->IsDirty()) {
+        config_->Save();
+    }
 }
 
 void ImManager::Init()
 {
-    // Read the configuration
-    if (boost::filesystem::exists(conf_file_)) {
-        boost::property_tree::read_info(conf_file_.string(), config_);
-    } else {
-        LOG_ERROR << "File " << log::Esc(conf_file_.string()) << " don't exist.";
-        WAR_THROW_T(ExceptionNotFound, conf_file_.string());
-    }
+    config_->Load();
 
     threadpool_ = make_unique<war::Threadpool>(
-        config_.get<unsigned>("service.io_threads", 2));
+        config_->Get<unsigned>(Config::IO_THREADS, 2));
 
     protocol_ = ImProtocol::CreateProtocol([this]() -> war::Pipeline& {
         return threadpool_->GetAnyPipeline();
-    }, config_);
+    }, *config_);
     LoadBuddies();
     event_monitor_ = make_shared<Events>(*this);
     protocol_->SetMonitor(event_monitor_);
@@ -199,13 +196,16 @@ Api::buddy_list_t ImManager::GetBuddies()
     return list;
 }
 
-void ImManager::GoOnline(const Info& my_info)
+
+void ImManager::GoOnline()
 {
     // TODO: Trigger event that we are going on-line
 
-    const auto id =  config_.get<string>("service.dark_id");
-    const auto hostname = config_.get("service.hostname", "127.0.0.1");
-    const auto port = config_.get<unsigned short>("service.hostname", 11009);
+    const auto id =  config_->Get<string>(Config::HANDLE);
+    const auto hostname = config_->Get<string>(Config::SERVICE_HOSTNAME,
+                                               Config::SERVICE_HOSTNAME_DEFAULT);
+    const auto port = config_->Get<unsigned short>(Config::SERVICE_PORT,
+                                                   Config::SERVICE_PORT_DEFAULT);
 
     boost::asio::ip::tcp::endpoint endpoint{
         boost::asio::ip::address::from_string(hostname), port};
@@ -217,14 +217,12 @@ void ImManager::GoOnline(const Info& my_info)
         monitor->OnOtherEvent(event);
     }
 
-    protocol_->SetInfo(my_info);
     protocol_->Listen(endpoint);
 
     LOG_DEBUG_FN<< "I will now connect to all buddys with the auto_connect"
         " flag set for my id: " << log::Esc(id);
 
     LOCK;
-    my_info_ = my_info;
     for(auto& it : buddies_) {
         auto& buddy = it.second;
         if (buddy->HasAutoConnect()) {
@@ -243,7 +241,8 @@ void ImManager::Panic(std::string message, bool erase_data)
 
 void ImManager::LoadBuddies()
 {
-    path_t path = config_.get("service.buddy_file", "buddies.data");
+    path_t path = config_->Get(Config::SERVICE_BUDDY_FILE,
+                               Config::SERVICE_BUDDY_FILE_DEFAULT);
 
     if (boost::filesystem::is_regular(path)) {
         // open the archive
@@ -281,7 +280,8 @@ void ImManager::SaveBuddies()
         }
     }
 
-    const auto path = config_.get("service.buddy_file", "buddies.data");
+    const auto path = config_->Get(Config::SERVICE_BUDDY_FILE,
+                                   Config::SERVICE_BUDDY_FILE_DEFAULT);
 
     LOG_DEBUG_FN << "Saving " << data.data.size() << " buddies to "
         << log::Esc(path);
@@ -361,7 +361,7 @@ bool ImManager::Events::OnAddNewBuddy(const EventMonitor::BuddyInfo& info)
         return true;
     }
 
-    if (manager_.GetConfigValue("settings.auto_accept_buddies", true)) {
+    if (manager_.GetConfig()->Get("settings.auto_accept_buddies", true)) {
 
         LOG_DEBUG_FN << "Adding incoming buddy " << info.buddy_id;
 
@@ -480,5 +480,23 @@ shared_ptr<Api> Api::CreateInstance(path_t conf_file)
 {
     return impl::ImManager::CreateInstance(conf_file);
 }
+
+// Api::Info impl::ImManager::GetInfo()
+// {
+//     Api::Info info;
+//     info.id = config_->Get(Config::HANDLE);
+//     info.profile_name = config_->Get(Config::PROFILE_NAME, "");
+//     info.profile_text = config_->Get(Config::PROFILE_INFO, "");
+//     switch(config_->Get<int>("profile.status", 0)) {
+//         case 0: info.status = Api::Status::AVAILABLE; break;
+//         case 1: info.status = Api::Status::AWAY; break;
+//         case 2: info.status = Api::Status::LONG_TIME_AWAY; break;
+//         default:
+//             LOG_WARN_FN << "Invalid status. Resetting to available.";
+//     }
+//
+//     return info;
+// }
+
 
 } // darkspeak

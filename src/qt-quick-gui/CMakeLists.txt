@@ -22,6 +22,8 @@ set(QML_SRC
     qml/EditBuddy.qml
     qml/DataTextRo.qml
     qml/DataText.qml
+    qml/OwnInfoTab.qml
+    qml/SettingsDlg.qml
     )
 
 set(SOURCES
@@ -30,6 +32,7 @@ set(SOURCES
     ContactsModel.cpp
     ChatMessagesModel.cpp
     ContactData.cpp
+    SettingsData.cpp
     )
 
 set (HEADERS
@@ -37,6 +40,7 @@ set (HEADERS
     ContactsModel.h
     ChatMessagesModel.h
     ContactData.h
+    SettingsData.h
     )
 
 qt5_add_resources(RESOURCES resources.qrc)

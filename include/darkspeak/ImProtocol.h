@@ -12,10 +12,11 @@
 
 #include "darkspeak/Api.h"
 
+
 namespace darkspeak {
 
-
 class EventMonitor;
+class Config;
 
 /*! \class ImProtocol ImProtocol.h darkspeak/ImProtocol.h
  *
@@ -94,13 +95,6 @@ public:
      */
     virtual void Connect(Api::Buddy::ptr_t buddy) = 0;
 
-    /*! Set the infor regarding the user.
-     *
-     * The user inputs the data in the UI
-     */
-    virtual void SetInfo(const Api::Info& info) = 0;
-
-
     virtual void SendMessage(Api::Buddy& buddy,
                              const Api::Message::ptr_t& msg) = 0;
 
@@ -132,7 +126,7 @@ public:
 
     /*! Create an instance of the implemnetation of the protocol */
     static ptr_t CreateProtocol(get_pipeline_fn_t fn,
-                                const boost::property_tree::ptree& properties);
+                                Config& properties);
 };
 
 

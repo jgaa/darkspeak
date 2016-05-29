@@ -279,11 +279,8 @@ public:
     /*! Start the secret Tor service and listen for incoming connections.
      *
      * Connect all buddies with auto_connect set.
-     *
-     *
-     *
      */
-    virtual void GoOnline(const Info& my_info) = 0;
+    virtual void GoOnline() = 0;
 
     /*! Close all connections and stop listening for incoming calls.
      *

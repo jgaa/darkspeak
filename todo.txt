@@ -1,22 +1,10 @@
 Development todo's
 
 BUGS:
-  v Contact status not being updated when we go off-line
-  v Contact Last seen not being updated
-  v Contact status must show "offline" when he is offline
-  v Edit data does not save the data
-  v When a contact is edited, we must trigger an event in the contact-list so it gets updated
-  v We don't get the profile info from the remote side in Edit dialog
-  v We don't propagate client version
-  v Messages queued when off-line is not sent.
-  v Cannot connect to our self
-  - First contact not updated
 
 Missing features:
-  - Do not show ID if we have no nickname
-  - Verify connection status by connecting to our self.
-  - Implement Settings
-    - Own info
+  ~ Implement Settings
+    v Own info
     - Tor Server settings
   - Avatar icon
     - Buddy's
@@ -33,6 +21,7 @@ TODO:
     - Right click: Pop up menu:
         - Delete
             - Confirmation dialog
+    - Send status, profile name/info/icon if we edit data
     - Show message icon if we have unread messages
     - Show connection status for contacts (not connecting, connecting, connected)
 

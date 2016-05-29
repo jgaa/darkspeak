@@ -4,15 +4,24 @@ import QtQuick.Controls 1.3
 import com.jgaa.darkspeak 1.0
 
 ToolBar {
+    id: root
     width: parent.width
     height: connectButton.height + 8
+
+    ToolButton {
+        x: 0
+        id: backButton
+        iconSource: "qrc:/images/Back-32.png"
+        opacity: 0
+        enabled: false
+        onClicked: main_pane.state = ""
+    }
 
     ToolButton {
         id: connectButton
         enabled: true
         text: checked ? "Disconnect" : "Connect"
-        anchors.left: parent.left
-        anchors.leftMargin: 6
+        x: 0
         tooltip: "Connect to the Tor Network"
         onClicked: {
              console.log("Online status is " + contactsModel.onlineStatus)
@@ -33,26 +42,33 @@ ToolBar {
     }
 
     ToolButton {
-        //anchors.left: connectButton.left
-        x: 0
-        id: backButton
-        iconSource: "qrc:/images/Back-32.png"
-        opacity: 0
-        enabled: false
-        onClicked: main_pane.state = ""
-    }
-
-    ToolButton {
         id: addContactButton
+        tooltip: "Add a new contact"
+        iconSource: "qrc:/images/AddContact-32.png"
         enabled: true
         text: "Add Contact"
         anchors.top: connectButton.top
         anchors.left: connectButton.right
         anchors.leftMargin: 6
         onClicked: addContactDlg.open()
-
         AddContactDlg {id: addContactDlg}
     }
+
+    ToolButton {
+        id: settingsButton
+        tooltip: "Settings"
+        iconSource: "qrc:/images/Settings-32.png"
+        enabled: true
+        text: "Settings"
+        anchors.top: addContactButton.top
+        x: root.width - width - 6
+        onClicked: settingsDlg.open()
+        SettingsDlg {
+            id: settingsDlg
+            settings: darkRoot.settings()
+        }
+    }
+
 
 //     Text {
 //         text: "w=" + main_window,width

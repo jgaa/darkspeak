@@ -5,11 +5,13 @@
 #include "log/WarLog.h"
 
 #include "DarkRoot.h"
+#include "SettingsData.h"
 
 
-
-DarkRoot::DarkRoot(darkspeak::Api& api, QObject *parent)
-    : QObject(parent), api_{api}
+DarkRoot::DarkRoot(darkspeak::Api& api,
+                   const std::shared_ptr<darkspeak::Config>& config,
+                   QObject *parent)
+    : QObject(parent), api_{api}, config_{config}
 {
 }
 
@@ -22,7 +24,7 @@ ContactsModel *DarkRoot::contactsModel()
 
 void DarkRoot::goOnline()
 {
-    api_.GoOnline(my_info_);
+    api_.GoOnline();
 }
 
 void DarkRoot::goOffline()
@@ -34,4 +36,9 @@ void DarkRoot::copyToClipboard(QString text)
 {
     QClipboard *clipboard = QApplication::clipboard();
     clipboard->setText(text);
+}
+
+SettingsData* DarkRoot::settings()
+{
+    return new SettingsData(config_, this);
 }

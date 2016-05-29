@@ -80,13 +80,12 @@ public:
     };
 
     TorChatEngine(ImProtocol::get_pipeline_fn_t fn,
-        const boost::property_tree::ptree& properties);
+        Config& properties);
 
     ~TorChatEngine();
 
     // IM protocol implementation
     void Connect(Api::Buddy::ptr_t buddy) override;
-    void SetInfo(const Api::Info& info) override;
     void SendMessage(Api::Buddy& buddy, const Api::Message::ptr_t& msg) override;
     void SendFile(Api::Buddy& buddy, const File& file,
         FileMonitor::ptr_t monitor) override;
@@ -207,13 +206,13 @@ private:
     std::vector<std::weak_ptr<EventMonitor>> event_monitors_;
     std::shared_ptr<boost::asio::ip::tcp::acceptor> acceptor_;
     war::Pipeline& pipeline_;
-    boost::property_tree::ptree config_;
+    Config& config_;
     std::size_t connect_timeout_ = 1000 * 60 * 2; // 2 minutes in milliseconds
     std::map<std::string, std::shared_ptr<TorChatPeer>> peers_;
     std::map<std::string, Command> commands_;
-    Api::Info local_info_;
     Stat current_stats_;
     std::mt19937 random_generator_;
+    std::string id_;
 };
 
 } // impl

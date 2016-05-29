@@ -10,6 +10,7 @@
 #include "darkspeak/TorChatPeer.h"
 #include "darkspeak/IoTimer.h"
 #include "darkspeak/weak_container.h"
+#include "darkspeak/Config.h"
 
 using namespace std;
 using namespace war;
@@ -47,7 +48,7 @@ namespace darkspeak {
 namespace impl {
 
 TorChatEngine::TorChatEngine(ImProtocol::get_pipeline_fn_t fn,
-    const boost::property_tree::ptree& config)
+    Config& config)
 : pipeline_{fn()}, config_{config}, random_generator_{std::random_device()()}
 {
     commands_ = {
@@ -531,7 +532,7 @@ void TorChatEngine::ConnectToPeer(TorChatPeer& peer,
         LOG_WARN_FN << "Peer already have an outbound connection.";
         return;
     }
-
+    id_ = config_.Get<string>(Config::HANDLE);
     peer.retry_connect_time = GetNewReconnectTime(peer);
     peer.UpgradeState(TorChatPeer::State::CONNECTING);
     auto timer = IoTimer::Create(connect_timeout_, outbound);
@@ -552,8 +553,11 @@ void TorChatEngine::ConnectToPeer(TorChatPeer& peer,
 
 boost::asio::ip::tcp::endpoint TorChatEngine::GetTorEndpoint() const
 {
-    const auto hostname = config_.get("tor.hostname", "127.0.0.1");
-    const auto port = config_.get<unsigned short>("tor.hostname", 9050);
+    const auto hostname = config_.Get(Config::TOR_HOSTNAME,
+                                      Config::TOR_HOSTNAME_DEFAULT);
+
+    const auto port = config_.Get<unsigned short>(Config::TOR_PORT,
+                                                  Config::TOR_PORT_DEFAULT);
 
     return {boost::asio::ip::address::from_string(hostname), port};
 }
@@ -606,8 +610,7 @@ void TorChatEngine::Shutdown()
 
     pipeline_.Post({[&]() {
 
-        LOG_NOTICE << "Shutting down " << local_info_.id;
-        local_info_.status = Api::Status::OFF_LINE;
+        LOG_NOTICE << "Shutting down " << id_;
 
         // Stop the listening socket
         LOG_TRACE1_FN << "Closing listener.";
@@ -788,11 +791,14 @@ void TorChatEngine::OnPong(const TorChatEngine::Request& req)
     }
     DoSend("client", {GetClientName()}, *req.peer, *req.yield);
     DoSend("version", {GetClientVersion()}, *req.peer, *req.yield);
-    if (!local_info_.profile_name.empty()) {
-        DoSend("profile_name", {local_info_.profile_name}, *req.peer, *req.yield);
+
+    const auto info = config_.GetInfo();
+
+    if (!info.profile_name.empty()) {
+        DoSend("profile_name", {info.profile_name}, *req.peer, *req.yield);
     }
-    if (!local_info_.profile_text.empty()) {
-        DoSend("profile_text", {local_info_.profile_text}, *req.peer, *req.yield);
+    if (!info.profile_text.empty()) {
+        DoSend("profile_text", {info.profile_text}, *req.peer, *req.yield);
     }
     // TODO: Add avatar
     DoSend("add_me", {}, *req.peer, *req.yield);
@@ -832,7 +838,7 @@ bool TorChatEngine::DoSendStatus(TorChatPeer& peer, boost::asio::yield_context& 
     static const string status{"status"};
 
     // TODO: Do not send status until we are in TorChatPeer::State::READY state
-    if (DoSend(status, {ToString(local_info_.status)}, peer, yield)) {
+    if (DoSend(status, {ToString(config_.GetInfo().status)}, peer, yield)) {
         peer.next_keep_alive_time = GetNewKeepAliveTime();
         return true;
     }
@@ -844,7 +850,7 @@ bool TorChatEngine::DoSendPing(TorChatPeer& peer, boost::asio::yield_context& yi
 
     auto rval = DoSend(ping,
                        {
-                           config_.get<string>("service.dark_id"),
+                           id_,
                            peer.GetMyCookie()
                        },
                        peer, yield);
@@ -926,13 +932,6 @@ void TorChatEngine::OnStatus(const TorChatEngine::Request& req)
 void TorChatEngine::OnVersion(const TorChatEngine::Request& req)
 {
     req.peer->info.client_version = req.params.at(0);
-}
-
-void TorChatEngine::SetInfo(const Api::Info& info)
-{
-    pipeline_.Dispatch({[info, this](){
-        local_info_ = info;
-    }, "Set Info"});
 }
 
 const string& TorChatEngine::ToString(Api::Status status)
@@ -1160,7 +1159,7 @@ TorChatEngine::GetNewKeepAliveTime()
 } // impl
 
 ImProtocol::ptr_t ImProtocol::CreateProtocol(
-    get_pipeline_fn_t fn, const boost::property_tree::ptree& properties) {
+    get_pipeline_fn_t fn, Config& properties) {
     auto engine = make_shared<impl::TorChatEngine>(fn, properties);
     engine->StartMonitor();
     return engine;

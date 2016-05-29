@@ -32,15 +32,10 @@ int main(int argc, char **argv) {
 
     auto manager = impl::ImManager::CreateInstance("testing.conf");
 
-    Api::Info me;
     auto config = manager->GetConfig();
-    me.id = config.get<string>("service.dark_id");
-    me.profile_name = config.get("profile.name", "");
-    me.profile_text = config.get("profile.text", "");
-    me.status = Api::Status::AWAY;
-    manager->GoOnline(me);
+    manager->GoOnline();
 
-    auto test_buddy = config.get("connect_test.buddy.id", "");
+    auto test_buddy = config->Get("connect_test.buddy.id", "");
     if (!test_buddy.empty()) {
         Api::Buddy::Info b;
         b.id = test_buddy;

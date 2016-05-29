@@ -19,6 +19,7 @@
 #include "ContactsModel.h"
 #include "ChatMessagesModel.h"
 #include "ContactData.h"
+#include "SettingsData.h"
 
 using namespace darkspeak;
 using namespace war;
@@ -73,13 +74,9 @@ int main(int argc, char *argv[])
     //      Pop up a configuration dialog when the Gui starts.
 
     auto manager = impl::ImManager::CreateInstance(conf_path);
-    DarkRoot dark_root(*manager);
+    DarkRoot dark_root(*manager, manager->GetConfig());
     ContactsModel contacts_model(*manager);
 
-    {
-        darkspeak::Api::Info& info = dark_root.GetInfo();
-        info.id = manager->GetConfigValue("service.dark_id");
-    }
 
     // Initiallze the UI components
     QQmlApplicationEngine engine;
@@ -94,6 +91,7 @@ int main(int argc, char *argv[])
         qmlRegisterUncreatableType<ChatMessagesModel>("com.jgaa.darkspeak", 1, 0, "ChatMessagesModel", no_create_message);
     }
 
+
     qRegisterMetaType<darkspeak::Api::Message::ptr_t>("darkspeak::Api::Message::ptr_t");
     qRegisterMetaType<std::string>("std::string");
 
@@ -103,6 +101,7 @@ int main(int argc, char *argv[])
     //}
 
     qmlRegisterType<ContactData>("com.jgaa.darkspeak", 1, 0, "ContactData");
+    qmlRegisterType<SettingsData>("com.jgaa.darkspeak", 1, 0, "SettingsData");
 
     //qmlRegisterType<ContactsModel>("com.jgaa.darkspeak", 1, 0, "ContactsModel");
     //FoldersModel folders_model(*client);

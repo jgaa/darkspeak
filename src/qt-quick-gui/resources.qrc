@@ -16,5 +16,9 @@
         <file>qml/EditBuddy.qml</file>
         <file>qml/DataTextRo.qml</file>
         <file>qml/DataText.qml</file>
+        <file>images/AddContact-32.png</file>
+        <file>images/Settings-32.png</file>
+        <file>qml/SettingsDlg.qml</file>
+        <file>qml/OwnInfoTab.qml</file>
     </qresource>
 </RCC>

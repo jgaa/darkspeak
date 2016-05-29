@@ -12,6 +12,7 @@
 #include "darkspeak/Api.h"
 #include "darkspeak/EventMonitor.h"
 #include "darkspeak/BuddyImpl.h"
+#include "darkspeak/Config.h"
 
 namespace darkspeak {
 
@@ -52,14 +53,14 @@ public:
     buddy_list_t GetBuddies() override;
     Buddy::ptr_t AddBuddy(const Buddy::Info& def) override;
     void RemoveBuddy(const std::string& id) override;
-    void GoOnline(const Info& my_info) override;
+    void GoOnline() override;
     void Disconnect(bool local_only = true) override;
     void Panic(std::string message, bool erase_data) override;
     void SetMonitor(std::shared_ptr<EventMonitor> monitor) override;
 
     std::shared_ptr<ImProtocol> GetProtocol() { return protocol_; }
     void Connect(Api::Buddy::ptr_t buddy);
-    boost::property_tree::ptree GetConfig() const {
+    std::shared_ptr<Config> GetConfig() const {
         return config_;
     }
 
@@ -68,21 +69,23 @@ public:
 
     bool HaveBuddy(const std::string& id) const;
 
-    template <typename T>
-    T GetConfigValue(std::string key, const T& def) {
-        return config_.get(key, def);
-    }
-
-    template <typename T = std::string>
-    T GetConfigValue(std::string key) {
-        return config_.get<T>(key);
-    }
+//     template <typename T>
+//     T GetConfigValue(std::string key, const T&& def) {
+//         return config_->Get<T>(key, def);
+//     }
+//
+//     template <typename T = std::string>
+//     T GetConfigValue(std::string key) {
+//         return config_->Get<T>(key);
+//     }
 
     std::vector<std::shared_ptr<EventMonitor>> GetMonitors();
 
     war::Threadpool& GetThreadpool() { return *threadpool_; }
 
     static std::shared_ptr<ImManager> CreateInstance(path_t conf_file);
+
+    Info GetInfo();
 
 protected:
     void Init();
@@ -93,15 +96,14 @@ private:
     void SaveBuddies();
 
     mutable std::mutex mutex_;
-    boost::property_tree::ptree config_;
+    std::shared_ptr<Config> config_;
     // id, pointer
     std::map<std::string, BuddyImpl::ptr_t> buddies_;
     std::shared_ptr<ImProtocol> protocol_;
     std::unique_ptr<war::Threadpool> threadpool_;
     std::vector<std::weak_ptr<EventMonitor>> event_monitors_;
-    Info my_info_;
+    //Info my_info_;
     std::shared_ptr<Events> event_monitor_;
-    path_t conf_file_;
 };
 
 } // impl
