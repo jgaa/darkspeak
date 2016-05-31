@@ -46,9 +46,9 @@ Dialog {
             var tor = ownInfoView.getTab(1).item
             settings.torIncomingHost = tor.incomingHost
             if (!isNaN(tor.incomingPort)) {
-                settings.torIncomingPort = parseInt(tor.outgoingHost);
+                settings.torIncomingPort = parseInt(tor.incomingPort);
             }
-            settings.torOutgoingHost = tor.incomingHost
+            settings.torOutgoingHost = tor.outgoingHost
             if (!isNaN(tor.outgoingPort)) {
                 settings.torOutgoingPort = parseInt(tor.outgoingPort);
             }
