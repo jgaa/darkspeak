@@ -24,6 +24,7 @@ set(QML_SRC
     qml/DataText.qml
     qml/OwnInfoTab.qml
     qml/SettingsDlg.qml
+    qml/TorSettingsTab.qml
     )
 
 set(SOURCES

@@ -20,5 +20,6 @@
         <file>images/Settings-32.png</file>
         <file>qml/SettingsDlg.qml</file>
         <file>qml/OwnInfoTab.qml</file>
+        <file>qml/TorSettingsTab.qml</file>
     </qresource>
 </RCC>

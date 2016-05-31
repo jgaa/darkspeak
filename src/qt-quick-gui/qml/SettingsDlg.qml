@@ -19,13 +19,18 @@ Dialog {
         id: ownInfoView
         width: dlg_width - 6
         height: dlg_height - 30
+
         Tab {
             title: "You"
-            OwnInfoTab {
-                id: ownInfo
-            }
+            OwnInfoTab {}
+        }
+
+        Tab {
+            title: "Tor"
+            TorSettingsTab{}
         }
     }
+
 
     onButtonClicked: {
         if (clickedButton === StandardButton.Save) {
@@ -37,6 +42,16 @@ Dialog {
             settings.status = own_info.status
             settings.nickname = own_info.nickname
             settings.profileText = own_info.profileText
+
+            var tor = ownInfoView.getTab(1).item
+            settings.torIncomingHost = tor.incomingHost
+            if (!isNaN(tor.incomingPort)) {
+                settings.torIncomingPort = parseInt(tor.outgoingHost);
+            }
+            settings.torOutgoingHost = tor.incomingHost
+            if (!isNaN(tor.outgoingPort)) {
+                settings.torOutgoingPort = parseInt(tor.outgoingPort);
+            }
 
         } else {
             console.log("Cancelled" + clickedButton)
