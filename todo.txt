@@ -37,3 +37,7 @@ TODO:
   - Check if it works on IOS
 
   - Release beta!
+
+  
+NB:
+  - On debian stable, we need "mesa-common-dev" in order for cmake to work QT 5.6

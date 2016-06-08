@@ -33,8 +33,10 @@ int main(int argc, char *argv[])
     // Prepare our own stuff
     log::LogEngine logger;
 
+#ifdef DEBUG
     logger.AddHandler(make_shared<war::log::LogToStream>(
         clog, "console", log::LL_DEBUG));
+#endif
 
     LOG_DEBUG << "Starting up with cwd='"
         << boost::filesystem::current_path().string()
@@ -61,8 +63,13 @@ int main(int argc, char *argv[])
 
     boost::filesystem::current_path(conf_path);
 
+#ifdef DEBUG
     logger.AddHandler(make_shared<war::log::LogToFile>(
         "darkspeak.log", true, "file", log::LL_TRACE4));
+#else
+    logger.AddHandler(make_shared<war::log::LogToFile>(
+        "darkspeak.log", true, "file", log::LL_NOTICE));
+#endif
 
     LOG_INFO << "Using "
         << log::Esc(boost::filesystem::current_path().string())

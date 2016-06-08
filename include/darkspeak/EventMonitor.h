@@ -42,6 +42,15 @@ public:
     };
 
     struct ConnectionInfo {
+
+        ConnectionInfo() = default;
+        ConnectionInfo(const ConnectionInfo&) = default;
+        ConnectionInfo(ConnectionInfo&&) = default;
+
+        ConnectionInfo(const std::string& id)
+        : buddy_id{id}
+        {}
+
         std::string buddy_id;
         Existing exists = Existing::DONT_KNOW;
     };
@@ -76,7 +85,7 @@ public:
         : buddy_id{buddyId}, type{evType} {}
 
         Event(const std::string& buddyId, Type evType, boost::uuids::uuid uuidVal)
-        : buddy_id{buddyId}, type{evType}, uuid{uuidVal} {}
+        : buddy_id{buddyId}, type{evType}, uuid(uuidVal) {}
 
         std::string buddy_id;
         Type type = Type::UNKNOWN;
