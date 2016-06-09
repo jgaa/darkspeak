@@ -11,6 +11,10 @@
 
 #include "darkspeak/Api.h"
 
+#ifdef SendMessage
+// Thank you SO much Micro$oft!
+#	undef SendMessage
+#endif
 
 inline QString Convert(const time_t &when)
 {

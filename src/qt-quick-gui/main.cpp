@@ -80,6 +80,10 @@ int main(int argc, char *argv[])
     // TODO: Create configuration file if it don't exist.
     //      Pop up a configuration dialog when the Gui starts.
 
+	if (!boost::filesystem::is_regular_file(conf_path)) {
+		std::ofstream cf(conf_path.string().c_str());
+	}
+
     auto manager = impl::ImManager::CreateInstance(conf_path);
     DarkRoot dark_root(*manager, manager->GetConfig());
     ContactsModel contacts_model(*manager);
