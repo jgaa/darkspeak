@@ -39,7 +39,7 @@ set(DEFAULT_LIBRARIES ${DEFAULT_LIBRARIES}
 
 # We create a configuration file so that other code that
 # include our header files gets the correct configuration.
-set(CONF_PATH ${DARKSPEAK_ROOT_DIR}/include/darkspeak/config.h)
+set(CONF_PATH ${DARKSPEAK_ROOT_DIR}/include/darkspeak/ds_config.h)
 
 message(STATUS "Using ${CMAKE_CXX_COMPILER}")
 
