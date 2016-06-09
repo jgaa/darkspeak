@@ -73,7 +73,7 @@ public:
         virtual void OnError(const FileError& error) = 0;
 
         /// Called during transfer when data is sent or received
-        virtual void Progress(uint percent) = 0;
+        virtual void Progress(unsigned int percent) = 0;
 
         /// Get the transfer token for the file
         virtual std::string GetFileId() = 0;

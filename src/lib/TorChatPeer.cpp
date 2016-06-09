@@ -77,7 +77,7 @@ void TorChatPeer::InitCookie()
 
     std::random_device device;
     std::mt19937 generator(device());
-    std::uniform_int_distribution< int > distribution(0, alphabet.size() -1);
+    std::uniform_int_distribution< size_t > distribution(0, alphabet.size() -1);
 
     for(int i = 0; i < 200; ++i) {
         my_cookie.push_back(alphabet[distribution(generator)]);

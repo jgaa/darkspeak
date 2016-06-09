@@ -14,6 +14,11 @@
 #include "darkspeak/BuddyImpl.h"
 #include "darkspeak/Config.h"
 
+#ifdef SendMessage
+// Thank you SO much Micro$oft!
+#	undef SendMessage
+#endif
+
 namespace darkspeak {
 
 class ImProtocol;

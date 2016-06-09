@@ -38,7 +38,7 @@ public:
 
     bool IsExcpiered() const noexcept { return is_expiered_; }
 
-    static ptr_t Create(int milliseconds_timeout,
+    static ptr_t Create(size_t milliseconds_timeout,
         boost::asio::io_service& io_service,
         close_t close) {
 
@@ -53,7 +53,7 @@ public:
      * The wrapper must have a GetSocket() method that
      * returns a asio socket.
      */
-    static ptr_t Create(int milliseconds_timeout,
+    static ptr_t Create(size_t milliseconds_timeout,
             const std::shared_ptr<Connection>& ptr) {
 
         WAR_ASSERT(ptr);
@@ -81,7 +81,7 @@ private:
     : close_{close}, timer_{io_service}
     {}
 
-    void Start(int millisecondsTimeOut)
+    void Start(size_t millisecondsTimeOut)
     {
         timer_.expires_from_now(
             boost::posix_time::milliseconds(millisecondsTimeOut));

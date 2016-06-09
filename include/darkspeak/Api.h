@@ -12,6 +12,11 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 
+#ifdef SendMessage
+// Thank you SO much Micro$oft!
+#	undef SendMessage
+#endif
+
 namespace darkspeak {
 
 using path_t = boost::filesystem::path;

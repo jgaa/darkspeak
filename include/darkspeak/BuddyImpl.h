@@ -5,6 +5,11 @@
 #include "darkspeak/EventMonitor.h"
 #include "darkspeak/BuddyEventsMonitor.h"
 
+#ifdef SendMessage
+// Thank you SO much Micro$oft!
+#	undef SendMessage
+#endif
+
 namespace darkspeak {
 
 class ImProtocol;

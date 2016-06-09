@@ -61,7 +61,7 @@ struct InfoCapsule : public Api::Buddy::Info {
     : Api::Buddy::Info{move(v)} {}
 
     template<class Archive>
-    void serialize(Archive & ar, auto version)
+    void serialize(Archive & ar, int version)
     {
         ar & id;
         ar & profile_name;
@@ -82,7 +82,7 @@ struct InfoData {
     std::vector<InfoCapsule> data;
 
     template<class Archive>
-    void serialize(Archive & ar, auto version)
+    void serialize(Archive & ar, int version)
     {
         ar & data;
     }

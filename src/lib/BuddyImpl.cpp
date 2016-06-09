@@ -126,7 +126,7 @@ std::shared_ptr<Api::Message> BuddyImpl::SendMessage(const std::string& msg)
 
     try {
         GetProtocol()->SendMessage(*this, message);
-    } catch(const ExceptionNotConnected& ex) {
+    } catch(const ExceptionNotConnected&) {
         // Save the message
         LOG_DEBUG << "The message could not be delivered. Adding it to queue.";
         {
@@ -208,7 +208,7 @@ void BuddyImpl::SendQueuedMessage()
             auto message = outgoing_message_queue_.front();
             GetProtocol()->SendMessage(*this, message);
             outgoing_message_queue_.pop_front();
-        } catch (const ExceptionNotConnected& ex) {
+        } catch (const ExceptionNotConnected&) {
             ; // Do nothing
         }
     }

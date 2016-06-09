@@ -343,7 +343,7 @@ void TorChatEngine::OnAccepted(
                 peer->SetState(TorChatPeer::State::ACCEPTING);
             }
         } else {
-            if (!EmitEventIncomingConnection({id})) {
+            if (!EmitEventIncomingConnection(EventMonitor::ConnectionInfo(id))) {
                 LOG_DEBUG << "Dropping connection to " << *in_conn
                     << ": Rejected.";
                 in_conn->Close();
