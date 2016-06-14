@@ -60,6 +60,7 @@ elseif(WIN32)
     # We will support windows from Windows Vista
     add_definitions(-D_WIN32_WINNT=0x0600 /EHsc )
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SAFESEH:NO")
+	set(GUI_TYPE WIN32)
 endif()
 
 set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib CACHE PATH "Destination location")

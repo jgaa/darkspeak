@@ -16,11 +16,10 @@ Dialog {
             color: "light gray"
         }
 
-        TextInput {
+        TextField {
             id: edId
             width: parent.width
-            text: "23enroxotjtsogn4"
-            color: "dark blue"
+            placeholderText: "<Tor Chat ID>"
         }
     }
 

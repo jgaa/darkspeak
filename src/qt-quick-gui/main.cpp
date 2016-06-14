@@ -25,6 +25,16 @@ using namespace darkspeak;
 using namespace war;
 using namespace std;
 
+// Prevent Microsoft's "telemetry" (phone home) crap
+// https://www.jgaa.com/index.php?cmd=show_article&article_id=1051
+extern "C"
+{
+	void _cdecl __vcrt_initialize_telemetry_provider() {}
+	void _cdecl __telemetry_main_invoke_trigger() {}
+	void _cdecl __telemetry_main_return_trigger() {}
+	void _cdecl __vcrt_uninitialize_telemetry_provider() {}
+};
+
 int main(int argc, char *argv[])
 {
     // Let QT eat it's command-line arguments

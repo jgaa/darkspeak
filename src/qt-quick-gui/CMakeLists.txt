@@ -45,7 +45,7 @@ set (HEADERS
     )
 
 qt5_add_resources(RESOURCES resources.qrc)
-add_executable(darkspeak-gui ${SOURCES} ${HEADERS} ${RESOURCES} ${QML_SRC})
+add_executable(darkspeak-gui ${GUI_TYPE} ${SOURCES} ${HEADERS} ${RESOURCES} ${QML_SRC})
 set_target_properties(darkspeak-gui PROPERTIES DEBUG_OUTPUT_NAME darkspeak-guiD)
 target_link_libraries(darkspeak-gui
     darkspeak_api
