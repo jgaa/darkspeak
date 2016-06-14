@@ -16,6 +16,9 @@ namespace darkspeak {
 void Connection::Connect(std::string address, endpoint_t proxy,
                  boost::asio::yield_context& yield) {
 
+	LOG_DEBUG_FN << "Connecting to " << log::Esc(address)
+		<< " trough Socks 5 proxy at " << proxy;
+
     array<char, 512> rcv_buffer;
     WAR_ASSERT(!IsConnected());
     // Connect
@@ -55,17 +58,16 @@ void Connection::Connect(std::string address, endpoint_t proxy,
     req_hdr.push_back(1); // connect
     req_hdr.push_back(0); // reserved
     req_hdr.push_back(3); // domanname
-    req_hdr.push_back(address.size()); // string length
-    for(auto ch : address) {
+    req_hdr.push_back(static_cast<char>(address.size())); // string length
+    for(char ch : address) {
         req_hdr.push_back(ch); // Domain name
     }
-    std::uint16_t *port = reinterpret_cast<std::uint16_t *>(&req_hdr[req_hdr.size()]);
+	req_hdr.push_back(0); // port
     req_hdr.push_back(0); // port
-    req_hdr.push_back(0); // port
+	std::uint16_t *port = reinterpret_cast<std::uint16_t *>(&req_hdr[req_hdr.size() - 2]);
     *port = htons(11009);
     socket_->AsyncWrite(boost::asio::const_buffers_1(
         &req_hdr[0], req_hdr.size()), yield);
-
 
     bytes = socket_->AsyncReadSome(
         boost::asio::buffer(rcv_buffer), yield);
