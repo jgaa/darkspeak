@@ -14,10 +14,19 @@ Missing features:
         - Send
   - Tray icon
 
-REFACTOR:
-  - Buddy: Getters, setters and change notifications on all properties.
 
 TODO:
+  - File Transfer
+    Work-flow:
+      - Handle filedata. Set up a connection object fro the buddy,
+        identified by the cookie. Notify the upper layer.
+        >>  Only allow one pending file transfer per peer. Automatically
+            dismiss a new request until the current one is approved or
+            dismissed.
+        >> Peers could have auto-accept, ask or auto-deny status on a buddy.
+        >> Save incoming file-data in a temporary file in the peers download folder.
+      - If the upper layer confirm the transfer, start sending OK packages.
+
   - Finish Contact List:
     - Send status, profile name/info/icon if we edit data
     - Show message icon if we have unread messages

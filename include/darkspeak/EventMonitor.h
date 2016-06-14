@@ -66,6 +66,7 @@ public:
 
     struct FileInfo {
         std::string buddy_id;
+        boost::uuids::uuid file_id;
         std::string name;
         std::int64_t length = -1; // Unknown size
     };

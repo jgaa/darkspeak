@@ -296,34 +296,43 @@ the messages.
 
 ## Someone knows a Tor Chat ID and want to initiate a conversation
 
-Speculative...
 
 ```
-Alice -- [ ping ] --> Bob
-Bob -- [pong ] --> Alice
-Alice -- [ client ] --> Bob
-Alice -- [ version ] --> Bob
-Alice -- [ add_me ] --> Bob
-Bob --> [ Msg: Was added ] --> Alice
+Connection from Alice to Bob: ---
+Connection from Bob to Alice: ===
+
+Alice -- [ping] --> Bob
+Bob === [ping] ===> Alice
+Bob === [pong] ===> Alice
+Alice -- [pong] --> Bob
+Alice -- [client] --> Bob
+Alice -- [version] --> Bob
+Alice -- [add_me] --> Bob
+Alice -- [status] --> Bob
+Bob === [client] ===> Alice
+Bob === [version] ===> Alice
+Bob === [addme] ===> Alice
+Bob === [status] ===> Alice
+
+Both sides are connected and authenticated
 ```
-
-TBD: See what goes on in a real conversation
-
-## A client initiates a conversation with an existing contact
-
-Speculative...
-
-```
-Alice -- [ ping ] --> Bob
-Bob -- [pong ] --> Alice
-Alice -- [ client ] --> Bob
-Alice -- [ version ] --> Bob
-Bob --> [ Msg: Was added ] --> Alice
-```
-
-TBD: See what goes on in a real conversation
-
 
 ## A client transfers a file to an existing contact
 
-TBD
+```
+Connection from Alice to Bob: ---
+Connection from Bob to Alice: ===
+
+Alice -- [filename] --> Bob
+Alice -- [filedata] --> Bob
+Alice -- [filedata] --> Bob
+Alice -- [filedata] --> Bob
+...
+Alice -- [filedata] --> Bob
+Bob === [filedata_ok] ===> Alice
+Bob === [filedata_ok] ===> Alice
+Bob === [filedata_ok] ===> Alice
+...
+Bob === [filedata_ok] ===> Alice
+...
+```

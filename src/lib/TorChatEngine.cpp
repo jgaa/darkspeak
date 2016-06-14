@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <memory>
 #include <sstream>
+#include <string>
 
 #include "war_uuid.h"
 
@@ -697,7 +698,7 @@ void TorChatEngine::OnAddMe(const TorChatEngine::Request& req)
 
 void TorChatEngine::OnFileData(const TorChatEngine::Request& req)
 {
-
+    // Notify the upper layer about the file.
 }
 
 void TorChatEngine::OnFileDataError(const TorChatEngine::Request& req)
@@ -712,7 +713,24 @@ void TorChatEngine::OnFileDataOk(const TorChatEngine::Request& req)
 
 void TorChatEngine::OnFilename(const TorChatEngine::Request& req)
 {
-    // TODO: Add event
+    // filename <transfer_cookie> <file_size> <block_size> "filename"
+    auto ft = make_unique<TorChatPeer::FileTransfer>();
+    ft->info.buddy_id = req.peer->GetId();
+    ft->info.file_id = boost::uuids::random_generator()();
+    ft->info.name = req.params.at(3);
+    ft->info.length = stoll(req.params.at(1));
+    ft->cookie = req.params.at(0);
+    ft->block_size = stoul(req.params.at(2));
+
+    LOG_DEBUG_FN << "Incoming file transfer request for file "
+        << log::Esc(ft->info.name)
+        << " with size " << ft->info.length
+        << " and block-length " << ft->block_size
+        << " with cookie " << log::Esc(ft->cookie)
+        << " assigned with id " << ft->info.file_id
+        << " from " << req.peer;
+
+    EmitEventIncomingFile(ft->info);
 }
 
 void TorChatEngine::OnFileStopSending(const TorChatEngine::Request& req)
@@ -1004,6 +1022,12 @@ void TorChatEngine::EmitEventListening(const EventMonitor::ListeningInfo& endpoi
     }
 }
 
+void TorChatEngine::EmitEventIncomingFile(const EventMonitor::FileInfo& info)
+{
+    for(auto& monitor : GetMonitors()) {
+        monitor->OnIncomingFile(info);
+    }
+}
 
 
 void TorChatEngine::StartMonitor()

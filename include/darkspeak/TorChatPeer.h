@@ -25,6 +25,19 @@ namespace impl {
  */
 class TorChatPeer {
 public:
+
+    class FileTransfer
+    {
+    public:
+        EventMonitor::FileInfo info;
+        unsigned int block_size = 1024 * 8;
+        std::string cookie;
+        boost::filesystem::path path;
+        std::fstream file;
+        int last_good_block = -1; // None
+        std::deque<std::unique_ptr<char *>> buffered;
+    };
+
     enum class State {
         UNINTIALIZED,
         ACCEPTING,

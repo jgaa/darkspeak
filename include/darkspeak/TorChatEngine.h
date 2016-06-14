@@ -168,6 +168,7 @@ private:
     void EmitOtherEvent(const EventMonitor::Event& event);
     void EmitShutdownComplete(const EventMonitor::ShutdownInfo& info);
     void EmitEventListening(const EventMonitor::ListeningInfo& endpoint);
+    void EmitEventIncomingFile(const EventMonitor::FileInfo& info);
 
     // Requests
     void OnAddMe(const Request& req);

@@ -57,7 +57,7 @@ private:
                                   boost::string_ref& line,
                                   boost::string_ref& remaining) const;
 
-    std::array<char, 4096> read_buffer_;
+    std::array<char, 1024 * 12> read_buffer_;
     boost::string_ref remaining_data_;
     static const std::size_t max_fragments_in_one_line_ = 16;
     const std::string name_;
