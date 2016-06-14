@@ -25,6 +25,7 @@ using namespace darkspeak;
 using namespace war;
 using namespace std;
 
+#ifdef _MSC_VER
 // Prevent Microsoft's "telemetry" (phone home) crap
 // https://www.jgaa.com/index.php?cmd=show_article&article_id=1051
 extern "C"
@@ -34,6 +35,8 @@ extern "C"
 	void _cdecl __telemetry_main_return_trigger() {}
 	void _cdecl __vcrt_uninitialize_telemetry_provider() {}
 };
+#endif // _MSC_VER
+
 
 int main(int argc, char *argv[])
 {
