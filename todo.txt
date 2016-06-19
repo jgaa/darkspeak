@@ -19,9 +19,6 @@ REFACTOR:
 
 TODO:
   - Finish Contact List:
-    - Right click: Pop up menu:
-        - Delete
-            - Confirmation dialog
     - Send status, profile name/info/icon if we edit data
     - Show message icon if we have unread messages
     - Show connection status for contacts (not connecting, connecting, connected)
@@ -30,7 +27,7 @@ TODO:
     - Show status similar to the contact list
     - Notifications regarding other events
     - Edit buddy button
-
+    - Scroll down so we show the latest messages on arrival
 
   - Check if it works on Windows
   - Check if it works on OS/X
@@ -53,3 +50,5 @@ Features:
     - Window in the app to show/save the log with filters and color highlighting
     - Log level and optionally log file from settings (Log pane)
   - ChatView: Show by color or icon when a message is queued or sent
+  - ChatView: Tag messages with timestamp
+  - ContacList: Alternative layout, more compact.

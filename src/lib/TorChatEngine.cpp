@@ -107,6 +107,7 @@ TorChatEngine::~TorChatEngine()
 
 void TorChatEngine::Connect(Api::Buddy::ptr_t buddy)
 {
+    LOG_NOTICE << "Connecting to " << *buddy;
     SpawnConnect(buddy->GetInfo().id);
 }
 
@@ -119,9 +120,10 @@ void TorChatEngine::SpawnConnect(const string& buddy_id)
                 std::placeholders::_1));
 }
 
-
+// TODO: Make thread safe
 void TorChatEngine::Disconnect(Api::Buddy& buddy)
 {
+    LOG_NOTICE << "Disconnecting from " << buddy;
     auto id = buddy.GetId();
     auto peer = GetPeer(id);
     if (peer) {
@@ -143,30 +145,35 @@ void TorChatEngine::DisconnectPeer(TorChatPeer& peer)
 void TorChatEngine::SendMessage(Api::Buddy& buddy,
                                 const Api::Message::ptr_t& msg)
 {
-    auto id = buddy.GetId();
-    auto peer = GetPeer(id);
+    pipeline_.PostSynchronously({[&]() {
+        auto id = buddy.GetId();
+        auto peer = GetPeer(id);
 
-    if (!peer || (peer->GetState() != TorChatPeer::State::READY)) {
-        WAR_THROW_T(ExceptionNotConnected, "Peer is not connected");
-    }
+        if (!peer || (peer->GetState() != TorChatPeer::State::READY)) {
+            WAR_THROW_T(ExceptionNotConnected, "Peer is not connected");
+        }
 
-    boost::asio::spawn(pipeline_.GetIoService(),
-        [this, peer, msg](boost::asio::yield_context yield) {
-            static const string message_verb{"message"};
-            LOG_DEBUG << "Sending message to " << *peer;
+        boost::asio::spawn(pipeline_.GetIoService(),
+            [this, peer, msg](boost::asio::yield_context yield) {
+                static const string message_verb{"message"};
+                LOG_DEBUG << "Sending message to " << *peer;
 
-            DoSend(message_verb, {msg->body}, *peer, yield);
-            msg->status = Api::Message::Status::SENT;
+                DoSend(message_verb, {msg->body}, *peer, yield);
+                msg->status = Api::Message::Status::SENT;
 
-            EmitOtherEvent({peer->GetId(),
-                EventMonitor::Event::Type::MESSAGE_TRANSMITTED,
-                msg->uuid});
-    });
+                EmitOtherEvent({peer->GetId(),
+                    EventMonitor::Event::Type::MESSAGE_TRANSMITTED,
+                    msg->uuid});
+        });
+    }, "SendMessage"});
 }
 
 void TorChatEngine::SetMonitor(shared_ptr<EventMonitor> monitor)
 {
-    event_monitors_.push_back(monitor);
+    pipeline_.PostSynchronously({
+        [&]() {
+            event_monitors_.push_back(monitor);
+        }, "SetMonitor"});
 }
 
 vector<shared_ptr<EventMonitor>> TorChatEngine::GetMonitors()
