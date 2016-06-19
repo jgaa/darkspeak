@@ -1,6 +1,6 @@
 import QtQuick 2.4
 import QtQuick.Controls 1.3
-
+import QtQuick.Dialogs 1.1
 import com.jgaa.darkspeak 1.0
 
 Component {
@@ -8,7 +8,7 @@ Component {
 
     Rectangle {
         id: main_rect
-        width: main_window.width
+        width: parent.width
         height: 52
         border.color: "#7cd5dd"
         border.width: 0
@@ -19,15 +19,25 @@ Component {
         }
 
         function openChatWindow() {
-            chat.model = contactsModel.getMessagesModel(index)
-            main_pane.state = "chat"
+            main_pane.openChatWindow(contactsModel.getMessagesModel(index))
         }
 
-        EditBuddy{
+       EditBuddy{
             id: edit
-        }
+       }
 
-        Menu {
+       MessageDialog {
+            id: confirm_delete
+            title: "Confirmation"
+            icon: StandardIcon.Warning
+            text: "Do you really want to delete "
+                + nickname + "?"
+            standardButtons: StandardButton.Yes | StandardButton.Cancel
+            onYes: contactsModel.remove(index)
+       }
+
+
+       Menu {
             id: contextMenu
 
             MenuItem {
@@ -45,6 +55,7 @@ Component {
 
             MenuItem {
                 text: "Delete"
+                onTriggered: confirm_delete.open()
             }
 
             MenuItem {
@@ -59,11 +70,8 @@ Component {
             anchors.fill: parent
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
-            //onClicked: { main_pane.state = "chat" }
             onDoubleClicked:  {
                 openChatWindow()
-                //chat.model = contactsModel.getMessagesModel(index)
-                //main_pane.state = "chat"
             }
             onClicked: {
                 if (mouse.button == Qt.RightButton) {
@@ -79,59 +87,59 @@ Component {
 
         Row {
             id: contact_row
-            height: contact_col.height > contact_icon.height ?
-                        contact_col.height : contact_icon.height
-            width: parent.width
-            spacing: 4
+           height: contact_col.height > contact_icon.height ?
+                       contact_col.height : contact_icon.height
+           width: parent.width
+           spacing: 4
 
-            Image {
-                id: contact_icon
-                source: "qrc:/images/anon_contact_48x48.png"
-            }
+           Image {
+               id: contact_icon
+               source: "qrc:/images/anon_contact_48x48.png"
+           }
 
-            Column {
-                id: contact_col
-                spacing: 4
-                width: parent.width
+           Column {
+               id: contact_col
+               spacing: 4
+               width: parent.width
 
-                Row {
-                    spacing: 4
+               Row {
+                   spacing: 4
 
-                    Text {
-                        id: contact_nickname
-                        text: nickname
-                        font.pointSize: 12
-                        color: "steelblue"
-                    }
+                   Text {
+                       id: contact_nickname
+                       text: nickname
+                       font.pointSize: 12
+                       color: "steelblue"
+                   }
 
-                    Text {
-                        anchors.bottom: contact_nickname.bottom
-                        text: handle
-                        font.pointSize: 8
-                    }
-                }
+                   Text {
+                       anchors.bottom: contact_nickname.bottom
+                       text: handle
+                       font.pointSize: 8
+                   }
+               }
 
-                Row {
-                    spacing: 4
+               Row {
+                   spacing: 4
 
-                    Text {
-                        text: status
-                        color: status_color
-                        font.pointSize: 8
-                    }
+                   Text {
+                       text: status
+                       color: status_color
+                       font.pointSize: 8
+                   }
 
-                    Text {
-                        text: " Last seen: "
-                        color: "grey"
-                        font.pointSize: 8
-                    }
+                   Text {
+                       text: " Last seen: "
+                       color: "grey"
+                       font.pointSize: 8
+                   }
 
-                    Text {
-                        text: last_seen
-                        font.pointSize: 8
-                    }
-                }
-            }
+                   Text {
+                       text: last_seen
+                       font.pointSize: 8
+                   }
+               }
+           }
         }
     }
 }

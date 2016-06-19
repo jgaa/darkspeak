@@ -14,7 +14,7 @@ ToolBar {
         iconSource: "qrc:/images/Back-32.png"
         opacity: 0
         enabled: false
-        onClicked: main_pane.state = ""
+        onClicked: main_pane.popWindow()
     }
 
     ToolButton {
@@ -68,11 +68,6 @@ ToolBar {
             settings: darkRoot.settings()
         }
     }
-
-
-//     Text {
-//         text: "w=" + main_window,width
-//     }
 
     states: [
         State {

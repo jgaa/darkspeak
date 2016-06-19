@@ -1,11 +1,12 @@
 Development todo's
 
 BUGS:
+ - Crashes on quit (threading?)
+ - Do not allow sending of empty messages
+ - Discard incoming empty messages
+ - Crashed if you add a buddy twice (uncaught exception)
 
 Missing features:
-  ~ Implement Settings
-    v Own info
-    - Tor Server settings
   - Avatar icon
     - Buddy's
     - Our own
@@ -38,6 +39,17 @@ TODO:
 
   - Release beta!
 
-  
+
 NB:
   - On debian stable, we need "mesa-common-dev" in order for cmake to work QT 5.6
+
+Features:
+  - ChatView: Clear messages (delete all messages)
+  - On desktop: Allow one window per conversation.
+  - Desktop/tablet embedded mode: List on left, conversation on right
+  - Remember last screen position (start in same place / size)
+  - Logging:
+    - Log to sircular buffer
+    - Window in the app to show/save the log with filters and color highlighting
+    - Log level and optionally log file from settings (Log pane)
+  - ChatView: Show by color or icon when a message is queued or sent

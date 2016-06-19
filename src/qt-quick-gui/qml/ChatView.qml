@@ -9,6 +9,7 @@ Item {
     property int input_height: 96
     property int msg_border: 16
     property alias model: msgs.model
+    property string stateName: "chat"
 
     Component {
         id: messageDelegate

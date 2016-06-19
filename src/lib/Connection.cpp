@@ -84,7 +84,7 @@ void Connection::Connect(std::string address, endpoint_t proxy,
     }
 
     if (rcv_buffer[1] != 0) {
-        LOG_ERROR << "Failed to establish a Socks 5 connection to "
+        LOG_NOTICE << "Failed to establish a Socks 5 connection to "
             << log::Esc(address);
         WAR_THROW_T(war::ExceptionIoError, "Socks5 connect failed");
     }

@@ -150,7 +150,7 @@ Api::Buddy::ptr_t ImManager::AddBuddy(const Buddy::Info& def)
 
 void ImManager::RemoveBuddy(const string& id)
 {
-    bool can_log = false;
+    Api::Buddy::ptr_t buddy;
     {
         LOCK;
         auto it = buddies_.find(id);
@@ -158,16 +158,17 @@ void ImManager::RemoveBuddy(const string& id)
             return;
         }
 
-        can_log = it->second->CanBeLogged();
-
+        buddy = it->second;
         buddies_.erase(it);
-        // TODO Send event
     }
 
-    if (can_log) {
-        LOG_NOTICE_FN << "Removed buddy: " << id;
-    } else {
-        LOG_NOTICE_FN << "Removed anonymous buddy";
+    LOG_NOTICE_FN << "Removed buddy: " << *buddy;
+
+    protocol_->Disconnect(*buddy);
+    EventMonitor::DeletedBuddyInfo info;
+    info.buddy_id = id;
+    for(auto& monitor : GetMonitors()) {
+        monitor->OnBuddyDeleted(info);
     }
 }
 

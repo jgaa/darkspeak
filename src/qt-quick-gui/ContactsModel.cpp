@@ -101,13 +101,15 @@ void ContactsModel::append(const QString &bid)
 {
     Api::Buddy::Info bi;
     bi.id = bid.toStdString();
-    LOG_DEBUG << "Adding buddy: " << log::Esc(bi.id);
-    api_.AddBuddy(bi);
+    auto buddy = api_.AddBuddy(bi);
+    LOG_NOTICE << "Added buddy: " << *buddy;
 }
 
 void ContactsModel::remove(int index)
 {
-
+    auto buddy = buddies_.at(index);
+    LOG_NOTICE << "Removing buddy: " << *buddy;
+    api_.RemoveBuddy(buddy->GetId());
 }
 
 ContactsModel::OnlineStatus ContactsModel::getOnlineStatus() const
@@ -188,6 +190,14 @@ void ContactsModel::Events::OnNewBuddyAdded(const EventMonitor::BuddyInfo &info)
     LOG_DEBUG_FN << "Buddy " << info.buddy_id << " is added in the manager.";
     emit parent_.onBuddyAdded(info.buddy_id);
 }
+
+void ContactsModel::Events::OnBuddyDeleted(
+    const EventMonitor::DeletedBuddyInfo& info)
+{
+    LOG_DEBUG_FN << "Buddy " << info.buddy_id << " is deleted in the manager.";
+    emit parent_.onBuddyDeleted(info.buddy_id);
+}
+
 
 void ContactsModel::Events::OnBuddyStateUpdate(const EventMonitor::BuddyInfo &info)
 {

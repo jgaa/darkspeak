@@ -325,3 +325,4 @@ public:
 
 std::ostream& operator << (std::ostream& o, const darkspeak::Api::Status& v);
 std::ostream& operator << (std::ostream& o, const darkspeak::Api::Presence& v);
+std::ostream& operator << (std::ostream& o, const darkspeak::Api::Buddy& v);

@@ -3,6 +3,10 @@ import QtQuick 2.4
 import QtQuick.Controls 1.3
 
 import com.jgaa.darkspeak 1.0
+import QtQuick.Layouts 1.2
+import QtQuick.Extras 1.4
+import QtPositioning 5.5
+import org.kde.private.kquickcontrols 2.0
 
 ApplicationWindow {
     id: main_window
@@ -13,40 +17,37 @@ ApplicationWindow {
 
     toolBar: MainToolBar { id: mainToolBar }
 
-    ScrollView {
-        id: main_pane
-        x: 0
-        height: parent.height
-        width: main_window.width * 2
 
-        ContactsListView {
-            id: contacts
-            width: main_window.width
-            x: 0
-            height: parent.height
-        }
+   StackView {
+       id: main_pane
+       initialItem: ContactsListView {
+           id: contacts
+           anchors.fill: parent
+           property string stateName: ""
+       }
+       anchors.fill: parent
 
-        ChatView {
-            id: chat
-            x: main_window.width
-            height: main_pane.height
-            width: main_window.width
-        }
+       function popWindow() {
+           pop()
+           state = currentItem.stateName
+           console.log("dept is: " + depth);
+       }
 
-        states: [
-            State {
-                name: "chat"
-                PropertyChanges { target: main_pane; x: - main_window.width }
-                PropertyChanges { target: mainToolBar; state: "chat"}
-            }
-        ]
+       function openChatWindow(model) {
+           var chatComponent = Qt.createComponent("ChatView.qml")
+           var chat = chatComponent.createObject(
+               main_pane, {"model":model});
+           chat.model = model
+           push(chat)
+           state = currentItem.stateName
+       }
 
-        transitions: [
-            Transition {
-                from: "*"; to: "*"
-                NumberAnimation { properties: "x,y"; easing.type: Easing.InOutQuad; duration: 100 }
-            }
-        ]
-    }
+       states: [
+           State {
+               name: "chat"
+               PropertyChanges { target: mainToolBar; state: "chat"}
+           }
+       ]
+   }
 }
 

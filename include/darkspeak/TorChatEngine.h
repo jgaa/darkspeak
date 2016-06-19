@@ -141,6 +141,8 @@ private:
                       boost::asio::yield_context yield);
 
     void DisconnectPeer(TorChatPeer& peer);
+    
+    void DisconnectPeer(const std::string& id);
 
     std::unique_ptr<std::chrono::steady_clock::time_point>
     GetNewKeepAliveTime();

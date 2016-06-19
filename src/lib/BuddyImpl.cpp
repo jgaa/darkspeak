@@ -14,6 +14,15 @@ using namespace war;
 
 #define LOCK std::lock_guard<std::mutex> lock(mutex_);
 
+std::ostream& operator << (std::ostream& o, const darkspeak::Api::Buddy& v) {
+    static const std::string censored{"<censored>"};
+    return o << "{buddy: "
+        << (v.CanBeLogged() ? v.GetId() : censored)
+        << ' '
+        << v.GetUiName()
+        << '}';
+}
+
 namespace darkspeak {
 namespace impl {
 

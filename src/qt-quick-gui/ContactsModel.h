@@ -42,6 +42,7 @@ private:
         bool OnIncomingConnection(const ConnectionInfo &info) override;
         bool OnAddNewBuddy(const BuddyInfo &info) override;
         void OnNewBuddyAdded(const BuddyInfo &info) override;
+        void OnBuddyDeleted(const DeletedBuddyInfo &info) override;
         void OnBuddyStateUpdate(const BuddyInfo &info) override;
         void OnIncomingMessage(const Message &message) override;
         void OnIncomingFile(const FileInfo &file) override;

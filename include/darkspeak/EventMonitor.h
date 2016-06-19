@@ -41,6 +41,10 @@ public:
         Existing exists = Existing::DONT_KNOW;
     };
 
+    struct DeletedBuddyInfo {
+        std::string buddy_id;
+    };
+
     struct ConnectionInfo {
 
         ConnectionInfo() = default;
@@ -118,6 +122,11 @@ public:
      *          the incoming connection will be closed.
      */
     virtual void OnNewBuddyAdded(const BuddyInfo& info) = 0;
+
+    /*! A buddy was deleted.
+     *
+     */
+    virtual void OnBuddyDeleted(const DeletedBuddyInfo &info) = 0;
 
     /*! A buddy's state was updates
         *
