@@ -4,6 +4,7 @@
 #include <string>
 
 #include "war_uuid.h"
+#include "war_helper.h"
 
 #include "darkspeak/darkspeak_impl.h"
 #include "darkspeak/TorChatEngine.h"
@@ -12,6 +13,7 @@
 #include "darkspeak/IoTimer.h"
 #include "darkspeak/weak_container.h"
 #include "darkspeak/Config.h"
+#include "darkspeak/md5.h"
 
 using namespace std;
 using namespace war;
@@ -58,7 +60,7 @@ TorChatEngine::TorChatEngine(ImProtocol::get_pipeline_fn_t fn,
             [this] (const Request& req) { OnAddMe(req); }}},
         {"client", {Command::Verb::CLIENT, 1,
             [this] (const Request& req) { OnClient(req); }}},
-        {"filedata", {Command::Verb::FILEDATA, 2,
+        {"filedata", {Command::Verb::FILEDATA, 4,
             [this] (const Request& req) { OnFileData(req); },
             Command::Valid::ACCEPTED }},
         {"filedata_error", {Command::Verb::FILEDATA_ERROR, 2,
@@ -698,7 +700,37 @@ void TorChatEngine::OnAddMe(const TorChatEngine::Request& req)
 
 void TorChatEngine::OnFileData(const TorChatEngine::Request& req)
 {
-    // Notify the upper layer about the file.
+    // filedata <transfer_cookie> <blockid> <hash> <data>
+
+    auto ft = req.peer->GetFileTransfer(req.params.at(0));
+    if (!ft) {
+        LOG_WARN_FN << "Got incoming data for unknown transfer with cookie: "
+            << log::Esc(req.params.at(0))
+            << " from " << req.peer;
+        // TODO: Send abort notification
+        return;
+    }
+
+    std::string chunk = move(req.params.at(3));
+
+    LOG_DEBUG << "Got chunk " << req.params.at(1) << " with size "
+        << chunk.size()
+        << " of " << *ft;
+
+    MD5 md5;
+    md5.update(chunk);
+    md5.finalize();
+    const auto checksum = md5.hex_digest();
+    if (checksum.compare(req.params.at(2)) != 0) {
+        LOG_WARN << "Checksum error in file transfer " << *ft
+            << ". Their checksum is " << log::Esc(req.params.at(2))
+            << " while ours is " << log::Esc(checksum);
+
+        // TODO: Send nak
+        return;
+    }
+
+    ft->OnIncomingData(move(chunk), stoul(req.params.at(1)));
 }
 
 void TorChatEngine::OnFileDataError(const TorChatEngine::Request& req)
@@ -708,29 +740,34 @@ void TorChatEngine::OnFileDataError(const TorChatEngine::Request& req)
 
 void TorChatEngine::OnFileDataOk(const TorChatEngine::Request& req)
 {
+    //filedata <transfer_cookie> <blob (fixed size)> <hash> <start>
+
 
 }
 
 void TorChatEngine::OnFilename(const TorChatEngine::Request& req)
 {
     // filename <transfer_cookie> <file_size> <block_size> "filename"
-    auto ft = make_unique<TorChatPeer::FileTransfer>();
-    ft->info.buddy_id = req.peer->GetId();
-    ft->info.file_id = boost::uuids::random_generator()();
-    ft->info.name = req.params.at(3);
-    ft->info.length = stoll(req.params.at(1));
-    ft->cookie = req.params.at(0);
-    ft->block_size = stoul(req.params.at(2));
+    auto ft = make_shared<TorChatPeer::FileTransfer>(
+        req.peer->GetId(),
+        req.params.at(3), // name
+        stoll(req.params.at(1)), // size
+        req.params.at(0), // cookie
+        stoul(req.params.at(2)) // blocksize
+    );
 
     LOG_DEBUG_FN << "Incoming file transfer request for file "
-        << log::Esc(ft->info.name)
-        << " with size " << ft->info.length
-        << " and block-length " << ft->block_size
-        << " with cookie " << log::Esc(ft->cookie)
-        << " assigned with id " << ft->info.file_id
-        << " from " << req.peer;
+        << log::Esc(ft->GetInfo().name)
+        << " with size " << ft->GetInfo().length
+        << " and block-length " << ft->GetBlockSize()
+        << " with cookie " << log::Esc(ft->GetCookie())
+        << " assigned with id " << ft->GetInfo().file_id
+        << " from " << *req.peer;
 
-    EmitEventIncomingFile(ft->info);
+    ft->SetState(TorChatPeer::FileTransfer::State::UNVERIFIED);
+    req.peer->AddFileTransfer(ft);
+
+    EmitEventIncomingFile(ft->GetInfo());
 }
 
 void TorChatEngine::OnFileStopSending(const TorChatEngine::Request& req)

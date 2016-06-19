@@ -29,13 +29,43 @@ public:
     class FileTransfer
     {
     public:
-        EventMonitor::FileInfo info;
-        unsigned int block_size = 1024 * 8;
-        std::string cookie;
-        boost::filesystem::path path;
-        std::fstream file;
-        int last_good_block = -1; // None
-        std::deque<std::unique_ptr<char *>> buffered;
+        using ptr_t = std::shared_ptr<FileTransfer>;
+
+        enum State {
+            UNINITIALIZED,
+            UNVERIFIED,
+            ACTIVE,
+            DONE
+        };
+
+        FileTransfer(const std::string buddyId,
+            std::string fileName,
+            std::int64_t fileSize,
+            std::string fileCookie,
+            unsigned int blockSize)
+        : cookie_{fileCookie}, block_size_{blockSize}
+        {
+            info_.buddy_id = buddyId;
+            info_.file_id = boost::uuids::random_generator()();
+            info_.name = fileName;
+            info_.length = fileSize;
+        }
+
+        const EventMonitor::FileInfo& GetInfo() const { return info_; }
+        auto GetBlockSize() const { return block_size_; }
+        const std::string& GetCookie() const { return cookie_; }
+        void SetState(State newState);
+        void OnIncomingData(std::string&& data, unsigned int blockId);
+
+    private:
+        EventMonitor::FileInfo info_;
+        std::string cookie_;
+        unsigned int block_size_ = 1024 * 8;
+        boost::filesystem::path path_;
+        std::fstream file_;
+        int last_good_block_ = -1; // None
+        std::deque<std::string> buffers_;
+        State state_ = State::UNINITIALIZED;
     };
 
     enum class State {
@@ -191,6 +221,9 @@ public:
 
     void Close();
 
+    void AddFileTransfer(FileTransfer::ptr_t transfer);
+    FileTransfer::ptr_t GetFileTransfer(const std::string& cookie);
+
     EventMonitor::BuddyInfo info;
     Direction initiative = Direction::INCOMING;
     std::unique_ptr<std::chrono::steady_clock::time_point> next_keep_alive_time;
@@ -238,6 +271,7 @@ private:
     bool got_ping_ = false;
     bool got_pong_ = false;
     bool has_been_ready_ = false;
+    std::map<boost::uuids::uuid, FileTransfer::ptr_t> file_transfers_;
 };
 
 } // impl
@@ -246,3 +280,6 @@ private:
 std::ostream& operator << (std::ostream& o, const darkspeak::impl::TorChatPeer& v);
 std::ostream& operator << (std::ostream& o,
                            const darkspeak::impl::TorChatPeer::State& v);
+std::ostream& operator << (std::ostream& o, const darkspeak::impl::TorChatPeer::FileTransfer& v);
+std::ostream& operator << (std::ostream& o,
+                           const darkspeak::impl::TorChatPeer::FileTransfer::State& v);

@@ -49,6 +49,7 @@ add_executable(darkspeak-gui ${GUI_TYPE} ${SOURCES} ${HEADERS} ${RESOURCES} ${QM
 set_target_properties(darkspeak-gui PROPERTIES DEBUG_OUTPUT_NAME darkspeak-guiD)
 target_link_libraries(darkspeak-gui
     darkspeak_api
+    darkspeak_md5
     ${DEFAULT_LIBRARIES}
     ${Qt5Core_LIBRARIES}
     ${Qt5Widgets_LIBRARIES}

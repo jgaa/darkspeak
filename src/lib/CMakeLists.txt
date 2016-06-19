@@ -26,5 +26,6 @@ add_dependencies(darkspeak_api
     war_base
     war_log
     war_tasks
+    darkspeak_md5
     )
 set_target_properties(darkspeak_api PROPERTIES DEBUG_OUTPUT_NAME darkspeak_apiD)

@@ -45,6 +45,7 @@ documentation and/or software.
 
 #include <stdio.h>
 #include <fstream>
+#include <string>
 #include <ostream>
 #include <memory>
 #include <array>
@@ -56,8 +57,11 @@ class MD5 {
 public:
 // methods for controlled operation:
   MD5              ();  // simple initializer
-  void  update     (unsigned char *input, unsigned int input_length);
-  void  update     (std::istream& stream);
+  void  update     (const unsigned char *input, unsigned int input_length);
+//  void  update     (std::istream& stream);
+  void  update     (const std::string& str) {
+      update(reinterpret_cast<const unsigned char*>(str.c_str()), str.size());
+  }
 //   void  update     (FILE *file);
 //   void  update     (std::ifstream& stream);
   void  finalize   ();
@@ -65,13 +69,13 @@ public:
 // constructors for special circumstances.  All these constructors finalize
 // the MD5 context.
   MD5              (unsigned char *string); // digest string, finalize
-  MD5              (std::istream& stream);       // digest stream, finalize
+//  MD5              (std::istream& stream);       // digest stream, finalize
 //   MD5              (FILE *file);            // digest file, close, finalize
 //   MD5              (std::ifstream& stream);      // digest stream, close, finalize
 
 // methods to acquire finalized result
   std::unique_ptr<std::array<unsigned char, 16>> raw_digest ();  // digest as a 16-byte binary array
-  std::unique_ptr<std::array<char, 33>> hex_digest ();  // digest as a 33-byte ascii-hex string
+  std::string hex_digest ();  // digest as a 33-byte ascii-hex string
   friend std::ostream& operator<< (std::ostream&, MD5 context);
 
 
@@ -92,12 +96,12 @@ private:
 
 // last, the private methods, mostly static:
   void init             ();               // called by all constructors
-  void transform        (uint1 *buffer);  // does the real update work.  Note
+  void transform        (const uint1 *buffer);  // does the real update work.  Note
                                           // that length is implied to be 64.
 
-  static void encode    (uint1 *dest, uint4 *src, uint4 length);
-  static void decode    (uint4 *dest, uint1 *src, uint4 length);
-  static void memcpy    (uint1 *dest, uint1 *src, uint4 length);
+  static void encode    (uint1 *dest, const uint4 *src, uint4 length);
+  static void decode    (uint4 *dest, const uint1 *src, uint4 length);
+  static void memcpy    (uint1 *dest, const uint1 *src, uint4 length);
   static void memset    (uint1 *start, uint1 val, uint4 length);
 
   static inline uint4  rotate_left (uint4 x, uint4 n);

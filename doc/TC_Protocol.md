@@ -74,7 +74,7 @@ this number is only a wild guess and might need some tuning)
 Start is "block start position in bytes". (File offset?)
 
 ```
-Command: filedata <transfer_cookie> <blob (fixed size)> <hash> <start>
+Command: filedata <transfer_cookie> <blockid> <hash> <data>
 ```
 
 ## filedata_error

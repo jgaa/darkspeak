@@ -1,11 +1,15 @@
 
 #include <random>
 
+#include "war_uuid.h"
+#include "log/WarLog.h"
+#include "war_helper.h"
+
 #include "darkspeak/darkspeak.h"
 #include "darkspeak/TorChatPeer.h"
 
 using namespace std;
-
+using namespace war;
 
 std::ostream& operator << (std::ostream& o, const darkspeak::impl::TorChatPeer& v) {
     return o << "{peer: " << v.GetId() << '}';
@@ -17,6 +21,24 @@ std::ostream& operator << (std::ostream& o,
         "UNINTIALIZED", "ACCEPTING", "CONNECTING", "AUTENTICATING",
         "AUTHENTICATED", "READY", "DONE"
     };
+
+    return o << names.at(static_cast<int>(v));
+}
+
+std::ostream& operator << (std::ostream& o,
+                           const darkspeak::impl::TorChatPeer::FileTransfer& v) {
+
+    return o << "{FileTransfer: " << v.GetInfo().file_id
+        << ", size " << v.GetInfo().length
+        << ", name " << log::Esc(v.GetInfo().name)
+        << "}";
+
+}
+
+std::ostream& operator << (std::ostream& o,
+                           darkspeak::impl::TorChatPeer::FileTransfer::State& v) {
+    static const array<string, 4> names = {
+        "UNINITIALIZED", "UNVERIFIED", "ACTIVE", "DONE" };
 
     return o << names.at(static_cast<int>(v));
 }
@@ -84,6 +106,54 @@ void TorChatPeer::InitCookie()
     }
 }
 
+void TorChatPeer::AddFileTransfer(TorChatPeer::FileTransfer::ptr_t transfer)
+{
+    LOG_DEBUG_FN << "Adding " << *transfer;
+    WarMapAddUnique(file_transfers_, transfer->GetInfo().file_id, transfer);
+}
+
+TorChatPeer::FileTransfer::ptr_t TorChatPeer::GetFileTransfer(const string& cookie)
+{
+    for(auto& it : file_transfers_) {
+        if (it.second->GetCookie().compare(cookie) == 0) {
+            return it.second;
+        }
+    }
+    return nullptr;
+}
+
+void TorChatPeer::FileTransfer::OnIncomingData(string&& data,
+                                               unsigned int blockId)
+{
+    if (info_.direction != Direction::INCOMING) {
+        WAR_THROW_T(war::ExceptionBadState, "This transfer is not inbound");
+    }
+
+    if (state_ == State::UNVERIFIED) {
+        if (buffers_.size() > 42) {
+            WAR_THROW_T(war::ExceptionOutOfRange, "The cache buffer is full");
+        }
+
+        LOG_TRACE1_FN << "Adding block #" << blockId << " to buffer "
+            " for " << *this;
+        buffers_.push_back(move(data));
+        return;
+    }
+
+    // TODO: Implement file write
+
+    // TODO: Send ack
+}
+
+
+
+///////////////////// FileTransfer /////////////////
+
+void TorChatPeer::FileTransfer::SetState(TorChatPeer::FileTransfer::State newState)
+{
+    LOG_TRACE1_FN << "Changing from " << state_ << " to " << newState;
+    state_ = newState;
+}
 
 
 

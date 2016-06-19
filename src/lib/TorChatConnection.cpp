@@ -64,7 +64,7 @@ boost::string_ref TorChatConnection::GetLine(boost::asio::yield_context& yield)
             line, remaining_data_)) {
 
             LOG_TRACE4_FN << *this << " Found complete line in remains: " << line.to_string();
-            return line;
+            return DecodeCurrent(line);
         }
     }
 
@@ -80,8 +80,8 @@ boost::string_ref TorChatConnection::GetLine(boost::asio::yield_context& yield)
             {&read_buffer_[0], total_bytes_read},
             line, remaining_data_)) {
 
-            LOG_TRACE4_FN << *this << " Found complete line in remains: " << line.to_string();
-            return line;
+            LOG_TRACE4_FN << *this << " Got complete line: " << line.to_string();
+            return DecodeCurrent(line);
         }
 
         bytes_wanted -= bytes_received;
@@ -147,6 +147,45 @@ void TorChatConnection::Decode(std::string& blob)
 {
     boost::replace_all(blob, "\\n", "\n");
     boost::replace_all(blob, "\\/", "\\");
+}
+
+std::string TorChatConnection::Decode(boost::string_ref& blob)
+{
+    std::string s;
+    s.reserve(blob.size());
+
+    for(auto c = blob.cbegin(); c != blob.cend(); ++c) {
+        if (*c == '\\') {
+            auto cc = c;
+            ++cc;
+            if (cc != blob.end()) {
+                if (*cc == 'n') {
+                    s.push_back('\n');
+                } else if (*cc == '/') {
+                    s.push_back('\\');
+                } else {
+                    s.push_back(*c);
+                    s.push_back(*cc);
+                }
+                ++c;
+            } else {
+                s.push_back(*c);
+            }
+        } else {
+            s.push_back(*c);
+        }
+    }
+
+    return s;
+}
+
+boost::string_ref TorChatConnection::DecodeCurrent(boost::string_ref& blob)
+{
+    if (blob.find('\\') != blob.npos) {
+        current_line_ = Decode(blob);
+        return {current_line_.c_str(), current_line_.size()};
+    }
+    return blob;
 }
 
 
