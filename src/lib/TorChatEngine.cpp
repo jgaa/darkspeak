@@ -108,7 +108,7 @@ TorChatEngine::~TorChatEngine()
 void TorChatEngine::Connect(Api::Buddy::ptr_t buddy)
 {
     LOG_NOTICE << "Connecting to " << *buddy;
-    SpawnConnect(buddy->GetInfo().id);
+    SpawnConnect(buddy->GetId());
 }
 
 void TorChatEngine::SpawnConnect(const string& buddy_id)
@@ -123,12 +123,15 @@ void TorChatEngine::SpawnConnect(const string& buddy_id)
 // TODO: Make thread safe
 void TorChatEngine::Disconnect(Api::Buddy& buddy)
 {
-    LOG_NOTICE << "Disconnecting from " << buddy;
-    auto id = buddy.GetId();
-    auto peer = GetPeer(id);
-    if (peer) {
-       DisconnectPeer(*peer);
-    }
+    pipeline_.PostSynchronously({
+        [&]() {
+            LOG_NOTICE << "Disconnecting from " << buddy;
+            auto id = buddy.GetId();
+            auto peer = GetPeer(id);
+            if (peer) {
+                DisconnectPeer(*peer);
+            }
+        }, "Disconnect buddy"});
 }
 
 void TorChatEngine::DisconnectPeer(TorChatPeer& peer)
@@ -183,28 +186,17 @@ vector<shared_ptr<EventMonitor>> TorChatEngine::GetMonitors()
 
 void TorChatEngine::Listen(boost::asio::ip::tcp::endpoint endpoint)
 {
-    std::promise<void> promise;
-    auto future = promise.get_future();
+    pipeline_.PostSynchronously({[&]() {
+        {
+            // Notify monitors that we are about to listen
+            EventMonitor::Event event(EventMonitor::Event::Type::PROTOCOL_CONNECTING);
+            for(auto& monitor : GetMonitors()) {
+                monitor->OnOtherEvent(event);
+            }
+        }
 
-    pipeline_.Post({[this]() {
-         EventMonitor::Event event;
-         event.type = EventMonitor::Event::Type::PROTOCOL_CONNECTING;
-    }, "Emitting Connecting state"});
+        WAR_ASSERT(!acceptor_);
 
-    pipeline_.Dispatch({[this, endpoint, &promise]() {
-        Listen_(endpoint, promise);
-    }, "Listen"});
-
-    future.wait();
-}
-
-void TorChatEngine::Listen_(boost::asio::ip::tcp::endpoint endpoint,
-                                    std::promise<void>& promise)
-{
-
-    WAR_ASSERT(!acceptor_);
-
-    try {
         acceptor_ = make_shared<boost::asio::ip::tcp::acceptor>(pipeline_.GetIoService());
         acceptor_->open(endpoint.protocol());
         acceptor_->set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
@@ -218,9 +210,7 @@ void TorChatEngine::Listen_(boost::asio::ip::tcp::endpoint endpoint,
             bind(&TorChatEngine::Accept,
                 this, endpoint, weak_acceptor, std::placeholders::_1));
 
-        promise.set_value();
-    } WAR_CATCH_ALL_EF(promise.set_exception(std::current_exception()));
-
+    }, "Listen"});
 }
 
 void TorChatEngine::Accept(boost::asio::ip::tcp::endpoint endpoint,
@@ -610,14 +600,15 @@ void TorChatEngine::SendFile(Api::Buddy& buddy, const ImProtocol::File& file, Im
 
 void TorChatEngine::Shutdown()
 {
-    pipeline_.Post({[this]() {
-         EventMonitor::Event event;
-         event.type = EventMonitor::Event::Type::PROTOCOL_DISCONNECTING;
-    }, "Emitting Disconnecting state"});
-
     pipeline_.Post({[&]() {
 
         LOG_NOTICE << "Shutting down " << id_;
+        {
+            EventMonitor::Event event(EventMonitor::Event::Type::PROTOCOL_DISCONNECTING);
+            for(auto& monitor : GetMonitors()) {
+                monitor->OnOtherEvent(event);
+            }
+        }
 
         // Stop the listening socket
         LOG_TRACE1_FN << "Closing listener.";
@@ -634,7 +625,6 @@ void TorChatEngine::Shutdown()
 
         EmitShutdownComplete({});
 
-    // Close all peers
     }, "Shutting down TorChatEngine"});
 }
 

@@ -98,9 +98,6 @@ public:
 private:
     void SpawnConnect(const std::string& buddy_id);
 
-    void Listen_(boost::asio::ip::tcp::endpoint endpoint,
-                 std::promise<void>& promise);
-
     void Accept(boost::asio::ip::tcp::endpoint endpoint,
                 std::weak_ptr<boost::asio::ip::tcp::acceptor> weak_acceptor,
                 boost::asio::yield_context yield);
@@ -141,7 +138,7 @@ private:
                       boost::asio::yield_context yield);
 
     void DisconnectPeer(TorChatPeer& peer);
-    
+
     void DisconnectPeer(const std::string& id);
 
     std::unique_ptr<std::chrono::steady_clock::time_point>
