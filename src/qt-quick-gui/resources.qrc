@@ -21,5 +21,6 @@
         <file>qml/SettingsDlg.qml</file>
         <file>qml/OwnInfoTab.qml</file>
         <file>qml/TorSettingsTab.qml</file>
+        <file>qml/IncomingFileRequest.qml</file>
     </qresource>
 </RCC>

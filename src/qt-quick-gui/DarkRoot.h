@@ -44,6 +44,8 @@ public:
     Q_INVOKABLE void goOnline();
     Q_INVOKABLE void goOffline();
     Q_INVOKABLE void copyToClipboard(QString text);
+    Q_INVOKABLE void acceptFile(const QString buddyHandle, const QString fileId);
+    Q_INVOKABLE void rejectFile(const QString buddyHandle, const QString fileId);
 
 private:
     darkspeak::Api& api_;

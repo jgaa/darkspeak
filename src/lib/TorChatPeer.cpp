@@ -122,6 +122,17 @@ TorChatPeer::FileTransfer::ptr_t TorChatPeer::GetFileTransfer(const string& cook
     return nullptr;
 }
 
+TorChatPeer::FileTransfer::ptr_t TorChatPeer::GetFileTransfer(
+    const boost::uuids::uuid& uuid)
+{
+    auto it = file_transfers_.find(uuid);
+    if (it == file_transfers_.end()) {
+        return nullptr;
+    }
+    return it->second;
+}
+
+
 void TorChatPeer::FileTransfer::OnIncomingData(string&& data,
                                                unsigned int blockId)
 {
@@ -155,6 +166,25 @@ void TorChatPeer::FileTransfer::SetState(TorChatPeer::FileTransfer::State newSta
     state_ = newState;
 }
 
+void TorChatPeer::FileTransfer::StartDownload()
+{
+    // Set state
+
+    // Open file
+
+    // Send event that the file transfer is in progress
+
+    // Flush buffers
+
+    // Send event regarding progress or download complete
+}
+
+void TorChatPeer::FileTransfer::AbortDownload()
+{
+    // Send abort
+
+    // Send Event
+}
 
 
 } // impl

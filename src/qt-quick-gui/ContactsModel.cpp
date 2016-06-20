@@ -37,6 +37,11 @@ ContactsModel::ContactsModel(Api& api, QObject *parent)
             SIGNAL(onBuddyDeleted(std::string)),
             this, SLOT(deleteBuddyFromList(std::string)));
 
+    connect(this,
+            SIGNAL(onIncomingFileRequest(darkspeak::EventMonitor::FileInfo)),
+            this, SLOT(IncomingFileRequest(darkspeak::EventMonitor::FileInfo)));
+
+
     api_.SetMonitor(event_listener_);
 }
 
@@ -212,7 +217,7 @@ void ContactsModel::Events::OnIncomingMessage(const EventMonitor::Message &messa
 
 void ContactsModel::Events::OnIncomingFile(const EventMonitor::FileInfo &file)
 {
-
+    emit parent_.onIncomingFileRequest(file);
 }
 
 void ContactsModel::Events::OnOtherEvent(const EventMonitor::Event &event)
@@ -343,4 +348,14 @@ void ContactsModel::deleteBuddyFromList(string id)
     emit beginRemoveRows(QModelIndex(), ix, ix);
     buddies_.erase(buddies_.begin() + ix);
     emit endRemoveRows();
+}
+
+void ContactsModel::IncomingFileRequest(const EventMonitor::FileInfo file)
+{
+    LOG_DEBUG_FN << "Caught file signal. Contacting UI now";
+    QString name = file.name.c_str();
+    auto uuid = boost::uuids::to_string(file.file_id);
+    QString file_id = uuid.c_str();
+    auto contact = getContactData(FindBuddy(file.buddy_id));
+    emit incomingFile(name, file_id, contact);
 }

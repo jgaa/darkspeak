@@ -1,7 +1,7 @@
 
 import QtQuick 2.4
 import QtQuick.Controls 1.3
-
+import QtQuick.Dialogs 1.1
 import com.jgaa.darkspeak 1.0
 import QtQuick.Layouts 1.2
 import QtQuick.Extras 1.4
@@ -17,8 +17,30 @@ ApplicationWindow {
 
     toolBar: MainToolBar { id: mainToolBar }
 
+    Connections {
+        target: contactsModel
 
-   StackView {
+        onIncomingFile: {
+            console.log("Incoming file" + fileName)
+
+            var component = Qt.createComponent("IncomingFileRequest.qml")
+            if( component.status != Component.Ready ) {
+                if( component.status == Component.Error )
+                    console.debug("Error:"+ component.errorString() );
+                return; // or maybe throw
+            }
+            var dialog = component.createObject(
+               main_window,
+               {
+                   "fileName": fileName,
+                   "fileId": fileId,
+                   "contact": contact
+               });
+            dialog.process()
+        }
+    }
+
+    StackView {
        id: main_pane
        initialItem: ContactsListView {
            id: contacts

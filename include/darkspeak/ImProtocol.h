@@ -109,6 +109,13 @@ public:
     virtual void SendFile(Api::Buddy& buddy, const File& file,
         FileMonitor::ptr_t monitor) = 0;
 
+    /*! Accept a file transfer
+     */
+    virtual void AcceptFileTransfer(const AcceptFileTransferData& aftd) = 0;
+
+    /*! Reject a file transfer
+     */
+    virtual void RejectFileTransfer(const AcceptFileTransferData& aftd) = 0;
 
     /*! Disconnect a buddy */
     virtual void Disconnect(Api::Buddy& buddy) = 0;

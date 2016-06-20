@@ -3,6 +3,7 @@
 #include <QClipboard>
 
 #include "log/WarLog.h"
+#include "war_uuid.h"
 
 #include "DarkRoot.h"
 #include "SettingsData.h"
@@ -42,3 +43,21 @@ SettingsData* DarkRoot::settings()
 {
     return new SettingsData(config_, this);
 }
+
+void DarkRoot::acceptFile(const QString buddyHandle, const QString fileId)
+{
+    AcceptFileTransferData aftd;
+    aftd.buddy_id = buddyHandle.toStdString();
+    aftd.uuid = get_uuid_from_string(fileId.toStdString());
+    api_.AcceptFileTransfer(aftd);
+}
+
+void DarkRoot::rejectFile(const QString buddyHandle, const QString fileId)
+{
+    AcceptFileTransferData aftd;
+    aftd.buddy_id = buddyHandle.toStdString();
+    aftd.uuid = get_uuid_from_string(fileId.toStdString());
+    api_.RejectFileTransfer(aftd);
+}
+
+

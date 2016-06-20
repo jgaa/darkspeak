@@ -92,9 +92,10 @@ public slots:
     void refreshBuddyMessages(std::string id);
     void addBuddyToList(std::string id);
     void deleteBuddyFromList(std::string id);
+    void IncomingFileRequest(darkspeak::EventMonitor::FileInfo file);
 
 signals: // signals can be emitted
-    void onlineStatusChanged(const OnlineStatus &status);
+    void onlineStatusChanged(const OnlineStatus status);
     void onlineStatusIconChanged();
     void onBuddyStateChanged(std::string id);
     void onBuddyHasNewMessage(std::string id);
@@ -104,6 +105,11 @@ signals: // signals can be emitted
     void onBuddyMayHaveNewMessage(std::string id);
     void onBuddyAdded(std::string id);
     void onBuddyDeleted(std::string id);
+    void onIncomingFileRequest(darkspeak::EventMonitor::FileInfo file);
+
+    // Signals we want accessible from QML
+    // First letter must be lower case
+    void incomingFile(QString fileName, QString fileId, ContactData *contact);
 
 protected:
     // return the roles mapping to be used by QML

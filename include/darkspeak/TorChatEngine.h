@@ -94,6 +94,8 @@ public:
     void Listen(boost::asio::ip::tcp::endpoint endpoint) override;
     void Shutdown() override;
     void StartMonitor();
+    void AcceptFileTransfer(const AcceptFileTransferData& aftd) override;
+    void RejectFileTransfer(const AcceptFileTransferData& aftd) override;
 
 private:
     void SpawnConnect(const std::string& buddy_id);
@@ -153,6 +155,9 @@ private:
     GetNewReconnectTime(TorChatPeer& peer);
 
     std::shared_ptr<TorChatPeer>CreatePeer(const std::string& id);
+
+    void ProcessIncomingFileDecision(const AcceptFileTransferData& aftd,
+        bool accepted);
 
     void Reconnect(const std::shared_ptr<TorChatPeer>& peer);
 

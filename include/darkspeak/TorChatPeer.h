@@ -38,12 +38,14 @@ public:
             DONE
         };
 
-        FileTransfer(const std::string buddyId,
+        FileTransfer(
+            TorChatPeer& parent,
+            const std::string buddyId,
             std::string fileName,
             std::int64_t fileSize,
             std::string fileCookie,
             unsigned int blockSize)
-        : cookie_{fileCookie}, block_size_{blockSize}
+        : cookie_{fileCookie}, block_size_{blockSize}, parent_{parent}
         {
             info_.buddy_id = buddyId;
             info_.file_id = boost::uuids::random_generator()();
@@ -56,6 +58,8 @@ public:
         const std::string& GetCookie() const { return cookie_; }
         void SetState(State newState);
         void OnIncomingData(std::string&& data, unsigned int blockId);
+        void StartDownload();
+        void AbortDownload();
 
     private:
         EventMonitor::FileInfo info_;
@@ -66,6 +70,7 @@ public:
         int last_good_block_ = -1; // None
         std::deque<std::string> buffers_;
         State state_ = State::UNINITIALIZED;
+        TorChatPeer& parent_;
     };
 
     enum class State {
@@ -223,6 +228,7 @@ public:
 
     void AddFileTransfer(FileTransfer::ptr_t transfer);
     FileTransfer::ptr_t GetFileTransfer(const std::string& cookie);
+    FileTransfer::ptr_t GetFileTransfer(const boost::uuids::uuid& uuid);
 
     EventMonitor::BuddyInfo info;
     Direction initiative = Direction::INCOMING;

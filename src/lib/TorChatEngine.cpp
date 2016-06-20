@@ -749,6 +749,7 @@ void TorChatEngine::OnFilename(const TorChatEngine::Request& req)
 {
     // filename <transfer_cookie> <file_size> <block_size> "filename"
     auto ft = make_shared<TorChatPeer::FileTransfer>(
+        *req.peer,
         req.peer->GetId(),
         req.params.at(3), // name
         stoll(req.params.at(1)), // size
@@ -1211,6 +1212,45 @@ TorChatEngine::GetNewKeepAliveTime()
     return std::make_unique<std::chrono::steady_clock::time_point>(
         std::chrono::steady_clock::now()
         + std::chrono::seconds(seconds));
+}
+
+void TorChatEngine::AcceptFileTransfer(const AcceptFileTransferData& aftd)
+{
+    pipeline_.Post({
+        [this, aftd]() {
+            ProcessIncomingFileDecision(aftd, true);
+        }, "AcceptFileTransfer"});
+}
+
+
+void TorChatEngine::RejectFileTransfer(const AcceptFileTransferData& aftd)
+{
+    pipeline_.Post({
+        [this, aftd]() {
+            ProcessIncomingFileDecision(aftd, false);
+        }, "RejectFileTransfer"});
+}
+
+void TorChatEngine::ProcessIncomingFileDecision(
+    const AcceptFileTransferData& aftd, bool accepted)
+{
+    auto peer = GetPeer(aftd.buddy_id);
+    if (!peer) {
+        if (accepted) {
+            LOG_WARN_FN  << "The peer " << log::Esc(aftd.buddy_id)
+                << " was not found. Cannot proceed with file transfer.";
+            // TODO: Send an event to notify failed transfer
+        }
+        return;
+    }
+
+    auto ft = peer->GetFileTransfer(aftd.uuid);
+
+    if (accepted) {
+        ft->StartDownload();
+    } else {
+        ft->AbortDownload();
+    }
 }
 
 

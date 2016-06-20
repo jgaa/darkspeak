@@ -25,6 +25,7 @@ set(QML_SRC
     qml/OwnInfoTab.qml
     qml/SettingsDlg.qml
     qml/TorSettingsTab.qml
+    qml/IncomingFileRequest.qml
     )
 
 set(SOURCES

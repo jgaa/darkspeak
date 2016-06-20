@@ -24,6 +24,11 @@ using path_t = boost::filesystem::path;
 class EventMonitor;
 class BuddyEventsMonitor;
 
+struct AcceptFileTransferData {
+        std::string buddy_id;
+        boost::uuids::uuid uuid;
+};
+
 /*! \class Api Api.h darkspeak/Api.h
  *
  * Interface to the dark Instant Message world.
@@ -83,6 +88,7 @@ public:
         AWAY,
         LONG_TIME_AWAY
     };
+
 
     class Message {
         public:
@@ -303,6 +309,13 @@ public:
      */
     virtual void SetMonitor(std::shared_ptr<EventMonitor> monitor) = 0;
 
+    /*! Accept a file transfer
+     */
+    virtual void AcceptFileTransfer(const AcceptFileTransferData& aftd) = 0;
+
+    /*! Reject a file transfer
+     */
+    virtual void RejectFileTransfer(const AcceptFileTransferData& aftd) = 0;
 
     /*! Panic button.
      *

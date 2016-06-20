@@ -474,6 +474,16 @@ shared_ptr< ImManager > ImManager::CreateInstance(path_t conf_file)
     return mgr;
 }
 
+void ImManager::AcceptFileTransfer(const AcceptFileTransferData& aftd)
+{
+    protocol_->AcceptFileTransfer(aftd);
+}
+
+void ImManager::RejectFileTransfer(const AcceptFileTransferData& aftd)
+{
+    protocol_->RejectFileTransfer(aftd);
+}
+
 
 } // impl
 

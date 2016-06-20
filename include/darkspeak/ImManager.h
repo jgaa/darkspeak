@@ -63,6 +63,8 @@ public:
     void Disconnect(bool local_only = true) override;
     void Panic(std::string message, bool erase_data) override;
     void SetMonitor(std::shared_ptr<EventMonitor> monitor) override;
+    void AcceptFileTransfer(const AcceptFileTransferData& aftd) override;
+    void RejectFileTransfer(const AcceptFileTransferData& aftd) override;
 
     std::shared_ptr<ImProtocol> GetProtocol() { return protocol_; }
     void Connect(Api::Buddy::ptr_t buddy);
