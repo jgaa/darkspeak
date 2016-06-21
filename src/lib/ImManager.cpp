@@ -439,6 +439,14 @@ void ImManager::Events::OnIncomingFile(const EventMonitor::FileInfo& file)
     }
 }
 
+void ImManager::Events::OnFileTransferUpdate(const EventMonitor::FileInfo& file)
+{
+    for(auto& monitor : manager_.GetMonitors()) {
+        monitor->OnFileTransferUpdate(file);
+    }
+}
+
+
 void ImManager::Events::OnOtherEvent(const EventMonitor::Event& event)
 {
     if (!event.buddy_id.empty()) {

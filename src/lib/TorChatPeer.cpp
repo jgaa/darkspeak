@@ -7,6 +7,7 @@
 
 #include "darkspeak/darkspeak.h"
 #include "darkspeak/TorChatPeer.h"
+#include "darkspeak/TorChatEngine.h"
 
 using namespace std;
 using namespace war;
@@ -164,6 +165,19 @@ void TorChatPeer::FileTransfer::SetState(TorChatPeer::FileTransfer::State newSta
 {
     LOG_TRACE1_FN << "Changing from " << state_ << " to " << newState;
     state_ = newState;
+
+    switch(state_) {
+        case TorChatPeer::FileTransfer::State::UNINITIALIZED:
+        case TorChatPeer::FileTransfer::State::UNVERIFIED:
+            info_.state = EventMonitor::FileInfo::State::PENDING;
+            break;
+        case TorChatPeer::FileTransfer::State::ACTIVE:
+            info_.state = EventMonitor::FileInfo::State::TRANSFERRING;
+            break;
+        case TorChatPeer::FileTransfer::State::DONE:
+            info_.state = EventMonitor::FileInfo::State::DONE;
+            break;
+    }
 }
 
 void TorChatPeer::FileTransfer::StartDownload()
@@ -181,9 +195,20 @@ void TorChatPeer::FileTransfer::StartDownload()
 
 void TorChatPeer::FileTransfer::AbortDownload()
 {
+    static const string stop_sending{"file_stop_sending"};
+
+    info_.state = EventMonitor::FileInfo::State::ABORTED;
+    LOG_NOTICE << "Aborting " << *this;
+
     // Send abort
+    parent_.GetEngine().SendCommand(stop_sending,
+                                    {GetCookie()},
+                                    parent_.shared_from_this());
 
     // Send Event
+    for(auto& monitor : parent_.GetEngine().GetMonitors()) {
+        monitor->OnFileTransferUpdate(info_);
+    }
 }
 
 

@@ -46,6 +46,7 @@ private:
         void OnBuddyStateUpdate(const BuddyInfo &info) override;
         void OnIncomingMessage(const Message &message) override;
         void OnIncomingFile(const FileInfo &file) override;
+        void OnFileTransferUpdate(const FileInfo& file) override;
         void OnOtherEvent(const Event &event) override;
         void OnListening(const ListeningInfo &endpoint) override;
         void OnShutdownComplete(const ShutdownInfo &info) override;

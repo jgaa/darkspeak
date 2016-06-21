@@ -220,6 +220,12 @@ void ContactsModel::Events::OnIncomingFile(const EventMonitor::FileInfo &file)
     emit parent_.onIncomingFileRequest(file);
 }
 
+void ContactsModel::Events::OnFileTransferUpdate(const EventMonitor::FileInfo& file)
+{
+    // TODO: Handle
+}
+
+
 void ContactsModel::Events::OnOtherEvent(const EventMonitor::Event &event)
 {
     LOG_DEBUG_FN << "Got event " << event.type;

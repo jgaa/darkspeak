@@ -387,7 +387,7 @@ void TorChatEngine::OnAccepted(
 shared_ptr< TorChatPeer > TorChatEngine::CreatePeer(const string& id)
 {
     LOG_TRACE1_FN << "Creating peer " << id;
-    auto peer =  make_shared<TorChatPeer>(id);
+    auto peer =  make_shared<TorChatPeer>(*this, id);
     peer->received_status_timeout = GetNewStatusTimeout();
     peers_[id] = peer;
     return peer;
@@ -860,6 +860,38 @@ void TorChatEngine::OnPong(const TorChatEngine::Request& req)
     req.peer->SetReceivedPong();
 
 }
+
+void TorChatEngine::SendCommand(const string& command,
+                                initializer_list< string > args,
+                                std::weak_ptr<TorChatPeer> weakPeer,
+                                Direction direction)
+{
+    boost::asio::spawn(
+        pipeline_.GetIoService(),
+        bind(&TorChatEngine::SendCommand_,
+                shared_from_this(),
+                command,
+                args,
+                weakPeer,
+                direction,
+                std::placeholders::_1));
+}
+
+void TorChatEngine::SendCommand_(const string& command,
+                                 initializer_list< string > args,
+                                 std::weak_ptr<TorChatPeer> weakPeer,
+                                 Direction direction,
+                                 boost::asio::yield_context yield)
+{
+    auto peer = weakPeer.lock();
+    if (!peer) {
+        LOG_DEBUG_FN << "Peer is gone (disconnected). Cannot send command.";
+        return;
+    }
+
+    DoSend(command, args, *peer, yield, direction);
+}
+
 
 bool TorChatEngine::DoSend(const string& command,
                            initializer_list< string > args,

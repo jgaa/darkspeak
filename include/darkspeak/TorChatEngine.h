@@ -97,7 +97,20 @@ public:
     void AcceptFileTransfer(const AcceptFileTransferData& aftd) override;
     void RejectFileTransfer(const AcceptFileTransferData& aftd) override;
 
+    void SendCommand(const std::string& command,
+                std::initializer_list<std::string> args,
+                std::weak_ptr<TorChatPeer> weakPeer,
+                Direction direction = Direction::OUTGOING);
+
+    std::vector<std::shared_ptr<EventMonitor>> GetMonitors();
+
 private:
+    void SendCommand_(const std::string& command,
+                      std::initializer_list<std::string> args,
+                      std::weak_ptr<TorChatPeer> weakPeer,
+                      Direction direction,
+                      boost::asio::yield_context yield);
+
     void SpawnConnect(const std::string& buddy_id);
 
     void Accept(boost::asio::ip::tcp::endpoint endpoint,
@@ -109,8 +122,6 @@ private:
 
     void OnAccepted(std::shared_ptr< boost::asio::ip::tcp::socket > socket,
                     boost::asio::yield_context yield);
-
-    std::vector<std::shared_ptr<EventMonitor>> GetMonitors();
 
     bool VerifyPing(boost::string_ref line, std::string& id,
                     std::string& cookie);

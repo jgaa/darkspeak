@@ -66,11 +66,20 @@ public:
     };
 
     struct FileInfo {
+        enum class State {
+            PENDING,
+            TRANSFERRING,
+            DONE,
+            ABORTED
+        };
+
         std::string buddy_id;
         boost::uuids::uuid file_id;
         std::string name;
         std::int64_t length = -1; // Unknown size
+        std::int64_t transferred = 0;
         Direction direction = Direction::INCOMING;
+        State state = State::PENDING;
     };
 
     struct Event {
@@ -146,6 +155,9 @@ public:
         * the layers to start the transfer.
         */
     virtual void OnIncomingFile(const FileInfo& file) = 0;
+
+    /*! Sent to notify about progress and completion/abort */
+    virtual void OnFileTransferUpdate(const FileInfo& file) = 0;
 
     /*! Some other event happened that the user may want to know about.
         */

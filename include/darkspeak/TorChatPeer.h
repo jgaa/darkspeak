@@ -20,10 +20,12 @@
 namespace darkspeak {
 namespace impl {
 
+class TorChatEngine;
+
 /*! A peer at the protocol level.
  *
  */
-class TorChatPeer {
+class TorChatPeer : public std::enable_shared_from_this<TorChatPeer> {
 public:
 
     class FileTransfer
@@ -84,8 +86,8 @@ public:
     };
     using ptr_t = std::shared_ptr<TorChatPeer>;
 
-    TorChatPeer(const std::string id)
-    :id_{id}
+    TorChatPeer(TorChatEngine& parent, const std::string id)
+    :id_{id}, parent_{parent}
     {
         info.buddy_id = id_;
         InitCookie();
@@ -237,6 +239,8 @@ public:
     std::unique_ptr<std::chrono::steady_clock::time_point> retry_connect_time;
     unsigned reconnect_count = 0;
 
+    TorChatEngine& GetEngine() { return parent_; }
+
 private:
     void InitCookie();
 
@@ -278,6 +282,7 @@ private:
     bool got_pong_ = false;
     bool has_been_ready_ = false;
     std::map<boost::uuids::uuid, FileTransfer::ptr_t> file_transfers_;
+    TorChatEngine& parent_;
 };
 
 } // impl
