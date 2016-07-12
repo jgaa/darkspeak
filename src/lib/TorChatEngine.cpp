@@ -5,6 +5,7 @@
 
 #include "war_uuid.h"
 #include "war_helper.h"
+#include "war_filecheck.h"
 
 #include "darkspeak/darkspeak_impl.h"
 #include "darkspeak/TorChatEngine.h"
@@ -747,6 +748,8 @@ void TorChatEngine::OnFileDataOk(const TorChatEngine::Request& req)
 
 void TorChatEngine::OnFilename(const TorChatEngine::Request& req)
 {
+    static const string stop_sending{"file_stop_sending"};
+
     // filename <transfer_cookie> <file_size> <block_size> "filename"
     auto ft = make_shared<TorChatPeer::FileTransfer>(
         *req.peer,
@@ -764,6 +767,15 @@ void TorChatEngine::OnFilename(const TorChatEngine::Request& req)
         << " with cookie " << log::Esc(ft->GetCookie())
         << " assigned with id " << ft->GetInfo().file_id
         << " from " << *req.peer;
+
+    path_t file_name = ft->GetInfo().name;
+    if (!validate_filename_as_safe(file_name)) {
+        LOG_WARN << "Incoming file-name " << log::Esc(ft->GetInfo().name)
+            << " is unsafe. Potential attack. Rejecting transfer.";
+
+        DoSend(stop_sending, {ft->GetCookie()}, *req.peer, *req.yield);
+        return;
+    }
 
     ft->SetState(TorChatPeer::FileTransfer::State::UNVERIFIED);
     req.peer->AddFileTransfer(ft);
@@ -919,45 +931,29 @@ bool TorChatEngine::DoSend(const string& command,
 }
 
 
-bool TorChatEngine::DoSendStatus(TorChatPeer& peer, boost::asio::yield_context& yield) {
+void TorChatEngine::DoSendStatus(TorChatPeer& peer, boost::asio::yield_context& yield) {
     static const string status{"status"};
 
-    // TODO: Do not send status until we are in TorChatPeer::State::READY state
     if (DoSend(status, {ToString(config_.GetInfo().status)}, peer, yield)) {
         peer.next_keep_alive_time = GetNewKeepAliveTime();
-        return true;
     }
-    return false;
 }
 
-bool TorChatEngine::DoSendPing(TorChatPeer& peer, boost::asio::yield_context& yield) {
+void TorChatEngine::DoSendPing(TorChatPeer& peer, boost::asio::yield_context& yield) {
     static const string ping{"ping"};
 
-    auto rval = DoSend(ping,
-                       {
-                           id_,
-                           peer.GetMyCookie()
-                       },
-                       peer, yield);
-
-    if (rval) {
+    if (DoSend(ping, {id_, peer.GetMyCookie()},peer, yield)) {
         peer.SetSentPing();
     }
-
-    return rval;
 }
 
-bool TorChatEngine::DoSendPong(TorChatPeer& peer,
+void TorChatEngine::DoSendPong(TorChatPeer& peer,
                                boost::asio::yield_context& yield) {
     static const string pong{"pong"};
 
-    auto rval = DoSend(pong, { peer.GetPeerCookie() }, peer, yield);
-
-    if (rval) {
+    if (DoSend(pong, { peer.GetPeerCookie() }, peer, yield)) {
         peer.SetSentPong();
     }
-
-    return rval;
 }
 
 

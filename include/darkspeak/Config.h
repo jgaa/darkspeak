@@ -69,6 +69,8 @@ public:
     constexpr static const char *TOR_PORT = "tor.port";
     constexpr static const int   TOR_PORT_DEFAULT = 9050;
 
+    constexpr static const char *DOWNLOAD_FOLDER = "folder.download";
+    constexpr static const char *DOWNLOAD_FOLDER_DEFAULT = "./incoming/{id}";
 
 
 private:

@@ -104,6 +104,8 @@ public:
 
     std::vector<std::shared_ptr<EventMonitor>> GetMonitors();
 
+    const Config& GetConfig() { return config_; }
+
 private:
     void SendCommand_(const std::string& command,
                       std::initializer_list<std::string> args,
@@ -204,9 +206,9 @@ private:
     void OnStatus(const Request& req);
     void OnVersion(const Request& req);
 
-    bool DoSendPing(TorChatPeer& peer, boost::asio::yield_context& yield);
-    bool DoSendPong(TorChatPeer& peer, boost::asio::yield_context& yield);
-    bool DoSendStatus(TorChatPeer& peer, boost::asio::yield_context& yield);
+    void DoSendPing(TorChatPeer& peer, boost::asio::yield_context& yield);
+    void DoSendPong(TorChatPeer& peer, boost::asio::yield_context& yield);
+    void DoSendStatus(TorChatPeer& peer, boost::asio::yield_context& yield);
     bool DoSend(const std::string& command,
                 std::initializer_list<std::string> args,
                 TorChatPeer& peer, boost::asio::yield_context& yield,

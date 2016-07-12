@@ -80,6 +80,7 @@ public:
         std::int64_t transferred = 0;
         Direction direction = Direction::INCOMING;
         State state = State::PENDING;
+        std::string failure_reason;
     };
 
     struct Event {

@@ -1,13 +1,17 @@
 
 #include <random>
 
+#include <boost/algorithm/string.hpp>
+
 #include "war_uuid.h"
 #include "log/WarLog.h"
 #include "war_helper.h"
+#include "war_filecheck.h"
 
 #include "darkspeak/darkspeak.h"
 #include "darkspeak/TorChatPeer.h"
 #include "darkspeak/TorChatEngine.h"
+#include <darkspeak/Config.h>
 
 using namespace std;
 using namespace war;
@@ -113,6 +117,16 @@ void TorChatPeer::AddFileTransfer(TorChatPeer::FileTransfer::ptr_t transfer)
     WarMapAddUnique(file_transfers_, transfer->GetInfo().file_id, transfer);
 }
 
+void TorChatPeer::RemoveFileTransfer(const boost::uuids::uuid& uuid)
+{
+    auto ft = GetFileTransfer(uuid);
+    if (ft) {
+        LOG_DEBUG_FN << "Removing " << *ft;
+        file_transfers_.erase(uuid);
+    }
+}
+
+
 TorChatPeer::FileTransfer::ptr_t TorChatPeer::GetFileTransfer(const string& cookie)
 {
     for(auto& it : file_transfers_) {
@@ -148,15 +162,15 @@ void TorChatPeer::FileTransfer::OnIncomingData(string&& data,
 
         LOG_TRACE1_FN << "Adding block #" << blockId << " to buffer "
             " for " << *this;
-        buffers_.push_back(move(data));
+
+
+        buffers_.emplace_back(move(data), blockId);
         return;
     }
 
-    // TODO: Implement file write
-
-    // TODO: Send ack
+    Write(data, blockId);
+    SendUpdateEvents();
 }
-
 
 
 ///////////////////// FileTransfer /////////////////
@@ -183,32 +197,132 @@ void TorChatPeer::FileTransfer::SetState(TorChatPeer::FileTransfer::State newSta
 void TorChatPeer::FileTransfer::StartDownload()
 {
     // Set state
+    SetState(TorChatPeer::FileTransfer::ACTIVE);
 
     // Open file
+    auto raw_path = parent_.GetEngine().GetConfig().Get<string>(
+        Config::DOWNLOAD_FOLDER, Config::DOWNLOAD_FOLDER_DEFAULT);
 
-    // Send event that the file transfer is in progress
 
-    // Flush buffers
 
-    // Send event regarding progress or download complete
+    // Expand macros
+    boost::replace_all(raw_path, "{id}", info_.buddy_id);
+
+    path_ = raw_path;
+
+    if (!boost::filesystem::is_directory(path_)) {
+        LOG_NOTICE << "Creating download directory " << log::Esc(path_.string());
+        boost::filesystem::create_directories(path_);
+    }
+
+    path_ /= info_.name;
+    if (!validate_filename_as_safe(path_)) {
+        LOG_WARN_FN << "The path " << log::Esc(path_.string())
+            << " is not safe. Aborting download.";
+        AbortDownload("Unsafe filename");
+        return;
+    }
+
+    file_.open(path_.c_str(), ios::out | ios::binary | ios::trunc);
+
+    // TODO: Check for errors
+    for(const auto& buffer: buffers_) {
+        Write(buffer.data, buffer.blkid);
+    }
+    buffers_.clear();
+    SendUpdateEvents();
 }
 
-void TorChatPeer::FileTransfer::AbortDownload()
+void TorChatPeer::FileTransfer::SendUpdateEvents()
+{
+    if (info_.transferred >= info_.length) {
+        SetState(TorChatPeer::FileTransfer::State::DONE);
+        LOG_NOTICE << "The file " << log::Esc(info_.name)
+            << " from " << parent_ << " is successfully received.";
+        parent_.RemoveFileTransfer(info_.file_id);
+    }
+
+    // Send event regarding progress or download complete
+    for(auto& monitor : parent_.GetEngine().GetMonitors()) {
+        monitor->OnFileTransferUpdate(info_);
+    }
+}
+
+/* TODO: Add logic to check that all data in the file is written.
+        The sneder can write data to any offset, so should check
+        that all locations in the file are written to, and only then
+        close the file.
+        As of now, we close the file when we have seen the last block.
+        That will eventually fail.
+*/
+void TorChatPeer::FileTransfer::Write(const string data, uint64_t offset)
+{
+    if (offset > info_.length) {
+        LOG_WARN_FN << "Trying to write after end of file. Aborting transfer. "
+            << *this;
+
+        AbortDownload("Invalid file offset");
+        return;
+    }
+
+    file_.seekg(offset);
+    if (file_.tellg() != offset) {
+        LOG_ERROR_FN << "Failed to set file offset to " <<
+            offset << " for " *this;
+
+        AbortDownload("Failed to set file offset");
+        return;
+    }
+    file_.write(data.c_str(), data.size());
+        info_.transferred += data.size();
+
+    if (file_.fail() || file_.bad()) {
+        LOG_ERROR_FN << "Failed to write data to offset " <<
+            offset << " for " *this;
+
+        AbortDownload("Write failed");
+        return;
+    }
+
+    info_.transferred += data.size();
+    SendAck(offset);
+}
+
+
+void TorChatPeer::FileTransfer::SendAck(std::uint64_t blockid)
+{
+    if (blockid > last_written_blockid_) {
+        last_written_blockid_ = blockid;
+    }
+
+    static const string ack{"filedata_ok"};
+    parent_.GetEngine().SendCommand(ack,
+                                    {GetCookie(), to_string(blockid)},
+                                    parent_.shared_from_this());
+}
+
+void TorChatPeer::FileTransfer::AbortDownload(const std::string& reason)
 {
     static const string stop_sending{"file_stop_sending"};
 
     info_.state = EventMonitor::FileInfo::State::ABORTED;
+    info_.failure_reason = reason;
     LOG_NOTICE << "Aborting " << *this;
 
-    // Send abort
+    if (file_.is_open()) {
+        file_.close();
+        boost::filesystem::remove(path_);
+    }
+
     parent_.GetEngine().SendCommand(stop_sending,
                                     {GetCookie()},
                                     parent_.shared_from_this());
 
-    // Send Event
     for(auto& monitor : parent_.GetEngine().GetMonitors()) {
         monitor->OnFileTransferUpdate(info_);
     }
+
+    parent_.RemoveFileTransfer(info_.file_id);
 }
 
 

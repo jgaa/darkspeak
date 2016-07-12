@@ -28,10 +28,19 @@ class TorChatEngine;
 class TorChatPeer : public std::enable_shared_from_this<TorChatPeer> {
 public:
 
-    class FileTransfer
+    class FileTransfer : public std::enable_shared_from_this<FileTransfer>
     {
     public:
         using ptr_t = std::shared_ptr<FileTransfer>;
+
+
+        struct Buffer {
+            Buffer(std::string&& d, std::uint64_t bid)
+            : data{std::move(d)}, blkid{bid} {}
+
+            std::string data;
+            std::uint64_t blkid = 0;
+        };
 
         enum State {
             UNINITIALIZED,
@@ -61,16 +70,21 @@ public:
         void SetState(State newState);
         void OnIncomingData(std::string&& data, unsigned int blockId);
         void StartDownload();
-        void AbortDownload();
+        void AbortDownload(const std::string& reason);
 
     private:
+        void Write(const std::string data, std::uint64_t offset);
+        void SendAck(std::uint64_t blockid);
+        void SendUpdateEvents();
+
         EventMonitor::FileInfo info_;
         std::string cookie_;
         unsigned int block_size_ = 1024 * 8;
         boost::filesystem::path path_;
         std::fstream file_;
         int last_good_block_ = -1; // None
-        std::deque<std::string> buffers_;
+        std::uint64_t last_written_blockid_ = 0;
+        std::deque<Buffer> buffers_;
         State state_ = State::UNINITIALIZED;
         TorChatPeer& parent_;
     };
@@ -231,6 +245,7 @@ public:
     void AddFileTransfer(FileTransfer::ptr_t transfer);
     FileTransfer::ptr_t GetFileTransfer(const std::string& cookie);
     FileTransfer::ptr_t GetFileTransfer(const boost::uuids::uuid& uuid);
+    void RemoveFileTransfer(const boost::uuids::uuid& uuid);
 
     EventMonitor::BuddyInfo info;
     Direction initiative = Direction::INCOMING;

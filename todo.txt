@@ -26,6 +26,9 @@ TODO:
         >> Peers could have auto-accept, ask or auto-deny status on a buddy.
         >> Save incoming file-data in a temporary file in the peers download folder.
       - If the upper layer confirm the transfer, start sending OK packages.
+    - Add File transfer view to list ongoing and complete file transfers
+        - Global
+        - Filtered by contact
 
   - Finish Contact List:
     - Send status, profile name/info/icon if we edit data
