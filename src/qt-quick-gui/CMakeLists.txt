@@ -35,6 +35,7 @@ set(SOURCES
     ChatMessagesModel.cpp
     ContactData.cpp
     SettingsData.cpp
+    FileTransferModel.cpp
     )
 
 set (HEADERS
@@ -43,6 +44,7 @@ set (HEADERS
     ChatMessagesModel.h
     ContactData.h
     SettingsData.h
+    FileTransferModel.h
     )
 
 qt5_add_resources(RESOURCES resources.qrc)

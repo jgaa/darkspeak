@@ -81,6 +81,18 @@ public:
         Direction direction = Direction::INCOMING;
         State state = State::PENDING;
         std::string failure_reason;
+
+        bool IsActive() const noexcept {
+            return (state == State::PENDING)
+                || (state == State::TRANSFERRING);
+        }
+
+        int PercentageComplete() const {
+            return static_cast<int>(
+                (static_cast<double>(transferred)
+                    / static_cast<double>(length))
+                * 100.0);
+        }
     };
 
     struct Event {
@@ -174,3 +186,5 @@ public:
 } // namespace
 
 std::ostream& operator << (std::ostream& o, const darkspeak::EventMonitor::Event::Type& v);
+std::ostream& operator << (std::ostream& o, const darkspeak::EventMonitor::FileInfo& v);
+

@@ -33,10 +33,7 @@ std::ostream& operator << (std::ostream& o,
 std::ostream& operator << (std::ostream& o,
                            const darkspeak::impl::TorChatPeer::FileTransfer& v) {
 
-    return o << "{FileTransfer: " << v.GetInfo().file_id
-        << ", size " << v.GetInfo().length
-        << ", name " << log::Esc(v.GetInfo().name)
-        << "}";
+    return o << v.GetInfo();
 
 }
 
@@ -287,6 +284,8 @@ void TorChatPeer::FileTransfer::Write(const string data, uint64_t offset)
 /* Tor Chat allows the sender to send and re-send segments at any offset
  * within the file. We therefore need to keep track of the segments that
  * are written so that we know when we have all the data in the file.
+ *
+ * TODO: Add unit tests
  */
 void TorChatPeer::FileTransfer::AddSegment(uint64_t offset, size_t size)
 {
@@ -340,6 +339,14 @@ void TorChatPeer::FileTransfer::AddSegment(uint64_t offset, size_t size)
 
         if (it->start < offset) {
             insert_it = it;
+        }
+
+        // See if it can be merged with it +1
+        auto next = it + 1;
+        while (next != segments_.end() && (it->next() == next->start)) {
+            it->size += next->size;
+            segments_.erase(next);
+            next = it + 1;
         }
     }
 

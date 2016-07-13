@@ -78,16 +78,6 @@ public:
 
     bool HaveBuddy(const std::string& id) const;
 
-//     template <typename T>
-//     T GetConfigValue(std::string key, const T&& def) {
-//         return config_->Get<T>(key, def);
-//     }
-//
-//     template <typename T = std::string>
-//     T GetConfigValue(std::string key) {
-//         return config_->Get<T>(key);
-//     }
-
     std::vector<std::shared_ptr<EventMonitor>> GetMonitors();
 
     war::Threadpool& GetThreadpool() { return *threadpool_; }
@@ -106,12 +96,10 @@ private:
 
     mutable std::mutex mutex_;
     std::shared_ptr<Config> config_;
-    // id, pointer
     std::map<std::string, BuddyImpl::ptr_t> buddies_;
     std::shared_ptr<ImProtocol> protocol_;
     std::unique_ptr<war::Threadpool> threadpool_;
     std::vector<std::weak_ptr<EventMonitor>> event_monitors_;
-    //Info my_info_;
     std::shared_ptr<Events> event_monitor_;
 };
 

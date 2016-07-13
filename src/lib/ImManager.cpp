@@ -11,6 +11,7 @@
 #include <boost/archive/text_oarchive.hpp>
 
 #include "war_helper.h"
+#include "war_uuid.h"
 
 #include "darkspeak/darkspeak_impl.h"
 #include "darkspeak/ImManager.h"
@@ -47,6 +48,12 @@ std::ostream& operator << (std::ostream& o, const darkspeak::EventMonitor::Event
     return o << names.at(static_cast<int>(v));
 }
 
+std::ostream& operator << (std::ostream& o, const darkspeak::EventMonitor::FileInfo& v) {
+    return o << "{FileTransfer: " << v.file_id
+        << ", size " << v.length
+        << ", name " << log::Esc(v.name)
+        << "}";
+}
 
 #define LOCK std::lock_guard<std::mutex> lock(mutex_);
 
