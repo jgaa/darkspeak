@@ -1277,7 +1277,7 @@ void TorChatEngine::ProcessIncomingFileDecision(
     if (accepted) {
         ft->StartDownload();
     } else {
-        ft->AbortDownload();
+        ft->AbortDownload("The file was rejcted by user");
     }
 }
 

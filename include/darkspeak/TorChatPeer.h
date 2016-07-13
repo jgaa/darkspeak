@@ -46,7 +46,8 @@ public:
             UNINITIALIZED,
             UNVERIFIED,
             ACTIVE,
-            DONE
+            DONE,
+            ABORTED
         };
 
         FileTransfer(
@@ -71,11 +72,25 @@ public:
         void OnIncomingData(std::string&& data, unsigned int blockId);
         void StartDownload();
         void AbortDownload(const std::string& reason);
+        bool IsComplete() const;
 
     private:
+        struct Segment {
+            Segment(std::uint64_t st, std::uint64_t si)
+            : start{st}, size{si} {}
+
+            std::uint64_t start = {};
+            std::uint64_t size = {}; // end of data + 1
+
+            std::uint64_t end() const {return start + size - 1;}
+            std::uint64_t next() const {return start + size; }
+            std::uint64_t prev() const {return start ? (start - 1) : 0;}
+        };
+
         void Write(const std::string data, std::uint64_t offset);
         void SendAck(std::uint64_t blockid);
         void SendUpdateEvents();
+        void AddSegment(uint64_t offset, size_t size);
 
         EventMonitor::FileInfo info_;
         std::string cookie_;
@@ -83,10 +98,10 @@ public:
         boost::filesystem::path path_;
         std::fstream file_;
         int last_good_block_ = -1; // None
-        std::uint64_t last_written_blockid_ = 0;
         std::deque<Buffer> buffers_;
         State state_ = State::UNINITIALIZED;
         TorChatPeer& parent_;
+        std::vector<Segment> segments_;
     };
 
     enum class State {

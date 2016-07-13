@@ -42,8 +42,8 @@ std::ostream& operator << (std::ostream& o,
 
 std::ostream& operator << (std::ostream& o,
                            darkspeak::impl::TorChatPeer::FileTransfer::State& v) {
-    static const array<string, 4> names = {
-        "UNINITIALIZED", "UNVERIFIED", "ACTIVE", "DONE" };
+    static const array<string, 5> names = {
+        "UNINITIALIZED", "UNVERIFIED", "ACTIVE", "DONE", "ABORTED" };
 
     return o << names.at(static_cast<int>(v));
 }
@@ -191,6 +191,9 @@ void TorChatPeer::FileTransfer::SetState(TorChatPeer::FileTransfer::State newSta
         case TorChatPeer::FileTransfer::State::DONE:
             info_.state = EventMonitor::FileInfo::State::DONE;
             break;
+        case TorChatPeer::FileTransfer::State::ABORTED:
+            info_.state = EventMonitor::FileInfo::State::ABORTED;
+            break;
     }
 }
 
@@ -225,7 +228,6 @@ void TorChatPeer::FileTransfer::StartDownload()
 
     file_.open(path_.c_str(), ios::out | ios::binary | ios::trunc);
 
-    // TODO: Check for errors
     for(const auto& buffer: buffers_) {
         Write(buffer.data, buffer.blkid);
     }
@@ -235,7 +237,7 @@ void TorChatPeer::FileTransfer::StartDownload()
 
 void TorChatPeer::FileTransfer::SendUpdateEvents()
 {
-    if (info_.transferred >= info_.length) {
+    if (IsComplete()) {
         SetState(TorChatPeer::FileTransfer::State::DONE);
         LOG_NOTICE << "The file " << log::Esc(info_.name)
             << " from " << parent_ << " is successfully received.";
@@ -248,16 +250,9 @@ void TorChatPeer::FileTransfer::SendUpdateEvents()
     }
 }
 
-/* TODO: Add logic to check that all data in the file is written.
-        The sneder can write data to any offset, so should check
-        that all locations in the file are written to, and only then
-        close the file.
-        As of now, we close the file when we have seen the last block.
-        That will eventually fail.
-*/
 void TorChatPeer::FileTransfer::Write(const string data, uint64_t offset)
 {
-    if (offset > info_.length) {
+    if (static_cast<int64_t>(offset) > info_.length) {
         LOG_WARN_FN << "Trying to write after end of file. Aborting transfer. "
             << *this;
 
@@ -266,9 +261,9 @@ void TorChatPeer::FileTransfer::Write(const string data, uint64_t offset)
     }
 
     file_.seekg(offset);
-    if (file_.tellg() != offset) {
+    if (file_.tellg() != static_cast<streampos>(offset)) {
         LOG_ERROR_FN << "Failed to set file offset to " <<
-            offset << " for " *this;
+            offset << " for " << *this;
 
         AbortDownload("Failed to set file offset");
         return;
@@ -278,21 +273,102 @@ void TorChatPeer::FileTransfer::Write(const string data, uint64_t offset)
 
     if (file_.fail() || file_.bad()) {
         LOG_ERROR_FN << "Failed to write data to offset " <<
-            offset << " for " *this;
+            offset << " for " << *this;
 
         AbortDownload("Write failed");
         return;
     }
 
     info_.transferred += data.size();
+    AddSegment(offset, data.size());
     SendAck(offset);
+}
+
+/* Tor Chat allows the sender to send and re-send segments at any offset
+ * within the file. We therefore need to keep track of the segments that
+ * are written so that we know when we have all the data in the file.
+ */
+void TorChatPeer::FileTransfer::AddSegment(uint64_t offset, size_t size)
+{
+    // See if we can merge to an existing segment
+    bool merged = false;
+    auto insert_it = segments_.end();
+    for (auto it = segments_.begin(); it != segments_.end(); ++it) {
+
+        if ((offset % block_size_) != 0) {
+            LOG_WARN_FN << "Got an unaligned segment at offset "
+                << offset
+                << " for " << *this
+                << ". Aborting transfer.";
+
+            AbortDownload("Unaligned data segment");
+            return;
+        }
+
+        if (size > block_size_) {
+            LOG_WARN_FN << "Got an oversized segment at offset "
+                << offset
+                << " with size " << size
+                << " for " << *this
+                << ". Aborting transfer.";
+
+            AbortDownload("Oversized data segment");
+            return;
+        }
+
+        // See if the new segment is alread inside this segment
+        if ((it->start <= offset)
+            && (it->next() >= (offset + size))) {
+            // Duplicate / re-sent segment
+            LOG_DEBUG_FN << "Duplicate segment at " << offset << " " << *this;
+            continue;
+        }
+
+        // Try to merge before iterator
+        if (it->prev() == offset) {
+            it->start = offset;
+            it->size += size;
+            merged = true;
+        }
+
+        // Try to merge after iterator
+        if (it->next() == offset) {
+            it->size += size;
+            merged = true;
+            break;
+        }
+
+        if (it->start < offset) {
+            insert_it = it;
+        }
+    }
+
+    if (!merged) {
+        // Insert in ascending order
+        segments_.insert(insert_it, {offset, size});
+    }
+}
+
+/* We are complete when we have only one merged segment covering
+ * the entire file.
+ */
+bool TorChatPeer::FileTransfer::IsComplete() const
+{
+    if (segments_.size() == 1) {
+        const auto& seg = segments_.front();
+        if ((seg.start == 0) && (static_cast<int64_t>(seg.size) == info_.length)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 
 void TorChatPeer::FileTransfer::SendAck(std::uint64_t blockid)
 {
-    if (blockid > last_written_blockid_) {
-        last_written_blockid_ = blockid;
+    if (state_ == State::ABORTED) {
+        return;
     }
 
     static const string ack{"filedata_ok"};
@@ -307,7 +383,8 @@ void TorChatPeer::FileTransfer::AbortDownload(const std::string& reason)
 
     info_.state = EventMonitor::FileInfo::State::ABORTED;
     info_.failure_reason = reason;
-    LOG_NOTICE << "Aborting " << *this;
+    SetState(State::ABORTED);
+    LOG_NOTICE << "Aborting " << *this << ". " << reason;
 
     if (file_.is_open()) {
         file_.close();
