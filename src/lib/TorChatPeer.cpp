@@ -381,6 +381,10 @@ void TorChatPeer::FileTransfer::AbortDownload(const std::string& reason)
 {
     static const string stop_sending{"file_stop_sending"};
 
+    if (state_ == State::ABORTED) {
+        return; // Already aborted
+    }
+
     info_.state = EventMonitor::FileInfo::State::ABORTED;
     info_.failure_reason = reason;
     SetState(State::ABORTED);

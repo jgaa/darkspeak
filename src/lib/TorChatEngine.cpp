@@ -76,6 +76,9 @@ TorChatEngine::TorChatEngine(ImProtocol::get_pipeline_fn_t fn,
         {"file_stop_sending", {Command::Verb::FILE_STOP_SENDING, 1,
             [this] (const Request& req) { OnFileStopSending(req); },
             Command::Valid::ACCEPTED }},
+        {"file_stop_receiving", {Command::Verb::FILE_STOP_RECEIVING, 1,
+            [this] (const Request& req) { OnFileStopReceiving(req); },
+            Command::Valid::ACCEPTED }},
         {"message", {Command::Verb::MESSAGE, -1,
             [this] (const Request& req) { OnMessage(req); },
             Command::Valid::ACCEPTED}},
@@ -799,8 +802,16 @@ void TorChatEngine::OnFilename(const TorChatEngine::Request& req)
 
 void TorChatEngine::OnFileStopSending(const TorChatEngine::Request& req)
 {
-
 }
+
+void TorChatEngine::OnFileStopReceiving(const TorChatEngine::Request& req)
+{
+    auto ft = req.peer->GetFileTransfer(req.params.at(0));
+    if (ft) {
+        ft->AbortDownload("Aborted by sender");
+    }
+}
+
 
 void TorChatEngine::OnMessage(const TorChatEngine::Request& req)
 {

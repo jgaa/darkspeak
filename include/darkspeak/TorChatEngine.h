@@ -39,6 +39,7 @@ public:
             FILEDATA_OK,
             FILENAME,
             FILE_STOP_SENDING,
+            FILE_STOP_RECEIVING,
             MESSAGE,
             PING,
             PONG,
@@ -196,6 +197,7 @@ private:
     void OnFileDataOk(const Request& req);
     void OnFilename(const Request& req);
     void OnFileStopSending(const Request& req);
+    void OnFileStopReceiving(const Request& req);
     void OnMessage(const Request& req);
     void OnPing(const Request& req);
     void OnPong(const Request& req);
