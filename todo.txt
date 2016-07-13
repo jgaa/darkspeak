@@ -18,17 +18,17 @@ Missing features:
 TODO:
   - File Transfer
     Work-flow:
-      - Handle filedata. Set up a connection object fro the buddy,
+      v Handle filedata. Set up a connection object fro the buddy,
         identified by the cookie. Notify the upper layer.
-        >>  Only allow one pending file transfer per peer. Automatically
-            dismiss a new request until the current one is approved or
-            dismissed.
-        >> Peers could have auto-accept, ask or auto-deny status on a buddy.
-        >> Save incoming file-data in a temporary file in the peers download folder.
-      - If the upper layer confirm the transfer, start sending OK packages.
+        v  Only allow /n/ file transfer per peer. Automatically
+            dismiss new requests until current transfers are out of the way.
+      v If the upper layer confirm the transfer, start sending OK packages.
     - Add File transfer view to list ongoing and complete file transfers
         - Global
         - Filtered by contact
+    - Optimize the performance. We use too much CPU when receiving a file.
+    - Send file
+    - Implement stop_sending
 
   - Finish Contact List:
     - Send status, profile name/info/icon if we edit data
@@ -64,3 +64,4 @@ Features:
   - ChatView: Show by color or icon when a message is queued or sent
   - ChatView: Tag messages with timestamp
   - ContacList: Alternative layout, more compact.
+  - File Transfer: Peers could have auto-accept, ask or auto-deny status on a buddy.

@@ -777,6 +777,20 @@ void TorChatEngine::OnFilename(const TorChatEngine::Request& req)
         return;
     }
 
+    auto curr_transfers = config_.Get<size_t>(
+        Config::MAX_FILE_TRANSFERS_PER_CONTACT,
+        Config::MAX_FILE_TRANSFERS_PER_CONTACT_DEFAULT);
+
+    if (req.peer->GetFileTransfersCount() > curr_transfers) {
+
+        LOG_WARN << "Incoming file " << log::Esc(ft->GetInfo().name)
+            << " is rejected because the user is already sending "
+            << curr_transfers << " files.";
+
+        DoSend(stop_sending, {ft->GetCookie()}, *req.peer, *req.yield);
+        return;
+    }
+
     ft->SetState(TorChatPeer::FileTransfer::State::UNVERIFIED);
     req.peer->AddFileTransfer(ft);
 

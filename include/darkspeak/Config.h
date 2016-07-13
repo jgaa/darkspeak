@@ -72,6 +72,8 @@ public:
     constexpr static const char *DOWNLOAD_FOLDER = "folder.download";
     constexpr static const char *DOWNLOAD_FOLDER_DEFAULT = "./incoming/{id}";
 
+    constexpr static const char *MAX_FILE_TRANSFERS_PER_CONTACT = "limits.max_transfers_per_contact";
+    constexpr static const int MAX_FILE_TRANSFERS_PER_CONTACT_DEFAULT = 5;
 
 private:
     bool dirty_ = false;

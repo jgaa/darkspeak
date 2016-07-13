@@ -261,6 +261,7 @@ public:
     FileTransfer::ptr_t GetFileTransfer(const std::string& cookie);
     FileTransfer::ptr_t GetFileTransfer(const boost::uuids::uuid& uuid);
     void RemoveFileTransfer(const boost::uuids::uuid& uuid);
+    size_t GetFileTransfersCount() const { return file_transfers_.size(); }
 
     EventMonitor::BuddyInfo info;
     Direction initiative = Direction::INCOMING;
