@@ -359,7 +359,7 @@ void ContactsModel::deleteBuddyFromList(string id)
 void ContactsModel::IncomingFileRequest(const EventMonitor::FileInfo file)
 {
     LOG_DEBUG_FN << "Caught file signal. Contacting UI now";
-    QString name = file.name.c_str();
+    QString name = file.path.filename().c_str();
     auto uuid = boost::uuids::to_string(file.file_id);
     QString file_id = uuid.c_str();
     auto contact = getContactData(FindBuddy(file.buddy_id));

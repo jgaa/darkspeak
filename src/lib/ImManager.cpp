@@ -51,7 +51,7 @@ std::ostream& operator << (std::ostream& o, const darkspeak::EventMonitor::Event
 std::ostream& operator << (std::ostream& o, const darkspeak::EventMonitor::FileInfo& v) {
     return o << "{FileTransfer: " << v.file_id
         << ", size " << v.length
-        << ", name " << log::Esc(v.name)
+        << ", name " << log::Esc(v.path.string())
         << "}";
 }
 
@@ -304,7 +304,13 @@ void ImManager::Connect(Api::Buddy::ptr_t buddy)
     protocol_->Connect(move(buddy));
 }
 
-BuddyImpl::ptr_t ImManager::GetBuddy(const string& id)
+Api::Buddy::ptr_t ImManager::GetBuddy(const string& id)
+{
+    return GetBuddyImpl(id);
+}
+
+
+BuddyImpl::ptr_t ImManager::GetBuddyImpl(const string& id)
 {
     LOCK;
     auto it = buddies_.find(id);
@@ -397,7 +403,7 @@ void ImManager::Events::OnNewBuddyAdded(const EventMonitor::BuddyInfo& info)
 
 void ImManager::Events::OnBuddyStateUpdate(const EventMonitor::BuddyInfo& info)
 {
-    auto buddy = manager_.GetBuddy(info.buddy_id);
+    auto buddy = manager_.GetBuddyImpl(info.buddy_id);
     if (!buddy) {
         WAR_THROW_T(ExceptionDisconnectNow, "Nonexistant buddy");
     }
@@ -423,7 +429,7 @@ void ImManager::Events::OnIncomingMessage(const EventMonitor::Message& message)
         << ": " << log::Esc(message.message);
 
     if (!message.buddy_id.empty()) {
-        auto buddy = manager_.GetBuddy(message.buddy_id);
+        auto buddy = manager_.GetBuddyImpl(message.buddy_id);
         if (buddy) {
             buddy->UpdateLastSeenTimestamp();
             auto msg = make_shared<Api::Message>(
@@ -457,7 +463,7 @@ void ImManager::Events::OnFileTransferUpdate(const EventMonitor::FileInfo& file)
 void ImManager::Events::OnOtherEvent(const EventMonitor::Event& event)
 {
     if (!event.buddy_id.empty()) {
-        auto buddy = manager_.GetBuddy(event.buddy_id);
+        auto buddy = manager_.GetBuddyImpl(event.buddy_id);
         if (buddy) {
             buddy->OnOtherEvent(event);
         }
@@ -498,6 +504,12 @@ void ImManager::RejectFileTransfer(const AcceptFileTransferData& aftd)
 {
     protocol_->RejectFileTransfer(aftd);
 }
+
+void ImManager::AbortFileTransfer(const AbortFileTransferData& aftd)
+{
+    protocol_->AbortFileTransfer(aftd);
+}
+
 
 
 } // impl

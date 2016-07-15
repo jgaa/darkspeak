@@ -59,6 +59,7 @@ public:
 
     buddy_list_t GetBuddies() override;
     Buddy::ptr_t AddBuddy(const Buddy::Info& def) override;
+    Buddy::ptr_t GetBuddy(const std::string& id)override;
     void RemoveBuddy(const std::string& id) override;
     void GoOnline() override;
     void Disconnect(bool local_only = true) override;
@@ -66,6 +67,8 @@ public:
     void SetMonitor(std::shared_ptr<EventMonitor> monitor) override;
     void AcceptFileTransfer(const AcceptFileTransferData& aftd) override;
     void RejectFileTransfer(const AcceptFileTransferData& aftd) override;
+    void AbortFileTransfer(const AbortFileTransferData& aftd) override;
+
 
     std::shared_ptr<ImProtocol> GetProtocol() { return protocol_; }
     void Connect(Api::Buddy::ptr_t buddy);
@@ -74,7 +77,7 @@ public:
     }
 
     // Returne nullpointer if not found
-    BuddyImpl::ptr_t GetBuddy(const std::string& id);
+    BuddyImpl::ptr_t GetBuddyImpl(const std::string& id);
 
     bool HaveBuddy(const std::string& id) const;
 

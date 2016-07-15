@@ -764,16 +764,15 @@ void TorChatEngine::OnFilename(const TorChatEngine::Request& req)
     );
 
     LOG_DEBUG_FN << "Incoming file transfer request for file "
-        << log::Esc(ft->GetInfo().name)
+        << log::Esc(ft->GetInfo().path.string())
         << " with size " << ft->GetInfo().length
         << " and block-length " << ft->GetBlockSize()
         << " with cookie " << log::Esc(ft->GetCookie())
         << " assigned with id " << ft->GetInfo().file_id
         << " from " << *req.peer;
 
-    path_t file_name = ft->GetInfo().name;
-    if (!validate_filename_as_safe(file_name)) {
-        LOG_WARN << "Incoming file-name " << log::Esc(ft->GetInfo().name)
+    if (!validate_filename_as_safe(ft->GetInfo().path)) {
+        LOG_WARN << "Incoming file-name " << log::Esc(ft->GetInfo().path.string())
             << " is unsafe. Potential attack. Rejecting transfer.";
 
         DoSend(stop_sending, {ft->GetCookie()}, *req.peer, *req.yield);
@@ -786,7 +785,7 @@ void TorChatEngine::OnFilename(const TorChatEngine::Request& req)
 
     if (req.peer->GetFileTransfersCount() > curr_transfers) {
 
-        LOG_WARN << "Incoming file " << log::Esc(ft->GetInfo().name)
+        LOG_WARN << "Incoming file " << *ft
             << " is rejected because the user is already sending "
             << curr_transfers << " files.";
 
@@ -1283,6 +1282,36 @@ void TorChatEngine::RejectFileTransfer(const AcceptFileTransferData& aftd)
             ProcessIncomingFileDecision(aftd, false);
         }, "RejectFileTransfer"});
 }
+
+void TorChatEngine::AbortFileTransfer(const AbortFileTransferData& aftd)
+{
+    pipeline_.Post({
+        [this, aftd]() {
+            ProcessAbortFileTransfer(aftd);
+        }, "AbortFileTransfer"});
+}
+
+void TorChatEngine::ProcessAbortFileTransfer(const AbortFileTransferData& aftd)
+{
+    auto peer = GetPeer(aftd.buddy_id);
+    auto transfer = peer->GetFileTransfer(aftd.uuid);
+
+    if (transfer) {
+        if (transfer->GetInfo().direction == Direction::INCOMING) {
+            transfer->AbortDownload(aftd.reason);
+        }
+        // TODO: Handle upload
+
+    }
+
+    if (!aftd.delete_this.empty()) {
+        if (boost::filesystem::is_regular(aftd.delete_this)) {
+            LOG_NOTICE << "Removing file " << log::Esc(aftd.delete_this.string());
+            boost::filesystem::remove(aftd.delete_this);
+        }
+    }
+}
+
 
 void TorChatEngine::ProcessIncomingFileDecision(
     const AcceptFileTransferData& aftd, bool accepted)

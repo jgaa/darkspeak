@@ -208,22 +208,23 @@ void TorChatPeer::FileTransfer::StartDownload()
     // Expand macros
     boost::replace_all(raw_path, "{id}", info_.buddy_id);
 
-    path_ = raw_path;
+    auto name = info_.path;
+    info_.path = raw_path;
 
-    if (!boost::filesystem::is_directory(path_)) {
-        LOG_NOTICE << "Creating download directory " << log::Esc(path_.string());
-        boost::filesystem::create_directories(path_);
+    if (!boost::filesystem::is_directory(info_.path)) {
+        LOG_NOTICE << "Creating download directory " << log::Esc(info_.path.string());
+        boost::filesystem::create_directories(info_.path);
     }
 
-    path_ /= info_.name;
-    if (!validate_filename_as_safe(path_)) {
-        LOG_WARN_FN << "The path " << log::Esc(path_.string())
+    info_.path /= name;
+    if (!validate_filename_as_safe(info_.path)) {
+        LOG_WARN_FN << "The path " << log::Esc(info_.path.string())
             << " is not safe. Aborting download.";
         AbortDownload("Unsafe filename");
         return;
     }
 
-    file_.open(path_.c_str(), ios::out | ios::binary | ios::trunc);
+    file_.open(info_.path.c_str(), ios::out | ios::binary | ios::trunc);
 
     for(const auto& buffer: buffers_) {
         Write(buffer.data, buffer.blkid);
@@ -236,7 +237,7 @@ void TorChatPeer::FileTransfer::SendUpdateEvents()
 {
     if (IsComplete()) {
         SetState(TorChatPeer::FileTransfer::State::DONE);
-        LOG_NOTICE << "The file " << log::Esc(info_.name)
+        LOG_NOTICE << "The file " << log::Esc(info_.path.string())
             << " from " << parent_ << " is successfully received.";
         parent_.RemoveFileTransfer(info_.file_id);
     }
@@ -399,7 +400,7 @@ void TorChatPeer::FileTransfer::AbortDownload(const std::string& reason)
 
     if (file_.is_open()) {
         file_.close();
-        boost::filesystem::remove(path_);
+        boost::filesystem::remove(info_.path);
     }
 
     parent_.GetEngine().SendCommand(stop_sending,

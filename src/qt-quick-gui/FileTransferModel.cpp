@@ -1,4 +1,6 @@
 
+#include <QDesktopServices>
+
 #include "log/WarLog.h"
 
 #include "darkspeak/EventMonitor.h"
@@ -20,12 +22,16 @@ FileTransferModel::FileTransferModel(Api& api, QObject *parent)
     event_listener_ = make_shared<Events>(*this);
 
     connect(this,
-            SIGNAL(newTransfer(std::string)),
-            this, SLOT(addFileToList(std::string)));
+            SIGNAL(newTransfer(darkspeak::EventMonitor::FileInfo)),
+            this, SLOT(addFileToList(darkspeak::EventMonitor::FileInfo)));
 
     connect(this,
-            SIGNAL(fileInfoUpdated(std::string)),
-            this, SLOT(updateFileInfo(std::string)));
+            SIGNAL(fileInfoUpdated(darkspeak::EventMonitor::FileInfo)),
+            this, SLOT(updateFileInfo(darkspeak::EventMonitor::FileInfo)));
+
+    connect(this,
+            SIGNAL(deleteEntry(int)),
+            this, SLOT(deleteEntryFromList(int)));
 
     api_.SetMonitor(event_listener_);
 }
@@ -47,10 +53,17 @@ QVariant FileTransferModel::data(const QModelIndex& index, int role) const
     switch(role) {
         case BuddyIdRole:
             return {transfers_[row].buddy_id.c_str()};
+        case BuddyNameRole: {
+            if (auto buddy = api_.GetBuddy(transfers_[row].buddy_id)) {
+                const auto ui_name = buddy->GetUiName();
+                return {ui_name.c_str()};
+            }
+            break;
+        }
         case NameRole:
-            return {transfers_[row].name.c_str()};
+            return {transfers_[row].path.filename().c_str()};
         case SizeRole:
-            return {static_cast<qint64>(transfers_[row].length)};
+            return GetHumanReadableNumber(transfers_[row].length);
         case PercentageRole:
             return {transfers_[row].PercentageComplete()};
         case DirectionRole:
@@ -59,6 +72,8 @@ QVariant FileTransferModel::data(const QModelIndex& index, int role) const
         case StatusRole:
             return static_cast<State>(
                 static_cast<int>(transfers_[row].state));
+        case IconRole:
+            return GetIconForFile(transfers_[row]);
     }
 
     return {};
@@ -68,11 +83,13 @@ QHash<int, QByteArray> FileTransferModel::roleNames() const
 {
     static const QHash<int, QByteArray> names = {
         {BuddyIdRole, "buddy_id"},
+        {BuddyNameRole, "buddy_name"},
         {NameRole, "name"},
         {SizeRole, "size"},
         {PercentageRole, "percent"},
         {DirectionRole, "direction"},
-        {StatusRole, "status"}
+        {StatusRole, "status"},
+        {IconRole, "icon"}
     };
 
     return names;
@@ -105,29 +122,164 @@ void FileTransferModel::updateActiveTransfers()
 
     if (count != active_transfers_) {
         active_transfers_ = count;
+        emit transferStatusIconChanged();
         emit activeTransfersChanged(active_transfers_);
     }
 }
 
 void FileTransferModel::updateFileInfo(EventMonitor::FileInfo fi)
 {
-    auto file = GetFile(fi.file_id);
+    int row = 0;
+    auto file = GetFile(fi.file_id, row);
     if (file) {
         *file = fi;
-        return;
+        try {
+            auto mi = index(row, 0);
+            LOG_DEBUG_FN << "Refreshing " << *file << " at index " << row;
+            emit dataChanged(mi, mi);
+        } WAR_CATCH_NORMAL;
     }
+
+    updateActiveTransfers();
 }
 
 
-EventMonitor::FileInfo* FileTransferModel::GetFile(const boost::uuids::uuid& uuid)
+EventMonitor::FileInfo* FileTransferModel::GetFile(
+    const boost::uuids::uuid& uuid, int& index)
 {
+    index = 0;
     for(auto& transfer: transfers_) {
         if (transfer.file_id == uuid) {
             return &transfer;
         }
+        ++index;
     }
 
     return nullptr;
+}
+
+
+QUrl FileTransferModel::GetIconForFile(const darkspeak::EventMonitor::FileInfo& fileInfo) const
+{
+    static const std::array<QUrl, 6> icons = {
+        // DownloadBuddyNameRole
+        QUrl("qrc:/images/FileDownload.svg"),
+        QUrl("qrc:/images/FileDownloadFailed.svg"),
+        QUrl("qrc:/images/FileDownloadOk.svg"),
+        // Upload
+        QUrl("qrc:/imagesFileUpload.svg"),
+        QUrl("qrc:/images/FileUploadFailed.svg"),
+        QUrl("qrc:/images/FileUploadOk.svg"),
+    };
+
+    int index = fileInfo.direction == darkspeak::Direction::INCOMING ? 0 : 3;
+    switch(fileInfo.state) {
+        case darkspeak::EventMonitor::FileInfo::State::DONE:
+            index += 2;
+            break;
+        case darkspeak::EventMonitor::FileInfo::State::PENDING:
+        case darkspeak::EventMonitor::FileInfo::State::TRANSFERRING:
+            break;
+        case darkspeak::EventMonitor::FileInfo::State::ABORTED:
+            index += 1;
+        break;
+    }
+
+    return icons.at(index);
+}
+
+QUrl FileTransferModel::getTransferStatusIcon() const
+{
+    static const std::array<QUrl, 2> icons = {
+        QUrl("qrc:/images/FileTansferActive.svg"),
+        QUrl("qrc:/images/FileTansferInactive.svg"),
+    };
+
+    const auto& rval = icons.at(active_transfers_ ? 0 : 1);
+    LOG_DEBUG_FN << "Sending transfers icon: " << rval.toString().toStdString();
+    return rval;
+}
+
+// TODO: Add file explorer with file selected for KDE, OS/X and Windows
+void FileTransferModel::openFolder(int index)
+{
+    try {
+        const auto& fi = transfers_.at(index);
+        auto fullpath = boost::filesystem::canonical(fi.path.parent_path());
+        auto url = string("file://") + fullpath.string();
+        QDesktopServices::openUrl({url.c_str(), QUrl::TolerantMode});
+    } WAR_CATCH_NORMAL;
+}
+
+void FileTransferModel::deleteTransfer(int index)
+{
+    try {
+        const auto& fi = transfers_.at(index);
+
+        if ((fi.state == EventMonitor::FileInfo::State::PENDING)
+            || (fi.state == EventMonitor::FileInfo::State::TRANSFERRING)) {
+
+            AbortFileTransferData aftd;
+            aftd.buddy_id = fi.buddy_id;
+            aftd.uuid = fi.file_id;
+            aftd.reason = "Aborted by user";
+            aftd.delete_this = fi.direction == darkspeak::Direction::INCOMING
+                ? fi.path : boost::filesystem::path();
+            api_.AbortFileTransfer(aftd);
+        } else if (fi.state == EventMonitor::FileInfo::State::DONE) {
+            if (boost::filesystem::is_regular(fi.path)) {
+                LOG_NOTICE << "Removing file " << log::Esc(fi.path.string());
+                boost::filesystem::remove(fi.path);
+            }
+        }
+
+        emit deleteEntry(index);
+
+    } WAR_CATCH_NORMAL;
+}
+
+void FileTransferModel::deleteEntryFromList(int index) {
+
+    try {
+        const auto& fi = transfers_.at(index);
+
+        LOG_DEBUG_FN << "Removing file transfer " << fi;
+
+        emit beginRemoveRows(QModelIndex(), index, index);
+        transfers_.erase(transfers_.begin() + index);
+        emit endRemoveRows();
+
+        updateActiveTransfers();
+    } WAR_CATCH_NORMAL;
+}
+
+QString FileTransferModel::GetHumanReadableNumber(int64_t num) {
+    static const auto peta = 1125899906842624;
+    static const auto tera = 1099511627776;
+    static const auto giga = 1073741824;
+    static const auto mega = 1048576;
+    static const auto kilo = 1024;
+
+    std::stringstream result;
+
+    result << fixed <<  setprecision(2);
+
+    if (num >= (peta + (peta / 4))) {
+        result << (static_cast<double>(num) / peta) << 'p';
+    } if (num >= (tera + (tera / 4))) {
+        result << (static_cast<double>(num) / tera) << 't';
+    } else if (num >= (giga + (giga / 4))) {
+        result << (static_cast<double>(num) / giga) << 'g';
+    } else if (num >= (mega + (mega / 4))) {
+        result << (static_cast<double>(num) / mega) << 'm';
+    } else if (num >= (kilo + (kilo / 4))) {
+        result << (static_cast<double>(num) / kilo) << 'k';
+    } else {
+        result << num << 'b';
+    }
+
+    auto str = result.str();
+    return {str.c_str()};
 }
 
 

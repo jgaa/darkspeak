@@ -17,6 +17,14 @@ ApplicationWindow {
 
     toolBar: MainToolBar { id: mainToolBar }
 
+    ListModel {
+            id: filesMock
+
+            ListElement { name: "test.zip"; icon: "qrc:/images/FileDownload.svg"; buddy_name: "jgaa"; percent: 100; size: "123b" }
+            ListElement { name: "nicecat.zip"; icon: "qrc:/images/FileDownload.svg"; buddy_name: "jgaa"; percent: 70; size: "67m" }
+            ListElement { name: "nicedog.zip"; icon: "qrc:/images/FileUpload.svg"; buddy_name: "gakke"; percent: 0; size: "2.45g"}
+        }
+
     Connections {
         target: contactsModel
 
@@ -56,11 +64,28 @@ ApplicationWindow {
        }
 
        function openChatWindow(model) {
-           var chatComponent = Qt.createComponent("ChatView.qml")
-           var chat = chatComponent.createObject(
-               main_pane, {"model":model});
-           chat.model = model
-           push(chat)
+//           var chatComponent = Qt.createComponent("ChatView.qml")
+//           var chat = chatComponent.createObject(
+//               main_pane, {"model":model});
+//           chat.model = model
+//           push(chat)
+//           state = currentItem.stateName
+           openWindow("ChatView.qml", model)
+       }
+
+       function openTransfersWindow(model) {
+           openWindow("FileTransfersView.qml", model)
+       }
+
+       function openWindow(qmlFile, model) {
+           var uiComponent = Qt.createComponent(qmlFile)
+           if( uiComponent.status === Component.Error ) {
+                   console.debug("Error: "+ uiComponent.errorString());
+               return;
+           }
+           var uiWin = uiComponent.createObject(main_pane, {"model":model});
+           uiWin.model = model
+           push(uiWin)
            state = currentItem.stateName
        }
 
@@ -68,6 +93,10 @@ ApplicationWindow {
            State {
                name: "chat"
                PropertyChanges { target: mainToolBar; state: "chat"}
+           },
+           State {
+               name: "transfers"
+               PropertyChanges { target: mainToolBar; state: "transfers"}
            }
        ]
    }

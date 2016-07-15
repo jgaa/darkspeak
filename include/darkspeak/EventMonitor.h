@@ -75,7 +75,7 @@ public:
 
         std::string buddy_id;
         boost::uuids::uuid file_id;
-        std::string name;
+        path_t path;
         std::int64_t length = -1; // Unknown size
         std::int64_t transferred = 0;
         Direction direction = Direction::INCOMING;

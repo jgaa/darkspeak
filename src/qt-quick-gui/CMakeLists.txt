@@ -26,6 +26,7 @@ set(QML_SRC
     qml/SettingsDlg.qml
     qml/TorSettingsTab.qml
     qml/IncomingFileRequest.qml
+    qml/FileTransfersView.qml
     )
 
 set(SOURCES

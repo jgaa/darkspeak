@@ -18,6 +18,7 @@
 #include "DarkRoot.h"
 #include "ContactsModel.h"
 #include "ChatMessagesModel.h"
+#include "FileTransferModel.h"
 #include "ContactData.h"
 #include "SettingsData.h"
 
@@ -100,6 +101,7 @@ int main(int argc, char *argv[])
     auto manager = impl::ImManager::CreateInstance(conf_path);
     DarkRoot dark_root(*manager, manager->GetConfig());
     ContactsModel contacts_model(*manager);
+    FileTransferModel file_transfer_model(*manager);
 
 
     // Initiallze the UI components
@@ -108,6 +110,11 @@ int main(int argc, char *argv[])
     {
         QString no_create_message = "ContactsModel is a global signleton.";
         qmlRegisterUncreatableType<ContactsModel>("com.jgaa.darkspeak", 1, 0, "ContactsModel", no_create_message);
+    }
+
+    {
+        QString no_create_message = "FileTransferModel is a global signleton.";
+        qmlRegisterUncreatableType<FileTransferModel>("com.jgaa.darkspeak", 1, 0, "FileTransferModel", no_create_message);
     }
 
     {
@@ -129,11 +136,13 @@ int main(int argc, char *argv[])
     qmlRegisterType<ContactData>("com.jgaa.darkspeak", 1, 0, "ContactData");
     qmlRegisterType<SettingsData>("com.jgaa.darkspeak", 1, 0, "SettingsData");
 
+
     //qmlRegisterType<ContactsModel>("com.jgaa.darkspeak", 1, 0, "ContactsModel");
     //FoldersModel folders_model(*client);
 
     engine.rootContext()->setContextProperty("darkRoot", &dark_root);
     engine.rootContext()->setContextProperty("contactsModel", &contacts_model);
+    engine.rootContext()->setContextProperty("transfersModel", &file_transfer_model);
     engine.load(QUrl("qrc:/qml/main.qml"));
     //engine.rootContext()->setContextProperty("darkRoot", &dark_root);
 

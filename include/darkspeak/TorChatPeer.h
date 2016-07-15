@@ -61,7 +61,7 @@ public:
         {
             info_.buddy_id = buddyId;
             info_.file_id = boost::uuids::random_generator()();
-            info_.name = fileName;
+            info_.path = fileName;
             info_.length = fileSize;
         }
 
@@ -95,7 +95,7 @@ public:
         EventMonitor::FileInfo info_;
         std::string cookie_;
         unsigned int block_size_ = 1024 * 8;
-        boost::filesystem::path path_;
+        //boost::filesystem::path path_;
         std::fstream file_;
         int last_good_block_ = -1; // None
         std::deque<Buffer> buffers_;

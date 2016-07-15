@@ -97,6 +97,7 @@ public:
     void StartMonitor();
     void AcceptFileTransfer(const AcceptFileTransferData& aftd) override;
     void RejectFileTransfer(const AcceptFileTransferData& aftd) override;
+    void AbortFileTransfer(const AbortFileTransferData& aftd) override;
 
     void SendCommand(const std::string& command,
                 std::initializer_list<std::string> args,
@@ -172,6 +173,8 @@ private:
 
     void ProcessIncomingFileDecision(const AcceptFileTransferData& aftd,
         bool accepted);
+
+    void ProcessAbortFileTransfer(const AbortFileTransferData& aftd);
 
     void Reconnect(const std::shared_ptr<TorChatPeer>& peer);
 

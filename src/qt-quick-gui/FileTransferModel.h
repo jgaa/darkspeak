@@ -39,11 +39,13 @@ class FileTransferModel : public QAbstractListModel
 
     enum RoleNames {
         BuddyIdRole = Qt::UserRole,
+        BuddyNameRole,
         NameRole,
         SizeRole,
         PercentageRole,
         DirectionRole,
-        StatusRole
+        StatusRole,
+        IconRole
     };
 
 public:
@@ -66,6 +68,12 @@ public:
         READ getActiveTransfers
         NOTIFY activeTransfersChanged)
 
+    Q_PROPERTY(QUrl transferStatusIcon
+        READ getTransferStatusIcon
+        NOTIFY transferStatusIconChanged)
+
+    static QString GetHumanReadableNumber(std::int64_t num);
+
     // QAbstractItemModel interface
 public:
     explicit FileTransferModel(darkspeak::Api& api, QObject *parent = nullptr);
@@ -79,22 +87,35 @@ public:
     virtual QVariant data(const QModelIndex &index, int role) const override;
 
     Q_INVOKABLE int getActiveTransfers();
+    Q_INVOKABLE void openFolder(int id);
+
+    /*! Delete a transfer.
+     *
+     * If pending or active, cancel.
+     * If complete, delete the entry and the file.
+     */
+    Q_INVOKABLE void deleteTransfer(int id);
 
 protected:
     QHash<int, QByteArray> roleNames() const;
 
 public slots:
-    void addFileToList(darkspeak::EventMonitor::FileInfo fi);
-    void updateFileInfo(darkspeak::EventMonitor::FileInfo fi);
+    void addFileToList(darkspeak::EventMonitor::FileInfo);
+    void updateFileInfo(darkspeak::EventMonitor::FileInfo);
     void updateActiveTransfers();
+    QUrl getTransferStatusIcon() const;
+    void deleteEntryFromList(int index);
 
 signals:
     void activeTransfersChanged(int);
-    void newTransfer(darkspeak::EventMonitor::FileInfo fi);
-    void fileInfoUpdated(darkspeak::EventMonitor::FileInfo fi);
+    void newTransfer(darkspeak::EventMonitor::FileInfo);
+    void fileInfoUpdated(darkspeak::EventMonitor::FileInfo);
+    void transferStatusIconChanged();
+    void deleteEntry(int index);
 
 private:
-    darkspeak::EventMonitor::FileInfo *GetFile(const boost::uuids::uuid& uuid);
+    darkspeak::EventMonitor::FileInfo *GetFile(const boost::uuids::uuid& uuid, int &index);
+    QUrl GetIconForFile(const darkspeak::EventMonitor::FileInfo& fileInfo) const;
 
     darkspeak::Api& api_;
     std::shared_ptr<Events> event_listener_;

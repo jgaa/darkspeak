@@ -41,6 +41,7 @@ ToolBar {
         iconSource: contactsModel.onlineStatusIcon
     }
 
+
     ToolButton {
         id: addContactButton
         tooltip: "Add a new contact"
@@ -52,6 +53,19 @@ ToolBar {
         anchors.leftMargin: 6
         onClicked: addContactDlg.open()
         AddContactDlg {id: addContactDlg}
+    }
+
+    ToolButton {
+        id: transferButton
+        enabled: true
+        anchors.top: addContactButton.top
+        anchors.left: addContactButton.right
+        anchors.leftMargin: 6
+        tooltip: "Connect to the Tor Network"
+        onClicked: {
+            main_pane.openTransfersWindow(transfersModel)
+        }
+        iconSource: transfersModel.transferStatusIcon
     }
 
     ToolButton {
@@ -78,6 +92,17 @@ ToolBar {
             PropertyChanges { target: addContactButton; enabled: false}
             PropertyChanges { target: backButton; opacity: 1}
             PropertyChanges { target: backButton; enabled: true}
+        },
+        State {
+            name: "transfers"
+            PropertyChanges { target: connectButton; opacity: 0}
+            PropertyChanges { target: connectButton; enabled: false}
+            PropertyChanges { target: addContactButton; opacity: 0}
+            PropertyChanges { target: addContactButton; enabled: false}
+            PropertyChanges { target: backButton; opacity: 1}
+            PropertyChanges { target: backButton; enabled: true}
+            PropertyChanges { target: transferButton; opacity: 0}
+            PropertyChanges { target: transferButton; enabled: false}
         }
     ]
 

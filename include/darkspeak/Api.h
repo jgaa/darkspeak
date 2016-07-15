@@ -25,9 +25,17 @@ class EventMonitor;
 class BuddyEventsMonitor;
 
 struct AcceptFileTransferData {
-        std::string buddy_id;
-        boost::uuids::uuid uuid;
+    std::string buddy_id;
+    boost::uuids::uuid uuid;
 };
+
+struct AbortFileTransferData {
+    std::string buddy_id;
+    boost::uuids::uuid uuid;
+    std::string reason;
+    path_t delete_this; // If set, the file will be deleted
+};
+
 
 /*! \class Api Api.h darkspeak/Api.h
  *
@@ -281,6 +289,12 @@ public:
      */
     virtual Buddy::ptr_t AddBuddy(const Buddy::Info& def) = 0;
 
+    /*! Get one buddy
+     *
+     * \return Pointer to a bddy or nullptr
+     */
+    virtual Buddy::ptr_t GetBuddy(const std::string& id) = 0;
+
     /*! Remove a buddy
      *
      */
@@ -316,6 +330,13 @@ public:
     /*! Reject a file transfer
      */
     virtual void RejectFileTransfer(const AcceptFileTransferData& aftd) = 0;
+
+    /*! Abort an ongoing file transfer
+     *
+     * The file is deleted.
+     */
+    virtual void AbortFileTransfer(const AbortFileTransferData& aftd) = 0;
+
 
     /*! Panic button.
      *

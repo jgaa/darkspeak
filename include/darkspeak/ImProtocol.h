@@ -117,6 +117,9 @@ public:
      */
     virtual void RejectFileTransfer(const AcceptFileTransferData& aftd) = 0;
 
+    /*! Abort a file transfer. */
+    virtual void AbortFileTransfer(const AbortFileTransferData& aftd) = 0;
+
     /*! Disconnect a buddy */
     virtual void Disconnect(Api::Buddy& buddy) = 0;
 
