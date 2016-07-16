@@ -59,5 +59,3 @@ void DarkRoot::rejectFile(const QString buddyHandle, const QString fileId)
     aftd.uuid = get_uuid_from_string(fileId.toStdString());
     api_.RejectFileTransfer(aftd);
 }
-
-

@@ -35,7 +35,22 @@ Component {
             standardButtons: StandardButton.Yes | StandardButton.Cancel
             onYes: contactsModel.remove(index)
        }
+/*
+       FileDialog {
+            id: fileDialog
+            title: "Please select a file"
+            folder: shortcuts.home
 
+            onAccepted: {
+                console.log("You chose: " + fileDialog.fileUrls)
+                close()
+            }
+            onRejected: {
+                console.log("Canceled")
+                close()
+            }
+            //Component.onCompleted: visible = false
+       }*/
 
        Menu {
             id: contextMenu
@@ -56,6 +71,13 @@ Component {
             MenuItem {
                 text: "Delete"
                 onTriggered: confirm_delete.open()
+            }
+
+            MenuItem {
+                text: "Send a File"
+                onTriggered: {
+                    main_pane.sendFile(handle, nickname)
+                }
             }
 
             MenuItem {

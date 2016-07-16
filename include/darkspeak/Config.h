@@ -74,6 +74,9 @@ public:
 
     constexpr static const char *MAX_FILE_TRANSFERS_PER_CONTACT = "limits.max_transfers_per_contact";
     constexpr static const int MAX_FILE_TRANSFERS_PER_CONTACT_DEFAULT = 5;
+    constexpr static const char *MAX_OUT_BUFFERS_PER_FILE_TRANSFER
+        = "limits.max_out_buffers_per_file_transfer";
+    constexpr static const int MAX_OUT_BUFFERS_PER_FILE_TRANSFER_DEFAULT = 12;
 
 private:
     bool dirty_ = false;

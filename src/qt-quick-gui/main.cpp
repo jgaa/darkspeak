@@ -125,7 +125,7 @@ int main(int argc, char *argv[])
 
     qRegisterMetaType<darkspeak::Api::Message::ptr_t>("darkspeak::Api::Message::ptr_t");
     qRegisterMetaType<std::string>("std::string");
-    qRegisterMetaType<darkspeak::EventMonitor::FileInfo>("darkspeak::EventMonitor::FileInfo");
+    qRegisterMetaType<darkspeak::FileInfo>("darkspeak::FileInfo");
 
 
     //{

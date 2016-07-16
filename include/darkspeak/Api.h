@@ -23,6 +23,7 @@ using path_t = boost::filesystem::path;
 
 class EventMonitor;
 class BuddyEventsMonitor;
+class FileInfo;
 
 struct AcceptFileTransferData {
     std::string buddy_id;
@@ -234,6 +235,14 @@ public:
          *      the status of the message.
          */
         virtual Message::ptr_t SendMessage(const std::string& msg) = 0;
+
+        /*! Send a file to the buddy.
+         *
+         * Currently, files can only be sent to buddies that are online.
+         *
+         * \returns the uuid of the file transfer.
+         */
+        virtual void SendFile(const FileInfo& fi) = 0;
 
         /*! Disconnect from the buddy
          *

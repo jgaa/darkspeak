@@ -1,9 +1,6 @@
 
 
 #include "log/WarLog.h"
-
-#include "darkspeak/EventMonitor.h"
-
 #include "ContactsModel.h"
 #include "ChatMessagesModel.h"
 #include "ContactData.h"
@@ -38,8 +35,8 @@ ContactsModel::ContactsModel(Api& api, QObject *parent)
             this, SLOT(deleteBuddyFromList(std::string)));
 
     connect(this,
-            SIGNAL(onIncomingFileRequest(darkspeak::EventMonitor::FileInfo)),
-            this, SLOT(IncomingFileRequest(darkspeak::EventMonitor::FileInfo)));
+            SIGNAL(onIncomingFileRequest(darkspeak::FileInfo)),
+            this, SLOT(IncomingFileRequest(darkspeak::FileInfo)));
 
 
     api_.SetMonitor(event_listener_);
@@ -215,12 +212,12 @@ void ContactsModel::Events::OnIncomingMessage(const EventMonitor::Message &messa
     emit parent_.onBuddyStateMayHaveChanged(message.buddy_id);
 }
 
-void ContactsModel::Events::OnIncomingFile(const EventMonitor::FileInfo &file)
+void ContactsModel::Events::OnIncomingFile(const FileInfo &file)
 {
     emit parent_.onIncomingFileRequest(file);
 }
 
-void ContactsModel::Events::OnFileTransferUpdate(const EventMonitor::FileInfo& file)
+void ContactsModel::Events::OnFileTransferUpdate(const FileInfo& file)
 {
     // TODO: Handle
 }
@@ -356,12 +353,16 @@ void ContactsModel::deleteBuddyFromList(string id)
     emit endRemoveRows();
 }
 
-void ContactsModel::IncomingFileRequest(const EventMonitor::FileInfo file)
+void ContactsModel::IncomingFileRequest(const FileInfo file)
 {
-    LOG_DEBUG_FN << "Caught file signal. Contacting UI now";
-    QString name = file.path.filename().c_str();
-    auto uuid = boost::uuids::to_string(file.file_id);
-    QString file_id = uuid.c_str();
-    auto contact = getContactData(FindBuddy(file.buddy_id));
-    emit incomingFile(name, file_id, contact);
+    if (file.direction == darkspeak::Direction::INCOMING) {
+        LOG_DEBUG_FN << "Caught file signal. Contacting UI now";
+        QString name = file.path.filename().c_str();
+        auto uuid = boost::uuids::to_string(file.file_id);
+        QString file_id = uuid.c_str();
+        auto contact = getContactData(FindBuddy(file.buddy_id));
+        emit incomingFile(name, file_id, contact);
+    } else {
+        LOG_DEBUG_FN << "Ignoring file signal for outgoing file " << file;
+    }
 }

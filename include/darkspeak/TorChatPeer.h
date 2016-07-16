@@ -5,6 +5,7 @@
 #include <iostream>
 #include <mutex>
 #include <chrono>
+#include <set>
 
 #include "war_error_handling.h"
 #include "log/WarLog.h"
@@ -16,6 +17,7 @@
 #include "darkspeak/Api.h"
 #include "darkspeak/TorChatConnection.h"
 #include "darkspeak/EventMonitor.h"
+#include "darkspeak/FileInfo.h"
 
 namespace darkspeak {
 namespace impl {
@@ -65,14 +67,25 @@ public:
             info_.length = fileSize;
         }
 
-        const EventMonitor::FileInfo& GetInfo() const { return info_; }
+        FileTransfer(
+            TorChatPeer& parent,
+            std::string fileCookie,
+            const FileInfo& fi)
+        : info_{fi}, cookie_{fileCookie}, parent_{parent}
+        {
+        }
+
+        const FileInfo& GetInfo() const { return info_; }
         auto GetBlockSize() const { return block_size_; }
         const std::string& GetCookie() const { return cookie_; }
         void SetState(State newState);
         void OnIncomingData(std::string&& data, unsigned int blockId);
         void StartDownload();
-        void AbortDownload(const std::string& reason);
+        void AbortTransfer(const std::string& reason);
         bool IsComplete() const;
+        void StartSending();
+        void FiledataOk(std::streampos offset);
+        void FiledataError(std::streampos offset); // resend
 
     private:
         struct Segment {
@@ -92,16 +105,23 @@ public:
         void SendUpdateEvents();
         void AddSegment(uint64_t offset, size_t size);
 
-        EventMonitor::FileInfo info_;
+        bool SendBuffer();
+        std::size_t DoSendBuffer(std::streampos pos);
+
+        FileInfo info_;
         std::string cookie_;
         unsigned int block_size_ = 1024 * 8;
-        //boost::filesystem::path path_;
         std::fstream file_;
         int last_good_block_ = -1; // None
         std::deque<Buffer> buffers_;
         State state_ = State::UNINITIALIZED;
         TorChatPeer& parent_;
         std::vector<Segment> segments_;
+        std::map<std::streampos, std::size_t> sendt_pending_;
+        std::streampos next_out_pos_ = 0;
+        std::vector<char> read_buffer_;
+        std::string cmd_buffer_;
+        bool read_is_eof_ = false;
     };
 
     enum class State {
@@ -314,6 +334,7 @@ private:
     bool has_been_ready_ = false;
     std::map<boost::uuids::uuid, FileTransfer::ptr_t> file_transfers_;
     TorChatEngine& parent_;
+    protected:
 };
 
 } // impl

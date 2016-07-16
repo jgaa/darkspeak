@@ -10,6 +10,7 @@
 #include <boost/asio/spawn.hpp>
 #include <boost/utility/string_ref.hpp>
 
+#include "darkspeak/darkspeak.h"
 #include "darkspeak/Api.h"
 #include "darkspeak/Connection.h"
 
@@ -44,6 +45,7 @@ public:
      * \return bytes sent
      */
     std::size_t SendLine(std::string line, boost::asio::yield_context& yield);
+    void SendLine(std::string line, asio_handler_t handler);
 
     static void Encode(std::string& blob);
     static void Decode(std::string& blob);

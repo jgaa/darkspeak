@@ -12,6 +12,7 @@
 #include "darkspeak/TorChatPeer.h"
 #include "darkspeak/TorChatEngine.h"
 #include <darkspeak/Config.h>
+#include "darkspeak/md5.h"
 
 using namespace std;
 using namespace war;
@@ -112,6 +113,10 @@ void TorChatPeer::AddFileTransfer(TorChatPeer::FileTransfer::ptr_t transfer)
 {
     LOG_DEBUG_FN << "Adding " << *transfer;
     WarMapAddUnique(file_transfers_, transfer->GetInfo().file_id, transfer);
+
+    if (transfer->GetInfo().direction == Direction::OUTGOING) {
+        transfer->StartSending();
+    }
 }
 
 void TorChatPeer::RemoveFileTransfer(const boost::uuids::uuid& uuid)
@@ -180,18 +185,148 @@ void TorChatPeer::FileTransfer::SetState(TorChatPeer::FileTransfer::State newSta
     switch(state_) {
         case TorChatPeer::FileTransfer::State::UNINITIALIZED:
         case TorChatPeer::FileTransfer::State::UNVERIFIED:
-            info_.state = EventMonitor::FileInfo::State::PENDING;
+            info_.state = FileInfo::State::PENDING;
             break;
         case TorChatPeer::FileTransfer::State::ACTIVE:
-            info_.state = EventMonitor::FileInfo::State::TRANSFERRING;
+            info_.state = FileInfo::State::TRANSFERRING;
             break;
         case TorChatPeer::FileTransfer::State::DONE:
-            info_.state = EventMonitor::FileInfo::State::DONE;
+            info_.state = FileInfo::State::DONE;
             break;
         case TorChatPeer::FileTransfer::State::ABORTED:
-            info_.state = EventMonitor::FileInfo::State::ABORTED;
+            info_.state = FileInfo::State::ABORTED;
             break;
     }
+}
+
+void TorChatPeer::FileTransfer::StartSending()
+{
+    file_.open(info_.path.c_str(), ios::in | ios::binary);
+
+    if (file_.fail()) {
+        LOG_ERROR_FN << "Failed to open file " << log::Esc(info_.path.string())
+            << " for read.";
+        AbortTransfer("Failed to open file");
+        return;
+    }
+
+    {
+        //  filename <transfer_cookie> <file_size> <block_size> "filename"
+        const static string filename{"filename"};
+        parent_.GetEngine().SendCommand(filename,
+            {GetCookie(), to_string(info_.length), to_string(block_size_),
+                info_.path.filename().string()},
+            parent_.shared_from_this());
+    }
+
+
+    read_buffer_.resize(block_size_);
+    auto default_buffers = Config::MAX_OUT_BUFFERS_PER_FILE_TRANSFER_DEFAULT;
+    const int max_buffers = parent_.GetEngine().GetConfig().Get<int>(
+        Config::MAX_OUT_BUFFERS_PER_FILE_TRANSFER, default_buffers);
+    for(int i = 0; i < max_buffers; ++i) {
+        if (!SendBuffer()) {
+            break; // No more data
+        }
+    }
+}
+
+bool TorChatPeer::FileTransfer::SendBuffer()
+{
+    auto bytes = DoSendBuffer(next_out_pos_);
+    read_is_eof_ = bytes < block_size_;
+    next_out_pos_ += bytes;
+    return read_is_eof_;
+}
+
+size_t TorChatPeer::FileTransfer::DoSendBuffer(streampos offset)
+{
+    static const string filedata{"filedata"};
+    static const string sp{" "};
+
+    file_.seekg(offset);
+    if (file_.fail()) {
+        LOG_ERROR_FN << "Failed to set file offset to "
+            << offset << " for " << *this
+            << ". File offset is " << file_.tellg() ;
+
+
+        AbortTransfer("Failed to set file offset");
+        return 0;
+    }
+    file_.read(read_buffer_.data(), block_size_);
+    auto read_bytes = file_.gcount();
+
+    if (file_.fail()) {
+        if (file_.eof()) {
+            file_.clear();
+        } else {
+            LOG_ERROR_FN << "Failed to read data at offset " <<
+                offset << " for " << *this;
+
+            AbortTransfer("Read failed");
+            return 0;
+        }
+    }
+
+    if (read_bytes == 0) {
+        // eof
+        return 0;
+    }
+
+    read_buffer_.resize(read_bytes);
+
+    MD5 md5;
+    md5.update(reinterpret_cast<const unsigned char *>(read_buffer_.data()),
+               read_bytes);
+    md5.finalize();
+    const auto checksum = md5.hex_digest();
+
+    cmd_buffer_.reserve(read_bytes + 32 + GetCookie().size() );
+    cmd_buffer_ = filedata + sp + GetCookie() + sp + to_string(offset)
+        + sp + md5.hex_digest() + sp;
+    cmd_buffer_.append(read_buffer_.data(), read_bytes);
+
+    parent_.GetEngine().SendCommand(cmd_buffer_, {}, parent_.shared_from_this());
+    sendt_pending_.emplace(offset, read_bytes);
+    return read_bytes;
+}
+
+void TorChatPeer::FileTransfer::FiledataOk(streampos offset)
+{
+    auto it = sendt_pending_.find(offset);
+    if (it == sendt_pending_.end()) {
+        LOG_WARN_FN << "Got confirmation for an unknown block." << offset
+            << ". Ignoring.";
+        return;
+    }
+
+    info_.transferred += it->second; // bytes sent
+    sendt_pending_.erase(it);
+
+    if (state_ == State::UNVERIFIED) {
+        SetState(State::ACTIVE);
+    }
+
+    if (!read_is_eof_) {
+        SendBuffer();
+    }
+
+    SendUpdateEvents();
+}
+
+void TorChatPeer::FileTransfer::FiledataError(streampos offset)
+{
+    // Just Resend
+    auto it = sendt_pending_.find(offset);
+    if (it == sendt_pending_.end()) {
+        LOG_WARN_FN << "Got error for an unknown block " << offset
+            << ". Ignoring.";
+        return;
+    }
+
+    LOG_DEBUG_FN << "Resending data at offset " << offset << " for " << *this;
+    DoSendBuffer(offset);
 }
 
 void TorChatPeer::FileTransfer::StartDownload()
@@ -202,8 +337,6 @@ void TorChatPeer::FileTransfer::StartDownload()
     // Open file
     auto raw_path = parent_.GetEngine().GetConfig().Get<string>(
         Config::DOWNLOAD_FOLDER, Config::DOWNLOAD_FOLDER_DEFAULT);
-
-
 
     // Expand macros
     boost::replace_all(raw_path, "{id}", info_.buddy_id);
@@ -220,7 +353,7 @@ void TorChatPeer::FileTransfer::StartDownload()
     if (!validate_filename_as_safe(info_.path)) {
         LOG_WARN_FN << "The path " << log::Esc(info_.path.string())
             << " is not safe. Aborting download.";
-        AbortDownload("Unsafe filename");
+        AbortTransfer("Unsafe filename");
         return;
     }
 
@@ -238,7 +371,7 @@ void TorChatPeer::FileTransfer::SendUpdateEvents()
     if (IsComplete()) {
         SetState(TorChatPeer::FileTransfer::State::DONE);
         LOG_NOTICE << "The file " << log::Esc(info_.path.string())
-            << " from " << parent_ << " is successfully received.";
+            << " from " << parent_ << " is successfully transferred.";
         parent_.RemoveFileTransfer(info_.file_id);
     }
 
@@ -254,25 +387,25 @@ void TorChatPeer::FileTransfer::Write(const string data, uint64_t offset)
         LOG_WARN_FN << "Trying to write after end of file. Aborting transfer. "
             << *this;
 
-        AbortDownload("Invalid file offset");
+        AbortTransfer("Invalid file offset");
         return;
     }
 
     file_.seekg(offset);
-    if (file_.tellg() != static_cast<streampos>(offset)) {
+    if (file_.fail()) {
         LOG_ERROR_FN << "Failed to set file offset to " <<
             offset << " for " << *this;
 
-        AbortDownload("Failed to set file offset");
+        AbortTransfer("Failed to set file offset");
         return;
     }
     file_.write(data.c_str(), data.size());
 
-    if (file_.fail() || file_.bad()) {
+    if (file_.fail()) {
         LOG_ERROR_FN << "Failed to write data to offset " <<
             offset << " for " << *this;
 
-        AbortDownload("Write failed");
+        AbortTransfer("Write failed");
         return;
     }
 
@@ -300,7 +433,7 @@ void TorChatPeer::FileTransfer::AddSegment(uint64_t offset, size_t size)
                 << " for " << *this
                 << ". Aborting transfer.";
 
-            AbortDownload("Unaligned data segment");
+            AbortTransfer("Unaligned data segment");
             return;
         }
 
@@ -311,7 +444,7 @@ void TorChatPeer::FileTransfer::AddSegment(uint64_t offset, size_t size)
                 << " for " << *this
                 << ". Aborting transfer.";
 
-            AbortDownload("Oversized data segment");
+            AbortTransfer("Oversized data segment");
             return;
         }
 
@@ -361,9 +494,16 @@ void TorChatPeer::FileTransfer::AddSegment(uint64_t offset, size_t size)
  */
 bool TorChatPeer::FileTransfer::IsComplete() const
 {
-    if (segments_.size() == 1) {
-        const auto& seg = segments_.front();
-        if ((seg.start == 0) && (static_cast<int64_t>(seg.size) == info_.length)) {
+    if (info_.direction == Direction::INCOMING) {
+        if (segments_.size() == 1) {
+            const auto& seg = segments_.front();
+            if ((seg.start == 0) && (static_cast<int64_t>(seg.size) == info_.length)) {
+                return true;
+            }
+        }
+    } else {
+        // OUTGOING
+        if (sendt_pending_.empty()) {
             return true;
         }
     }
@@ -384,15 +524,16 @@ void TorChatPeer::FileTransfer::SendAck(std::uint64_t blockid)
                                     parent_.shared_from_this());
 }
 
-void TorChatPeer::FileTransfer::AbortDownload(const std::string& reason)
+void TorChatPeer::FileTransfer::AbortTransfer(const string& reason)
 {
     static const string stop_sending{"file_stop_sending"};
+    static const string stop_receiving{"file_stop_receiving"};
 
     if (state_ == State::ABORTED) {
         return; // Already aborted
     }
 
-    info_.state = EventMonitor::FileInfo::State::ABORTED;
+    info_.state = FileInfo::State::ABORTED;
     info_.failure_reason = reason;
     SetState(State::ABORTED);
     LOG_NOTICE << "Aborting " << *this << ". " << reason;
@@ -402,9 +543,11 @@ void TorChatPeer::FileTransfer::AbortDownload(const std::string& reason)
         boost::filesystem::remove(info_.path);
     }
 
-    parent_.GetEngine().SendCommand(stop_sending,
-                                    {GetCookie()},
-                                    parent_.shared_from_this());
+    parent_.GetEngine().SendCommand(
+        info_.direction == darkspeak::Direction::INCOMING
+        ? stop_sending : stop_receiving,
+            {GetCookie()},
+            parent_.shared_from_this());
 
     for(auto& monitor : parent_.GetEngine().GetMonitors()) {
         monitor->OnFileTransferUpdate(info_);

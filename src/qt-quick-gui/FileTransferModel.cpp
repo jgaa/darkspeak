@@ -20,12 +20,12 @@ FileTransferModel::FileTransferModel(Api& api, QObject *parent)
 : QAbstractListModel(parent), api_{api}
 {
     connect(this,
-            SIGNAL(newTransfer(darkspeak::EventMonitor::FileInfo)),
-            this, SLOT(addFileToList(darkspeak::EventMonitor::FileInfo)));
+            SIGNAL(newTransfer(darkspeak::FileInfo)),
+            this, SLOT(addFileToList(darkspeak::FileInfo)));
 
     connect(this,
-            SIGNAL(fileInfoUpdated(darkspeak::EventMonitor::FileInfo)),
-            this, SLOT(updateFileInfo(darkspeak::EventMonitor::FileInfo)));
+            SIGNAL(fileInfoUpdated(darkspeak::FileInfo)),
+            this, SLOT(updateFileInfo(darkspeak::FileInfo)));
 
     connect(this,
             SIGNAL(deleteEntry(int)),
@@ -99,7 +99,7 @@ int FileTransferModel::getActiveTransfers()
     return active_transfers_;
 }
 
-void FileTransferModel::addFileToList(EventMonitor::FileInfo fi)
+void FileTransferModel::addFileToList(FileInfo fi)
 {
     LOG_DEBUG_FN << "Adding file transfer " << fi;
 
@@ -141,7 +141,7 @@ void FileTransferModel::updateActiveTransfers()
     }
 }
 
-void FileTransferModel::updateFileInfo(EventMonitor::FileInfo fi)
+void FileTransferModel::updateFileInfo(FileInfo fi)
 {
     int row = 0;
     auto file = GetFile(fi.file_id, row);
@@ -158,7 +158,7 @@ void FileTransferModel::updateFileInfo(EventMonitor::FileInfo fi)
 }
 
 
-EventMonitor::FileInfo* FileTransferModel::GetFile(
+FileInfo* FileTransferModel::GetFile(
     const boost::uuids::uuid& uuid, int& index)
 {
     index = 0;
@@ -173,7 +173,7 @@ EventMonitor::FileInfo* FileTransferModel::GetFile(
 }
 
 
-QUrl FileTransferModel::GetIconForFile(const darkspeak::EventMonitor::FileInfo& fileInfo) const
+QUrl FileTransferModel::GetIconForFile(const darkspeak::FileInfo& fileInfo) const
 {
     static const std::array<QUrl, 6> icons = {
         // DownloadBuddyNameRole
@@ -188,13 +188,13 @@ QUrl FileTransferModel::GetIconForFile(const darkspeak::EventMonitor::FileInfo& 
 
     int index = fileInfo.direction == darkspeak::Direction::INCOMING ? 0 : 3;
     switch(fileInfo.state) {
-        case darkspeak::EventMonitor::FileInfo::State::DONE:
+        case darkspeak::FileInfo::State::DONE:
             index += 2;
             break;
-        case darkspeak::EventMonitor::FileInfo::State::PENDING:
-        case darkspeak::EventMonitor::FileInfo::State::TRANSFERRING:
+        case darkspeak::FileInfo::State::PENDING:
+        case darkspeak::FileInfo::State::TRANSFERRING:
             break;
-        case darkspeak::EventMonitor::FileInfo::State::ABORTED:
+        case darkspeak::FileInfo::State::ABORTED:
             index += 1;
         break;
     }
@@ -230,20 +230,22 @@ void FileTransferModel::deleteTransfer(int index)
     try {
         const auto& fi = transfers_.at(index);
 
-        if ((fi.state == EventMonitor::FileInfo::State::PENDING)
-            || (fi.state == EventMonitor::FileInfo::State::TRANSFERRING)) {
+        if ((fi.state == FileInfo::State::PENDING)
+            || (fi.state == FileInfo::State::TRANSFERRING)) {
 
             AbortFileTransferData aftd;
             aftd.buddy_id = fi.buddy_id;
             aftd.uuid = fi.file_id;
             aftd.reason = "Aborted by user";
-            aftd.delete_this = fi.direction == darkspeak::Direction::INCOMING
+            aftd.delete_this = (fi.direction == darkspeak::Direction::INCOMING)
                 ? fi.path : boost::filesystem::path();
             api_.AbortFileTransfer(aftd);
-        } else if (fi.state == EventMonitor::FileInfo::State::DONE) {
-            if (boost::filesystem::is_regular(fi.path)) {
-                LOG_NOTICE << "Removing file " << log::Esc(fi.path.string());
-                boost::filesystem::remove(fi.path);
+        } else if (fi.state == FileInfo::State::DONE) {
+            if (fi.direction == darkspeak::Direction::INCOMING) {
+                if (boost::filesystem::is_regular(fi.path)) {
+                    LOG_NOTICE << "Removing file " << log::Esc(fi.path.string());
+                    boost::filesystem::remove(fi.path);
+                }
             }
         }
 
@@ -297,6 +299,31 @@ QString FileTransferModel::GetHumanReadableNumber(int64_t num) {
 }
 
 
+void FileTransferModel::sendFile(const QString buddyHandle, const QUrl file)
+{
+    FileInfo fi;
+    fi.buddy_id = buddyHandle.toStdString();
+    fi.file_id = boost::uuids::random_generator()();
+    fi.path = file.path().toStdString();
+    fi.length = boost::filesystem::file_size(fi.path);
+    fi.direction = darkspeak::Direction::OUTGOING;
+
+    auto buddy = api_.GetBuddy(fi.buddy_id);
+    if (!buddy) {
+        LOG_ERROR_FN << "Cannot find buddy " << fi.buddy_id
+            << ". Ignoring Transfer request: " << fi;
+        return;
+    }
+
+    // Put it in the transfers list
+    emit newTransfer(fi);
+
+    buddy->SendFile(fi);
+
+}
+
+
+
 //////////////// Events ///////////////
 
 FileTransferModel::Events::Events(FileTransferModel& parent)
@@ -309,13 +336,13 @@ FileTransferModel::~FileTransferModel() {
 }
 
 
-void FileTransferModel::Events::OnIncomingFile(const EventMonitor::FileInfo& file)
+void FileTransferModel::Events::OnIncomingFile(const FileInfo& file)
 {
     emit parent_.newTransfer(file);
 }
 
 
-void FileTransferModel::Events::OnFileTransferUpdate(const EventMonitor::FileInfo& file)
+void FileTransferModel::Events::OnFileTransferUpdate(const FileInfo& file)
 {
     emit parent_.fileInfoUpdated(file);
 }

@@ -25,6 +25,7 @@
         <file>images/FileTansferInactive.svg</file>
         <file>images/FileTansferActive.svg</file>
         <file>qml/FileTransfersView.qml</file>
+        <file>qml/SendFileDialog.qml</file>
         <file>images/FileDownload.svg</file>
         <file>images/FileDownloadFailed.svg</file>
         <file>images/FileDownloadOk.svg</file>

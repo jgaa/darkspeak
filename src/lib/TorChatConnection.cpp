@@ -137,6 +137,17 @@ size_t TorChatConnection::SendLine(string line,
     return line.size();
 }
 
+void TorChatConnection::SendLine(string line, asio_handler_t handler) {
+    Encode(line);
+    line += static_cast<char>(0x0a);
+
+    GetSocket().AsyncWrite(boost::asio::const_buffers_1(line.c_str(),
+                                                        line.size()),
+                                                        handler);
+
+    LOG_DEBUG << *this  << " Sending line: " << log::Esc(line);
+}
+
 void TorChatConnection::Encode(std::string& blob)
 {
     boost::replace_all(blob, "\\", "\\/");

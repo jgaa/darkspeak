@@ -88,8 +88,7 @@ public:
     // IM protocol implementation
     void Connect(Api::Buddy::ptr_t buddy) override;
     void SendMessage(Api::Buddy& buddy, const Api::Message::ptr_t& msg) override;
-    void SendFile(Api::Buddy& buddy, const File& file,
-        FileMonitor::ptr_t monitor) override;
+    void SendFile(Api::Buddy& buddy, const FileInfo& file) override;
     void Disconnect(Api::Buddy& buddy) override;
     void SetMonitor(std::shared_ptr<EventMonitor> monitor) override;
     void Listen(boost::asio::ip::tcp::endpoint endpoint) override;
@@ -112,8 +111,7 @@ private:
     void SendCommand_(const std::string& command,
                       std::initializer_list<std::string> args,
                       std::weak_ptr<TorChatPeer> weakPeer,
-                      Direction direction,
-                      boost::asio::yield_context yield);
+                      Direction direction);
 
     void SpawnConnect(const std::string& buddy_id);
 
@@ -190,7 +188,7 @@ private:
     void EmitOtherEvent(const EventMonitor::Event& event);
     void EmitShutdownComplete(const EventMonitor::ShutdownInfo& info);
     void EmitEventListening(const EventMonitor::ListeningInfo& endpoint);
-    void EmitEventIncomingFile(const EventMonitor::FileInfo& info);
+    void EmitEventIncomingFile(const FileInfo& info);
 
     // Requests
     void OnAddMe(const Request& req);
@@ -218,6 +216,10 @@ private:
                 std::initializer_list<std::string> args,
                 TorChatPeer& peer, boost::asio::yield_context& yield,
                 Direction direction = Direction::OUTGOING);
+    bool DoSend(const std::string& command,
+                std::initializer_list<std::string> args,
+                TorChatPeer& peer, asio_handler_t handler,
+                Direction direction = Direction::OUTGOING);
     boost::string_ref GetLine(TorChatConnection& conn,
                               boost::asio::yield_context& yield);
     static const std::string& ToString(Api::Status status);
@@ -225,6 +227,8 @@ private:
     boost::asio::ip::tcp::endpoint GetTorEndpoint() const;
 
     Request Parse(boost::string_ref request) const;
+
+    std::string GetRandomCookie(std::size_t len);
 
     std::vector<std::weak_ptr<EventMonitor>> event_monitors_;
     std::shared_ptr<boost::asio::ip::tcp::acceptor> acceptor_;

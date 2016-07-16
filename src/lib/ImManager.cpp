@@ -18,6 +18,7 @@
 #include "darkspeak/ImProtocol.h"
 #include "darkspeak/BuddyImpl.h"
 #include "darkspeak/weak_container.h"
+#include "darkspeak/FileInfo.h"
 
 using namespace std;
 using namespace war;
@@ -48,7 +49,7 @@ std::ostream& operator << (std::ostream& o, const darkspeak::EventMonitor::Event
     return o << names.at(static_cast<int>(v));
 }
 
-std::ostream& operator << (std::ostream& o, const darkspeak::EventMonitor::FileInfo& v) {
+std::ostream& operator << (std::ostream& o, const darkspeak::FileInfo& v) {
     return o << "{FileTransfer: " << v.file_id
         << ", size " << v.length
         << ", name " << log::Esc(v.path.string())
@@ -445,14 +446,14 @@ void ImManager::Events::OnIncomingMessage(const EventMonitor::Message& message)
     }
 }
 
-void ImManager::Events::OnIncomingFile(const EventMonitor::FileInfo& file)
+void ImManager::Events::OnIncomingFile(const FileInfo& file)
 {
     for(auto& monitor : manager_.GetMonitors()) {
         monitor->OnIncomingFile(file);
     }
 }
 
-void ImManager::Events::OnFileTransferUpdate(const EventMonitor::FileInfo& file)
+void ImManager::Events::OnFileTransferUpdate(const FileInfo& file)
 {
     for(auto& monitor : manager_.GetMonitors()) {
         monitor->OnFileTransferUpdate(file);

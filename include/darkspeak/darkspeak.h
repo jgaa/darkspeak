@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/asio.hpp>
+
 #include "war_error_handling.h"
 
 namespace darkspeak {
@@ -20,6 +22,9 @@ enum class Direction {
     INCOMING,
     OUTGOING
 };
+
+using asio_handler_t
+        = std::function<void(const boost::system::error_code&, std::size_t)>;
 
 } // namespace
 

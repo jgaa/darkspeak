@@ -3,6 +3,7 @@
 #include "darkspeak/darkspeak.h"
 #include "darkspeak/Api.h"
 #include "darkspeak/EventMonitor.h"
+#include "darkspeak/FileInfo.h"
 
 #include <QtCore>
 
@@ -45,8 +46,8 @@ private:
         void OnBuddyDeleted(const DeletedBuddyInfo &info) override;
         void OnBuddyStateUpdate(const BuddyInfo &info) override;
         void OnIncomingMessage(const Message &message) override;
-        void OnIncomingFile(const FileInfo &file) override;
-        void OnFileTransferUpdate(const FileInfo& file) override;
+        void OnIncomingFile(const darkspeak::FileInfo &file) override;
+        void OnFileTransferUpdate(const darkspeak::FileInfo& file) override;
         void OnOtherEvent(const Event &event) override;
         void OnListening(const ListeningInfo &endpoint) override;
         void OnShutdownComplete(const ShutdownInfo &info) override;
@@ -93,7 +94,7 @@ public slots:
     void refreshBuddyMessages(std::string id);
     void addBuddyToList(std::string id);
     void deleteBuddyFromList(std::string id);
-    void IncomingFileRequest(darkspeak::EventMonitor::FileInfo file);
+    void IncomingFileRequest(darkspeak::FileInfo file);
 
 signals: // signals can be emitted
     void onlineStatusChanged(const OnlineStatus status);
@@ -106,7 +107,7 @@ signals: // signals can be emitted
     void onBuddyMayHaveNewMessage(std::string id);
     void onBuddyAdded(std::string id);
     void onBuddyDeleted(std::string id);
-    void onIncomingFileRequest(darkspeak::EventMonitor::FileInfo file);
+    void onIncomingFileRequest(darkspeak::FileInfo file);
 
     // Signals we want accessible from QML
     // First letter must be lower case

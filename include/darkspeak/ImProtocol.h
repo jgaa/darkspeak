@@ -38,9 +38,6 @@ public:
     using ptr_t = std::shared_ptr<ImProtocol>;
     using get_pipeline_fn_t = std::function<war::Pipeline&()>;
 
-    struct File {
-        path_t path;
-    };
 
     struct FileError {
         std::string error_description;
@@ -98,16 +95,14 @@ public:
     virtual void SendMessage(Api::Buddy& buddy,
                              const Api::Message::ptr_t& msg) = 0;
 
+
     /*! Starts a file transfer.
      *
      * The function returns when the transfer is set up to send and receive data.
      *
      * \param file Information about the file to send
-     * \param monitor Information sharing from the transfer to the
-     *          initiator.
      */
-    virtual void SendFile(Api::Buddy& buddy, const File& file,
-        FileMonitor::ptr_t monitor) = 0;
+    virtual void SendFile(Api::Buddy& buddy, const darkspeak::FileInfo& file) = 0;
 
     /*! Accept a file transfer
      */

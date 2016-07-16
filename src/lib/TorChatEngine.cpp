@@ -599,9 +599,27 @@ bool TorChatEngine::VerifyPing(boost::string_ref line,
     return true;
 }
 
-void TorChatEngine::SendFile(Api::Buddy& buddy, const ImProtocol::File& file, ImProtocol::FileMonitor::ptr_t monitor)
+void TorChatEngine::SendFile(Api::Buddy& buddy, const FileInfo& file)
 {
-    assert(false && "Not implemented");
+    pipeline_.PostSynchronously({[&]() {
+
+        auto peer = GetPeer(buddy.GetId());
+        if (peer) {
+            auto ft = make_shared<TorChatPeer::FileTransfer>(*peer,
+                GetRandomCookie(64), file);
+                ft->SetState(TorChatPeer::FileTransfer::State::UNVERIFIED);
+            peer->AddFileTransfer(ft);
+            EmitEventIncomingFile(ft->GetInfo());
+        } else {
+            LOG_WARN << "No peer " << buddy.GetId() << " is online. Dismissing "
+                << file;
+
+            auto aborted = file;
+            aborted.state = FileInfo::State::ABORTED;
+            aborted.failure_reason = "Buddy is not on-line";
+            EmitEventIncomingFile(aborted);
+        }
+    }, "SendFile"});
 }
 
 
@@ -739,14 +757,21 @@ void TorChatEngine::OnFileData(const TorChatEngine::Request& req)
 
 void TorChatEngine::OnFileDataError(const TorChatEngine::Request& req)
 {
-
+    // filedata_error <transfer_cookie> <start>
+    auto ft = req.peer->GetFileTransfer(req.params.at(0));
+    if (ft) {
+        ft->FiledataError(stoll(req.params.at(1)));
+    }
 }
 
 void TorChatEngine::OnFileDataOk(const TorChatEngine::Request& req)
 {
-    //filedata <transfer_cookie> <blob (fixed size)> <hash> <start>
+    //filedata_ok <transfer_cookie> <start>
 
-
+    auto ft = req.peer->GetFileTransfer(req.params.at(0));
+    if (ft) {
+        ft->FiledataOk(stoll(req.params.at(1)));
+    }
 }
 
 void TorChatEngine::OnFilename(const TorChatEngine::Request& req)
@@ -801,13 +826,17 @@ void TorChatEngine::OnFilename(const TorChatEngine::Request& req)
 
 void TorChatEngine::OnFileStopSending(const TorChatEngine::Request& req)
 {
+    auto ft = req.peer->GetFileTransfer(req.params.at(0));
+    if (ft) {
+        ft->AbortTransfer("Aborted by peer");
+    }
 }
 
 void TorChatEngine::OnFileStopReceiving(const TorChatEngine::Request& req)
 {
     auto ft = req.peer->GetFileTransfer(req.params.at(0));
     if (ft) {
-        ft->AbortDownload("Aborted by sender");
+        ft->AbortTransfer("Aborted by peer");
     }
 }
 
@@ -902,22 +931,27 @@ void TorChatEngine::SendCommand(const string& command,
                                 std::weak_ptr<TorChatPeer> weakPeer,
                                 Direction direction)
 {
-    boost::asio::spawn(
-        pipeline_.GetIoService(),
-        bind(&TorChatEngine::SendCommand_,
-                shared_from_this(),
-                command,
-                args,
-                weakPeer,
-                direction,
-                std::placeholders::_1));
+//     boost::asio::spawn(
+//         pipeline_.GetIoService(),
+//         bind(&TorChatEngine::SendCommand_,
+//                 shared_from_this(),
+//                 command,
+//                 args,
+//                 weakPeer,
+//                 direction,
+//                 std::placeholders::_1));
+
+    pipeline_.Dispatch({[=](){
+
+        SendCommand_(command, args, weakPeer, direction);
+
+    }, "SendCommand"});
 }
 
 void TorChatEngine::SendCommand_(const string& command,
                                  initializer_list< string > args,
                                  std::weak_ptr<TorChatPeer> weakPeer,
-                                 Direction direction,
-                                 boost::asio::yield_context yield)
+                                 Direction direction)
 {
     auto peer = weakPeer.lock();
     if (!peer) {
@@ -925,7 +959,21 @@ void TorChatEngine::SendCommand_(const string& command,
         return;
     }
 
-    DoSend(command, args, *peer, yield, direction);
+    DoSend(command, args, *peer, [this, weakPeer](
+        const boost::system::error_code& ec, std::size_t){
+
+        auto peer = weakPeer.lock();
+        if (!peer) {
+            LOG_DEBUG_FN << "Peer is gone (disconnected) while sending command.";
+            return;
+        }
+
+        if (ec) {
+            LOG_ERROR << "Failed to send command. Error: " << ec;
+
+            // Let the connection keep-alive and timeout logic deal with it.
+        }
+    }, direction);
 }
 
 
@@ -950,6 +998,30 @@ bool TorChatEngine::DoSend(const string& command,
     }
 
     current_stats_.bytes_sent += conn->SendLine(buffer.str(), yield);
+    ++current_stats_.messages_sent;
+    return true;
+}
+
+bool TorChatEngine::DoSend(const string& command, initializer_list< string > args,
+                           TorChatPeer& peer, asio_handler_t handler, Direction direction)
+{
+    auto conn = (direction == Direction::OUTGOING)
+        ? peer.GetOutConnection()
+        : peer.GetInConnection();
+
+    if (!conn) {
+        return false;
+    }
+
+    std::ostringstream buffer;
+    buffer << command;
+    for(const auto& arg : args) {
+        buffer << ' ' << arg;
+    }
+
+    std::string str_buffer = buffer.str();
+    current_stats_.bytes_sent += str_buffer.size(); // FIXME: We will increment also when fail.
+    conn->SendLine(move(str_buffer), handler);
     ++current_stats_.messages_sent;
     return true;
 }
@@ -1112,7 +1184,7 @@ void TorChatEngine::EmitEventListening(const EventMonitor::ListeningInfo& endpoi
     }
 }
 
-void TorChatEngine::EmitEventIncomingFile(const EventMonitor::FileInfo& info)
+void TorChatEngine::EmitEventIncomingFile(const FileInfo& info)
 {
     for(auto& monitor : GetMonitors()) {
         monitor->OnIncomingFile(info);
@@ -1266,6 +1338,19 @@ TorChatEngine::GetNewKeepAliveTime()
         + std::chrono::seconds(seconds));
 }
 
+string TorChatEngine::GetRandomCookie(size_t len)
+{
+    std::uniform_int_distribution< char > distribution('!', '~');
+    std::stringstream buf;
+
+    for(size_t i = 0; i < len; ++i) {
+        buf << distribution(random_generator_);
+    }
+
+    return buf.str();
+}
+
+
 void TorChatEngine::AcceptFileTransfer(const AcceptFileTransferData& aftd)
 {
     pipeline_.Post({
@@ -1298,7 +1383,7 @@ void TorChatEngine::ProcessAbortFileTransfer(const AbortFileTransferData& aftd)
 
     if (transfer) {
         if (transfer->GetInfo().direction == Direction::INCOMING) {
-            transfer->AbortDownload(aftd.reason);
+            transfer->AbortTransfer(aftd.reason);
         }
         // TODO: Handle upload
 
@@ -1331,7 +1416,7 @@ void TorChatEngine::ProcessIncomingFileDecision(
     if (accepted) {
         ft->StartDownload();
     } else {
-        ft->AbortDownload("The file was rejcted by user");
+        ft->AbortTransfer("The file was rejcted by user");
     }
 }
 

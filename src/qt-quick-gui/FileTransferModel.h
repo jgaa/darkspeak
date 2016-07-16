@@ -3,6 +3,7 @@
 #include "darkspeak/darkspeak.h"
 #include "darkspeak/Api.h"
 #include "darkspeak/EventMonitor.h"
+#include "darkspeak/FileInfo.h"
 
 #include <QtCore>
 
@@ -27,8 +28,8 @@ class FileTransferModel : public QAbstractListModel
         void OnBuddyDeleted(const DeletedBuddyInfo &info) override {};
         void OnBuddyStateUpdate(const BuddyInfo &info) override {};
         void OnIncomingMessage(const Message &message) override {};
-        void OnIncomingFile(const FileInfo &file) override;
-        void OnFileTransferUpdate(const FileInfo& file) override;
+        void OnIncomingFile(const darkspeak::FileInfo &file) override;
+        void OnFileTransferUpdate(const darkspeak::FileInfo& file) override;
         void OnOtherEvent(const Event &event) override;
         void OnListening(const ListeningInfo &endpoint) override {};
         void OnShutdownComplete(const ShutdownInfo &info) override {};
@@ -95,30 +96,31 @@ public:
      * If complete, delete the entry and the file.
      */
     Q_INVOKABLE void deleteTransfer(int id);
+    Q_INVOKABLE void sendFile(const QString buddyHandle, const QUrl file);
 
 protected:
     QHash<int, QByteArray> roleNames() const;
 
 public slots:
-    void addFileToList(darkspeak::EventMonitor::FileInfo);
-    void updateFileInfo(darkspeak::EventMonitor::FileInfo);
+    void addFileToList(darkspeak::FileInfo);
+    void updateFileInfo(darkspeak::FileInfo);
     void updateActiveTransfers();
     QUrl getTransferStatusIcon() const;
     void deleteEntryFromList(int index);
 
 signals:
     void activeTransfersChanged(int);
-    void newTransfer(darkspeak::EventMonitor::FileInfo);
-    void fileInfoUpdated(darkspeak::EventMonitor::FileInfo);
+    void newTransfer(darkspeak::FileInfo);
+    void fileInfoUpdated(darkspeak::FileInfo);
     void transferStatusIconChanged();
     void deleteEntry(int index);
 
 private:
-    darkspeak::EventMonitor::FileInfo *GetFile(const boost::uuids::uuid& uuid, int &index);
-    QUrl GetIconForFile(const darkspeak::EventMonitor::FileInfo& fileInfo) const;
+    darkspeak::FileInfo *GetFile(const boost::uuids::uuid& uuid, int &index);
+    QUrl GetIconForFile(const darkspeak::FileInfo& fileInfo) const;
 
     darkspeak::Api& api_;
     std::shared_ptr<Events> event_listener_;
-    std::vector<darkspeak::EventMonitor::FileInfo> transfers_;
+    std::vector<darkspeak::FileInfo> transfers_;
     int active_transfers_ = 0;
 };

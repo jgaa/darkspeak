@@ -274,6 +274,11 @@ void BuddyImpl::Update(const EventMonitor::BuddyInfo& bi)
     info_.profile_text = bi.profile_text;
 }
 
+void BuddyImpl::SendFile(const darkspeak::FileInfo& fi)
+{
+    GetProtocol()->SendFile(*this, fi);
+}
+
 
 } // impl
 } // darkspeak

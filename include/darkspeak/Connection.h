@@ -10,6 +10,8 @@
 #include <boost/asio.hpp>
 #include <boost/asio/spawn.hpp>
 
+#include "darkspeak/darkspeak.h"
+
 namespace darkspeak {
 
 /*! Transport layer connection.
@@ -44,7 +46,11 @@ public:
                                         boost::asio::yield_context& yield) = 0;
 
         virtual void AsyncWrite(const boost::asio::const_buffers_1& buffers,
+            asio_handler_t handler) = 0;
+
+        virtual void AsyncWrite(const boost::asio::const_buffers_1& buffers,
             boost::asio::yield_context& yield) = 0;
+
 
         virtual void AsyncWrite(const write_buffers_t& buffers,
             boost::asio::yield_context& yield) = 0;

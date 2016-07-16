@@ -57,6 +57,17 @@ ApplicationWindow {
        }
        anchors.fill: parent
 
+       function sendFile(buddyId, buddyName) {
+           var uiComponent = Qt.createComponent("SendFileDialog.qml")
+           if( uiComponent.status === Component.Error ) {
+                   console.debug("Error: "+ uiComponent.errorString());
+               return;
+           }
+           var dialog = uiComponent.createObject(main_pane,
+              {"buddyId":buddyId,"buddyName":buddyName});
+           dialog.open()
+       }
+
        function popWindow() {
            pop()
            state = currentItem.stateName
@@ -64,12 +75,6 @@ ApplicationWindow {
        }
 
        function openChatWindow(model) {
-//           var chatComponent = Qt.createComponent("ChatView.qml")
-//           var chat = chatComponent.createObject(
-//               main_pane, {"model":model});
-//           chat.model = model
-//           push(chat)
-//           state = currentItem.stateName
            openWindow("ChatView.qml", model)
        }
 

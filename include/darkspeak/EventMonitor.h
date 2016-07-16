@@ -65,36 +65,6 @@ public:
         std::string message;
     };
 
-    struct FileInfo {
-        enum class State {
-            PENDING,
-            TRANSFERRING,
-            DONE,
-            ABORTED
-        };
-
-        std::string buddy_id;
-        boost::uuids::uuid file_id;
-        path_t path;
-        std::int64_t length = -1; // Unknown size
-        std::int64_t transferred = 0;
-        Direction direction = Direction::INCOMING;
-        State state = State::PENDING;
-        std::string failure_reason;
-
-        bool IsActive() const noexcept {
-            return (state == State::PENDING)
-                || (state == State::TRANSFERRING);
-        }
-
-        int PercentageComplete() const {
-            const double l = length;
-            const double t = transferred;
-            const auto p = (t / l) * 100.0;
-            return static_cast<int>(p);
-        }
-    };
-
     struct Event {
         enum class Type {
             UNKNOWN,
@@ -169,7 +139,11 @@ public:
         */
     virtual void OnIncomingFile(const FileInfo& file) = 0;
 
-    /*! Sent to notify about progress and completion/abort */
+    /*! Sent to notify about progress and completion/abort
+     *
+     * Information about outgoing transfers appears here as well
+     * as incoming transfers.
+     */
     virtual void OnFileTransferUpdate(const FileInfo& file) = 0;
 
     /*! Some other event happened that the user may want to know about.
@@ -186,5 +160,4 @@ public:
 } // namespace
 
 std::ostream& operator << (std::ostream& o, const darkspeak::EventMonitor::Event::Type& v);
-std::ostream& operator << (std::ostream& o, const darkspeak::EventMonitor::FileInfo& v);
 

@@ -43,6 +43,7 @@ public:
     bool CanBeLogged() const override { return info_.CanBeLogged(); }
     void Connect() override;
     Api::Message::ptr_t SendMessage(const std::string& msg) override;
+    void SendFile(const darkspeak::FileInfo& fi) override;
     void Disconnect() override;
     void Delete() override;
     Api::message_list_t GetMessages(const boost::uuids::uuid* after = nullptr) override;
@@ -53,7 +54,7 @@ public:
     void OnMessageReceived(const Api::Message::ptr_t& message);
     void UpdateLastSeenTimestamp();
     void Update(const EventMonitor::BuddyInfo& bi);
-    
+
 
 private:
     void SendQueuedMessage();

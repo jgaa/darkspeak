@@ -52,6 +52,11 @@ public:
          boost::asio::async_write(*socket_, buffers, yield);
     }
 
+    void AsyncWrite(const boost::asio::const_buffers_1& buffers,
+                    asio_handler_t handler) override {
+        boost::asio::async_write(*socket_, buffers, handler);
+    }
+
     void AsyncConnect(const boost::asio::ip::tcp::endpoint& ep,
                       boost::asio::yield_context& yield) override {
         socket_->async_connect(ep, yield);
