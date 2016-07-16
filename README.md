@@ -9,6 +9,7 @@ To make the most Secure and Private Communication Platform for citizens, in the 
 # Planned features
 - Secure Instant Messaging (Legacy Tor Chat)
 - File Transfer (Legacy Tor Chat)
+- More than one ID on one Tor instance (require use of other ports - only one ID will be visible from legacy Tor Chart clients)
 - Proxy service (allow darkspeak on several devices simultaneously with the same ID)
 - Nice looking graphical interface on Linux, OS/X and Windows
 - Android version
@@ -28,6 +29,11 @@ Dark Speak (or another enhanced client).
 - Emergency flag to indicate that the conversation is compromized (for example by
     the physical presenc of an adversary).
 
+# Some ideas for future versions
+- Support for more Tor IM protocols (like ricochet)
+- Support for other anonymous networks
+- Server versions where oprganizations (like newspapers) can host thousands of ID's on one Tor instance (like darkspeak:jgaa@23enroxotjtsogn4)
+
 # Current State
 The project is under heavy development. I'm building a GUI based on QT Quick.
 I hope that I can use basically the same GUI source code on all target platforms.
@@ -35,7 +41,7 @@ So far it looks promising. (The learning curve for QT Quicks is steeper the I ex
 but the GUI is slowly becoming usable)
 
 # Building from source
-## Debian 
+## Debian
 TBD
 
 ## Windows.
@@ -66,22 +72,28 @@ CMAKE_PREFIX_PATH path C:/Qt/Qt5.6.0/5.6/msvc2015_64
 ## Beta 1
 - [x] ~~Document the legacy Tor Chat protocol~~
 - [ ] Implement a library that speaks the TC protocol
- - [ ] Core functionality (work in progress)
+ - [x] ~~Core functionality (work in progress)~~
  - [ ] Unit tests
  - [ ] Functional tests
-- [ ] Implement GUI for Linux (work in progress)
-- [ ] Implement GUI for Windows
+- [x] ~~Implement GUI for Linux~~
+- [x] ~~Implement GUI for Windows~~
 - [ ] Implement GUI for OS/X
 - [ ] Implement GUI for Android
 - [ ] Implement GUI for IOS
 
 ## Beta 2
 - [ ] Add good/popular suggestions/ideas
+- [ ] Add DarkSpeak specific extentions to the TC protocol
 - [ ] Implement support for multiple ID's in one client
 - [ ] Research how to configure an existing Tor Server seamlessly with the hidden service
 - [ ] Package the application. Make sure it's easy to get started.
 
 ## Beta 3
+- [ ] Add good/popular suggestions/ideas
+- [ ] Implement encryption from client to client with PKS. Remember peer's public keys (like ssh).
+- [ ] Implement group chat
+
+## Beta 4
 - [ ] Add good/popular suggestions/ideas
 - [ ] Implement proxy (master node) functionality, so that we can have several clients running with one ID.
 
