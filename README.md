@@ -69,7 +69,7 @@ CMAKE_PREFIX_PATH path C:/Qt/Qt5.6.0/5.6/msvc2015_64
 - In Visual Studio, build the solution.
 
 # Roadmap
-## Beta 1
+## Beta 1a
 - [x] ~~Document the legacy Tor Chat protocol~~
 - [ ] Implement a library that speaks the TC protocol
  - [x] ~~Core functionality (work in progress)~~
@@ -78,8 +78,11 @@ CMAKE_PREFIX_PATH path C:/Qt/Qt5.6.0/5.6/msvc2015_64
 - [x] ~~Implement GUI for Linux~~
 - [x] ~~Implement GUI for Windows~~
 - [ ] Implement GUI for OS/X
+
+## Beta 1b
 - [ ] Implement GUI for Android
 - [ ] Implement GUI for IOS
+
 
 ## Beta 2
 - [ ] Add good/popular suggestions/ideas
