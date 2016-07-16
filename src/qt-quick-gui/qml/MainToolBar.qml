@@ -61,7 +61,7 @@ ToolBar {
         anchors.top: addContactButton.top
         anchors.left: addContactButton.right
         anchors.leftMargin: 6
-        tooltip: "Connect to the Tor Network"
+        tooltip: "Open Transfers window"
         onClicked: {
             main_pane.openTransfersWindow(transfersModel)
         }

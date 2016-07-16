@@ -267,7 +267,6 @@ void TorChatPeer::FileTransfer::Write(const string data, uint64_t offset)
         return;
     }
     file_.write(data.c_str(), data.size());
-        info_.transferred += data.size();
 
     if (file_.fail() || file_.bad()) {
         LOG_ERROR_FN << "Failed to write data to offset " <<

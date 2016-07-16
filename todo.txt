@@ -24,9 +24,9 @@ TODO:
         v Add remove entry button
         v Update the list when state changes (file is transferred)
         v Get real data
-        - Icon for transfers don't change when active
+        v Icon for transfers don't change when active
         v Send "smart" file size
-        - Sort the list on time, group by id
+        v Sort the list on time, group by id
     - Optimize the performance. We use too much CPU when receiving a file.
     - Send file
     - Implement stop_sending

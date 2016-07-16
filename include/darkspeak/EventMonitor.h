@@ -88,10 +88,10 @@ public:
         }
 
         int PercentageComplete() const {
-            return static_cast<int>(
-                (static_cast<double>(transferred)
-                    / static_cast<double>(length))
-                * 100.0);
+            const double l = length;
+            const double t = transferred;
+            const auto p = (t / l) * 100.0;
+            return static_cast<int>(p);
         }
     };
 

@@ -44,6 +44,7 @@ Item {
                 id: removeBtn
                 anchors.bottom: data.bottom
                 anchors.right: data.right
+                tooltip: "Delete this file"
                 height: iconSize
                 width: iconSize
                 iconSource: "qrc:/images/Delete.svg"
@@ -57,6 +58,7 @@ Item {
                 anchors.bottom: data.bottom
                 anchors.left: fileIcon.right
                 anchors.leftMargin: margin
+                tooltip: "Open containing folder"
                 height: iconSize
                 width: iconSize
                 iconSource: "qrc:/images/OpenFolder.svg"

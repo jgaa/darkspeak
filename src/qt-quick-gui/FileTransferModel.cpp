@@ -19,8 +19,6 @@ using namespace war;
 FileTransferModel::FileTransferModel(Api& api, QObject *parent)
 : QAbstractListModel(parent), api_{api}
 {
-    event_listener_ = make_shared<Events>(*this);
-
     connect(this,
             SIGNAL(newTransfer(darkspeak::EventMonitor::FileInfo)),
             this, SLOT(addFileToList(darkspeak::EventMonitor::FileInfo)));
@@ -33,6 +31,7 @@ FileTransferModel::FileTransferModel(Api& api, QObject *parent)
             SIGNAL(deleteEntry(int)),
             this, SLOT(deleteEntryFromList(int)));
 
+    event_listener_ = make_shared<Events>(*this);
     api_.SetMonitor(event_listener_);
 }
 
@@ -54,8 +53,9 @@ QVariant FileTransferModel::data(const QModelIndex& index, int role) const
         case BuddyIdRole:
             return {transfers_[row].buddy_id.c_str()};
         case BuddyNameRole: {
-            if (auto buddy = api_.GetBuddy(transfers_[row].buddy_id)) {
-                const auto ui_name = buddy->GetUiName();
+            const auto bid = transfers_[row].buddy_id;
+            if (auto buddy = api_.GetBuddy(bid)) {
+                const auto ui_name = buddy->GetUiName() + " " + bid;
                 return {ui_name.c_str()};
             }
             break;
@@ -78,7 +78,6 @@ QVariant FileTransferModel::data(const QModelIndex& index, int role) const
 
     return {};
 }
-
 QHash<int, QByteArray> FileTransferModel::roleNames() const
 {
     static const QHash<int, QByteArray> names = {
@@ -104,8 +103,23 @@ void FileTransferModel::addFileToList(EventMonitor::FileInfo fi)
 {
     LOG_DEBUG_FN << "Adding file transfer " << fi;
 
-    emit beginInsertRows(QModelIndex(), transfers_.size(), transfers_.size());
-    transfers_.push_back(move(fi));
+    // The list is sorted by buddy id, with new files at the top.
+    int ix = 0, i = 0;
+    for(auto it = transfers_.begin(); it != transfers_.end(); ++it, ++i) {
+        const auto res = it->buddy_id.compare(fi.buddy_id);
+        if (res == 0) {
+            // Insert before to make our file on top
+            ix = i;
+            break;
+        }
+        if (res < 0) {
+            // Insert after, (unless we find a better match).
+            ix = i + 1;
+        }
+    }
+
+    emit beginInsertRows(QModelIndex(), ix, ix);
+    transfers_.insert(transfers_.begin() + ix, move(fi));
     emit endInsertRows();
 
     updateActiveTransfers();
