@@ -65,7 +65,7 @@ BOOST_LIBRARYDIR path C:/devel/boost_1_60_0/stage/lib/x64
 CMAKE_PREFIX_PATH path C:/Qt/Qt5.6.0/5.6/msvc2015_64
 ```
 - Configure and generate in Cmake
-- Find darkspeak.sln (it will be in darkspeak/build on my system) and double click on it to start Vu=isual Studio
+- Find darkspeak.sln (it will be in darkspeak/build on my system) and double click on it to start Visual Studio
 - In Visual Studio, build the solution.
 
 # Roadmap
