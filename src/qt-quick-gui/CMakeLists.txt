@@ -37,6 +37,7 @@ set(SOURCES
     ContactData.cpp
     SettingsData.cpp
     FileTransferModel.cpp
+    ImageProvider.cpp
     )
 
 set (HEADERS
@@ -46,6 +47,7 @@ set (HEADERS
     ContactData.h
     SettingsData.h
     FileTransferModel.h
+    ImageProvider.h
     )
 
 qt5_add_resources(RESOURCES resources.qrc)

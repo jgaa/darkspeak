@@ -290,6 +290,8 @@ public:
     std::unique_ptr<std::chrono::steady_clock::time_point> retry_connect_time;
     unsigned reconnect_count = 0;
 
+    std::string avatar_alpha_ch;
+
     TorChatEngine& GetEngine() { return parent_; }
 
 private:

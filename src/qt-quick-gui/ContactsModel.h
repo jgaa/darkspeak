@@ -5,6 +5,8 @@
 #include "darkspeak/EventMonitor.h"
 #include "darkspeak/FileInfo.h"
 
+#include <ImageProvider.h>
+
 #include <QtCore>
 
 class ChatMessagesModel;
@@ -51,6 +53,7 @@ private:
         void OnOtherEvent(const Event &event) override;
         void OnListening(const ListeningInfo &endpoint) override;
         void OnShutdownComplete(const ShutdownInfo &info) override;
+        void OnAvatarReceived(const AvatarInfo& info) override;
 
     private:
         ContactsModel& parent_;
@@ -64,7 +67,8 @@ public:
         LastSeenRole,
         StatusColorRole,
         StatusRole,
-        AnonymityLevelRole
+        AnonymityLevelRole,
+        AvatarRole
     };
 
     explicit ContactsModel(darkspeak::Api& api, QObject *parent = nullptr);
@@ -85,6 +89,10 @@ public:
     Q_INVOKABLE void remove(int index);
     Q_INVOKABLE ChatMessagesModel *getMessagesModel(int index);
     Q_INVOKABLE ContactData *getContactData(int index);
+
+    ImageProvider *GetAvatarProvider() {
+        return avatars_;
+    }
 
 public slots:
     OnlineStatus getOnlineStatus() const;
@@ -135,5 +143,6 @@ private:
     mutable InfoCache icache_;
     OnlineStatus online_status_ = OS_OFF_LINE;
     std::shared_ptr<Events> event_listener_;
+    ImageProvider *avatars_ {};
 };
 

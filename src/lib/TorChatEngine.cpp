@@ -1054,7 +1054,17 @@ void TorChatEngine::DoSendPong(TorChatPeer& peer,
 
 void TorChatEngine::OnProfileAvatar(const TorChatEngine::Request& req)
 {
+    static const string alpha_name {""};
 
+    if (req.cmd->verb == Command::Verb::PROFILE_AVATAR_ALPHA) {
+        req.peer->avatar_alpha_ch = req.params.at(0);
+    } else {
+        EventMonitor::AvatarInfo ai;
+        ai.buddy_id = req.peer->GetId();
+        ai.data_a = req.params.at(0);
+        ai.data_b = move(req.peer->avatar_alpha_ch);
+        EmitEventAvatarReceived(ai);
+    }
 }
 
 void TorChatEngine::OnProfileName(const TorChatEngine::Request& req)
@@ -1187,6 +1197,13 @@ void TorChatEngine::EmitEventIncomingFile(const FileInfo& info)
 {
     for(auto& monitor : GetMonitors()) {
         monitor->OnIncomingFile(info);
+    }
+}
+
+void TorChatEngine::EmitEventAvatarReceived(const EventMonitor::AvatarInfo& info)
+{
+    for(auto& monitor : GetMonitors()) {
+        monitor->OnAvatarReceived(info);
     }
 }
 

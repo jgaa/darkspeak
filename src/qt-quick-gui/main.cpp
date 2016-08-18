@@ -109,7 +109,7 @@ int main(int argc, char *argv[])
     qRegisterMetaType<darkspeak::FileInfo>("darkspeak::FileInfo");
     qRegisterMetaType<FileTransferModel::State>("FileTransferModel::State");
     qRegisterMetaType<FileTransferModel::Direction>("FileTransferModel::Direction");
-
+    qRegisterMetaType<QVector<int>>("QVector<int>");
 
     // Initiallze the UI components
     QQmlApplicationEngine engine;
@@ -145,8 +145,9 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("darkRoot", &dark_root);
     engine.rootContext()->setContextProperty("contactsModel", &contacts_model);
     engine.rootContext()->setContextProperty("transfersModel", &file_transfer_model);
+    engine.addImageProvider("buddy", contacts_model.GetAvatarProvider()); // QT takes ownership of the instance ?
     engine.load(QUrl("qrc:/qml/main.qml"));
-    //engine.rootContext()->setContextProperty("darkRoot", &dark_root);
+
 
     auto rval = app.exec();
 

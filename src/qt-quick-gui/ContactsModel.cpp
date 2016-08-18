@@ -6,6 +6,7 @@
 #include "ContactData.h"
 #include "darkspeak-gui.h"
 
+#include <QImage>
 
 using namespace std;
 using namespace darkspeak;
@@ -40,6 +41,10 @@ ContactsModel::ContactsModel(Api& api, QObject *parent)
 
 
     api_.SetMonitor(event_listener_);
+
+    avatars_ = new ImageProvider(); // Let QT own the instance
+    avatars_->add("default",
+                  make_shared<QImage>(":/images/anon_contact_48x48.png"));
 }
 
 ContactsModel::~ContactsModel()
@@ -94,6 +99,12 @@ QVariant ContactsModel::data(const QModelIndex &index, int role) const
         return Convert(buddies_[row]->GetStatus());
     case AnonymityLevelRole:
         return Convert(icache_.info.GetCurrentAnonymity());
+    case AvatarRole:
+        static const string avatar_url{"image://buddy/"};
+        if (avatars_->haveImage(icache_.info.id)) {
+            return QUrl(Convert(avatar_url + icache_.info.id));
+        }
+        return QUrl(Convert(avatar_url + "default"));
     }
 
     return {rval.c_str()};
@@ -127,7 +138,8 @@ QHash<int, QByteArray> ContactsModel::roleNames() const
         {LastSeenRole, "last_seen"},
         {StatusColorRole, "status_color"},
         {StatusRole, "status"},
-        {AnonymityLevelRole, "alevel"}
+        {AnonymityLevelRole, "alevel"},
+        {AvatarRole, "avatar"}
     };
 
     return names;
@@ -249,6 +261,39 @@ void ContactsModel::Events::OnListening(const EventMonitor::ListeningInfo &endpo
 void ContactsModel::Events::OnShutdownComplete(const EventMonitor::ShutdownInfo &info)
 {
     parent_.setOnlineStatus(OS_OFF_LINE);
+}
+
+void ContactsModel::Events::OnAvatarReceived(const EventMonitor::AvatarInfo& info)
+{
+    LOG_DEBUG_FN << "Received new avatar from " << info.buddy_id;
+
+    if (info.data_a.size() != (64*64*3)) {
+        LOG_WARN_FN << "The avatar image is not 64*64*24bit "
+            << (64*64*3)
+            << " but in stead " << info.data_a.size()
+            << " bytes. I don't know how to decode this avatar image!";
+        return;
+    }
+
+    auto img = make_shared<QImage>(64, 64, QImage::Format_ARGB32);
+
+    // TODO: See if we can stuff the pixels into QImage directly...
+    const char *rgb = info.data_a.c_str();
+    const char *alpha = info.data_b.c_str();
+    for(int y = 0; y < 64; ++y) {
+        for (int x = 0; x < 64; ++x) {
+
+            const uint8_t r = static_cast<uint8_t>(*rgb); ++rgb;
+            const uint8_t g = static_cast<uint8_t>(*rgb); ++rgb;
+            const uint8_t b = static_cast<uint8_t>(*rgb); ++rgb;
+            const uint8_t a = static_cast<uint8_t>(*alpha); ++alpha;
+
+            img->setPixel(x, y, qRgba(r, g, b, a));
+        }
+    }
+
+    parent_.GetAvatarProvider()->add(info.buddy_id, img);
+    parent_.refreshBuddyState(info.buddy_id);
 }
 
 ChatMessagesModel* ContactsModel::getMessagesModel(int index)

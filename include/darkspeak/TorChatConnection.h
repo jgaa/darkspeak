@@ -61,7 +61,7 @@ private:
                                   boost::string_ref& remaining) const;
 
     boost::string_ref DecodeCurrent(boost::string_ref& blob);
-    std::array<char, 1024 * 12> read_buffer_;
+    std::array<char, 1024 * 16> read_buffer_;
     boost::string_ref remaining_data_;
     static const std::size_t max_fragments_in_one_line_ = 16;
     const std::string name_;

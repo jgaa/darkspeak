@@ -65,6 +65,16 @@ public:
         std::string message;
     };
 
+    struct AvatarInfo {
+        enum class Format {
+            TORCHAT // a = 64*64*24bit image, b = 64*64*8bit alpha
+        };
+
+        std::string buddy_id;
+        std::string data_a;
+        std::string data_b;
+    };
+
     struct Event {
         enum class Type {
             UNKNOWN,
@@ -155,6 +165,9 @@ public:
 
     /*! Shutdown Complete. All connections are closed */
     virtual void OnShutdownComplete(const ShutdownInfo& info) = 0;
+
+    /*! We have received an avatar from a peer */
+    virtual void OnAvatarReceived(const AvatarInfo& info) = 0;
 };
 
 } // namespace

@@ -33,6 +33,7 @@ class FileTransferModel : public QAbstractListModel
         void OnOtherEvent(const Event &event) override;
         void OnListening(const ListeningInfo &endpoint) override {};
         void OnShutdownComplete(const ShutdownInfo &info) override {};
+        void OnAvatarReceived(const AvatarInfo& info) override {};
 
     private:
         FileTransferModel& parent_;

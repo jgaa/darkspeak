@@ -116,7 +116,10 @@ Component {
 
            Image {
                id: contact_icon
-               source: "qrc:/images/anon_contact_48x48.png"
+               //source: "qrc:/images/anon_contact_48x48.png"
+               source: avatar
+               height: 48
+               width: 48
            }
 
            Column {

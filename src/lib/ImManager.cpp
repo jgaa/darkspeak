@@ -489,6 +489,14 @@ void ImManager::Events::OnShutdownComplete(const EventMonitor::ShutdownInfo& inf
     }
 }
 
+void ImManager::Events::OnAvatarReceived(const EventMonitor::AvatarInfo& info)
+{
+    for(auto& monitor : manager_.GetMonitors()) {
+        monitor->OnAvatarReceived(info);
+    }
+}
+
+
 shared_ptr< ImManager > ImManager::CreateInstance(path_t conf_file)
 {
     shared_ptr< ImManager > mgr{new ImManager(conf_file)};

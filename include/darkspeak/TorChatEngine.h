@@ -189,6 +189,7 @@ private:
     void EmitShutdownComplete(const EventMonitor::ShutdownInfo& info);
     void EmitEventListening(const EventMonitor::ListeningInfo& endpoint);
     void EmitEventIncomingFile(const FileInfo& info);
+    void EmitEventAvatarReceived(const EventMonitor::AvatarInfo& info);
 
     // Requests
     void OnAddMe(const Request& req);
