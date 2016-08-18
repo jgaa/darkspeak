@@ -68,6 +68,28 @@ CMAKE_PREFIX_PATH path C:/Qt/Qt5.6.0/5.6/msvc2015_64
 - Find darkspeak.sln (it will be in darkspeak/build on my system) and double click on it to start Visual Studio
 - In Visual Studio, build the solution.
 
+# Integrating with a Tor Service
+
+Get the Tor service. Most Linux distributions will offer it as a package.
+
+Follow the instructions [here](https://www.torproject.org/docs/tor-hidden-service.html.en) to create a service.
+
+A Tor config file (torrc) may look like:
+
+```
+# torrc example for Debian Gnu Linux
+HiddenServiceDir /var/lib/tor/darkspeak
+HiddenServicePort 11009 127.0.0.1:11009
+```
+
+After altering torrc and re-startuinbg tor, you need to look at the 
+hostname file in your hidden service dir. The hostname, without the
+".onion" postfix is your chat handle (TC id).
+
+Start darkspeak, open the settings/You dialog and paste your chat handle
+into the "Chat Id" field. Then save and press the online button.
+
+
 # Roadmap
 ## Beta 1a
 - [x] ~~Document the legacy Tor Chat protocol~~
