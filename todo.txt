@@ -29,19 +29,18 @@ TODO:
         v Sort the list on time, group by id
     - Optimize the performance. We use too much CPU when receiving a file.
     - Send file
-        - AbortTransfer()
-        - Outgoing queue of sent blocks
-        - Handle Stop Sending
-        - Handle re-send
-        - Start sending data
-        - Send method.
-            - Read from file
-            - Caclulate md5
-            - Create a line to send
-            - Send the line
-            - Remember the offset until we have a confirmation
-
-    - Implement stop_sending
+        v AbortTransfer()
+        v Outgoing queue of sent blocks
+        v Handle Stop Sending
+        v Handle re-send
+        v Start sending data
+        v Send method.
+            v Read from file
+            v Caclulate md5
+            v Create a line to send
+            v Send the line
+            v Remember the offset until we have a confirmation
+        v Implement stop_sending
 
   - Finish Contact List:
     - Send status, profile name/info/icon if we edit data
