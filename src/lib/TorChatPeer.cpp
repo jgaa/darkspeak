@@ -489,12 +489,12 @@ void TorChatPeer::FileTransfer::AddSegment(uint64_t offset, size_t size)
     }
 }
 
-/* We are complete when we have only one merged segment covering
- * the entire file.
- */
 bool TorChatPeer::FileTransfer::IsComplete() const
 {
     if (info_.direction == Direction::INCOMING) {
+        /* We are complete when we have only one merged segment covering
+        * the entire file.
+        */
         if (segments_.size() == 1) {
             const auto& seg = segments_.front();
             if ((seg.start == 0) && (static_cast<int64_t>(seg.size) == info_.length)) {
@@ -540,7 +540,11 @@ void TorChatPeer::FileTransfer::AbortTransfer(const string& reason)
 
     if (file_.is_open()) {
         file_.close();
-        boost::filesystem::remove(info_.path);
+        if (info_.direction == darkspeak::Direction::INCOMING) {
+            LOG_DEBUG_FN << "Removing file " << log::Esc(info_.path.string())
+                << " because " << info_ << " is aborted.";
+            boost::filesystem::remove(info_.path);
+        }
     }
 
     parent_.GetEngine().SendCommand(

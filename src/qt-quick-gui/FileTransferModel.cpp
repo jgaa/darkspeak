@@ -181,7 +181,7 @@ QUrl FileTransferModel::GetIconForFile(const darkspeak::FileInfo& fileInfo) cons
         QUrl("qrc:/images/FileDownloadFailed.svg"),
         QUrl("qrc:/images/FileDownloadOk.svg"),
         // Upload
-        QUrl("qrc:/imagesFileUpload.svg"),
+        QUrl("qrc:/images/FileUpload.svg"),
         QUrl("qrc:/images/FileUploadFailed.svg"),
         QUrl("qrc:/images/FileUploadOk.svg"),
     };
@@ -225,10 +225,13 @@ void FileTransferModel::openFolder(int index)
     } WAR_CATCH_NORMAL;
 }
 
-void FileTransferModel::deleteTransfer(int index)
+void FileTransferModel::cancelTransfer(int index)
 {
     try {
         const auto& fi = transfers_.at(index);
+
+        LOG_DEBUG_FN << "Cancelling transfer at index " << index
+            << " " << fi;
 
         if ((fi.state == FileInfo::State::PENDING)
             || (fi.state == FileInfo::State::TRANSFERRING)) {
@@ -249,10 +252,28 @@ void FileTransferModel::deleteTransfer(int index)
             }
         }
 
+    } WAR_CATCH_NORMAL;
+}
+
+void FileTransferModel::removeTransfer(int index)
+{
+    try {
+        const auto& fi = transfers_.at(index);
+
+        LOG_DEBUG_FN << "Removing transfer at index " << index
+            << " " << fi;
+
+        if ((fi.state == FileInfo::State::PENDING)
+            || (fi.state == FileInfo::State::TRANSFERRING)) {
+
+            cancelTransfer(index);
+        }
+
         emit deleteEntry(index);
 
     } WAR_CATCH_NORMAL;
 }
+
 
 void FileTransferModel::deleteEntryFromList(int index) {
 
@@ -283,12 +304,24 @@ QString FileTransferModel::GetHumanReadableNumber(int64_t num) {
     if (num >= (peta + (peta / 4))) {
         result << (static_cast<double>(num) / peta) << 'p';
     } if (num >= (tera + (tera / 4))) {
+        if ((num % tera) == 0) {
+            result << fixed <<  setprecision(0);
+        }
         result << (static_cast<double>(num) / tera) << 't';
     } else if (num >= (giga + (giga / 4))) {
+        if ((num % giga) == 0) {
+            result << fixed <<  setprecision(0);
+        }
         result << (static_cast<double>(num) / giga) << 'g';
     } else if (num >= (mega + (mega / 4))) {
+        if ((num % mega) == 0) {
+            result << fixed <<  setprecision(0);
+        }
         result << (static_cast<double>(num) / mega) << 'm';
     } else if (num >= (kilo + (kilo / 4))) {
+        if ((num % kilo) == 0) {
+            result << fixed <<  setprecision(0);
+        }
         result << (static_cast<double>(num) / kilo) << 'k';
     } else {
         result << num << 'b';

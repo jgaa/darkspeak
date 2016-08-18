@@ -41,15 +41,32 @@ Item {
             }
 
             Button {
-                id: removeBtn
+                id: cancelBtn
+                // FIXME: The icon is not disabled when the tsransfer is done
+                enabled: status === FileTransferModel.State.PENDING
+                    || status === FileTransferModel.State.TRANSFERRING
                 anchors.bottom: data.bottom
                 anchors.right: data.right
-                tooltip: "Delete this file"
+                tooltip: "Cancel this transfer"
                 height: iconSize
                 width: iconSize
                 iconSource: "qrc:/images/Delete.svg"
                 onClicked: {
-                    transfersModel.deleteTransfer(index)
+                    transfersModel.cancelTransfer(index)
+                }
+            }
+
+            Button {
+                id: removeBtn
+                anchors.bottom: data.bottom
+                anchors.right: cancelBtn.left
+                anchors.rightMargin: margin
+                tooltip: "Remove from list"
+                height: iconSize
+                width: iconSize
+                iconSource: "qrc:/images/remove.svg"
+                onClicked: {
+                    transfersModel.removeTransfer(index)
                 }
             }
 
@@ -72,7 +89,7 @@ Item {
                 text: size
                 width: 80
                 anchors.verticalCenter: folderBtn.verticalCenter
-                anchors.right: removeBtn.left
+                anchors.right: cancelBtn.left
             }
 
             ProgressBar {

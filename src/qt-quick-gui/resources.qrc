@@ -34,5 +34,6 @@
         <file>images/FileUploadOk.svg</file>
         <file>images/OpenFolder.svg</file>
         <file>images/Delete.svg</file>
+        <file>images/remove.svg</file>
     </qresource>
 </RCC>

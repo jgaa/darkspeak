@@ -90,12 +90,8 @@ public:
     Q_INVOKABLE int getActiveTransfers();
     Q_INVOKABLE void openFolder(int id);
 
-    /*! Delete a transfer.
-     *
-     * If pending or active, cancel.
-     * If complete, delete the entry and the file.
-     */
-    Q_INVOKABLE void deleteTransfer(int id);
+    Q_INVOKABLE void cancelTransfer(int id);
+    Q_INVOKABLE void removeTransfer(int id); // Remove from the list
     Q_INVOKABLE void sendFile(const QString buddyHandle, const QUrl file);
 
 protected:

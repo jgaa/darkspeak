@@ -104,6 +104,13 @@ int main(int argc, char *argv[])
     FileTransferModel file_transfer_model(*manager);
 
 
+    qRegisterMetaType<darkspeak::Api::Message::ptr_t>("darkspeak::Api::Message::ptr_t");
+    qRegisterMetaType<std::string>("std::string");
+    qRegisterMetaType<darkspeak::FileInfo>("darkspeak::FileInfo");
+    qRegisterMetaType<FileTransferModel::State>("FileTransferModel::State");
+    qRegisterMetaType<FileTransferModel::Direction>("FileTransferModel::Direction");
+
+
     // Initiallze the UI components
     QQmlApplicationEngine engine;
 
@@ -121,11 +128,6 @@ int main(int argc, char *argv[])
         QString no_create_message = "ChatMessagesModel is obtained from ContactsModel.";
         qmlRegisterUncreatableType<ChatMessagesModel>("com.jgaa.darkspeak", 1, 0, "ChatMessagesModel", no_create_message);
     }
-
-
-    qRegisterMetaType<darkspeak::Api::Message::ptr_t>("darkspeak::Api::Message::ptr_t");
-    qRegisterMetaType<std::string>("std::string");
-    qRegisterMetaType<darkspeak::FileInfo>("darkspeak::FileInfo");
 
 
     //{

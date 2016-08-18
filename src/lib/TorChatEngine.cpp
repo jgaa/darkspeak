@@ -609,7 +609,6 @@ void TorChatEngine::SendFile(Api::Buddy& buddy, const FileInfo& file)
                 GetRandomCookie(64), file);
                 ft->SetState(TorChatPeer::FileTransfer::State::UNVERIFIED);
             peer->AddFileTransfer(ft);
-            EmitEventIncomingFile(ft->GetInfo());
         } else {
             LOG_WARN << "No peer " << buddy.GetId() << " is online. Dismissing "
                 << file;
@@ -1382,11 +1381,7 @@ void TorChatEngine::ProcessAbortFileTransfer(const AbortFileTransferData& aftd)
     auto transfer = peer->GetFileTransfer(aftd.uuid);
 
     if (transfer) {
-        if (transfer->GetInfo().direction == Direction::INCOMING) {
-            transfer->AbortTransfer(aftd.reason);
-        }
-        // TODO: Handle upload
-
+        transfer->AbortTransfer(aftd.reason);
     }
 
     if (!aftd.delete_this.empty()) {
