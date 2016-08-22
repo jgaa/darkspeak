@@ -9,7 +9,7 @@ BUGS:
 Missing features:
   - Avatar icon
     v Show Buddy's
-    - Save / cache buddys icon
+    v Save / cache buddys icon
     - Our own
         - Import / convert / display
         - Send

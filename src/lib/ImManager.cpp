@@ -83,8 +83,18 @@ struct InfoCapsule : public Api::Buddy::Info {
         ar & required_anonymity;
         ar & auto_connect;
         ar & store_conversations;
+        if (version > 0) {
+            ar & avatar;
+        }
     }
 };
+
+}} // namespaces
+
+BOOST_CLASS_VERSION(darkspeak::impl::InfoCapsule, 1)
+
+namespace darkspeak {
+namespace impl {
 
 struct InfoData {
     std::vector<InfoCapsule> data;
@@ -547,3 +557,4 @@ shared_ptr<Api> Api::CreateInstance(path_t conf_file)
 
 
 } // darkspeak
+

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <iostream>
 #include <atomic>
+#include <cstdint>
 
 #include <boost/filesystem.hpp>
 #include <boost/uuid/uuid.hpp>
@@ -182,6 +183,9 @@ public:
             /*! The client software used by the buddy */
             std::string client;
 
+            /*! Avatar in png format */
+            std::vector<std::uint8_t> avatar;
+
             AnonymityLevel GetCurrentAnonymity() const noexcept {
                 return static_cast<AnonymityLevel>(std::max(
                     static_cast<int>(anonymity),
@@ -274,6 +278,8 @@ public:
          */
         virtual message_list_t
         GetMessages(const boost::uuids::uuid *after = nullptr) = 0;
+
+        virtual void SetAvatar(std::vector<std::uint8_t> avatar) = 0;
 
         /*! Register a monitor to receive notifications */
         virtual void SetMonitor(const std::weak_ptr<BuddyEventsMonitor> monitor) = 0;

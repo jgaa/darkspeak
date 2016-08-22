@@ -48,13 +48,13 @@ public:
     void Delete() override;
     Api::message_list_t GetMessages(const boost::uuids::uuid* after = nullptr) override;
     void SetMonitor(const std::weak_ptr<BuddyEventsMonitor> monitor) override;
+    void SetAvatar(std::vector< std::uint8_t > avatar) override;
 
     void OnStateChange(Api::Status status);
     void OnOtherEvent(const EventMonitor::Event& event);
     void OnMessageReceived(const Api::Message::ptr_t& message);
     void UpdateLastSeenTimestamp();
     void Update(const EventMonitor::BuddyInfo& bi);
-
 
 private:
     void SendQueuedMessage();

@@ -1,5 +1,5 @@
 
-
+#include "war_error_handling.h"
 #include <map>
 #include <memory>
 #include <mutex>
@@ -21,7 +21,13 @@ public:
 
     void add(const std::string key, std::shared_ptr<QImage> img) {
         std::lock_guard<std::mutex> lock(mutex_);
+        WAR_ASSERT(img != nullptr);
         images_[key] = std::move(img);
+    }
+
+    void remove(const std::string key) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        images_.erase(key);
     }
 
     bool haveImage(const std::string& key) const {

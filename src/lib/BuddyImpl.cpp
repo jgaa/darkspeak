@@ -279,6 +279,13 @@ void BuddyImpl::SendFile(const darkspeak::FileInfo& fi)
     GetProtocol()->SendFile(*this, fi);
 }
 
+void BuddyImpl::SetAvatar(vector<uint8_t> avatar)
+{
+    LOCK;
+    info_.avatar = move(avatar);
+}
+
+
 
 } // impl
 } // darkspeak

@@ -45,6 +45,10 @@ ContactsModel::ContactsModel(Api& api, QObject *parent)
     avatars_ = new ImageProvider(); // Let QT own the instance
     avatars_->add("default",
                   make_shared<QImage>(":/images/anon_contact_48x48.png"));
+
+    for(const auto& buddy : buddies_) {
+        RefreshAvatar(*buddy);
+    }
 }
 
 ContactsModel::~ContactsModel()
@@ -166,6 +170,25 @@ QUrl ContactsModel::getOnlineStatusIcon() const
     };
 
     return icons.at(online_status_);
+}
+
+void ContactsModel::SetAvatar(const std::string& buddyId,
+                              std::shared_ptr<QImage> avatar)
+{
+    auto buddy = api_.GetBuddy(buddyId);
+    if (buddy) {
+        QByteArray bytes;
+        QBuffer buffer(&bytes);
+        avatar->save(&buffer, "PNG");
+        vector<uint8_t> image_data(bytes.size());
+        memcpy(&image_data[0],
+               reinterpret_cast<const uint8_t *>(bytes.data()),
+               bytes.size());
+        buddy->SetAvatar(image_data);
+        avatars_->add(buddyId, avatar);
+        refreshBuddyState(buddyId);
+    }
+
 }
 
 
@@ -292,8 +315,7 @@ void ContactsModel::Events::OnAvatarReceived(const EventMonitor::AvatarInfo& inf
         }
     }
 
-    parent_.GetAvatarProvider()->add(info.buddy_id, img);
-    parent_.refreshBuddyState(info.buddy_id);
+    parent_.SetAvatar(info.buddy_id, img);
 }
 
 ChatMessagesModel* ContactsModel::getMessagesModel(int index)
@@ -374,6 +396,9 @@ void ContactsModel::addBuddyToList(string id)
     auto base_list = api_.GetBuddies();
     for(size_t i = 0; i < base_list.size(); ++i) {
         if (id.compare(base_list[i]->GetId()) == 0) {
+
+            RefreshAvatar(*base_list[i]);
+
             emit beginInsertRows(QModelIndex(), i, i);
             buddies_ = base_list;
             emit endInsertRows();
@@ -383,6 +408,23 @@ void ContactsModel::addBuddyToList(string id)
 
     LOG_ERROR_FN << "Could not find buddy " << id << " in the list";
 }
+
+void ContactsModel::RefreshAvatar(const Api::Buddy& buddy)
+{
+    const auto info = buddy.GetInfo();
+    if (info.avatar.empty()) {
+        avatars_->remove(buddy.GetId());
+    } else {
+        auto img = make_shared<QImage>();
+        if (img->loadFromData(info.avatar.data(), info.avatar.size())) {
+            avatars_->add(buddy.GetId(), img);
+        } else {
+            LOG_WARN << "Failed to load image for " << buddy;
+            avatars_->remove(buddy.GetId());
+        }
+    }
+}
+
 
 void ContactsModel::deleteBuddyFromList(string id)
 {
@@ -396,6 +438,8 @@ void ContactsModel::deleteBuddyFromList(string id)
     emit beginRemoveRows(QModelIndex(), ix, ix);
     buddies_.erase(buddies_.begin() + ix);
     emit endRemoveRows();
+
+    avatars_->remove(id);
 }
 
 void ContactsModel::IncomingFileRequest(const FileInfo file)

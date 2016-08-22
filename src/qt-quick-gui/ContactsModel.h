@@ -94,6 +94,9 @@ public:
         return avatars_;
     }
 
+    void SetAvatar(const std::string& buddyId,
+                   std::shared_ptr<QImage> avatar);
+
 public slots:
     OnlineStatus getOnlineStatus() const;
     void setOnlineStatus(OnlineStatus status);
@@ -131,6 +134,7 @@ private:
 
     int FindBuddy(const std::string& id);
     bool HaveBuddy(const std::string& id);
+    void RefreshAvatar(const darkspeak::Api::Buddy& buddy);
 
     darkspeak::Api& api_;
     darkspeak::Api::buddy_list_t buddies_;
