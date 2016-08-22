@@ -14,6 +14,13 @@ ApplicationWindow {
     width: 300
     height: 400
     title: qsTr("DarkSpeak")
+    onActiveChanged: {
+        if (active) {
+            console.log("Window active");
+        } else {
+            console.log("Window inactive");
+        }
+    }
 
     toolBar: MainToolBar { id: mainToolBar }
 
