@@ -17,32 +17,7 @@ Missing features:
 
 
 TODO:
-  - File Transfer
-    Work-flow:
-    - Add File transfer view to list ongoing and complete file transfers
-        v Get print user for grouping
-        v Open folder with file
-        v Add remove entry button
-        v Update the list when state changes (file is transferred)
-        v Get real data
-        v Icon for transfers don't change when active
-        v Send "smart" file size
-        v Sort the list on time, group by id
-    - Optimize the performance. We use too much CPU when receiving a file.
-    - Send file
-        v AbortTransfer()
-        v Outgoing queue of sent blocks
-        v Handle Stop Sending
-        v Handle re-send
-        v Start sending data
-        v Send method.
-            v Read from file
-            v Caclulate md5
-            v Create a line to send
-            v Send the line
-            v Remember the offset until we have a confirmation
-        v Implement stop_sending
-
+  v File Transfer
   - Finish Contact List:
     - Send status, profile name/info/icon if we edit data
     - Show message icon if we have unread messages
