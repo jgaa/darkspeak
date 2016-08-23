@@ -42,6 +42,7 @@ Dialog {
             settings.status = own_info.status
             settings.nickname = own_info.nickname
             settings.profileText = own_info.profileText
+            settings.avatar = own_info.avatar
 
             var tor = ownInfoView.getTab(1).item
             settings.torIncomingHost = tor.incomingHost

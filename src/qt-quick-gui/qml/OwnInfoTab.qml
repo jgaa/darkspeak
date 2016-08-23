@@ -19,6 +19,7 @@ Item {
     property alias status: statusId.currentIndex
     property alias nickname: profileName.text
     property alias profileText: profileTextId.text
+    property alias avatar: profileAvatar.source
 
     ScrollView {
         id: scroller
@@ -72,13 +73,38 @@ Item {
             }
 
             RowLayout {
+                spacing: 6
+                Label { text: "Avatar:"}
+                Image {
+                    width: 48; height: 48
+                    fillMode: Image.PreserveAspectCrop
+                    id: profileAvatar
+                    source: settings.avatar
+                }
+                Button {
+                    text: "Change ..."
+
+                    onClicked: {
+                        var uiComponent = Qt.createComponent("SelectAvatar.qml")
+                        if( uiComponent.status === Component.Error ) {
+                                console.debug("Error: "+ uiComponent.errorString());
+                            return;
+                        }
+                        var dialog = uiComponent.createObject(main_pane,
+                            {"avatar":profileAvatar});
+                        dialog.open()
+                    }
+                }
+            }
+
+            RowLayout {
                 id: profileInfoRow
                 spacing: 6
                 Label { id: profileInfoLabel; text: "Info:" }
                 TextArea {
                     id: profileTextId
                     text: settings.profileText
-                    height: 50
+                    height: 30
                     Layout.alignment: Qt.AlignBaseline
                     Layout.fillWidth: true
                 }

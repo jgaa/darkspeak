@@ -18,6 +18,7 @@ using namespace darkspeak;
 using namespace war;
 
 class SettingsData;
+class ImageProvider;
 
 /*! Interface to QML.
  *
@@ -47,7 +48,16 @@ public:
     Q_INVOKABLE void acceptFile(const QString buddyHandle, const QString fileId);
     Q_INVOKABLE void rejectFile(const QString buddyHandle, const QString fileId);
 
+    void SetImageProvider(ImageProvider *provider) {
+        image_provider_ = provider;
+    }
+
+    ImageProvider *GetImageProvider() {
+        return image_provider_;
+    }
+
 private:
     darkspeak::Api& api_;
     std::shared_ptr<darkspeak::Config> config_;
+    ImageProvider *image_provider_ = nullptr;
 };

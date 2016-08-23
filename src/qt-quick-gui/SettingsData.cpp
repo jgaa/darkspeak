@@ -4,6 +4,7 @@
 #include "darkspeak-gui.h"
 
 #include "SettingsData.h"
+#include "ImageProvider.h"
 
 using namespace std;
 using namespace darkspeak;
@@ -15,8 +16,9 @@ SettingsData::SettingsData(QObject* parent): QObject(parent)
 
 
 SettingsData::SettingsData(const std::shared_ptr<darkspeak::Config>& config,
+                           ImageProvider *provider,
                            QObject *parent)
-: QObject(parent), config_{config}
+: QObject(parent), config_{config}, image_provider_{provider}
 {
 
 }
@@ -90,6 +92,29 @@ void SettingsData::setStatus(int newStatus)
         emit statusChanged(newStatus);
     }
 }
+
+QUrl SettingsData::avatar() const {
+    static const string avatar_url{"image://buddy/"};
+    static const string myself {"myself"};
+
+    if (image_provider_->haveImage(myself)) {
+        return QUrl(Convert(avatar_url + myself));
+    }
+    return QUrl(Convert(avatar_url + "default"));
+}
+
+void SettingsData::setAvatar(QUrl url)
+{
+    QImage original(url.path());
+
+    auto avatar = make_shared<QImage>(original.scaled(64, 64,
+                        Qt::KeepAspectRatioByExpanding,
+                        Qt::SmoothTransformation));
+
+    image_provider_->add("myself", avatar);
+    emit avatarChanged();
+}
+
 
 QString SettingsData::torOutgoingHost() const
 {

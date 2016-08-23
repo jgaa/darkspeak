@@ -27,6 +27,7 @@ set(QML_SRC
     qml/TorSettingsTab.qml
     qml/IncomingFileRequest.qml
     qml/FileTransfersView.qml
+    qml/SelectAvatar.qml
     )
 
 set(SOURCES

@@ -41,7 +41,7 @@ void DarkRoot::copyToClipboard(QString text)
 
 SettingsData* DarkRoot::settings()
 {
-    return new SettingsData(config_, this);
+    return new SettingsData(config_, image_provider_, this);
 }
 
 void DarkRoot::acceptFile(const QString buddyHandle, const QString fileId)

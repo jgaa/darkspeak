@@ -103,6 +103,7 @@ int main(int argc, char *argv[])
     ContactsModel contacts_model(*manager);
     FileTransferModel file_transfer_model(*manager);
 
+    dark_root.SetImageProvider(contacts_model.GetAvatarProvider());
 
     qRegisterMetaType<darkspeak::Api::Message::ptr_t>("darkspeak::Api::Message::ptr_t");
     qRegisterMetaType<std::string>("std::string");

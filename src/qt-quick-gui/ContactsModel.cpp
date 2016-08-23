@@ -45,6 +45,8 @@ ContactsModel::ContactsModel(Api& api, QObject *parent)
     avatars_ = new ImageProvider(); // Let QT own the instance
     avatars_->add("default",
                   make_shared<QImage>(":/images/anon_contact_48x48.png"));
+    avatars_->add("_none_",
+                  make_shared<QImage>(":/images/Missing.svg"));
 
     for(const auto& buddy : buddies_) {
         RefreshAvatar(*buddy);

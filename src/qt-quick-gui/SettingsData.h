@@ -9,6 +9,7 @@
 
 class ChatMessagesModel;
 class ContactsModel;
+class ImageProvider;
 
 class SettingsData : public QObject
 {
@@ -19,6 +20,9 @@ class SettingsData : public QObject
     Q_PROPERTY(QString nickname READ nickname WRITE setNickname NOTIFY nicknameChanged)
     Q_PROPERTY(int status READ status WRITE setStatus NOTIFY statusChanged)
     Q_PROPERTY(QString profileText READ profileText WRITE setProfileText NOTIFY profileTextChanged)
+    Q_PROPERTY(QUrl avatar READ avatar WRITE setAvatar NOTIFY avatarChanged)
+
+    // Tor
     Q_PROPERTY(QString torIncomingHost READ torIncomingHost WRITE setTorIncomingHost NOTIFY torIncomingHostChanged)
     Q_PROPERTY(unsigned int torIncomingPort READ torIncomingPort WRITE setTorIncomingPort NOTIFY torIncomingPortChanged)
     Q_PROPERTY(QString torOutgoingHost READ torOutgoingHost WRITE setTorOutgoingHost NOTIFY torOutgoingHostChanged)
@@ -26,7 +30,9 @@ class SettingsData : public QObject
 
 public:
     SettingsData(QObject *parent = nullptr);
-    SettingsData(const std::shared_ptr<darkspeak::Config>& config, QObject *parent);
+    SettingsData(const std::shared_ptr<darkspeak::Config>& config,
+                 ImageProvider *provider,
+                 QObject *parent);
 
     unsigned int torOutgoingPort() const;
     unsigned int torIncomingPort() const;
@@ -42,6 +48,8 @@ public slots:
     void setStatus(int status);
     QString profileText() const;
     void setProfileText(QString text);
+    QUrl avatar() const;
+    void setAvatar(QUrl url);
     void setTorOutgoingPort(unsigned int torOutgoingPort);
     void setTorIncomingPort(unsigned int torIncomingPort);
     void setTorOutgoingHost(QString torOutgoingHost);
@@ -52,6 +60,7 @@ signals:
     void nicknameChanged(const QString&);
     void statusChanged(int);
     void profileTextChanged(const QString&);
+    void avatarChanged();
     void torOutgoingPortChanged(unsigned int torOutgoingPort);
     void torIncomingPortChanged(unsigned int torIncomingPort);
     void torOutgoingHostChanged(QString torOutgoingHost);
@@ -60,4 +69,5 @@ signals:
 
 private:
     std::shared_ptr<darkspeak::Config> config_;
+    ImageProvider *image_provider_;
 };
