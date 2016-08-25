@@ -5,6 +5,7 @@
 #include "log/WarLog.h"
 #include "war_uuid.h"
 
+#include "darkspeak-gui.h"
 #include "DarkRoot.h"
 #include "SettingsData.h"
 
@@ -58,4 +59,17 @@ void DarkRoot::rejectFile(const QString buddyHandle, const QString fileId)
     aftd.buddy_id = buddyHandle.toStdString();
     aftd.uuid = get_uuid_from_string(fileId.toStdString());
     api_.RejectFileTransfer(aftd);
+}
+
+QUrl DarkRoot::prepareAvatar(QUrl url)
+{
+    QImage original(url.path());
+
+    auto avatar = make_shared<QImage>(original.scaled(64, 64,
+                        Qt::KeepAspectRatioByExpanding,
+                        Qt::SmoothTransformation));
+
+    image_provider_->add("myself~", avatar);
+    static const string avatar_url{"image://buddy/myself~"};
+    return QUrl(Convert(avatar_url));
 }

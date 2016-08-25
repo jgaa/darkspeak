@@ -292,6 +292,7 @@ public:
         Status status = Status::OFF_LINE;
         std::string profile_name;
         std::string profile_text;
+        std::vector<char> avatar; //binary argb
     };
 
     using buddy_list_t = std::deque<Buddy::ptr_t>;

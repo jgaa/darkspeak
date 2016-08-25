@@ -41,6 +41,7 @@ public:
 
     Q_INVOKABLE ContactsModel *contactsModel();
     Q_INVOKABLE SettingsData *settings();
+    Q_INVOKABLE QUrl prepareAvatar(QUrl url);
 
     Q_INVOKABLE void goOnline();
     Q_INVOKABLE void goOffline();

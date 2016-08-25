@@ -1,4 +1,6 @@
 
+#include "log/WarLog.h"
+
 #include "darkspeak/darkspeak.h"
 #include "darkspeak/Api.h"
 #include "darkspeak-gui.h"
@@ -97,22 +99,62 @@ QUrl SettingsData::avatar() const {
     static const string avatar_url{"image://buddy/"};
     static const string myself {"myself"};
 
+    auto png_path = config_->Get(Config::PROFILE_AVATAR_PATH,
+            Config::PROFILE_AVATAR_PATH_DEFAULT);
+
+    if (!loaded_avatar_
+        && boost::filesystem::is_regular(png_path.c_str())) {
+        auto avatar = make_shared<QImage>(png_path.c_str());
+        if (!avatar->isNull()) {
+            image_provider_->add(myself, avatar);
+            loaded_avatar_ = true;
+        }
+    }
+
     if (image_provider_->haveImage(myself)) {
         return QUrl(Convert(avatar_url + myself));
     }
     return QUrl(Convert(avatar_url + "default"));
 }
 
+//The url is always to a temporary image in the image provider
 void SettingsData::setAvatar(QUrl url)
 {
-    QImage original(url.path());
+    auto path = url.toString().toStdString();
+    auto pos = path.find_last_of('/');
+    if (pos != path.npos) {
+        auto key = path.substr(pos + 1);
+        if (!path.empty()) {
+            image_provider_->rename(key, "myself");
+            image_provider_->save("myself",
+                                  config_->Get(Config::PROFILE_AVATAR_PATH,
+                                               Config::PROFILE_AVATAR_PATH_DEFAULT));
+            auto argb = GetArgb(image_provider_->get("myself"));
+            config_->Set(Config::PROFILE_AVATAR_ARGB,
+                Config::EncodeArgb(argb));
 
-    auto avatar = make_shared<QImage>(original.scaled(64, 64,
-                        Qt::KeepAspectRatioByExpanding,
-                        Qt::SmoothTransformation));
+            emit avatarChanged();
+        }
+    }
+}
 
-    image_provider_->add("myself", avatar);
-    emit avatarChanged();
+std::vector<char> SettingsData::GetArgb(const std::shared_ptr<QImage>& image)
+{
+    std::vector<char> argb;
+
+    if (!image->isNull()) {
+        auto height = image->height();
+        auto width = image->width();
+        argb.reserve(height * width);
+
+        for(decltype(width) x = 0; x < width; ++x) {
+            for(decltype(height) y = 0; y < height; ++y) {
+                argb.push_back(image->pixel(x, y));
+            }
+        }
+    }
+
+    return argb;
 }
 
 

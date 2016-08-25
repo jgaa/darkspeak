@@ -18,7 +18,7 @@ Item {
 
         onAccepted: {
             console.log("You chose avatar: " + fileDialog.fileUrl)
-            avatar.source = fileDialog.fileUrl;
+            avatar.source = darkRoot.prepareAvatar(fileDialog.fileUrl);
         }
         onRejected: {
             console.log("Canceled")
