@@ -917,7 +917,25 @@ void TorChatEngine::OnPong(const TorChatEngine::Request& req)
     if (!info.profile_text.empty()) {
         DoSend("profile_text", {info.profile_text}, *req.peer, *req.yield);
     }
-    // TODO: Add avatar
+    if (!info.avatar.empty() && !(info.avatar.size() % 4)) {
+        string alpha;
+        string rgb;
+        alpha.resize(64*64);
+        rgb.resize(64*64*3);
+        size_t aix = 0, rgbix = 0;
+        LOG_DEBUG_FN << "Avatar is " << info.avatar.size() << " bytes.";
+        for(auto it = info.avatar.cbegin() ; it != info.avatar.cend(); ) {
+            WAR_ASSERT(rgbix < rgb.size());
+            WAR_ASSERT(aix < alpha.size());
+            rgb[rgbix++] = *it++;
+            rgb[rgbix++] = *it++;
+            rgb[rgbix++] = *it++;
+            alpha[aix++] = *it++;
+        }
+
+        DoSend("profile_avatar_alpha", {alpha}, *req.peer, *req.yield);
+        DoSend("profile_avatar", {rgb}, *req.peer, *req.yield);
+    }
     DoSend("add_me", {}, *req.peer, *req.yield);
     DoSendStatus(*req.peer, *req.yield);
 
@@ -930,20 +948,8 @@ void TorChatEngine::SendCommand(const string& command,
                                 std::weak_ptr<TorChatPeer> weakPeer,
                                 Direction direction)
 {
-//     boost::asio::spawn(
-//         pipeline_.GetIoService(),
-//         bind(&TorChatEngine::SendCommand_,
-//                 shared_from_this(),
-//                 command,
-//                 args,
-//                 weakPeer,
-//                 direction,
-//                 std::placeholders::_1));
-
     pipeline_.Dispatch({[=](){
-
         SendCommand_(command, args, weakPeer, direction);
-
     }, "SendCommand"});
 }
 

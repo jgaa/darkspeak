@@ -148,5 +148,6 @@ private:
     OnlineStatus online_status_ = OS_OFF_LINE;
     std::shared_ptr<Events> event_listener_;
     ImageProvider *avatars_ {};
+    mutable std::uint64_t sequence_ = 0;
 };
 

@@ -108,7 +108,8 @@ QVariant ContactsModel::data(const QModelIndex &index, int role) const
     case AvatarRole:
         static const string avatar_url{"image://buddy/"};
         if (avatars_->haveImage(icache_.info.id)) {
-            return QUrl(Convert(avatar_url + icache_.info.id));
+            return QUrl(Convert(avatar_url
+                + icache_.info.id + ":" + to_string(++sequence_)));
         }
         return QUrl(Convert(avatar_url + "default"));
     }

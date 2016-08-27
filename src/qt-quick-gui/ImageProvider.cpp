@@ -20,7 +20,14 @@ QImage ImageProvider::requestImage(const QString &id, QSize *size,
 
     QImage img;
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = images_.find(id.toStdString());
+
+    auto key = id.toStdString();
+    const auto pos = key.find_last_of(':');
+    if (pos != key.npos) {
+        key = key.substr(0, pos);
+    }
+
+    auto it = images_.find(key);
     if (it != images_.end()) {
         if (requestedSize.isValid()) {
             img = it->second->scaled(requestedSize,
@@ -41,7 +48,7 @@ QImage ImageProvider::requestImage(const QString &id, QSize *size,
     return img;
 }
 
-void ImageProvider::save(const std::string& key,
+int ImageProvider::save(const std::string& key,
                          const path_t& path) {
 
     if (!boost::filesystem::is_directory(path.parent_path())) {

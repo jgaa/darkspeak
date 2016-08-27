@@ -55,8 +55,8 @@ public:
         }
     }
 
-    void save(const std::string& key, const darkspeak::path_t& path);
-
+    int save(const std::string& key, const darkspeak::path_t& path);
+    
 private:
     std::map<std::string, std::shared_ptr<QImage>> images_;
     QImage missing_;

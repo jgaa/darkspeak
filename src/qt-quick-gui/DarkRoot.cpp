@@ -61,13 +61,17 @@ void DarkRoot::rejectFile(const QString buddyHandle, const QString fileId)
     api_.RejectFileTransfer(aftd);
 }
 
+//Make a 64 x 64 version of the image
 QUrl DarkRoot::prepareAvatar(QUrl url)
 {
     QImage original(url.path());
-
-    auto avatar = make_shared<QImage>(original.scaled(64, 64,
+    QImage scaled = original.scaled(64, 64,
                         Qt::KeepAspectRatioByExpanding,
-                        Qt::SmoothTransformation));
+                        Qt::SmoothTransformation);
+
+    int center_x = max(0, (scaled.width() / 2) - 32);
+    int center_y = max(0, (scaled.height() / 2) - 32);
+    auto avatar = make_shared<QImage>(scaled.copy(center_x, center_y, 64, 64));
 
     image_provider_->add("myself~", avatar);
     static const string avatar_url{"image://buddy/myself~"};

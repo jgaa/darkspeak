@@ -58,6 +58,7 @@ Dialog {
             console.log("Cancelled" + clickedButton)
             settings = null;
             settings = darkRoot.settings()
+            own_info.avatar = ""
             own_info = settings
         }
     }

@@ -49,8 +49,8 @@ public:
         return dirty_;
     }
 
-    static std::string EncodeArgb(const std::vector<char>& binary);
-    static std::vector<char> DecodeArgb(const std::string& hex);
+    static std::string EncodeRgba(const std::vector<char>& binary);
+    static std::vector<char> DecodeRgba(const std::string& hex);
     static std::vector<char> GetRgb(const std::vector<char>& binary);
     static std::vector<char> GetAlpha(const std::vector<char>& binary);
 
@@ -61,9 +61,7 @@ public:
     constexpr static const char *PROFILE_INFO = "profile.info";
     constexpr static const char *PROFILE_STATUS = "profile.status";
     constexpr static const int   PROFILE_STATUS_DEFAULT = 0;
-    constexpr static const char *PROFILE_AVATAR_PATH = "profile.avatar_path";
-    constexpr static const char *PROFILE_AVATAR_ARGB = "profile.avatar_argb";
-    constexpr static const char *PROFILE_AVATAR_PATH_DEFAULT = "./profile/avatar.png";
+    constexpr static const char *PROFILE_AVATAR_RGBA = "profile.avatar_argb";
     constexpr static const char *IO_THREADS = "service.io_threads";
     constexpr static const char *SERVICE_HOSTNAME = "service.hostname";
     constexpr static const char *SERVICE_HOSTNAME_DEFAULT = "127.0.0.1";

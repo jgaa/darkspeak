@@ -99,20 +99,33 @@ QUrl SettingsData::avatar() const {
     static const string avatar_url{"image://buddy/"};
     static const string myself {"myself"};
 
-    auto png_path = config_->Get(Config::PROFILE_AVATAR_PATH,
-            Config::PROFILE_AVATAR_PATH_DEFAULT);
+    if (!loaded_avatar_) {
 
-    if (!loaded_avatar_
-        && boost::filesystem::is_regular(png_path.c_str())) {
-        auto avatar = make_shared<QImage>(png_path.c_str());
-        if (!avatar->isNull()) {
+        shared_ptr<QImage> avatar;
+        auto encoded = config_->Get(Config::PROFILE_AVATAR_RGBA, "");
+        if (!encoded.empty()) {
+            auto rgba = Config::DecodeRgba(encoded);
+            avatar = make_shared<QImage>(64, 64, QImage::Format_ARGB32);
+            int ix = 0;
+            for(int y = 0; y < 64; ++y) {
+                for (int x = 0; x < 64; ++x) {
+                    const uint8_t r = static_cast<uint8_t>(rgba.at(ix++));
+                    const uint8_t g = static_cast<uint8_t>(rgba.at(ix++));
+                    const uint8_t b = static_cast<uint8_t>(rgba.at(ix++));
+                    const uint8_t a = static_cast<uint8_t>(rgba.at(ix++));
+                    avatar->setPixel(x, y, qRgba(r, g, b, a));
+                }
+            }
+        }
+
+        if (avatar && !avatar->isNull()) {
             image_provider_->add(myself, avatar);
             loaded_avatar_ = true;
         }
     }
 
     if (image_provider_->haveImage(myself)) {
-        return QUrl(Convert(avatar_url + myself));
+        return QUrl(Convert(avatar_url + myself + ":" + to_string(++sequence_)));
     }
     return QUrl(Convert(avatar_url + "default"));
 }
@@ -126,35 +139,36 @@ void SettingsData::setAvatar(QUrl url)
         auto key = path.substr(pos + 1);
         if (!path.empty()) {
             image_provider_->rename(key, "myself");
-            image_provider_->save("myself",
-                                  config_->Get(Config::PROFILE_AVATAR_PATH,
-                                               Config::PROFILE_AVATAR_PATH_DEFAULT));
-            auto argb = GetArgb(image_provider_->get("myself"));
-            config_->Set(Config::PROFILE_AVATAR_ARGB,
-                Config::EncodeArgb(argb));
+            auto rgba = GetRgba(image_provider_->get("myself"));
+            config_->Set(Config::PROFILE_AVATAR_RGBA,
+                Config::EncodeRgba(rgba));
 
             emit avatarChanged();
         }
     }
 }
 
-std::vector<char> SettingsData::GetArgb(const std::shared_ptr<QImage>& image)
+std::vector<char> SettingsData::GetRgba(const std::shared_ptr<QImage>& image)
 {
-    std::vector<char> argb;
+    std::vector<char> rgba;
 
     if (!image->isNull()) {
         auto height = image->height();
         auto width = image->width();
-        argb.reserve(height * width);
+        rgba.reserve(height * width);
 
-        for(decltype(width) x = 0; x < width; ++x) {
-            for(decltype(height) y = 0; y < height; ++y) {
-                argb.push_back(image->pixel(x, y));
+        for(decltype(width) y = 0; y < width; ++y) {
+            for(decltype(height) x = 0; x < height; ++x) {
+                auto pixel = image->pixel(x, y);
+                rgba.push_back(qRed(pixel));
+                rgba.push_back(qGreen(pixel));
+                rgba.push_back(qBlue(pixel));
+                rgba.push_back(qAlpha(pixel));
             }
         }
     }
 
-    return argb;
+    return rgba;
 }
 
 

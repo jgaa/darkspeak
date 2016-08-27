@@ -116,8 +116,8 @@ Component {
 
            Image {
                id: contact_icon
-               //source: "qrc:/images/anon_contact_48x48.png"
                source: avatar
+               cache: false
                height: 48
                width: 48
            }

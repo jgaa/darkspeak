@@ -76,10 +76,15 @@ ToolBar {
         text: "Settings"
         anchors.top: addContactButton.top
         x: root.width - width - 6
-        onClicked: settingsDlg.open()
-        SettingsDlg {
-            id: settingsDlg
-            settings: darkRoot.settings()
+        onClicked: {
+           var uiComponent = Qt.createComponent("SettingsDlg.qml")
+           if( uiComponent.status === Component.Error ) {
+                   console.debug("Error: "+ uiComponent.errorString());
+               return;
+           }
+           var dialog = uiComponent.createObject(main_pane,
+              {"settings":darkRoot.settings()});
+           dialog.open()
         }
     }
 

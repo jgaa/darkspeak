@@ -80,6 +80,7 @@ Item {
                     fillMode: Image.PreserveAspectCrop
                     id: profileAvatar
                     source: settings.avatar
+                    cache: false
                 }
                 Button {
                     text: "Change ..."

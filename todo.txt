@@ -5,19 +5,9 @@ BUGS:
  - Do not allow sending of empty messages
  - Discard incoming empty messages
  - Crashed if you add a buddy twice (uncaught exception)
- - Settings dialog must be created dynamically (now cancel does not reset info)
 
 Missing features:
-  - Avatar icon
-    v Show Buddy's
-    v Save / cache buddys icon
-    - Our own
-        v Select and show in settings
-        v When selected, scale to correct size and store in image provider
-        v When settings are saved, save the picture and update the config
-        - Send
   - Tray icon
-
 
 TODO:
   v File Transfer

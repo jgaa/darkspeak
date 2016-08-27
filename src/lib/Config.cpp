@@ -68,13 +68,13 @@ Api::Info Config::GetInfo()
         default:
             LOG_WARN_FN << "Invalid status. Resetting to available.";
     }
-    info.avatar = Config::DecodeArgb(
-        Get<string>(Config::PROFILE_AVATAR_ARGB, ""));
+    info.avatar = Config::DecodeRgba(
+        Get<string>(Config::PROFILE_AVATAR_RGBA, ""));
 
     return info;
 }
 
-string Config::EncodeArgb(const vector< char >& binary)
+string Config::EncodeRgba(const vector< char >& binary)
 {
     static const array<const char *, 256> hextable  {
         "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "0a", "0b", "0c", "0d", "0e", "0f", "10", "11",
@@ -99,24 +99,29 @@ string Config::EncodeArgb(const vector< char >& binary)
         hex << hextable[static_cast<uint8_t>(ch)];
     }
 
-    return hex.str();
+    auto rval = move(hex.str());
+
+    LOG_DEBUG_FN << "After encode binary is " << binary.size()
+        << " and rval is " << rval.size();
+
+    return rval;
 }
 
 
-vector< char > Config::DecodeArgb(const string& hex)
+vector< char > Config::DecodeRgba(const string& hex)
 {
-    vector< char > argb;
+    vector< char > rgba;
 
-    static const array<char, 16>alphabet{'0','1','2','3','4','5','6',
-        '7','8','9','A','B','C','D','E','F'};
-    auto len = hex.size();
+    static const array<char, 16> alphabet{'0','1','2','3','4','5','6',
+        '7','8','9','a','b','c','d','e','f'};
+    const auto len = hex.size();
     if (len % 1) {
-        WAR_THROW_T(ExceptionOutOfRange, "Length must be aliogned with 2");
+        WAR_THROW_T(ExceptionOutOfRange, "Length must be aligned with 2");
     }
 
-    argb.reserve(len / 2);
+    rgba.reserve(len / 2);
     auto ch = hex.cbegin();
-    for (decltype(len) i = 0; i < len; i += 2)
+    for (size_t i = 0; i < len; i += 2)
     {
         const char* p = std::lower_bound(alphabet.cbegin(),
                                          alphabet.cend(),
@@ -126,6 +131,7 @@ vector< char > Config::DecodeArgb(const string& hex)
         }
 
         ++ch;
+
         const char* q =  std::lower_bound(alphabet.cbegin(),
                                          alphabet.cend(),
                                          *ch);
@@ -133,10 +139,15 @@ vector< char > Config::DecodeArgb(const string& hex)
             WAR_THROW_T(ExceptionOutOfRange, "Not a hex digit");
         }
 
-        argb.push_back(((p - alphabet.data()) << 4) | (q - alphabet.data()));
+        ++ch;
+
+        rgba.push_back(((p - alphabet.data()) << 4) | (q - alphabet.data()));
     }
 
-    return argb;
+    LOG_DEBUG_FN << "After decode hex is " << hex.size()
+        << " and rgba is " << rgba.size();
+
+    return rgba;
 }
 
 

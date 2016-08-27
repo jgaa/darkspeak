@@ -68,9 +68,10 @@ signals:
     void torIncomingHostChanged(QString torIncomingHost);
 
 private:
-    static std::vector<char> GetArgb(const std::shared_ptr<QImage>& image);
+    static std::vector<char> GetRgba(const std::shared_ptr<QImage>& image);
 
     std::shared_ptr<darkspeak::Config> config_;
     ImageProvider *image_provider_;
     mutable bool loaded_avatar_ = false;
+    mutable std::uint64_t sequence_ = 0;
 };
