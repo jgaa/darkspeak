@@ -61,4 +61,5 @@ private:
     darkspeak::Api& api_;
     std::shared_ptr<darkspeak::Config> config_;
     ImageProvider *image_provider_ = nullptr;
+    std::uint64_t sequence_ = 0;
 };

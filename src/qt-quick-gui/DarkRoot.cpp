@@ -75,5 +75,5 @@ QUrl DarkRoot::prepareAvatar(QUrl url)
 
     image_provider_->add("myself~", avatar);
     static const string avatar_url{"image://buddy/myself~"};
-    return QUrl(Convert(avatar_url));
+    return QUrl(Convert(avatar_url + ":" + to_string(++sequence_)));
 }
