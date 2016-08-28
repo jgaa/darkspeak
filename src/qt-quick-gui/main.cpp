@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
 
 #ifdef DEBUG
     logger.AddHandler(make_shared<war::log::LogToFile>(
-        "darkspeak.log", true, "file", log::LL_TRACE4));
+        "darkspeak.log", true, "file", log::LL_TRACE3));
 #else
     logger.AddHandler(make_shared<war::log::LogToFile>(
         "darkspeak.log", true, "file", log::LL_NOTICE));

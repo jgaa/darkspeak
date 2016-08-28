@@ -92,6 +92,9 @@ void TorChatPeer::Close()
     got_ping_ = false;
     got_pong_ = false;
 
+    avatar_alpha_ch.clear();
+    avatar_rgb_ch.clear();
+
     info.status = Api::Status::OFF_LINE;
 }
 

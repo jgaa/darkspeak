@@ -99,6 +99,8 @@ QVariant ContactsModel::data(const QModelIndex &index, int role) const
             return "orangered";
         case Api::Status::LONG_TIME_AWAY:
             return "chocolate";
+        case Api::Status::REMOVED_ME:
+            return "purple";
         }
         break;
     case StatusRole:

@@ -118,6 +118,14 @@ public:
     /*! Disconnect a buddy */
     virtual void Disconnect(Api::Buddy& buddy) = 0;
 
+    /*! Remove a buddy.
+     *
+     * This is similar to Disconnect, except that it also
+     * informs the buddy that it ghas been removed from the
+     * contact list.
+     */
+    virtual void Remove(Api::Buddy& buddy) = 0;
+
     /*! Set the event monitor to receive events from this instance
      *
      */
@@ -128,6 +136,8 @@ public:
 
     /*! Close all connections, stop listening */
     virtual void Shutdown() = 0;
+
+    virtual bool IsOnline() const = 0;
 
     /*! Create an instance of the implemnetation of the protocol */
     static ptr_t CreateProtocol(get_pipeline_fn_t fn,

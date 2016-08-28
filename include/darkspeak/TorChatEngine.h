@@ -90,6 +90,7 @@ public:
     void SendMessage(Api::Buddy& buddy, const Api::Message::ptr_t& msg) override;
     void SendFile(Api::Buddy& buddy, const FileInfo& file) override;
     void Disconnect(Api::Buddy& buddy) override;
+    void Remove(Api::Buddy& buddy) override;
     void SetMonitor(std::shared_ptr<EventMonitor> monitor) override;
     void Listen(boost::asio::ip::tcp::endpoint endpoint) override;
     void Shutdown() override;
@@ -97,6 +98,7 @@ public:
     void AcceptFileTransfer(const AcceptFileTransferData& aftd) override;
     void RejectFileTransfer(const AcceptFileTransferData& aftd) override;
     void AbortFileTransfer(const AbortFileTransferData& aftd) override;
+    bool IsOnline() const override;
 
     void SendCommand(const std::string& command,
                 std::initializer_list<std::string> args,
@@ -180,6 +182,8 @@ private:
     void CheckPeer(const std::shared_ptr<TorChatPeer>& peer,
                    boost::asio::yield_context& yield);
 
+    void EmitAvatar(const TorChatPeer& peer);
+
     // Event handlers
     bool EmitEventIncomingConnection(const EventMonitor::ConnectionInfo& info);
     bool EmitEventAddNewBuddy(const EventMonitor::BuddyInfo& info);
@@ -241,6 +245,7 @@ private:
     Stat current_stats_;
     std::mt19937 random_generator_;
     std::string id_;
+    std::atomic_bool is_online_;
 };
 
 } // impl

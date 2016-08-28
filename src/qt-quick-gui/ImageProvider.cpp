@@ -48,7 +48,7 @@ QImage ImageProvider::requestImage(const QString &id, QSize *size,
     return img;
 }
 
-int ImageProvider::save(const std::string& key,
+void ImageProvider::save(const std::string& key,
                          const path_t& path) {
 
     if (!boost::filesystem::is_directory(path.parent_path())) {

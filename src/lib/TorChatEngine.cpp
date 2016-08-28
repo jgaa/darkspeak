@@ -2,6 +2,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <chrono>
 
 #include "war_uuid.h"
 #include "war_helper.h"
@@ -55,6 +56,7 @@ TorChatEngine::TorChatEngine(ImProtocol::get_pipeline_fn_t fn,
     Config& config)
 : pipeline_{fn()}, config_{config}, random_generator_{std::random_device()()}
 {
+    is_online_ = false;
     commands_ = {
         {"", {Command::Verb::UNKNOWN}},
         {"add_me", {Command::Verb::ADD_ME, 0,
@@ -98,7 +100,7 @@ TorChatEngine::TorChatEngine(ImProtocol::get_pipeline_fn_t fn,
             [this] (const Request& req) { OnProfileText(req); }}},
         {"remove_me", {Command::Verb::REMOVE_ME, 0,
             [this] (const Request& req) { OnRemoveMe(req); },
-            Command::Valid::ACCEPTED}},
+            Command::Valid::AUTHENTICATED}},
         {"status", {Command::Verb::STATUS, 1,
             [this] (const Request& req) { OnStatus(req); }}},
         {"version", {Command::Verb::VERSION, 1,
@@ -127,18 +129,29 @@ void TorChatEngine::SpawnConnect(const string& buddy_id)
                 std::placeholders::_1));
 }
 
-// TODO: Make thread safe
+
+void TorChatEngine::Remove(Api::Buddy& buddy)
+{
+    static const string remove_me{"remove_me"};
+    auto peer = GetPeer(buddy.GetId());
+
+    SendCommand(remove_me, {}, peer);
+    Disconnect(buddy);
+}
+
+
 void TorChatEngine::Disconnect(Api::Buddy& buddy)
 {
-    pipeline_.PostSynchronously({
-        [&]() {
-            LOG_NOTICE << "Disconnecting from " << buddy;
-            auto id = buddy.GetId();
+    LOG_NOTICE << "Disconnecting from " << buddy;
+    auto id = buddy.GetId();
+    pipeline_.Post({
+        [this,id]() {
             auto peer = GetPeer(id);
             if (peer) {
+                LOG_DEBUG << "Disconnecting from " << *peer;
                 DisconnectPeer(*peer);
             }
-        }, "Disconnect buddy"});
+        }, "Disconnect peer"});
 }
 
 void TorChatEngine::DisconnectPeer(TorChatPeer& peer)
@@ -147,7 +160,9 @@ void TorChatEngine::DisconnectPeer(TorChatPeer& peer)
     peer.Close();
     peer.info.status = Api::Status::OFF_LINE;
     peer.info.precense = Api::Presence::OFF_LINE;
-    EmitEventBuddyStateUpdate(peer.info);
+    try {
+        EmitEventBuddyStateUpdate(peer.info);
+    } WAR_CATCH_ERROR;
     peers_.erase(peer.GetId());
 }
 
@@ -224,8 +239,9 @@ void TorChatEngine::Accept(boost::asio::ip::tcp::endpoint endpoint,
                            std::weak_ptr<boost::asio::ip::tcp::acceptor> weak_acceptor,
                            boost::asio::yield_context yield)
 {
-    LOG_NOTICE << "Starting listening on " << endpoint;
+    LOG_NOTICE_F(log::LA_NETWORK) << "Starting listening on " << endpoint;
 
+    is_online_ = true;
     {
         EventMonitor::ListeningInfo endp;
         endp.endpoint = endpoint;
@@ -242,7 +258,7 @@ void TorChatEngine::Accept(boost::asio::ip::tcp::endpoint endpoint,
 
         auto socket = make_shared<boost::asio::ip::tcp::socket>(
             pipeline_.GetIoService());
-        LOG_TRACE1_FN << "Created socket " << *socket
+        LOG_TRACE1_F_FN(log::LA_NETWORK) << "Created socket " << *socket
             << " on " << pipeline_
             << " from endpoint " << endpoint;
 
@@ -254,7 +270,7 @@ void TorChatEngine::Accept(boost::asio::ip::tcp::endpoint endpoint,
 
         if (!ec) {
             ++current_stats_.num_incoming_connections;
-            LOG_DEBUG << "Incoming connection: " << *socket;
+            LOG_DEBUG_F(log::LA_NETWORK) << "Incoming connection: " << *socket;
             try {
                 boost::asio::spawn(
                     pipeline_.GetIoService(),
@@ -264,7 +280,7 @@ void TorChatEngine::Accept(boost::asio::ip::tcp::endpoint endpoint,
 
             } WAR_CATCH_ERROR;
         } else /* ec */ {
-            LOG_WARN_FN << "Accept error: " << ec;
+            LOG_WARN_F_FN(log::LA_NETWORK) << "Accept error: " << ec;
         }
     } // while acceptor exists and is open
 
@@ -311,13 +327,13 @@ void TorChatEngine::OnAccepted(
 
         string id, cookie;
         if (!VerifyPing(ping_line, id, cookie)) {
-            LOG_DEBUG << "Ping verification failed. Dropping " << *socket;
+            LOG_WARN << "Ping verification failed. Dropping " << *socket;
             return;
         }
 
         auto peer = GetPeer(id);
         if (peer) {
-            LOG_DEBUG << "Connection from known peer " << *peer;
+            LOG_NOTICE_F(log::LA_NETWORK) << "Connection from already connected peer " << *peer;
             const auto peer_cookie = peer->GetPeerCookie();
             if (!peer_cookie.empty() && cookie.compare(peer_cookie) != 0) {
                 LOG_WARN << "I received a ping from a peer "
@@ -331,7 +347,7 @@ void TorChatEngine::OnAccepted(
             }
             auto existing_conn = peer->GetInConnection();
             if (existing_conn) {
-                LOG_WARN << "I got a new connection from a peer. I will"
+                LOG_WARN_F(log::LA_NETWORK) << "I got a new connection from a peer. I will"
                     " switch to that connection now.";
             }
             if (peer_cookie.empty()) {
@@ -341,6 +357,12 @@ void TorChatEngine::OnAccepted(
             peer->SetInConnection(in_conn);
             peer->SetReceivedPong(false);
 
+            if (peer->HaveOutConnection()) {
+                peer->retry_connect_time = GetNewReconnectTime(*peer);
+                LOG_TRACE3_FN << "New reconnect time is "
+                    << peer->retry_connect_time->time_since_epoch().count();
+            }
+
             // Do not downgrade the state if the incoming connection is
             // related to an outgoing connect.
             if (peer->initiative == Direction::INCOMING) {
@@ -348,7 +370,7 @@ void TorChatEngine::OnAccepted(
             }
         } else {
             if (!EmitEventIncomingConnection(EventMonitor::ConnectionInfo(id))) {
-                LOG_DEBUG << "Dropping connection to " << *in_conn
+                LOG_DEBUG_F(log::LA_NETWORK) << "Dropping connection to " << *in_conn
                     << ": Rejected.";
                 in_conn->Close();
                 return;
@@ -360,7 +382,6 @@ void TorChatEngine::OnAccepted(
         }
         WAR_ASSERT(peer);
         peer->UpgradeState(TorChatPeer::State::ACCEPTING);
-
         peer->SetReceivedPing();
         std::weak_ptr<TorChatPeer> weak_peer = peer;
 
@@ -368,6 +389,7 @@ void TorChatEngine::OnAccepted(
         if (peer->HaveOutConnection()) {
             send_pong = true;
         } else {
+            LOG_NOTICE_F(log::LA_NETWORK) << "Connection from peer " << *peer;
             ConnectToPeer(*peer, yield);
 
             // Enter event loop in new context
@@ -385,6 +407,14 @@ void TorChatEngine::OnAccepted(
         timer.reset();
         ProcessRequests(weak_peer, Direction::INCOMING, send_pong, yield);
 
+    } catch(const ExceptionIoError& ex) {
+        WAR_LOG_EXCEPTION(LOG_TRACE1_F_FN(log::LA_NETWORK), ex);
+    } catch(const boost::system::system_error& ex) {
+        if (ex.code() == boost::asio::error::operation_aborted) {
+            WAR_LOG_EXCEPTION(LOG_TRACE1_F_FN(log::LA_NETWORK), ex);
+        } else {
+            WAR_LOG_EXCEPTION(LOG_ERROR_F_FN(log::LA_NETWORK), ex);
+        }
     } WAR_CATCH_ALL_EF(return);
 }
 
@@ -417,7 +447,7 @@ void TorChatEngine::ProcessRequests(weak_ptr< TorChatPeer > weak_peer,
     while(true) {
         auto peer = weak_peer.lock();
         if (!peer || (peer->GetState() == TorChatPeer::State::DONE)) {
-            LOG_TRACE1_FN << "The peer is gone. Exiting request loop.";
+            LOG_DEBUG_FN << "The peer is gone. Exiting request loop.";
             return;
         }
 
@@ -435,7 +465,7 @@ void TorChatEngine::ProcessRequests(weak_ptr< TorChatPeer > weak_peer,
         }
 
         if (!conn || !conn->IsConnected()) {
-            LOG_TRACE1_FN << "The peer is gone. Exiting request loop.";
+            LOG_DEBUG_FN << "The peer is gone. Exiting request loop.";
             return;
         }
 
@@ -464,9 +494,11 @@ void TorChatEngine::ProcessRequests(weak_ptr< TorChatPeer > weak_peer,
 
             LOG_WARN << "The command " << log::Esc(request.command_name)
                     << " is not allowed when the peer is at state "
-                    << request.cmd->valid
+                    << peer->GetState()
                     << " and the command has validity "
-                    <<  peer->GetState();
+                    <<  request.cmd->valid
+                    << ". Cmd state maps to "
+                    <<  state_map.at(static_cast<int>(request.cmd->valid));
 
             continue;
         }
@@ -511,8 +543,8 @@ void TorChatEngine::StartConnectToPeer(std::string& peer_id,
 {
     auto peer = GetPeer(peer_id);
     if (!peer) {
-        LOG_DEBUG << "Failed to find peer " << log::Esc(peer_id)
-            << ". Creating instance.";
+        LOG_DEBUG_FN << "Failed to find peer " << log::Esc(peer_id)
+            << " in memory. Creating instance.";
 
         peer = CreatePeer(peer_id);
         peer->initiative = Direction::OUTGOING;
@@ -525,6 +557,14 @@ void TorChatEngine::StartConnectToPeer(std::string& peer_id,
         std::weak_ptr<TorChatPeer> weak_peer = peer;
         peer.reset();
         ProcessRequests(weak_peer, Direction::OUTGOING, false, yield);
+    } catch(const ExceptionIoError& ex) {
+        WAR_LOG_EXCEPTION(LOG_TRACE1_F_FN(log::LA_NETWORK), ex);
+    } catch(const boost::system::system_error& ex) {
+        if (ex.code() == boost::asio::error::operation_aborted) {
+            WAR_LOG_EXCEPTION(LOG_TRACE1_F_FN(log::LA_NETWORK), ex);
+        } else {
+            WAR_LOG_EXCEPTION(LOG_ERROR_F_FN(log::LA_NETWORK), ex);
+        }
     } WAR_CATCH_ALL_E;
 }
 
@@ -624,6 +664,8 @@ void TorChatEngine::SendFile(Api::Buddy& buddy, const FileInfo& file)
 
 void TorChatEngine::Shutdown()
 {
+    is_online_ = false;
+
     pipeline_.Post({[&]() {
 
         LOG_NOTICE << "Shutting down " << id_;
@@ -635,7 +677,7 @@ void TorChatEngine::Shutdown()
         }
 
         // Stop the listening socket
-        LOG_TRACE1_FN << "Closing listener.";
+        LOG_TRACE1_F_FN(log::LA_NETWORK) << "Closing listener.";
         if (acceptor_) {
             acceptor_->close();
             acceptor_.reset();
@@ -703,7 +745,7 @@ TorChatEngine::Request TorChatEngine::Parse(boost::string_ref request) const
         }
     }
 
-    LOG_TRACE1 << "Parsed command " << log::Esc(rval.command_name)
+    LOG_TRACE2 << "Parsed command " << log::Esc(rval.command_name)
         << " with " << rval.params.size() << " arguments.";
 
     return rval;
@@ -717,6 +759,7 @@ void TorChatEngine::OnAddMe(const TorChatEngine::Request& req)
 
     req.peer->UpgradeState(TorChatPeer::State::READY);
     req.peer->info.precense = Api::Presence::ON_LINE;
+    EmitAvatar(*req.peer);
 }
 
 void TorChatEngine::OnFileData(const TorChatEngine::Request& req)
@@ -734,7 +777,7 @@ void TorChatEngine::OnFileData(const TorChatEngine::Request& req)
 
     std::string chunk = move(req.params.at(3));
 
-    LOG_DEBUG << "Got chunk " << req.params.at(1) << " with size "
+    LOG_TRACE2_FN << "Got chunk " << req.params.at(1) << " with size "
         << chunk.size()
         << " of " << *ft;
 
@@ -787,7 +830,7 @@ void TorChatEngine::OnFilename(const TorChatEngine::Request& req)
         stoul(req.params.at(2)) // blocksize
     );
 
-    LOG_DEBUG_FN << "Incoming file transfer request for file "
+    LOG_NOTICE_FN << "Incoming file transfer request for file "
         << log::Esc(ft->GetInfo().path.string())
         << " with size " << ft->GetInfo().length
         << " and block-length " << ft->GetBlockSize()
@@ -923,7 +966,7 @@ void TorChatEngine::OnPong(const TorChatEngine::Request& req)
         alpha.resize(64*64);
         rgb.resize(64*64*3);
         size_t aix = 0, rgbix = 0;
-        LOG_DEBUG_FN << "Avatar is " << info.avatar.size() << " bytes.";
+        LOG_TRACE3_FN << "Avatar is " << info.avatar.size() << " bytes.";
         for(auto it = info.avatar.cbegin() ; it != info.avatar.cend(); ) {
             WAR_ASSERT(rgbix < rgb.size());
             WAR_ASSERT(aix < alpha.size());
@@ -1060,18 +1103,23 @@ void TorChatEngine::DoSendPong(TorChatPeer& peer,
 
 void TorChatEngine::OnProfileAvatar(const TorChatEngine::Request& req)
 {
-    static const string alpha_name {""};
-
     if (req.cmd->verb == Command::Verb::PROFILE_AVATAR_ALPHA) {
         req.peer->avatar_alpha_ch = req.params.at(0);
     } else {
-        EventMonitor::AvatarInfo ai;
-        ai.buddy_id = req.peer->GetId();
-        ai.data_a = req.params.at(0);
-        ai.data_b = move(req.peer->avatar_alpha_ch);
-        EmitEventAvatarReceived(ai);
+        req.peer->avatar_rgb_ch = req.params.at(0);
+        EmitAvatar(*req.peer);
     }
 }
+
+void TorChatEngine::EmitAvatar(const TorChatPeer& peer)
+{
+    EventMonitor::AvatarInfo ai;
+    ai.buddy_id = peer.GetId();
+    ai.data_a = peer.avatar_rgb_ch;
+    ai.data_b = peer.avatar_alpha_ch;
+    EmitEventAvatarReceived(ai);
+}
+
 
 void TorChatEngine::OnProfileName(const TorChatEngine::Request& req)
 {
@@ -1097,6 +1145,13 @@ void TorChatEngine::OnRemoveMe(const TorChatEngine::Request& req)
         conn->Close();
     }
 
+    LOG_NOTICE << *req.peer << " removed me.";
+
+    req.peer->SetState(TorChatPeer::State::DONE);
+    req.peer->info.status = Api::Status::REMOVED_ME;
+    req.peer->info.precense = Api::Presence::OFF_LINE;
+    EmitEventBuddyStateUpdate(req.peer->info);
+
     peers_.erase(req.peer->GetId());
 }
 
@@ -1118,6 +1173,11 @@ void TorChatEngine::OnStatus(const TorChatEngine::Request& req)
 
     req.peer->info.status = it->second;
     req.peer->received_status_timeout = GetNewStatusTimeout();
+
+    if (req.peer->GetState() == TorChatPeer::State::AUTHENTICATED) {
+        req.peer->SetState(TorChatPeer::State::READY);
+    }
+
     EmitEventBuddyStateUpdate(req.peer->info);
 }
 
@@ -1259,6 +1319,24 @@ void TorChatEngine::CheckPeers(boost::asio::yield_context& yield)
         auto& peer = it.second;
         try {
             CheckPeer(peer, yield);
+        } catch(const boost::system::system_error& ex) {
+            if ((ex.code() == boost::asio::error::operation_aborted)
+                || (ex.code() == boost::asio::error::broken_pipe)) {
+
+                LOG_NOTICE << "The peer " << *peer << " is not ok: "
+                    << ex.what()
+                    << ". I will reset it now.";
+
+                peer->Close();
+                pipeline_.Post({[this, peer](){
+
+                    Reconnect(peer);
+
+                }, "Reconnect after error."});
+
+            } else {
+                WAR_LOG_EXCEPTION(LOG_ERROR_F_FN(log::LA_NETWORK), ex);
+            }
         } WAR_CATCH_ALL_LOG(peer);
     }
 }
@@ -1283,13 +1361,16 @@ void TorChatEngine::CheckPeer(const std::shared_ptr<TorChatPeer>& peer,
             && peer->HaveInConnection()
             && peer->HaveOutConnection()) {
             LOG_DEBUG_FN << "The peer " << *peer
-                << " has an expired reconnect timer enabled. However the "
+                << " has an expired reconnect timer enabled ("
+                << peer->retry_connect_time->time_since_epoch().count()
+                << "). However the "
                 << "connection seems OK, so I'm cancelling the timer.";
             peer->retry_connect_time.reset();
         } else {
             LOG_DEBUG_FN << "The peer " << *peer
-                << " has an expired reconnect timer. "
-                << " State=" << peer->GetState()
+                << " has an expired reconnect timer ("
+                << peer->retry_connect_time->time_since_epoch().count()
+                << "). State=" << peer->GetState()
                 << ", HaveInConnection=" << peer->HaveInConnection()
                 << ", HaveOutConnection=" <<  peer->HaveOutConnection();
             Reconnect(peer);
@@ -1315,15 +1396,13 @@ void TorChatEngine::CheckPeer(const std::shared_ptr<TorChatPeer>& peer,
             DoSendStatus(*peer, yield);
         }
     }
-
-    // Check if we have to re-try an outgoing connection
-    // TODO: Implement
 }
 
 
 void TorChatEngine::Reconnect(const shared_ptr< TorChatPeer >& peer)
 {
     LOG_DEBUG_FN << "Reconecting peer " << *peer;
+    ++peer->reconnect_count;
     peer->Close();
     peer->SetState(TorChatPeer::State::UNINTIALIZED);
     peer->initiative = Direction::OUTGOING;
@@ -1331,14 +1410,14 @@ void TorChatEngine::Reconnect(const shared_ptr< TorChatPeer >& peer)
     peer->info.precense = Api::Presence::CONNECTING;
     SpawnConnect(peer->GetId());
     EmitEventBuddyStateUpdate(peer->info);
-    ++peer->reconnect_count;
 }
 
 unique_ptr< chrono::steady_clock::time_point >
 TorChatEngine::GetNewReconnectTime(TorChatPeer& peer)
 {
-    unsigned seconds = std::min<unsigned int>(
-        max<unsigned int>(1, peer.reconnect_count) * 20, 60 * 15);
+    std::uniform_int_distribution< int > distribution(0, 20);
+    const auto rnd = distribution(random_generator_);
+    unsigned seconds = rnd + std::min<unsigned int>((peer.reconnect_count + 1) * 10, 60 * 15);
 
     LOG_TRACE1_FN << "Reconnect time for " << peer
         << ": " << seconds << " seconds.";
@@ -1351,7 +1430,7 @@ TorChatEngine::GetNewReconnectTime(TorChatPeer& peer)
 unique_ptr< chrono::steady_clock::time_point >
 TorChatEngine::GetNewKeepAliveTime()
 {
-    std::uniform_int_distribution< int > distribution(5,110);
+    std::uniform_int_distribution< int > distribution(25,150);
     const auto seconds = distribution(random_generator_);
     LOG_TRACE4_FN << "Next status update in " << seconds << " seconds.";
 
@@ -1437,6 +1516,12 @@ void TorChatEngine::ProcessIncomingFileDecision(
         ft->AbortTransfer("The file was rejcted by user");
     }
 }
+
+bool TorChatEngine::IsOnline() const
+{
+    return is_online_;
+}
+
 
 
 } // impl

@@ -96,7 +96,8 @@ public:
         AVAILABLE,
         BUSY,
         AWAY,
-        LONG_TIME_AWAY
+        LONG_TIME_AWAY,
+        REMOVED_ME
     };
 
 

@@ -30,8 +30,9 @@ std::ostream& operator << (std::ostream& o, const darkspeak::Direction& v) {
 }
 
 std::ostream& operator << (std::ostream& o, const darkspeak::Api::Status& v) {
-    static const array<string, 5> names
-        = { "OFF_LINE", "AVAILABLE", "BUSY", "AWAY", "LONG_TIME_AWAY" };
+    static const array<string, 6> names
+        = { "OFF_LINE", "AVAILABLE", "BUSY", "AWAY", "LONG_TIME_AWAY",
+            "REMOVED_ME"};
 
     return o << names.at(static_cast<int>(v));
 }
@@ -163,6 +164,10 @@ Api::Buddy::ptr_t ImManager::AddBuddy(const Buddy::Info& def)
         m->OnNewBuddyAdded(bi);
     }
 
+    if (protocol_->IsOnline() && buddy->HasAutoConnect()) {
+        protocol_->Connect(buddy);
+    }
+
     return buddy;
 }
 
@@ -182,7 +187,7 @@ void ImManager::RemoveBuddy(const string& id)
 
     LOG_NOTICE_FN << "Removed buddy: " << *buddy;
 
-    protocol_->Disconnect(*buddy);
+    protocol_->Remove(*buddy);
     EventMonitor::DeletedBuddyInfo info;
     info.buddy_id = id;
     for(auto& monitor : GetMonitors()) {
@@ -416,8 +421,9 @@ void ImManager::Events::OnBuddyStateUpdate(const EventMonitor::BuddyInfo& info)
 {
     auto buddy = manager_.GetBuddyImpl(info.buddy_id);
     if (!buddy) {
-        WAR_THROW_T(ExceptionDisconnectNow, "Nonexistant buddy");
-    }
+        LOG_TRACE1_FN << "Nonexistant buddy " << info.buddy_id;
+        return;;
+    } 
 
     if (info.status != Api::Status::OFF_LINE) {
         buddy->UpdateLastSeenTimestamp();

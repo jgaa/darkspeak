@@ -24,7 +24,7 @@ TorChatConnection::TorChatConnection(std::string name, war::Pipeline& pipeline)
 : Connection(pipeline), name_{move(name)}
 {
     SetSocket(make_shared<SocketImpl>(pipeline.GetIoService()));
-    LOG_DEBUG << *this << " now communicates trough " << GetSocket().GetSocket();
+    LOG_DEBUG_F(log::LA_NETWORK) << *this << " now communicates trough " << GetSocket().GetSocket();
 }
 
 TorChatConnection::TorChatConnection(
@@ -34,7 +34,7 @@ TorChatConnection::TorChatConnection(
 : Connection(pipeline), name_{move(name)}
 {
     SetSocket(make_shared<SocketImpl>(socket));
-    LOG_DEBUG << *this << " now communicates trough " << GetSocket().GetSocket();
+    LOG_DEBUG_F(log::LA_NETWORK) << *this << " now communicates trough " << GetSocket().GetSocket();
 }
 
 boost::string_ref TorChatConnection::GetLine(boost::asio::yield_context& yield)
@@ -133,7 +133,7 @@ size_t TorChatConnection::SendLine(string line,
                                                         line.size()),
                                                         yield);
 
-    LOG_DEBUG << *this  << " Sent line: " << log::Esc(line);
+    LOG_TRACE4_F_FN(log::LA_NETWORK) << *this  << " Sent line: " << log::Esc(line);
     return line.size();
 }
 
@@ -145,7 +145,7 @@ void TorChatConnection::SendLine(string line, asio_handler_t handler) {
                                                         line.size()),
                                                         handler);
 
-    LOG_DEBUG << *this  << " Sending line: " << log::Esc(line);
+    LOG_DEBUG_F(log::LA_NETWORK) << *this  << " Sending line: " << log::Esc(line);
 }
 
 void TorChatConnection::Encode(std::string& blob)
