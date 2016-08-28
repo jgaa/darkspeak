@@ -1287,8 +1287,10 @@ void TorChatEngine::StartMonitor()
 void TorChatEngine::MonitorPeers(weak_ptr< TorChatEngine > weak_engine,
                                  boost::asio::yield_context yield)
 {
+    const auto thread_id = std::this_thread::get_id();
 
-    while(true) {
+    // When we are done and the thread-pool is gone, we find ourself in another thread
+    while(thread_id == std::this_thread::get_id()) {
         auto engine = weak_engine.lock();
         if (!engine
             && !engine->pipeline_.IsClosing()
@@ -1306,7 +1308,15 @@ void TorChatEngine::MonitorPeers(weak_ptr< TorChatEngine > weak_engine,
         LOG_TRACE4_FN << "Going to sleep.";
         try {
             timer.async_wait(yield);
-        } WAR_CATCH_ALL_E;
+        } WAR_CATCH_ERROR
+        catch(...) {
+            if (thread_id == std::this_thread::get_id()) {
+                LOG_ERROR_FN << "Caught UNKNOWN exception! ["
+                    << WAR_LOG_EXCEPTION_NAME(std::current_exception()) << "]";
+            } else {
+                LOG_TRACE1_FN << "Seems like we are done here...";
+            }
+        }
         LOG_TRACE4_FN << "Woke up.";
     }
 

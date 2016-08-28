@@ -130,18 +130,8 @@ int main(int argc, char *argv[])
         qmlRegisterUncreatableType<ChatMessagesModel>("com.jgaa.darkspeak", 1, 0, "ChatMessagesModel", no_create_message);
     }
 
-
-    //{
-    //    QString no_create_message = "ContactData is obtained from ContactsModel.";
-    //    qmlRegisterUncreatableType<ContactData>("com.jgaa.darkspeak", 1, 0, "ContactData", no_create_message);
-    //}
-
     qmlRegisterType<ContactData>("com.jgaa.darkspeak", 1, 0, "ContactData");
     qmlRegisterType<SettingsData>("com.jgaa.darkspeak", 1, 0, "SettingsData");
-
-
-    //qmlRegisterType<ContactsModel>("com.jgaa.darkspeak", 1, 0, "ContactsModel");
-    //FoldersModel folders_model(*client);
 
     engine.rootContext()->setContextProperty("darkRoot", &dark_root);
     engine.rootContext()->setContextProperty("contactsModel", &contacts_model);
@@ -149,12 +139,12 @@ int main(int argc, char *argv[])
     engine.addImageProvider("buddy", contacts_model.GetAvatarProvider()); // QT takes ownership of the instance ?
     engine.load(QUrl("qrc:/qml/main.qml"));
 
-
     auto rval = app.exec();
 
-    manager->Disconnect();
-
-    // TODO: Wait for the threadpool to finish
+    auto done = manager->Shutdown();
+    LOG_DEBUG_FN << "Waiting for manager to shut down";
+    done.wait();
+    LOG_DEBUG_FN << "Manager has shut down";
     manager.reset();
 
     return rval;

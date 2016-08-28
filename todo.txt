@@ -1,8 +1,7 @@
 Development todo's
 
 BUGS:
- - Crashes on quit (threading?)
-
+ 
 Missing features:
   - Tray icon
 

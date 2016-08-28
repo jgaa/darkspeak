@@ -8,6 +8,7 @@
 #include <iostream>
 #include <atomic>
 #include <cstdint>
+#include <future>
 
 #include <boost/filesystem.hpp>
 #include <boost/uuid/uuid.hpp>
@@ -368,6 +369,11 @@ public:
      *          all buddy's, conversation logs, - everything will be deleted.
      */
     virtual void Panic(std::string message, bool erase_data) = 0; // TODO: Implement
+
+    /*! Shutdown the instance.
+     *
+     */
+    virtual std::future<void> Shutdown() = 0;
 
     static std::shared_ptr<Api> CreateInstance(path_t conf_file);
 };

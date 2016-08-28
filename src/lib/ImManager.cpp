@@ -512,6 +512,9 @@ void ImManager::Events::OnShutdownComplete(const EventMonitor::ShutdownInfo& inf
     for(auto& monitor : manager_.GetMonitors()) {
         monitor->OnShutdownComplete(info);
     }
+
+    manager_.OnEventShutdownComplete();
+
 }
 
 void ImManager::Events::OnAvatarReceived(const EventMonitor::AvatarInfo& info)
@@ -542,6 +545,54 @@ void ImManager::RejectFileTransfer(const AcceptFileTransferData& aftd)
 void ImManager::AbortFileTransfer(const AbortFileTransferData& aftd)
 {
     protocol_->AbortFileTransfer(aftd);
+}
+
+future< void > ImManager::Shutdown()
+{
+    future< void > rval;
+    {
+        LOCK;
+        promises_.emplace_back<>();
+        rval = promises_.back().get_future();
+
+        if (shutdown_pending_) {
+            return rval;
+        }
+
+        shutdown_pending_ = true;
+
+        if (!protocol_->IsOnline()) {
+            ShutdonwThreadpool();
+            return rval;
+        }
+    }
+
+    protocol_->Shutdown();
+
+    return rval;
+}
+
+void ImManager::ShutdonwThreadpool()
+{
+    std::thread([this]() {
+        auto self = shared_from_this();
+        LOG_NOTICE_FN << "Shutting down threadpool.";
+        threadpool_->Close();
+        threadpool_->WaitUntilClosed();
+        LOG_NOTICE_FN << "Done! Take care now. Bye bye.";
+        LOCK;
+        for(auto& promise: promises_) {
+            promise.set_value_at_thread_exit();
+        }
+    }).detach();
+}
+
+void ImManager::OnEventShutdownComplete()
+{
+    LOCK;
+    if (shutdown_pending_) {
+        ShutdonwThreadpool();
+    }
 }
 
 

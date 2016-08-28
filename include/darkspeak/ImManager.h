@@ -3,6 +3,7 @@
 #include <string>
 #include <memory>
 #include <mutex>
+#include <future>
 #include <map>
 #include <boost/filesystem.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -68,6 +69,7 @@ public:
     void AcceptFileTransfer(const AcceptFileTransferData& aftd) override;
     void RejectFileTransfer(const AcceptFileTransferData& aftd) override;
     void AbortFileTransfer(const AbortFileTransferData& aftd) override;
+    std::future< void > Shutdown() override;
 
 
     std::shared_ptr<ImProtocol> GetProtocol() { return protocol_; }
@@ -88,6 +90,7 @@ public:
     static std::shared_ptr<ImManager> CreateInstance(path_t conf_file);
 
     Info GetInfo();
+    void OnEventShutdownComplete();
 
 protected:
     void Init();
@@ -96,6 +99,7 @@ protected:
 private:
     void LoadBuddies();
     void SaveBuddies();
+    void ShutdonwThreadpool();
 
     mutable std::mutex mutex_;
     std::shared_ptr<Config> config_;
@@ -104,6 +108,8 @@ private:
     std::unique_ptr<war::Threadpool> threadpool_;
     std::vector<std::weak_ptr<EventMonitor>> event_monitors_;
     std::shared_ptr<Events> event_monitor_;
+    std::vector<std::promise<void>> promises_;
+    bool shutdown_pending_ = false;
 };
 
 } // impl
