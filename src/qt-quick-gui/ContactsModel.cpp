@@ -124,7 +124,9 @@ void ContactsModel::append(const QString &bid)
     Api::Buddy::Info bi;
     bi.id = bid.toStdString();
     auto buddy = api_.AddBuddy(bi);
-    LOG_NOTICE << "Added buddy: " << *buddy;
+    if (buddy) {
+        LOG_NOTICE << "Added buddy: " << *buddy;
+    }
 }
 
 void ContactsModel::remove(int index)

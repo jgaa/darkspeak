@@ -149,10 +149,14 @@ Api::Buddy::ptr_t ImManager::AddBuddy(const Buddy::Info& def)
     }
 
     std::shared_ptr<BuddyImpl> buddy;
-    {
+
+    try {
         LOCK;
         buddy = make_shared<BuddyImpl>(def, shared_from_this());
         WarMapAddUnique(buddies_, def.id, buddy);
+    } catch (const ExceptionAlreadyExist&) {
+        LOG_DEBUG_FN << "The buddy already existed.";
+        return {};
     }
     EventMonitor::BuddyInfo bi;
     bi.buddy_id = def.id;
@@ -423,7 +427,7 @@ void ImManager::Events::OnBuddyStateUpdate(const EventMonitor::BuddyInfo& info)
     if (!buddy) {
         LOG_TRACE1_FN << "Nonexistant buddy " << info.buddy_id;
         return;;
-    } 
+    }
 
     if (info.status != Api::Status::OFF_LINE) {
         buddy->UpdateLastSeenTimestamp();
