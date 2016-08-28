@@ -449,6 +449,11 @@ void ImManager::Events::OnIncomingMessage(const EventMonitor::Message& message)
     LOG_DEBUG << "Incoming message from " << log::Esc(message.buddy_id)
         << ": " << log::Esc(message.message);
 
+    if (message.message.empty()) {
+        LOG_TRACE1_FN << "Ignoring empty message";
+        return;
+    }
+
     if (!message.buddy_id.empty()) {
         auto buddy = manager_.GetBuddyImpl(message.buddy_id);
         if (buddy) {

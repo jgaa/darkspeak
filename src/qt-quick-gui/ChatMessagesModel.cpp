@@ -111,6 +111,10 @@ int ChatMessagesModel::GetNumMessages() const
 
 void ChatMessagesModel::AddMessage(Api::Message::ptr_t message)
 {
+    if (!message) {
+        return;
+    }
+
     LOG_DEBUG << "Adding new message to UI";
     const auto count = GetNumMessages();
 

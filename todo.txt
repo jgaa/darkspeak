@@ -2,9 +2,6 @@ Development todo's
 
 BUGS:
  - Crashes on quit (threading?)
- - Do not allow sending of empty messages
- - Discard incoming empty messages
- - Crashed if you add a buddy twice (uncaught exception)
 
 Missing features:
   - Tray icon

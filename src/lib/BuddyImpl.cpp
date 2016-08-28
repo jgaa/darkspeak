@@ -123,6 +123,11 @@ std::string BuddyImpl::GetUiName() const
 
 std::shared_ptr<Api::Message> BuddyImpl::SendMessage(const std::string& msg)
 {
+    if (msg.empty()) {
+        LOG_TRACE1_FN << "Ignoring empty message.";
+        return {};
+    }
+
     auto message = make_shared<Api::Message>(
         Api::Message::Direction::OUTGOING,
         Api::Message::Status::QUEUED,
