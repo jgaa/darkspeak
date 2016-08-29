@@ -43,6 +43,9 @@ private:
     Q_ENUMS(MessageDirection)
     Q_ENUMS(MessageStatus)
 
+    Q_PROPERTY(QString buddyName READ buddyName)
+    Q_PROPERTY(QString buddyId READ buddyId)
+
 
     class EventsMonitor : public darkspeak::BuddyEventsMonitor,
         public QObject
@@ -82,6 +85,10 @@ public:
     ~ChatMessagesModel();
 
     void OnMessageReceived(const darkspeak::Api::Message::ptr_t& message);
+    void OnMessageSent(const boost::uuids::uuid uuid);
+
+    QString buddyId();
+    QString buddyName();
 
     // QAbstractItemModel interface
 public:
@@ -94,15 +101,12 @@ public:
 
 
 public slots:
-//     OnlineStatus getOnlineStatus() const;
-//     void setOnlineStatus(OnlineStatus status);
-//     QUrl getOnlineStatusIcon() const;
        void AddMessage(darkspeak::Api::Message::ptr_t message);
+       void UpdateMessageState(const boost::uuids::uuid uuid);
 
 signals: // signals can be emitted
-//     void onlineStatusChanged(const OnlineStatus &status);
-//     void onlineStatusIconChanged();
        void MessageReceived(darkspeak::Api::Message::ptr_t);
+       void MessageSent(const boost::uuids::uuid uuid);
 
 protected:
     // return the roles mapping to be used by QML

@@ -10,22 +10,65 @@ Item {
     property int msg_border: 16
     property alias model: msgs.model
     property string stateName: "chat"
+    //property string buddyName:
+    //property string buddyId:
+
+    function getStatus(state) {
+        if (state === ChatMessagesModel.MS_QUEUED)
+            return "Queued"
+        if (state === ChatMessagesModel.MS_SENT)
+            return "Sent"
+        return ""
+    }
+
+    function pickColor(direction, status) {
+        if (direction === ChatMessagesModel.MD_INCOMING)
+            return "lightblue"
+        if (status === ChatMessagesModel.MS_QUEUED)
+            return "pink"
+        return "lightgreen"
+    }
 
     Component {
         id: messageDelegate
 
         Rectangle {
+            id: textbox
             property int margin: 4
-            x: direction === ChatMessagesModel.MD_INCOMING ? msg_border : 0
+            x: direction === ChatMessagesModel.MD_INCOMING ? 0 : msg_border
             width: parent.width - msg_border
-            height: textarea.contentHeight + (margin * 2)
-            color: direction === ChatMessagesModel.MD_INCOMING ? "lightblue" : "lightgreen"
+            height: textarea.contentHeight + (margin * 2) + date.height
+            color: pickColor(direction, status)
             radius: 4
-            //border.color: direction === ChatMessagesModel.MD_INCOMING ? "blue" : "green"
+
+            TextEdit {
+                anchors.left: textbox.left
+                anchors.top: textbox.top
+                anchors.margins: 2
+                font.pointSize: 8
+                color: direction === ChatMessagesModel.MD_INCOMING
+                    ? "darkblue" : "darkgreen"
+                text: getStatus(status)
+            }
+
+            TextEdit {
+                id: date
+                anchors.right: textbox.right
+                anchors.top: textbox.top
+                anchors.margins: 2
+                font.pointSize: 8
+                color: direction === ChatMessagesModel.MD_INCOMING
+                    ? "darkblue" : "darkgreen"
+                text: timestamp
+            }
 
             TextEdit {
                 id: textarea
-                x: margin
+                anchors.top: date.bottom
+                anchors.left: textbox.left
+                anchors.right: textbox.right
+                anchors.leftMargin: 2
+                anchors.rightMargin: 2
                 y: margin
                 readOnly: true
                 selectByMouse: true
@@ -76,10 +119,11 @@ Item {
         id: input
         width: root.width
         height: input_height
-        radius: 8
+        radius: 4
         clip: false
         anchors.bottom: send.top
-        anchors.bottomMargin: 2
+        //anchors.bottomMargin: 2
+        anchors.margins: 4
         color: "white"
         border.color: "steelblue"
         border.width: 1
@@ -92,8 +136,10 @@ Item {
             focus: true
             Keys.onPressed: {
                 if(event.modifiers && Qt.ControlModifier) {
-                    if(event.key === Qt.Key_Enter) {
-                        send()
+                    if((event.key === Qt.Key_Enter)
+                        || (event.key === Qt.Key_Return)) {
+                        event.accepted = true
+                        textinput.send()
                     }
                 }
             }
@@ -105,10 +151,19 @@ Item {
         }
     }
 
+    Label {
+        anchors.left: root.left
+        anchors.bottom: root.bottom
+        anchors.margins: 2
+        color: "navy"
+        text: model.buddyName + " " + model.buddyId
+    }
+
     Button {
         id: send
         anchors.right: root.right
         anchors.bottom: root.bottom
+        anchors.margins: 2
         iconSource: "qrc:/images/Sent-32.png"
         onClicked: {
             textinput.send()

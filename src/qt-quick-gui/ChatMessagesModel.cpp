@@ -18,6 +18,11 @@ ChatMessagesModel::ChatMessagesModel(ContactsModel& cm,
             SIGNAL(MessageReceived(darkspeak::Api::Message::ptr_t)),
             this, SLOT(AddMessage(darkspeak::Api::Message::ptr_t)));
 
+    connect(this,
+            SIGNAL(MessageSent(const boost::uuids::uuid)),
+            this, SLOT(UpdateMessageState(const boost::uuids::uuid)));
+
+
     auto real_buddy = buddy_.lock();
     messages_ = real_buddy->GetMessages();
     real_buddy->SetMonitor(monitor_); // Get notifications from the buddy
@@ -127,12 +132,52 @@ void ChatMessagesModel::AddMessage(Api::Message::ptr_t message)
     emit endInsertRows();
 }
 
+void ChatMessagesModel::UpdateMessageState(const boost::uuids::uuid uuid)
+{
+    int row = 0;
+    for(const auto& msg : messages_) {
+        if (msg->uuid == uuid) {
+            auto mi = index(row, 0);
+            emit dataChanged(mi, mi);
+            return;
+        }
+        ++row;
+    }
+}
+
+
+QString ChatMessagesModel::buddyName()
+{
+    auto real_buddy = buddy_.lock();
+    if (real_buddy) {
+        return Convert(real_buddy->GetUiName());
+    }
+
+    return "";
+}
+
+QString ChatMessagesModel::buddyId()
+{
+    auto real_buddy = buddy_.lock();
+    if (real_buddy) {
+        return Convert(real_buddy->GetId());
+    }
+
+    return "";
+}
+
 
 void ChatMessagesModel::OnMessageReceived(const Api::Message::ptr_t& message)
 {
     LOG_DEBUG << "Emitting message to QT mail thread.";
     emit MessageReceived(message);
 }
+
+void ChatMessagesModel::OnMessageSent(const boost::uuids::uuid uuid)
+{
+    emit MessageSent(uuid);
+}
+
 
 void ChatMessagesModel::EventsMonitor::OnMessageReceived(const Api::Message::ptr_t& message)
 {
@@ -142,7 +187,9 @@ void ChatMessagesModel::EventsMonitor::OnMessageReceived(const Api::Message::ptr
 
 void ChatMessagesModel::EventsMonitor::OnOtherEvent(const EventMonitor::Event& event)
 {
-
+    if (event.type == EventMonitor::Event::Type::MESSAGE_TRANSMITTED) {
+        parent_.OnMessageSent(event.uuid);
+    }
 }
 
 void ChatMessagesModel::EventsMonitor::OnStateChange(Api::Status status)

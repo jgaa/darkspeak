@@ -110,7 +110,9 @@ int main(int argc, char *argv[])
     qRegisterMetaType<darkspeak::FileInfo>("darkspeak::FileInfo");
     qRegisterMetaType<FileTransferModel::State>("FileTransferModel::State");
     qRegisterMetaType<FileTransferModel::Direction>("FileTransferModel::Direction");
+    qRegisterMetaType<ChatMessagesModel::MessageStatus>("ChatMessagesModel::MessageStatus");
     qRegisterMetaType<QVector<int>>("QVector<int>");
+    qRegisterMetaType<boost::uuids::uuid>("boost::uuids::uuid");
 
     // Initiallze the UI components
     QQmlApplicationEngine engine;

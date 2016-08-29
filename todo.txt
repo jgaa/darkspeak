@@ -1,7 +1,7 @@
 Development todo's
 
 BUGS:
- 
+
 Missing features:
   - Tray icon
 
@@ -15,13 +15,10 @@ TODO:
   - Chat window:
     - Show status similar to the contact list
     - Notifications regarding other events
-    - Edit buddy button
     - Scroll down so we show the latest messages on arrival
 
   - Check if it works on Windows
   - Check if it works on OS/X
-  - Check if it works on Android
-  - Check if it works on IOS
 
   - Release beta!
 
