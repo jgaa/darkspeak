@@ -183,12 +183,12 @@ void TorChatEngine::SendMessage(Api::Buddy& buddy,
                 static const string message_verb{"message"};
                 LOG_DEBUG << "Sending message to " << *peer;
 
-                DoSend(message_verb, {msg->body}, *peer, yield);
-                msg->status = Api::Message::Status::SENT;
+                DoSend(message_verb, {msg->GetBody()}, *peer, yield);
+                msg->SetAsSent();
 
                 EmitOtherEvent({peer->GetId(),
                     EventMonitor::Event::Type::MESSAGE_TRANSMITTED,
-                    msg->uuid});
+                    msg->GetUuid()});
         });
     }, "SendMessage"});
 }

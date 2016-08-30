@@ -69,14 +69,14 @@ QVariant ChatMessagesModel::data(const QModelIndex& index, int role) const
 
     switch(role) {
         case ContentRole:
-            return Convert(message->body);
+            return Convert(message->GetBody());
         case TimestampRole:
-            return Convert(message->timestamp);
+            return Convert(message->GetTimestamp());
         case DirectionRole:
-            return (message->direction == Api::Message::Direction::INCOMING)
+            return (message->GetDirection() == Api::Message::Direction::INCOMING)
                 ? MD_INCOMING : MD_OUTGOING;
         case StatusRole:
-            switch(message->status) {
+            switch(message->GetStatus()) {
                 case Api::Message::Status::QUEUED:
                     return MS_QUEUED;
                 case Api::Message::Status::SENT:
@@ -86,7 +86,7 @@ QVariant ChatMessagesModel::data(const QModelIndex& index, int role) const
             }
             break;
         case UuidRole:
-            return Convert(message->uuid);
+            return Convert(message->GetUuid());
     }
 
     LOG_ERROR << "*** Unknown role " << role;
@@ -136,7 +136,7 @@ void ChatMessagesModel::UpdateMessageState(const boost::uuids::uuid uuid)
 {
     int row = 0;
     for(const auto& msg : messages_) {
-        if (msg->uuid == uuid) {
+        if (msg->GetUuid() == uuid) {
             auto mi = index(row, 0);
             emit dataChanged(mi, mi);
             return;

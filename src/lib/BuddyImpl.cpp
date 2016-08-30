@@ -239,7 +239,7 @@ Api::message_list_t BuddyImpl::GetMessages(const boost::uuids::uuid* after)
 
     LOCK;
     for(auto msg: conversation_) {
-        if (msg->uuid == *after) {
+        if (msg->GetUuid() == *after) {
             found = true;
         } else if (found) {
             list.push_back(msg);

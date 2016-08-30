@@ -101,7 +101,7 @@ public:
         REMOVED_ME
     };
 
-
+    // TODO: Split into interface and implementation?
     class Message {
         public:
         using ptr_t = std::shared_ptr<Message>;
@@ -123,11 +123,41 @@ public:
             status = initialStatus;
         }
 
-        const timestamp_t timestamp = std::chrono::system_clock::now();
+        boost::uuids::uuid GetUuid() const {
+            return uuid;
+        }
+
+        const std::string& GetBody() {
+            return body;
+        }
+
+        Direction GetDirection() const {
+            return direction;
+        }
+
+        timestamp_t GetTimestamp() const {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return timestamp;
+        }
+
+        Status GetStatus() const {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return status;
+        }
+
+        void SetAsSent() {
+            std::lock_guard<std::mutex> lock(mutex_);
+            status = Api::Message::Status::SENT;
+            timestamp = std::chrono::system_clock::now();
+        }
+
+    private:
         const boost::uuids::uuid uuid = boost::uuids::random_generator()();
         const Direction direction;
-        std::atomic<Status> status;
         const std::string body;
+        timestamp_t timestamp = std::chrono::system_clock::now();
+        Status status;
+        mutable std::mutex mutex_;
     };
 
     using message_list_t = std::deque<std::shared_ptr<Message>>;
