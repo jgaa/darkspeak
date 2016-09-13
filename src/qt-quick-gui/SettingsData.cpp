@@ -133,11 +133,12 @@ QUrl SettingsData::avatar() const {
 //The url is always to a temporary image in the image provider
 void SettingsData::setAvatar(QUrl url)
 {
+    static const string default_name{"default"};
     auto path = url.toString().toStdString();
     auto pos = path.find_last_of('/');
     if (pos != path.npos) {
         auto key = path.substr(pos + 1);
-        if (!path.empty()) {
+        if (!path.empty() && (key.compare(default_name) != 0)){
             image_provider_->rename(key, "myself");
             auto rgba = GetRgba(image_provider_->get("myself"));
             config_->Set(Config::PROFILE_AVATAR_RGBA,
