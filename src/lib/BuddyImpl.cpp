@@ -234,7 +234,7 @@ Api::message_list_t BuddyImpl::GetMessages(const boost::uuids::uuid* after)
         return conversation_;
     }
 
-    bool found;
+    bool found = false;
     Api::message_list_t list;
 
     LOCK;
