@@ -25,12 +25,20 @@ if (NOT DEFINED WARLIB_ROOT_DIR)
     set(WARLIB_ROOT_DIR ${DARKSPEAK_ROOT_DIR}/externals/warlib)
 endif()
 
-
 message(STATUS "WARLIB_ROOT_DIR: ${WARLIB_ROOT_DIR}")
+
+
 include(${WARLIB_ROOT_DIR}/cmake_scripts/boost.cmake)
 include(${WARLIB_ROOT_DIR}/cmake_scripts/pch.cmake)
 
+if (UNIX)
+    set(THREADLIBS pthread)
+endif()
+
 set(DEFAULT_LIBRARIES ${DEFAULT_LIBRARIES}
+    ${DEFAULT_LIBRARIES}
+    ${THREADLIBS}
+    ${OPENSSL_LIBRARIES}
     war_tasks
     war_log
     war_base
@@ -75,6 +83,7 @@ add_subdirectory(${WARLIB_ROOT_DIR})
 add_subdirectory(src)
 
 if (DARKSPEAK_WITH_UNIT_TESTS)
+    enable_testing()
     add_subdirectory(tests)
 endif()
 
