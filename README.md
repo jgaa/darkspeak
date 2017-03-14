@@ -82,7 +82,7 @@ HiddenServiceDir /var/lib/tor/darkspeak
 HiddenServicePort 11009 127.0.0.1:11009
 ```
 
-After altering torrc and re-startuinbg tor, you need to look at the 
+After altering torrc and re-startuinbg tor, you need to look at the
 hostname file in your hidden service dir. The hostname, without the
 ".onion" postfix is your chat handle (TC id).
 
@@ -105,18 +105,16 @@ into the "Chat Id" field. Then save and press the online button.
 - [ ] Implement GUI for Android
 - [ ] Implement GUI for IOS
 
-
 ## Beta 2
 - [ ] Add good/popular suggestions/ideas
 - [ ] Add DarkSpeak specific extentions to the TC protocol
-- [ ] Implement support for multiple ID's in one client
-- [ ] Research how to configure an existing Tor Server seamlessly with the hidden service
+ - [ ] Group chat
+ - [ ] End to end PKS encryption
+ - [ ] Fingerprint verification of peers
+ - [x] Research how to configure an existing Tor Server seamlessly with the hidden service
+ - [ ] Feed own cert to Tor on Demand
+ - [ ] Implement support for multiple ID's in one client
 - [ ] Package the application. Make sure it's easy to get started.
-
-## Beta 3
-- [ ] Add good/popular suggestions/ideas
-- [ ] Implement encryption from client to client with PKS. Remember peer's public keys (like ssh).
-- [ ] Implement group chat
 
 ## Beta 4
 - [ ] Add good/popular suggestions/ideas
