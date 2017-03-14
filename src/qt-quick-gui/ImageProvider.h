@@ -29,35 +29,19 @@ public:
         return {};
     }
 
-    void add(const std::string key, std::shared_ptr<QImage> img) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        WAR_ASSERT(img != nullptr);
-        images_[key] = std::move(img);
-    }
+    void add(const std::string key, std::shared_ptr<QImage> img);
 
-    void remove(const std::string key) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        images_.erase(key);
-    }
+    void remove(const std::string key);
 
-    bool haveImage(const std::string& key) const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return images_.find(key) != images_.end();
-    }
+    bool haveImage(const std::string& key) const;
 
-    void rename(const std::string& oldKey,
-                const std::string& key) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto it = images_.find(oldKey);
-        if (it != images_.end()) {
-            images_[key] = it->second;
-            images_.erase(it);
-        }
-    }
+    void rename(const std::string& oldKey, const std::string& key);
 
     void save(const std::string& key, const darkspeak::path_t& path);
 
 private:
+    void log_all();
+
     std::map<std::string, std::shared_ptr<QImage>> images_;
     QImage missing_;
     mutable std::mutex mutex_;
