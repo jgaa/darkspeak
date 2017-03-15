@@ -138,6 +138,13 @@ void SettingsData::setAvatar(QUrl url)
     auto pos = path.find_last_of('/');
     if (pos != path.npos) {
         auto key = path.substr(pos + 1);
+
+        // Strip off the ':#' part added by the qml code to redraw the image
+        auto coloumn_pos = key.find_last_of(':');
+        if (coloumn_pos != path.npos) {
+            key.resize(coloumn_pos);
+        }
+
         if (!path.empty() && (key.compare(default_name) != 0)){
             image_provider_->rename(key, "myself");
             auto rgba = GetRgba(image_provider_->get("myself"));
@@ -153,7 +160,7 @@ std::vector<char> SettingsData::GetRgba(const std::shared_ptr<QImage>& image)
 {
     std::vector<char> rgba;
 
-    if (!image->isNull()) {
+    if (image && !image->isNull()) {
         auto height = image->height();
         auto width = image->width();
         rgba.reserve(height * width);

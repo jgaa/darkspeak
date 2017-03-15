@@ -41,32 +41,9 @@ So far it looks promising. (The learning curve for QT Quicks is steeper the I ex
 but the GUI is slowly becoming usable)
 
 # Building from source
-## Debian
-TBD
+- [kubuntu 16.10](doc/darkspeak-kubuntu.md)
+- [Microsoft Windows](doc/darkspeak-windows.md)
 
-## Windows.
-I am using 64 bit Windows 10 with Visual studio 14 (2015).
-- Get Microsoft Visual Studio 14 (2015) or newer (I'm using the free community version)
-- Get and compile boost (www.bost.org) for 64 bits
-- Get cmake
-- Get QT Studio for 64 bit Windows (I am using QT 5.6)
-- Get the source code from github, initialize the dependencies):
-```bash
-$ git clone https://github.com/jgaa/darkspeak.git
-$ cd darkspeak
-$ git submodule init
-$ git submodule update
-```
-- Start Cmake (I use the Cmake GUI under Windows)
-In Cmake, add the following paths (I am showing the paths on my development machine):
-```
-BOOST_ROOT path C:/devel/boost_1_60_0
-BOOST_LIBRARYDIR path C:/devel/boost_1_60_0/stage/lib/x64
-CMAKE_PREFIX_PATH path C:/Qt/Qt5.6.0/5.6/msvc2015_64
-```
-- Configure and generate in Cmake
-- Find darkspeak.sln (it will be in darkspeak/build on my system) and double click on it to start Visual Studio
-- In Visual Studio, build the solution.
 
 # Integrating with a Tor Service
 
@@ -82,13 +59,20 @@ HiddenServiceDir /var/lib/tor/darkspeak
 HiddenServicePort 11009 127.0.0.1:11009
 ```
 
-After altering torrc and re-startuinbg tor, you need to look at the
+After altering torrc and re-starting tor, you need to look at the
 hostname file in your hidden service dir. The hostname, without the
 ".onion" postfix is your chat handle (TC id).
 
 Start darkspeak, open the settings/You dialog and paste your chat handle
 into the "Chat Id" field. Then save and press the online button.
 
+Example under Linux:
+```sh
+$ sudo sh -c 'echo "HiddenServiceDir /var/lib/tor/darkspeak
+HiddenServicePort 11009 127.0.0.1:11009" >> /etc/tor/torrc'
+$ sudo systemctl restart tor
+$ sudo cat /var/lib/tor/darkspeak/hostname
+```
 
 # Roadmap
 ## Beta 1a
