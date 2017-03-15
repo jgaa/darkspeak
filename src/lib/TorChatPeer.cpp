@@ -18,7 +18,12 @@ using namespace std;
 using namespace war;
 
 std::ostream& operator << (std::ostream& o, const darkspeak::impl::TorChatPeer& v) {
-    return o << "{peer: " << v.GetId() << '}';
+    static string censored{"censored"};
+    const bool can_log = war::log::LogEngine::IsRelevant(
+        war::log::LL_DEBUG, war::log::LA_GENERAL);
+    return o << "{peer: "
+        << (can_log ? v.GetId() : censored)
+        << '}';
 }
 
 std::ostream& operator << (std::ostream& o,

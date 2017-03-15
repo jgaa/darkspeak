@@ -19,7 +19,7 @@ std::ostream& operator << (std::ostream& o, const darkspeak::Api::Buddy& v) {
     return o << "{buddy: "
         << (v.CanBeLogged() ? v.GetId() : censored)
         << ' '
-        << v.GetUiName()
+        << (v.CanBeLogged() ? v.GetUiName() : censored)
         << '}';
 }
 
@@ -114,10 +114,12 @@ Api::Presence BuddyImpl::GetPresence() const
 std::string BuddyImpl::GetUiName() const
 {
     LOCK;
-    if (!info_.our_nickname.empty())
+    if (!info_.our_nickname.empty()) {
         return info_.our_nickname;
-    if (!info_.profile_name.empty())
+    }
+    if (!info_.profile_name.empty()) {
         return string("(") + info_.profile_name + ")";
+    }
     return info_.id;
 }
 

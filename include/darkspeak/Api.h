@@ -14,6 +14,8 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 
+#include "log/WarLog.h"
+
 #ifdef SendMessage
 // Thank you SO much Micro$oft!
 #	undef SendMessage
@@ -230,7 +232,11 @@ public:
             }
 
             bool CanBeLogged() const noexcept {
-                return CanBeSaved();
+                // We only log anything even remotely interesting if
+                // the log-level is at least at debug.
+                return war::log::LogEngine::IsRelevant(war::log::LL_DEBUG,
+                                                war::log::LA_GENERAL)
+                    && CanBeSaved();
             }
         };
 
