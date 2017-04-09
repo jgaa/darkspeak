@@ -75,39 +75,6 @@ $ sudo systemctl restart tor
 $ sudo cat /var/lib/tor/darkspeak/hostname
 ```
 
-# Roadmap
-## Beta 1a
-- [x] ~~Document the legacy Tor Chat protocol~~
-- [ ] Implement a library that speaks the TC protocol
- - [x] ~~Core functionality (work in progress)~~
- - [ ] Unit tests
- - [ ] Functional tests
-- [x] ~~Implement GUI for Linux~~
-- [x] ~~Implement GUI for Windows~~
-- [ ] Implement GUI for OS/X
-
-## Beta 1b
-- [ ] Implement GUI for Android
-- [ ] Implement GUI for IOS
-
-## Beta 2
-- [ ] Add good/popular suggestions/ideas
-- [ ] Add DarkSpeak specific extentions to the TC protocol
- - [ ] Group chat
- - [ ] End to end PKS encryption
- - [ ] Fingerprint verification of peers
- - [x] Research how to configure an existing Tor Server seamlessly with the hidden service
- - [ ] Feed own cert to Tor on Demand
- - [ ] Implement support for multiple ID's in one client
-- [ ] Package the application. Make sure it's easy to get started.
-
-## Beta 4
-- [ ] Add good/popular suggestions/ideas
-- [ ] Implement proxy (master node) functionality, so that we can have several clients running with one ID.
-
-## Release version 1
-- [ ] Fix all known bugs.
-
 
 # Links
  - The reference implementation of [TorChat](https://github.com/prof7bit/TorChat).
