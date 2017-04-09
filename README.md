@@ -79,3 +79,8 @@ $ sudo cat /var/lib/tor/darkspeak/hostname
 # Links
  - The reference implementation of [TorChat](https://github.com/prof7bit/TorChat).
  - Partially description of the [TC protocol](https://www.meebey.net/research/torchat_protocol/).
+
+## Links to related and relevant projects
+ - [Ricochet, anonymous peer-to-peer instant messaging](https://github.com/ricochet-im/ricochet)
+ - [saltpack, a modern crypto messaging format](https://saltpack.org/)
+
