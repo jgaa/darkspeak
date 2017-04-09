@@ -35,10 +35,11 @@ Dark Speak (or another enhanced client).
 - Server versions where oprganizations (like newspapers) can host thousands of ID's on one Tor instance (like darkspeak:jgaa@23enroxotjtsogn4)
 
 # Current State
-The project is under heavy development. I'm building a GUI based on QT Quick.
-I hope that I can use basically the same GUI source code on all target platforms.
-So far it looks promising. (The learning curve for QT Quicks is steeper the I expected,
-but the GUI is slowly becoming usable)
+The current implementation works, but I don't like it - so it's basically just
+a prototype to test my ideas.
+
+A new implementation based on the lessons learned is pending.
+
 
 # Building from source
 - [kubuntu 16.10](doc/darkspeak-kubuntu.md)
