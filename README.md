@@ -1,88 +1,25 @@
 # DarkSpeak
 
-Secure Instant Messenger based on the legacy Tor Chat protocol.
+Secure Instant Messenger
 
 # Mission Statement
 
 To make the most Secure and Private Communication Platform for citizens, in the History of the World.
 
-# Planned features
-- Secure Instant Messaging (Legacy Tor Chat)
-- File Transfer (Legacy Tor Chat)
-- More than one ID on one Tor instance (require use of other ports - only one ID will be visible from legacy Tor Chart clients)
-- Proxy service (allow darkspeak on several devices simultaneously with the same ID)
-- Nice looking graphical interface on Linux, OS/X and Windows
-- Android version
-- IOS version
-- Groups (like in Skype - several participants in one chat)
+# History
 
-# Enhancements over the original Tor Chat
+This project began in April 2016, when I wanted to chat with my friends without Facebook or Google or NNSA or anyone else overseeing the conversations. The idea that private conversations are no longer possible, and that we just have to accept that, provokes me. So I used the no dead Tor Chat project as a starting-point for a protocol, and wrote my own client in C++, using QT and QML for GUI.
 
-Dark Speak will remain backwards compatible with the original Tor Chat
-protocol. However, it will implement some extra guards to protect the
-user, and new protocol features that can be used when both parties use
-Dark Speak (or another enhanced client).
+However, because the legacy Tor Chat client was bundling an obsolete Tor server, my program was unable to maintain reliable connections with Tor Chat users. So at some point I decided to learn from my experience with the original implementation and write a new one from scratch.
 
-- Improved security in the client to prevent DoS attacks, memory overflow etc.
-- Better authentication of peers (to make it harder or impossible to impersonate a person).
-- Another layer of PKS p2p strong encryption and secure authentication.
-- Emergency flag to indicate that the conversation is compromized (for example by
-    the physical presenc of an adversary).
+The [original implementation](https://github.com/jgaa/darkspeak/tree/original-impl-torchat-prot) is still available.
 
-# Some ideas for future versions
-- Support for more Tor IM protocols (like ricochet)
-- Support for other anonymous networks
-- Server versions where oprganizations (like newspapers) can host thousands of ID's on one Tor instance (like darkspeak:jgaa@23enroxotjtsogn4)
-- Allow copy/paste of encrypted messages for use in other applications (mail, mms, sms, skype. ...). Use the PKS keys or a shared secret to encrypt/decrypt.
+# Current status
+
+I am currently designing the new protocol and application architecture.
 
 
-# Current State
-The current implementation works, but I don't like it - so it's basically just
-a prototype to test my ideas.
-
-A new implementation based on the lessons learned is pending.
-
-
-# Building from source
-- [kubuntu 16.10](doc/darkspeak-kubuntu.md)
-- [Microsoft Windows](doc/darkspeak-windows.md)
-
-
-# Integrating with a Tor Service
-
-Get the Tor service. Most Linux distributions will offer it as a package.
-
-Follow the instructions [here](https://www.torproject.org/docs/tor-hidden-service.html.en) to create a service.
-
-A Tor config file (torrc) may look like:
-
-```
-# torrc example for Debian Gnu Linux
-HiddenServiceDir /var/lib/tor/darkspeak
-HiddenServicePort 11009 127.0.0.1:11009
-```
-
-After altering torrc and re-starting tor, you need to look at the
-hostname file in your hidden service dir. The hostname, without the
-".onion" postfix is your chat handle (TC id).
-
-Start darkspeak, open the settings/You dialog and paste your chat handle
-into the "Chat Id" field. Then save and press the online button.
-
-Example under Linux:
-```sh
-$ sudo sh -c 'echo "HiddenServiceDir /var/lib/tor/darkspeak
-HiddenServicePort 11009 127.0.0.1:11009" >> /etc/tor/torrc'
-$ sudo systemctl restart tor
-$ sudo cat /var/lib/tor/darkspeak/hostname
-```
-
-
-# Links
- - The reference implementation of [TorChat](https://github.com/prof7bit/TorChat).
- - Partially description of the [TC protocol](https://www.meebey.net/research/torchat_protocol/).
-
-## Links to related and relevant projects
+# Links to related and relevant projects
  - [Ricochet, anonymous peer-to-peer instant messaging](https://github.com/ricochet-im/ricochet)
  - [saltpack, a modern crypto messaging format](https://saltpack.org/)
 
