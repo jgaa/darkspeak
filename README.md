@@ -8,7 +8,7 @@ To make the most Secure and Private Communication Platform for citizens, in the 
 
 # History
 
-This project began in April 2016, when I wanted to chat with my friends without Facebook or Google or NNSA or anyone else overseeing the conversations. The idea that private conversations are no longer possible, and that we just have to accept that, provokes me. So I used the no dead Tor Chat project as a starting-point for a protocol, and wrote my own client in C++, using QT and QML for GUI.
+This project began in April 2016, when I wanted to chat with my friends without Facebook, Google, NSA or anyone else overseeing our conversations. The idea that private conversations are no longer possible, and that we just have to accept that, provokes me. So I used the no dead Tor Chat project as a starting-point for a protocol, and wrote my own client in C++, using QT and QML for GUI.
 
 However, because the legacy Tor Chat client was bundling an obsolete Tor server, my program was unable to maintain reliable connections with Tor Chat users. So at some point I decided to learn from my experience with the original implementation and write a new one from scratch.
 
