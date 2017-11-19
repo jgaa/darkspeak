@@ -33,6 +33,8 @@ Dark Speak (or another enhanced client).
 - Support for more Tor IM protocols (like ricochet)
 - Support for other anonymous networks
 - Server versions where oprganizations (like newspapers) can host thousands of ID's on one Tor instance (like darkspeak:jgaa@23enroxotjtsogn4)
+- Allow copy/paste of encrypted messages for use in other applications (mail, mms, sms, skype. ...). Use the PKS keys or a shared secret to encrypt/decrypt.
+
 
 # Current State
 The current implementation works, but I don't like it - so it's basically just
