@@ -13,11 +13,11 @@ In addition to using the encryption of the Tor hidden service, DarkSpeak adds an
 Clients using DarkSpeak are identified by their public key. A contact handle contains that key in full, and one or more Tor hidden services where that user may be contacted. The hidden service use a random port to make it harder to scan the Tor network for DarkSpeak instances.
 
 ## Layers
-The protocol have n layers
+The protocol have 3 layers
 
-1 Transport
-2 Packet
-3 Conversations
+- Transport
+- Packet
+- Conversations
 
 ## Transport Layer
 
