@@ -33,9 +33,9 @@ The header is a packed, binary structure with the following fields:
 **Version**: The only version defined at this time is 1, which is the current version.
 
 **Channel**: This is used to route the message to an appropriate handler.
-- 0 Handle 0 is the control channel. This channel require the payload to be in json format.
+- Channel 0 is the control channel. This channel require the payload to be in json format.
 
-- File transfer handles contains raw data of a file that is in progress
+- File transfer handles are used to transfer raw chunks of data from a file
 
 **Size**: Size of the payload in bytes.
 
