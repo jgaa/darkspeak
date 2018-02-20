@@ -48,7 +48,7 @@ The following packets are defined for the Control Channel #0
 
 **Hello**: This package is the first package sent from the client to the server. The server will not respond to a client unless it sends a valid Hello message, encrypted with the servers public key. This makes it harder to scan the Tor network for DarkSpeak instances. If an invalid message is received, the server will drop the connection. The server will also drop the connection shortly after it is established if no Helo message is received.
 
-```json
+```
 {
     "type" : "Helo",
     "pubkey" : "GHGHGHG.....",
@@ -67,10 +67,10 @@ The pubkey is used to identify the client. If the client is known and on the con
 
 Response:
 
-```json
+```
 {
-    "type" : "Ack"
-    "what" : "Helo"
+    "type" : "Ack",
+    "what" : "Helo",
     "status" : "Greetings" | "Unauthorized" | "Collision"
 }
 ```
@@ -79,7 +79,7 @@ If the server does not want to talk to the client (for example if the client is 
 
 **AddMe**": This message asks the server to add the client to the contact list.
 
-```json
+```
 {
     "type" : "AddMe",
     "name" : "jgaa",
@@ -97,7 +97,7 @@ If the server does not want to talk to the client (for example if the client is 
 
 Response:
 
-```json
+```
 {
     "type" : "Ack",
     "what" : "AddMe",
@@ -111,11 +111,11 @@ If a AddMe is sent to a server that already have added the contact, an acknowled
 
 **SetAvatar**: This message sends an avatar image to be used for the contact.
 
-```json
+```
 {
-    "type: "SetAvatar",
-    "height: 64,
-    "width" 64,
+    "type" : "SetAvatar",
+    "height" : 64,
+    "width" : 64,
     "r": base-64 encoded data,
     "g": base-64 encoded data,
     "b": base-64 encoded data,
@@ -128,7 +128,7 @@ The image may be from 64 to 128 pixels hight to 64 - 128 pixels width.
 
 Reply:
 
-```json
+```
 {
     "type" : "Ack",
     "what" : "SetAvatar",
@@ -138,7 +138,7 @@ Reply:
 
 **Invite**: Invitation to join a conversation.
 
-```json
+```
 {
     "type" : "Invite",
     "conversation" : "67676ggg"
@@ -153,7 +153,7 @@ Reply:
 A conversation is a group chat. The group chat is hosted by one participant, and all messages are sent to that node. Only contacts on that persons contact-list can participate in the conversation. All the messages in the conversation is sent to all the participants by the hosts instance of DarkSpeak.
 
 Reply:
-```json
+```
 {
     "type" : "Ack",
     "what" : "Invite",
@@ -168,7 +168,7 @@ The status joined means that the conversation is set up by the participant, and 
 
 **Join**: Request to join an existing conversation
 
-```json
+```
 {
     "type" : "Join",
     "conversation" : "67676ggg"
@@ -180,7 +180,7 @@ The status joined means that the conversation is set up by the participant, and 
 
 Response:
 
-```json
+```
 {
     "type" : "Ack",
     "what" : "Join",
@@ -193,13 +193,13 @@ The reason for the rejection is not provided. It could be that the user was not 
 
 **Message**: A message
 
-```json
+```
 {
     "what" : "Message",
     "message-id" : "sjdaghfjasghdf87",
     "date" : 2347263476,
     "content" : "bla bla",
-    "encoding: "us-ascii" | "utf-8",
+    "encoding": "us-ascii" | "utf-8",
     "conversation" : "67676ggg"
 }
 ```
@@ -213,7 +213,7 @@ The reason for the rejection is not provided. It could be that the user was not 
 
 Reply:
 
-```json
+```
 {
     "type" : "Ack",
     "what" : "Message",
@@ -225,7 +225,7 @@ Reply:
 
 **IncomingFile**: Request to send a file to the recipient.
 
-```json
+```
 {
     "type" : "IncomingFile",
     "name" : "cutecat.jpg",
@@ -245,7 +245,7 @@ rest: Restore point. Used to continue an aborted or incomplete transfer. The tra
 
 Reply:
 
-```json
+```
 {
     "type" : "Ack",
     "what" : "IncomingFile",
@@ -266,7 +266,7 @@ If the connection between two parties are broken and reestablished, the receivin
 
 DarkSpeak can act as a simple file-server, and this request asks the server to send a file to the client.
 
-```json
+```
 {
     "type" : "SendFile",
     "name" : "/pub/cats/cutecat.jpg",
@@ -284,7 +284,7 @@ DarkSpeak can act as a simple file-server, and this request asks the server to s
 
 Reply:
 
-```json
+```
 {
     "type" : "Ack"
     "what" : "SendFile",
@@ -296,7 +296,7 @@ Reply:
 
 **ListDir**: Request to provide a directory-listing for available files.
 
-```json
+```
 {
     "type" : "ListDir",
     "path" : "/pub/cats",
@@ -305,7 +305,7 @@ Reply:
 
 Reply:
 
-```json
+```
 {
     "type" : "Ack",
     "what" : "ListDir",
