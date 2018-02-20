@@ -240,7 +240,7 @@ Reply:
 - name: Suggested name of the file. Cannot contain slashes. May be restricted to us-ascii at some clients.
 - size: Size of the file in bytes
 - type: Binary or text. DarkSpeak will convert text-files to UNIX format, and save in the local format for the operating system used by the client. This feature makes it harder to deduce the operating system used by a client.
-rest: Restore point. Used to continue an aborted or incomplete transfer. The transfer will start at the file-offset (in bytes) specified here.
+- rest: Restore point. Used to continue an aborted or incomplete transfer. The transfer will start at the file-offset (in bytes) specified here.
 - file-id: Used by the client to track the status of a file-transfer.
 
 Reply:
