@@ -25,10 +25,10 @@ The Transport Layer is a simple binary format with a header and a payload.
 
 The header is a packed, binary structure with the following fields:
 
-- version   1 byte, Version of the Dark Speak protocol used.
-- *channel* 2 bytes unsigned integer in Big Endian format
-- *size*    2 bytes unsigned integer in Big Endian format. Size in bytes of the payload.
-- payload   array of unsigned bytes with the payload.
+- **version**   1 byte, Version of the Dark Speak protocol used.
+- **channel** 2 bytes unsigned integer in Big Endian format
+- **size**    2 bytes unsigned integer in Big Endian format. Size in bytes of the payload.
+- **payload**   array of unsigned bytes with the payload.
 
 **Version**: The only version defined at this time is 1, which is the current version.
 
