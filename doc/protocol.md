@@ -200,7 +200,9 @@ The reason for the rejection is not provided. It could be that the user was not 
     "date" : 2347263476,
     "content" : "bla bla",
     "encoding": "us-ascii" | "utf-8",
-    "conversation" : "67676ggg"
+    "conversation" : "67676ggg",
+    "from" : "...",
+    "signature" : "..."
 }
 ```
 
@@ -210,6 +212,8 @@ The reason for the rejection is not provided. It could be that the user was not 
 - content: Content of the message
 - encoding: The encoding of the content. Some clients may reject anything but us-ascii to prevent exploits in the Unicode stack of system or QT libraries.
 - conversation: Optional parameter for messages that are part of a group chat.
+- signature: The message, except the signature entry, is signed by the sender to verify the authenticity of the message. This is required if the message is relayed, for example by a chat host.
+- from: Hash of the senders public key. Used to identify the sender in a group chat.
 
 Reply:
 
