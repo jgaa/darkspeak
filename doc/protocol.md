@@ -23,23 +23,33 @@ The protocol have 3 layers
 
 The Transport Layer is a simple binary format with a header and a payload.
 
-The header is a packed, binary structure with the following fields:
+The header is a flat, binary structure with the following fields:
 
-- **version**   1 byte, Version of the Dark Speak protocol used.
-- **channel** 2 bytes unsigned integer in Big Endian format
 - **size**    2 bytes unsigned integer in Big Endian format. Size in bytes of the payload.
-- **payload**   array of unsigned bytes with the payload.
 
-**Version**: The only version defined at this time is 1, which is the current version.
+*encrypted part*. Everything following the size is encrypted with the receivers public key.
+
+- **version** 1 byte
+- **md5** 16 byte md5 checksum for the remainder of the packet.
+- **channel** 2 bytes unsigned integer in Big Endian format
+
+The payload follows directly after the header.
+
+- **payload** The payload.
+
+**Size**: Size of the packet in bytes, excluding the 2 byte size header.
+
+**Version**: Version of the Dark Speak protocol used.
+
+**Md5**: Checksum to detect transmission errors. Since the checksum is encrypted it is tamper-proof, and should be safe to use. We use prefer md5 here because it is fast to calculate and occupies only 16 bytes.
 
 **Channel**: This is used to route the message to an appropriate handler.
 - Channel 0 is the control channel. This channel require the payload to be in json format.
-
 - File transfer handles are used to transfer raw chunks of data from a file
 
-**Size**: Size of the payload in bytes.
+Channels are allocated incrementally, and may wrap around. Only one channel with a  given id can be active at any time.
 
-**Payload**: Encrypted blob of data. It consists of exactly the number of bytes specified in the size field. The payload is always encrypted using the recipients public key.
+**Payload**: Blob of data. It consists of exactly the number of bytes specified in the size field, minus the encrypted part of the header (currently 19 bytes).
 
 ## Packet layer
 The packet layer is used to send requests and responses. The packages are encoded as json, and initially the encoding must be us-ascii.
@@ -63,7 +73,7 @@ The following packets are defined for the Control Channel #0
 - name: The current nickname for the client
 - cookie: Random session cookie
 
-The pubkey is used to identify the client. If the client is known and on the contact-list, the server will send a *Greetings* message. If the client is unknown, it wills end a *Unauthorized* message. If the server detects a collision, where it is currently trying to connect to the same client, it will compare the session-cookie, and reject the connection if it has the smaller value.
+The pubkey is used to identify the client. If the client is known and on the contact-list, the server will send a *Greetings* message. If the client is unknown, it will send a *Unauthorized* message. If the server detects a collision, where it is currently trying to connect to the same client, it will compare the session-cookie, and reject the connection if it has the smaller value.
 
 Response:
 
@@ -101,7 +111,7 @@ Response:
 {
     "type" : "Ack",
     "what" : "AddMe",
-    "status": "added" | "pending" | "rejected"
+    "status": "added" | "Pending" | "Rejected"
 }
 ```
 
