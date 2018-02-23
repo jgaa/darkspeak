@@ -1,4 +1,9 @@
-#include "torctlsocket.h"
+
+#include <regex>
+#include <assert.h>
+#include <locale>
+
+#include "ds/torctlsocket.h"
 
 namespace ds {
 namespace tor {
@@ -53,7 +58,7 @@ void TorCtlSocket::processIn()
         if (state_ == State::READY) {
             state_ = State::IN_REPLY;
 
-            current_reply_ = Reply{};
+            current_reply_ = TorCtlReply{};
             current_reply_.status = line.left(3).toInt();
         }
 
@@ -61,7 +66,7 @@ void TorCtlSocket::processIn()
             if (line == ".") {
                 state_ = State::IN_REPLY;
             } else {
-                current_reply_.lines.back() += line.mid(4);
+                current_reply_.lines.back() += line.mid(4).toStdString();
                 if (current_reply_.lines.back().size()
                         > max_data_in_one_reply_line_) {
                     setError(QStringLiteral("Invalid control reply syntax: Too verbose."));
@@ -78,7 +83,7 @@ void TorCtlSocket::processIn()
             return;
         }
 
-        current_reply_.lines.push_back(line.mid(4));
+        current_reply_.lines.push_back(line.mid(4).toStdString());
 
         if (line_type == '+') {
             state_ = State::IN_DATA;
@@ -97,7 +102,7 @@ void TorCtlSocket::processIn()
 
             qDebug() << "Unexpected async message: "
                      << current_reply_.status << ' '
-                     << current_reply_.lines.front();
+                     << current_reply_.lines.front().c_str();
 
             continue;
         }
@@ -105,7 +110,7 @@ void TorCtlSocket::processIn()
         if (pending_.empty()) {
             qWarning() << "Received orphan response from tor: "
                        << current_reply_.status << ' '
-                       << current_reply_.lines.front();
+                       << current_reply_.lines.front().c_str();
             continue;
         }
 
@@ -133,6 +138,206 @@ void TorCtlSocket::setError(QString errorMsg)
     qWarning() << "Error on Tor Conrol channel: " << errorMsg;
     emit error(errorMsg);
     abort();
+}
+
+TorCtlReply::map_t TorCtlReply::parse() const
+{
+    static const std::regex line_breakup(R"(^(\w+)( (.*))?$)");
+    static const std::regex key_value(R"(^(\w+)=(.*)( (\w+)=(.*))*$)");
+    map_t rval;
+    for(const auto& line: lines) {
+        // Get the first word
+        std::smatch m;
+        if (std::regex_match(line, m, line_breakup)) {
+            assert(m.size() == 4);
+            std::string key = m[1].str();
+            std::string value = m[3].str();
+
+            submap_t kv;
+            if (parse(value, kv)) {
+                rval[key] = kv;
+            } else {
+                auto escaped_value = unescape(value);
+                rval[key] = QString(escaped_value.c_str());
+            }
+        }
+    }
+
+    return rval;
+}
+
+bool TorCtlReply::parse(const std::string &data, TorCtlReply::submap_t &kv) const
+{
+    std::locale loc;
+    enum class State {
+        SCANNING,
+        KEY,
+        VALUE
+    };
+
+    State state = State::SCANNING;
+    QString key;
+    QByteArray value;
+
+    for(auto it = data.begin(); it != data.end(); ++it) {
+        if (state == State::SCANNING) {
+            if (*it == ' ' || *it == '\t') {
+                continue; // Skip whitespace
+            }
+
+            if (std::isalpha(*it, loc)) {
+                state = State::KEY;
+                assert(key.isEmpty());
+                assert(value.isEmpty());
+            } else {
+                return false; // Not a strict key=value ... input
+            }
+        }
+
+        if (state == State::KEY) {
+            if (*it == '=') {
+                state = State::VALUE;
+                continue;
+            }
+
+            key += std::toupper(*it, loc);
+        }
+
+        if (state == State::VALUE) {
+            if (*it == '\"') {
+                size_t used = 0;
+                auto escaped = unescape(it, data.end(), &used);
+                value += escaped.c_str();
+                assert(used > 0);
+
+                // we want to wrap past doublequote in the loop, not here
+                it += static_cast<int>(used) - 1;
+
+                // We assume that a key="..." only contain the quoted value
+                state = State::SCANNING;
+            } else if (*it == ' ' || *it == '\t') {
+                state = State::SCANNING;
+            } else {
+                value += *it;
+            }
+        }
+
+        if (state == State::SCANNING || (it + 1) == data.end()) {
+            if (!key.isEmpty()) {
+                kv[key] = value;
+            }
+
+            key = "";
+            value.clear();
+        }
+    }
+
+    return !kv.isEmpty();
+}
+
+/**
+ *  Unescape value. Per https://spec.torproject.org/control-spec section 2.1.1:
+ *
+ *  For future-proofing, controller implementors MAY use the following
+ *  rules to be compatible with buggy Tor implementations and with
+ *  future ones that implement the spec as intended:
+ *
+ *  Read \n \t \r and \0 ... \377 as C escapes.
+ *  Treat a backslash followed by any other character as that character.
+ *
+ * (Why is Tor, a security / anonymity thing, mandating complex parsing
+ * that easily can lead to trivial errors and cause clients to blow up
+ * if they connect to a Tor server that have exploints injected into it?)
+ */
+
+std::string TorCtlReply::unescape(const std::string::const_iterator start,
+                                  const std::string::const_iterator end,
+                                  size_t *used)
+{
+    std::string rval;
+    rval.reserve(static_cast<size_t>(end - start));
+
+    bool is_escaped = false;
+    if (used) {
+        *used = 0;
+    }
+
+    for(auto it = start; it != end; ++it) {
+        if (is_escaped) {
+            if (*it == '\\') {
+                if (++it == end) {
+                    // Invalid
+                    throw ParseError("Quoted string ends with backslash");
+                }
+
+                if (*it == 'n') {
+                    rval += '\n';
+                } else if (*it == 'r') {
+                    rval += '\r';
+                } else if (*it == 't') {
+                    rval += '\t';
+                } else if (*it >= '0' && *it <= '7') {
+                    // octal
+                    int have_digits = 3;
+                    std::string octet;
+                    // Tor restricts first digit to 0-3 for three-digit octals.
+                    // A leading digit of 4-7 would therefore be interpreted as
+                    // a two-digit octal.
+                    if (*it > '3') {
+                        --have_digits;
+                    }
+
+                    do {
+                        octet += *it;
+                    } while (--have_digits
+                             && (++it != end)
+                             && (*it >= '0' && *it <= '7'));
+
+                    if (have_digits) {
+                        // Roll back one position
+                        --it;
+                    }
+
+                    assert(!octet.empty());
+
+                    auto ch = static_cast<char>(std::stoi(octet, 0, 8));
+                    rval += ch;
+
+                } else {
+                    rval += *it;
+                }
+
+            } else if (*it == '\"') {
+                is_escaped = false;
+                if (used) {
+                    *used = static_cast<size_t>(it - start) + 1;
+                    return rval;
+                }
+            } else {
+                rval += *it;
+            }
+        } else {
+            // Looking for leading quote
+            if (*it == '\"') {
+                is_escaped = true;
+            } else if (used) {
+                throw ParseError("Quoted string must start with a double quote");
+            } else {
+                rval += *it;
+            }
+        }
+    }
+
+    if (is_escaped) {
+        throw ParseError("Quoted string was unterminated");
+    }
+
+    return rval;
+}
+
+std::string TorCtlReply::unescape(const std::string &escaped)
+{
+    return unescape(escaped.cbegin(), escaped.cend());
 }
 
 }} // namespaces

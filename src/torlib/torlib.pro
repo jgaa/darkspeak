@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += network
+QT       += core network
 QT       -= gui
 
 TARGET = tor
@@ -24,13 +24,18 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
     src/tormgr.cpp \
-    src/torctlsocket.cpp
+    src/torctlsocket.cpp \
+    src/torcontroller.cpp
 
 HEADERS += \
     include/ds/tormgr.h \
-    src/torctlsocket.h
+    include/ds/torctlsocket.h \
+    include/ds/torcontroller.h \
+    include/ds/torconfig.h
 
 INCLUDEPATH += $$PWD/include
+
+PKGCONFIG += openssl
 
 #unix {
 #    target.path = /usr/lib
