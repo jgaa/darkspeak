@@ -43,7 +43,9 @@ void TorController::start()
 
 void TorController::stop()
 {
-
+    qDebug() << "Closing the connection to the tor server.";
+    setState(CtlState::STOPPING);
+    ctl_->close();
 }
 
 void TorController::startAuth()
@@ -103,9 +105,12 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
     QString methods_str = auth_map.value("METHODS").toString();
     const auto methods = methods_str.split(',');
 
-    QByteArray auth_data;
-
-    if (config_.allowed_auth_methods.contains("SAFECOOKIE")
+    if (config_.allowed_auth_methods.contains("HASHEDPASSWORD")
+            && methods.contains("HASHEDPASSWORD", Qt::CaseInsensitive)
+            && !config_.ctl_passwd.isEmpty()) {
+        QByteArray auth_data = '\"' + config_.ctl_passwd.toLocal8Bit().replace("\"", "\"") + '\"';
+        Authenticate(auth_data);
+    } else if (config_.allowed_auth_methods.contains("SAFECOOKIE")
             && methods.contains("SAFECOOKIE", Qt::CaseInsensitive)) {
         const auto path = auth_map.value("COOKIEFILE").toString();
         cookie_ = GetCookie(path);
@@ -147,27 +152,21 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
 
             const auto ch = ComputeHmac(tor_safe_clientkey_, server_nonce);
 
-            Authenticate(ch);
+            Authenticate(ch.toHex());
         });
-
-        return;
-    }
-
-    if (config_.allowed_auth_methods.contains("COOKIE")
+   } else if (config_.allowed_auth_methods.contains("COOKIE")
             && methods.contains("COOKIE", Qt::CaseInsensitive)) {
         const auto path = auth_map.value("COOKIEFILE").toString();
-        auth_data = GetCookie(path);
+        QByteArray auth_data = GetCookie(path).toHex();
+        Authenticate(auth_data);
     } else {
         throw AuthError("No usable authentication methods");
     }
-
-    // TODO: Add PASSWORD
-    Authenticate(auth_data);
 }
 
 void TorController::Authenticate(const QByteArray &data)
 {
-    ctl_->sendCommand("AUTHENTICATE " + data.toHex(),
+    ctl_->sendCommand("AUTHENTICATE " + data,
                       std::bind(&TorController::OnAuthReply, this, std::placeholders::_1));
 }
 

@@ -21,6 +21,7 @@ public:
         CONNECTING,
         AUTHENTICATING,
         CONNECTED,
+        STOPPING,
     };
 
     enum class TorState {

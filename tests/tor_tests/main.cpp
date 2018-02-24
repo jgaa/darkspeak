@@ -9,6 +9,8 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
 
+    qDebug() << "Pwd is " << app.applicationDirPath();
+
     int status = 0;
 
     {
