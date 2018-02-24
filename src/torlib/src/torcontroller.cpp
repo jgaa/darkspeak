@@ -4,11 +4,19 @@
 #include <QRandomGenerator>
 #include <assert.h>
 
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
+
 #include "include/ds/torcontroller.h"
 #include "ds/torctlsocket.h"
 
 namespace ds {
 namespace tor {
+
+const QByteArray TorController::tor_safe_serverkey_
+    = "Tor safe cookie authentication server-to-controller hash";
+const QByteArray TorController::tor_safe_clientkey_
+    = "Tor safe cookie authentication controller-to-server hash";
 
 TorController::TorController(const TorConfig &config)
     : config_{config}
@@ -103,7 +111,7 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
         cookie_ = GetCookie(path);
 
         // Fill 32 random bytes into client_nounce_.
-        client_nounce_.clear();
+        client_nonce_.clear();
         for(auto i = 0; i < 8; ++i) {
             union {
                 quint32 uint;
@@ -112,20 +120,34 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
 
             u.uint = QRandomGenerator::global()->generate();
             for(const auto ch : u.bytes) {
-                client_nounce_ += ch;
+                client_nonce_ += ch;
             }
         }
 
-        assert(client_nounce_.size() == 32);
+        assert(client_nonce_.size() == 32);
 
-        ctl_->sendCommand("AUTHCHALLENGE SAFECOOKIE " + client_nounce_.toHex(), [this](const TorCtlReply& reply){
+        ctl_->sendCommand("AUTHCHALLENGE SAFECOOKIE " + client_nonce_.toHex(), [this](const TorCtlReply& reply){
             if (reply.status == 250) {
                 qDebug() << "Torctl AUTHCHALLENGE successful - proceeding with authenticating";
             }
 
             const auto map = reply.parse();
+            auto ac = map.at("AUTHCHALLENGE").toMap();
+            QByteArray server_hash = QByteArray::fromHex(ac.value("SERVERHASH").toByteArray());
+            QByteArray server_nonce = QByteArray::fromHex(ac.value("SERVERNONCE").toByteArray());
 
-            qDebug() << "Gakk";
+            if (server_hash.size() != 32 || server_nonce.size() != 32) {
+                throw SecurityError("Invalid AUTHCHALLENGE data from server.");
+            }
+
+            const auto sh = ComputeHmac(tor_safe_serverkey_, server_nonce);
+            if (sh != server_hash) {
+                throw SecurityError("Incorrect SERVERHASH");
+            }
+
+            const auto ch = ComputeHmac(tor_safe_clientkey_, server_nonce);
+
+            Authenticate(ch);
         });
 
         return;
@@ -140,22 +162,29 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
     }
 
     // TODO: Add PASSWORD
+    Authenticate(auth_data);
+}
 
-    ctl_->sendCommand("AUTHENTICATE " + auth_data.toHex(), [this](const TorCtlReply& reply){
+void TorController::Authenticate(const QByteArray &data)
+{
+    ctl_->sendCommand("AUTHENTICATE " + data.toHex(),
+                      std::bind(&TorController::OnAuthReply, this, std::placeholders::_1));
+}
 
-        qDebug() << QStringLiteral("Torctl AUTHENTICATE command returned status=%1").arg(reply.status);
+void TorController::OnAuthReply(const TorCtlReply &reply)
+{
+    qDebug() << QStringLiteral("Torctl AUTHENTICATE command returned status=%1").arg(reply.status);
 
-        if (reply.status == 250) {
-            setState(CtlState::CONNECTED);
-            emit autenticated();
-        } else if (reply.status == 515) {
-            emit authFailed(QStringLiteral("Incorrect password"));
-            close();
-        } else {
-            emit authFailed(QStringLiteral("uthentication failed error=%1").arg(reply.status));
-            close();
-        }
-    });
+    if (reply.status == 250) {
+        setState(CtlState::CONNECTED);
+        emit autenticated();
+    } else if (reply.status == 515) {
+        emit authFailed(QStringLiteral("Incorrect password"));
+        close();
+    } else {
+        emit authFailed(QStringLiteral("uthentication failed error=%1").arg(reply.status));
+        close();
+    }
 }
 
 QByteArray TorController::GetCookie(const QString &path)
@@ -177,6 +206,39 @@ QByteArray TorController::GetCookie(const QString &path)
     QByteArray cookie = file.readAll();
     file.close();
     return cookie;
+}
+
+QByteArray TorController::ComputeHmac(const QByteArray &key,
+                                      const QByteArray &serverNonce)
+{
+    QByteArray rval;
+    rval.resize(EVP_MAX_MD_SIZE);
+
+    auto ctx = std::shared_ptr<HMAC_CTX>(HMAC_CTX_new(), HMAC_CTX_free);
+    if (!ctx) {
+        throw CryptoError("HMAC_CTX_new()");
+    }
+
+    auto len = static_cast<unsigned int>(rval.size());
+    HMAC_Init_ex(ctx.get(), key.data(), key.size(), EVP_sha256(), NULL);
+
+    HMAC_Update(ctx.get(),
+                reinterpret_cast<const unsigned char *>(cookie_.data()),
+                static_cast<size_t>(cookie_.size()));
+
+    HMAC_Update(ctx.get(),
+                reinterpret_cast<const unsigned char *>(client_nonce_.data()),
+                static_cast<size_t>(client_nonce_.size()));
+
+    HMAC_Update(ctx.get(),
+                reinterpret_cast<const unsigned char *>(serverNonce.data()),
+                static_cast<size_t>(serverNonce.size()));
+
+    HMAC_Final(ctx.get(), reinterpret_cast<unsigned char *>(rval.data()), &len);
+
+    rval.resize(static_cast<int>(len));
+
+    return rval;
 }
 
 TorController::CtlState TorController::getCtlState() const

@@ -44,6 +44,11 @@ public:
         IoError(const char *what) : std::runtime_error(what) {}
     };
 
+    struct CryptoError : public std::runtime_error
+    {
+        CryptoError(const char *what) : std::runtime_error(what) {}
+    };
+
     TorController(const TorConfig& config);
 
     CtlState getCtlState() const;
@@ -71,15 +76,20 @@ protected:
     void setState(CtlState state);
     void setState(TorState state);
     void DoAuthentcate(const TorCtlReply& reply);
+    void Authenticate(const QByteArray& data);
+    void OnAuthReply(const TorCtlReply& reply);
     QByteArray GetCookie(const QString& path);
+    QByteArray ComputeHmac(const QByteArray& key, const QByteArray& serverNonce);
 
 private:
     CtlState ctl_state_ = CtlState::DISCONNECTED;
     TorState tor_state_ = TorState::UNKNOWN;
     std::unique_ptr<TorCtlSocket> ctl_;
     TorConfig config_;
-    QByteArray client_nounce_;
+    QByteArray client_nonce_;
     QByteArray cookie_;
+    static const QByteArray tor_safe_serverkey_;
+    static const QByteArray tor_safe_clientkey_;
 };
 
 }} // namespaces

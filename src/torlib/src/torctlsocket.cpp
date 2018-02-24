@@ -122,6 +122,8 @@ void TorCtlSocket::processIn()
             emit gotReply(current_reply_);
         } catch(const std::exception& ex) {
             qWarning() << "Caught exeption from handler: " << ex.what();
+            qWarning() << "Shutting down connection to torctl!";
+            close();
         }
 
         state_ = State::READY;
