@@ -88,7 +88,7 @@ public slots:
      * This will create and start a Tor hidden service.
      *
      * Signals:
-     *  - serviceCreated and serviceStarted is sucessful
+     *  - serviceCreated and serviceStarted if sucessful
      *  - serviceFailed if the service was not created or failed to start.
      */
     void createService(const QByteArray& id);
@@ -129,7 +129,6 @@ private:
     static const QByteArray tor_safe_serverkey_;
     static const QByteArray tor_safe_clientkey_;
     std::mt19937 rnd_eng_;
-    std::map<QByteArray, ServiceProperties> pending_services_;
 };
 
 }} // namespaces
