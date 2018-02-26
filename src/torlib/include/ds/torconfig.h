@@ -24,6 +24,8 @@ struct TorConfig {
     QHostAddress ctl_host = QHostAddress::LocalHost;
     QString ctl_passwd;
     QVector<QByteArray> allowed_auth_methods = {"HASHEDPASSWORD", "SAFECOOKIE"};
+    uint16_t service_from_port = 1025;
+    uint16_t service_to_port_ = 29999;
 };
 
 }} // namespaces

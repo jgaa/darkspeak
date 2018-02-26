@@ -2,9 +2,11 @@
 #define TORCONTROLLER_H
 
 #include <memory>
+#include <random>
 
 #include "ds/torconfig.h"
 #include "ds/torctlsocket.h"
+#include "ds/serviceproperties.h"
 
 namespace ds {
 namespace tor {
@@ -55,6 +57,11 @@ public:
         TorError(const char *what) : std::runtime_error(what) {}
     };
 
+    struct ParseError : public std::runtime_error
+    {
+        ParseError(const char *what) : std::runtime_error(what) {}
+    };
+
     TorController(const TorConfig& config);
 
     CtlState getCtlState() const;
@@ -65,6 +72,9 @@ signals:
     void stateUpdate(CtlState state);
     void autenticated();
     void authFailed(const QString& reason);
+    void serviceCreated(const ServiceProperties& service);
+    void serviceFailed(const QByteArray& id, const QByteArray& reason);
+    void serviceStarted(const QByteArray& id);
 
     // Emitted when we are authenticated and Tor is connected.
     void ready();
@@ -72,6 +82,27 @@ signals:
 public slots:
     void start(); // Connect to Tor server
     void stop(); // Disconnect from Tor server
+
+    /*! Create a hidden service
+     *
+     * This will create and start a Tor hidden service.
+     *
+     * Signals:
+     *  - serviceCreated and serviceStarted is sucessful
+     *  - serviceFailed if the service was not created or failed to start.
+     */
+    void createService(const QByteArray& id);
+
+    /*! Start a hidden service
+     *
+     * This will start a Tor hidden service using the key provided in the service argument.
+     *
+     * Signals:
+     *  - serviceStarted is sucessful
+     *  - serviceFailed if the service failed to start.
+     */
+    void startService(const ServiceProperties& service);
+
 
 private slots:
     void startAuth();
@@ -97,6 +128,8 @@ private:
     QByteArray cookie_;
     static const QByteArray tor_safe_serverkey_;
     static const QByteArray tor_safe_clientkey_;
+    std::mt19937 rnd_eng_;
+    std::map<QByteArray, ServiceProperties> pending_services_;
 };
 
 }} // namespaces

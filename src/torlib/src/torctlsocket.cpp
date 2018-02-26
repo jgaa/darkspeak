@@ -165,25 +165,27 @@ TorCtlReply::map_t TorCtlReply::parse() const
             const std::string key = m[5].str();
             const std::string value = m[7].str();
 
-            submap_t kv;
+            map_t kv;
 
             if (!level.empty()) {
-                rval[m[2].str()] = level.c_str();
+                rval[toKey(m[2].str())] = level.c_str();
             }
 
             if (parse(value, kv)) {
-                rval[key] = kv;
+                rval[toKey(key)] = QVariant(kv);
             } else {
                 auto escaped_value = unescape(value);
-                rval[key] = QString(escaped_value.c_str());
+                rval[toKey(key)] = QString(escaped_value.c_str());
             }
+        } else {
+            parse(line, rval);
         }
     }
 
     return rval;
 }
 
-bool TorCtlReply::parse(const std::string &data, TorCtlReply::submap_t &kv) const
+bool TorCtlReply::parse(const std::string &data, TorCtlReply::map_t &kv) const
 {
     std::locale loc;
     enum class State {
@@ -193,7 +195,7 @@ bool TorCtlReply::parse(const std::string &data, TorCtlReply::submap_t &kv) cons
     };
 
     State state = State::SCANNING;
-    QString key;
+    QByteArray key;
     QByteArray value;
 
     for(auto it = data.begin(); it != data.end(); ++it) {
@@ -217,7 +219,7 @@ bool TorCtlReply::parse(const std::string &data, TorCtlReply::submap_t &kv) cons
                 continue;
             }
 
-            key += std::toupper(*it, loc);
+            key += *it;
         }
 
         if (state == State::VALUE) {
@@ -241,7 +243,7 @@ bool TorCtlReply::parse(const std::string &data, TorCtlReply::submap_t &kv) cons
 
         if (state == State::SCANNING || (it + 1) == data.end()) {
             if (!key.isEmpty()) {
-                kv[key] = value;
+                kv[toKey(key)] = value;
             }
 
             key = "";

@@ -1,9 +1,12 @@
 #ifndef TORMGR_H
 #define TORMGR_H
 
+#include <memory>
+
 #include <QObject>
 
-#include "torconfig.h"
+#include "ds/torconfig.h"
+#include "torcontroller.h"
 
 namespace ds {
 namespace tor {
@@ -16,18 +19,21 @@ class TorMgr : public QObject
     Q_OBJECT
 
 public:
+    explicit TorMgr(const TorConfig& config);
 
-    explicit TorMgr(const TorConfig& config, QObject *parent = nullptr);
+    TorController *getController() { return ctl_.get(); }
 
 signals:
 
 public slots:
+    /*! Start / connect to the Tor service */
     void start();
 
 private:
     void startUseSystemInstance();
 
     TorConfig config_;
+    std::shared_ptr<TorController> ctl_;
 };
 
 }} // namespaces

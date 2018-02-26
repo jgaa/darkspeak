@@ -19,7 +19,7 @@ const QByteArray TorController::tor_safe_clientkey_
     = "Tor safe cookie authentication controller-to-server hash";
 
 TorController::TorController(const TorConfig &config)
-    : config_{config}
+    : config_{config}, rnd_eng_{std::random_device()()}
 {
 }
 
@@ -47,6 +47,46 @@ void TorController::stop()
     qDebug() << "Closing the connection to the tor server.";
     setState(CtlState::STOPPING);
     ctl_->close();
+}
+
+void TorController::createService(const QByteArray &id)
+{
+    std::uniform_int_distribution<quint16> distr(
+                config_.service_from_port,
+                config_.service_to_port_);
+
+    ServiceProperties sp;
+    sp.id = id;
+    sp.port = distr(rnd_eng_);
+
+    ctl_->sendCommand(QStringLiteral("ADD_ONION NEW:BEST Port=%1").arg(sp.port).toLocal8Bit(),
+                      [this, sp](const TorCtlReply& reply){
+
+        if (reply.status == 250) {
+            auto map = reply.parse();
+
+            auto list = map.value("PRIVATEKEY").toByteArray().split(':');
+            if (list.size() != 2) {
+                throw ParseError("Unexpected format of PRIVATEKEY");
+            }
+
+            auto service = sp;
+            service.service_id = map.value("SERVICEID").toByteArray();
+            service.key_type = list.front();
+            service.key = list.back();
+
+            emit serviceCreated(service);
+            emit serviceStarted(service.id);
+        } else {
+            auto msg = std::to_string(reply.status) + ' ' + reply.lines.front();
+            emit serviceFailed(sp.id, msg.c_str());
+        }
+    });
+}
+
+void TorController::startService(const ServiceProperties &service)
+{
+
 }
 
 void TorController::startAuth()
@@ -109,7 +149,7 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
     // Decide what kind of autentication we will use
     assert(reply.status == 250);
     auto map = reply.parse();
-    const auto auth_map = map.at("AUTH").toMap();
+    const auto auth_map = map.value("AUTH").toMap();
     QString methods_str = auth_map.value("METHODS").toString();
     const auto methods = methods_str.split(',');
 
@@ -125,16 +165,9 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
 
         // Fill 32 random bytes into client_nounce_.
         client_nonce_.clear();
-        for(auto i = 0; i < 8; ++i) {
-            union {
-                quint32 uint;
-                std::array<char, 4> bytes;
-            } u;
-
-            u.uint = QRandomGenerator::global()->generate();
-            for(const auto ch : u.bytes) {
-                client_nonce_ += ch;
-            }
+        std::uniform_int_distribution<unsigned char> distr(0, 255);
+        for(auto i = 0; i < 32; ++i) {
+            client_nonce_ += static_cast<char>(distr(rnd_eng_));
         }
 
         assert(client_nonce_.size() == 32);
@@ -145,7 +178,7 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
             }
 
             const auto map = reply.parse();
-            auto ac = map.at("AUTHCHALLENGE").toMap();
+            auto ac = map.value("AUTHCHALLENGE").toMap();
             QByteArray server_hash = QByteArray::fromHex(ac.value("SERVERHASH").toByteArray());
             QByteArray server_nonce = QByteArray::fromHex(ac.value("SERVERNONCE").toByteArray());
 
@@ -189,8 +222,8 @@ void TorController::OnAuthReply(const TorCtlReply &reply)
         ctl_->sendCommand("GETINFO status/bootstrap-phase", [this](const TorCtlReply& reply) {
             if (reply.status == 250) {
                 auto map = reply.parse();
-                const auto summary = map.at("BOOTSTRAP").toMap().value("SUMMARY").toString();
-                const auto progress = map.at("BOOTSTRAP").toMap().value("PROGRESS").toInt();
+                const auto summary = map.value("BOOTSTRAP").toMap().value("SUMMARY").toString();
+                const auto progress = map.value("BOOTSTRAP").toMap().value("PROGRESS").toInt();
 
                 setState(progress == 100 ? TorState::INITIALIZING : TorState::READY,
                          progress, summary);

@@ -49,7 +49,7 @@ void TestTorCtlSocket::test_reply_parser_1()
     auto map = reply.parse();
 
     QVERIFY(map.size() == 1);
-    QCOMPARE(QString("1.2.3"), map["version"].toString());
+    QCOMPARE(QString("1.2.3"), map["VERSION"].toString());
 }
 
 void TestTorCtlSocket::test_reply_parser_unescape()
@@ -87,11 +87,11 @@ void TestTorCtlSocket::test_reply_map_parser()
                    "VERSION Tor=\"0.2.9.14\"",
                    "OK"};
     const auto map = reply.parse();
-    QCOMPARE(QString("1"), map.at("PROTOCOLINFO").toString());
-    QCOMPARE(QString("0.2.9.14"), map.at("VERSION").toMap().value("TOR").toString());
-    QCOMPARE(QString("COOKIE,SAFECOOKIE"), map.at("AUTH").toMap().value("METHODS").toString());
-    QCOMPARE(QString("/var/run/tor/control.authcookie"), map.at("AUTH").toMap().value("COOKIEFILE").toString());
-    QCOMPARE(static_cast<size_t>(4), map.size());
+    QCOMPARE(QString("1"), map.value("PROTOCOLINFO").toString());
+    QCOMPARE(QString("0.2.9.14"), map.value("VERSION").toMap().value("TOR").toString());
+    QCOMPARE(QString("COOKIE,SAFECOOKIE"), map.value("AUTH").toMap().value("METHODS").toString());
+    QCOMPARE(QString("/var/run/tor/control.authcookie"), map.value("AUTH").toMap().value("COOKIEFILE").toString());
+    QCOMPARE(4, map.size());
 }
 
 

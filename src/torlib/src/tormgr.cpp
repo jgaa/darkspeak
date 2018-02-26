@@ -5,10 +5,10 @@ namespace ds {
 namespace tor {
 
 
-TorMgr::TorMgr(const TorConfig& config, QObject *parent)
-    : QObject(parent), config_{config}
+TorMgr::TorMgr(const TorConfig& config)
+    : config_{config}
+    , ctl_{std::make_unique<TorController>(config)}
 {
-
 }
 
 /* To start using a tor service, we need to connect over TCP to

@@ -59,3 +59,16 @@ void TestTorController::test_ready()
     ctl.start();
     QCOMPARE(spy_connect.wait(2000), true);
 }
+
+void TestTorController::test_create_service()
+{
+    ds::tor::TorConfig cfg;
+    ds::tor::TorController ctl(cfg);
+    QSignalSpy spy_connect(&ctl, SIGNAL(ready()));
+    ctl.start();
+    QCOMPARE(spy_connect.wait(2000), true);
+
+    QSignalSpy spy_started(&ctl, SIGNAL(serviceStarted(const QByteArray&)));
+    ctl.createService("test");
+    QCOMPARE(spy_started.wait(2000), true);
+}

@@ -3,7 +3,8 @@
 
 #include <functional>
 #include <deque>
-#include <map>
+//#include <map>
+#include <locale>
 #include <string.h>
 #include <algorithm>
 #include <QQueue>
@@ -12,6 +13,18 @@
 
 namespace ds {
 namespace tor {
+
+template<typename T>
+QString toKey(const T& key) {
+    QString rval;
+
+    std::locale loc;
+    for(const auto ch : key) {
+        rval += std::toupper(ch);
+    }
+
+    return rval;
+}
 
 struct TorCtlReply {
     int status = {};
@@ -22,20 +35,7 @@ struct TorCtlReply {
         ParseError(const char *what) : std::runtime_error(what) {}
     };
 
-    static std::string tolower(std::string s) {
-        std::transform(s.begin(), s.end(), s.begin(), ::tolower );
-        return s;
-    }
-
-    // https://stackoverflow.com/questions/19102195/how-to-make-stlmap-key-case-insensitive
-    struct cmp {
-        bool operator() (const std::string& lhs, const std::string& rhs) const {
-            return  tolower(lhs) < tolower(rhs);
-        }
-    };
-
-    using map_t = std::map<std::string, QVariant, cmp>;
-    using submap_t = QMap<QString, QVariant>;
+    using map_t = QMap<QString, QVariant>;
 
     // Parse the raw reply into key/value pairs.
     // The QVariant value may be a new map with key/value pairs in the form
@@ -43,7 +43,7 @@ struct TorCtlReply {
     map_t parse() const;
 
     // Try to parse a line into a key/value map. Return false if this is not a key/value set
-    bool parse(const std::string& data, submap_t& kv) const;
+    bool parse(const std::string& data, map_t& kv) const;
 
     // Unescape escaped (double quoted) section(s) of a string
     static std::string unescape(const std::string& escaped);

@@ -31,7 +31,8 @@ HEADERS += \
     include/ds/tormgr.h \
     include/ds/torctlsocket.h \
     include/ds/torcontroller.h \
-    include/ds/torconfig.h
+    include/ds/torconfig.h \
+    include/ds/serviceproperties.h
 
 INCLUDEPATH += $$PWD/include
 
