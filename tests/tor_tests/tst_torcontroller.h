@@ -19,7 +19,7 @@ private slots:
     void test_auth_cookie();
     void test_auth_safecookie();
     void test_auth_hashedpassword();
-
+    void test_ready();
 };
 
 

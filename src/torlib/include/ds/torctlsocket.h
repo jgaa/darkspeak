@@ -88,7 +88,8 @@ public:
 signals:
     // If triggered, the connection is dead
     void error(const QString &message);
-    void gotReply(const TorCtlReply& reply);
+    void torReply(const TorCtlReply& reply);
+    void torEvent(const TorCtlReply& reply);
 
 protected slots:
     void processIn();

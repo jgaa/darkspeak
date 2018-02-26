@@ -11,6 +11,13 @@ namespace tor {
 
 TorCtlSocket::TorCtlSocket()
 {
+    static bool registered = false;
+    if (!registered) {
+        registered = true;
+        qRegisterMetaType<ds::tor::TorCtlReply>("TorCtlReply");
+        qRegisterMetaType<ds::tor::TorCtlReply>("::ds::tor::TorCtlReply");
+    }
+
     connect(this, SIGNAL(readyRead()), this, SLOT(processIn()));
     connect(this, SIGNAL(disconnected()), this, SLOT(clear()));
 }
@@ -97,13 +104,12 @@ void TorCtlSocket::processIn()
         // At this point we have the final line in the reply.
         if (current_reply_.status >= 600 && current_reply_.status < 700) {
 
-            // Asynchronous response. We have not requested that, so let's
-            // just ignore it for now!
-
-            qDebug() << "Unexpected async message: "
+            // Asynchronous response.
+            qDebug() << "Torctl received event: "
                      << current_reply_.status << ' '
                      << current_reply_.lines.front().c_str();
-
+            emit torEvent(current_reply_);
+            state_ = State::READY;
             continue;
         }
 
@@ -116,10 +122,13 @@ void TorCtlSocket::processIn()
 
         const auto handler = pending_.takeFirst();
         try {
+            qDebug() << "Torctl received reply: "
+                     << current_reply_.status << ' '
+                     << current_reply_.lines.front().c_str();
             if (handler) {
                 handler(current_reply_);
             }
-            emit gotReply(current_reply_);
+            emit torReply(current_reply_);
         } catch(const std::exception& ex) {
             qWarning() << "Caught exeption from handler: " << ex.what();
             qWarning() << "Shutting down connection to torctl!";
@@ -144,18 +153,24 @@ void TorCtlSocket::setError(QString errorMsg)
 
 TorCtlReply::map_t TorCtlReply::parse() const
 {
-    static const std::regex line_breakup(R"(^(\w+)( (.*))?$)");
-    static const std::regex key_value(R"(^(\w+)=(.*)( (\w+)=(.*))*$)");
+    static const std::regex line_breakup(R"(^(([\w][\w-\/]+)(=(\w+)) )?(\w+)( (.*))?$)");
     map_t rval;
+
     for(const auto& line: lines) {
         // Get the first word
         std::smatch m;
         if (std::regex_match(line, m, line_breakup)) {
-            assert(m.size() == 4);
-            std::string key = m[1].str();
-            std::string value = m[3].str();
+            assert(m.size() == 8);
+            const std::string level = m[4].str();
+            const std::string key = m[5].str();
+            const std::string value = m[7].str();
 
             submap_t kv;
+
+            if (!level.empty()) {
+                rval[m[2].str()] = level.c_str();
+            }
+
             if (parse(value, kv)) {
                 rval[key] = kv;
             } else {

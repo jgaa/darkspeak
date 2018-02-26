@@ -20,10 +20,10 @@ struct TorConfig {
     }
 
     Mode mode = Mode::SYSTEM;
-    uint16_t ctl_port = {};
+    uint16_t ctl_port = 9051;
     QHostAddress ctl_host = QHostAddress::LocalHost;
     QString ctl_passwd;
-    QVector<QByteArray> allowed_auth_methods = {"SAFECOOKIE"};
+    QVector<QByteArray> allowed_auth_methods = {"HASHEDPASSWORD", "SAFECOOKIE"};
 };
 
 }} // namespaces

@@ -29,8 +29,9 @@ void TorController::start()
 
     ctl_ = std::make_unique<TorCtlSocket>();
 
-    connect(ctl_.get(), SIGNAL(connected()), this, SLOT(startAuth()));
-    connect(ctl_.get(), SIGNAL(disconnected()), this, SLOT(clear()));
+    connect(ctl_.get(), &TorCtlSocket::connected, this, &TorController::startAuth);
+    connect(ctl_.get(), &TorCtlSocket::disconnected, this, &TorController::clear);
+    connect(ctl_.get(), &TorCtlSocket::torEvent, this, &TorController::torEvent);
 
     qDebug() << "Connecting to Torctl on "
              << config_.ctl_host
@@ -84,16 +85,23 @@ void TorController::clear()
     setState(TorState::UNKNOWN);
 }
 
+void TorController::torEvent(const TorCtlReply &reply)
+{
+    const auto map = reply.parse();
+    qDebug() << "Received tor event: " << reply.lines.front().c_str();
+}
+
 void TorController::setState(TorController::CtlState state)
 {
     ctl_state_ = state;
     emit stateUpdate(ctl_state_);
 }
 
-void TorController::setState(TorController::TorState state)
+void TorController::setState(TorController::TorState state,
+                             int progress, const QString& summary)
 {
     tor_state_ = state;
-    emit torStateUpdate(tor_state_);
+    emit torStateUpdate(tor_state_, progress, summary);
 }
 
 void TorController::DoAuthentcate(const TorCtlReply &reply)
@@ -177,6 +185,22 @@ void TorController::OnAuthReply(const TorCtlReply &reply)
     if (reply.status == 250) {
         setState(CtlState::CONNECTED);
         emit autenticated();
+        ctl_->sendCommand("SETEVENTS EXTENDED STATUS_CLIENT", {});
+        ctl_->sendCommand("GETINFO status/bootstrap-phase", [this](const TorCtlReply& reply) {
+            if (reply.status == 250) {
+                auto map = reply.parse();
+                const auto summary = map.at("BOOTSTRAP").toMap().value("SUMMARY").toString();
+                const auto progress = map.at("BOOTSTRAP").toMap().value("PROGRESS").toInt();
+
+                setState(progress == 100 ? TorState::INITIALIZING : TorState::READY,
+                         progress, summary);
+                if (progress == 100) {
+                    emit ready();
+                }
+            } else {
+                throw TorError("tor command: 'SETEVENTS EXTENDED STATUS_CLIENT failed'");
+            }
+        });
     } else if (reply.status == 515) {
         emit authFailed(QStringLiteral("Incorrect password"));
         close();

@@ -50,13 +50,18 @@ public:
         CryptoError(const char *what) : std::runtime_error(what) {}
     };
 
+    struct TorError : public std::runtime_error
+    {
+        TorError(const char *what) : std::runtime_error(what) {}
+    };
+
     TorController(const TorConfig& config);
 
     CtlState getCtlState() const;
     TorState getTorState() const;
 
 signals:
-    void torStateUpdate(TorState state);
+    void torStateUpdate(TorState state, int progress, const QString& summary);
     void stateUpdate(CtlState state);
     void autenticated();
     void authFailed(const QString& reason);
@@ -72,10 +77,11 @@ private slots:
     void startAuth();
     void close();
     void clear(); // Disconnected - Clean up
+    void torEvent(const TorCtlReply& reply);
 
 protected:
     void setState(CtlState state);
-    void setState(TorState state);
+    void setState(TorState state, int progress = -1, const QString& summary = {});
     void DoAuthentcate(const TorCtlReply& reply);
     void Authenticate(const QByteArray& data);
     void OnAuthReply(const TorCtlReply& reply);

@@ -34,7 +34,7 @@ void TestTorCtlSocket::test_protocolinfo()
     QSignalSpy spy_connect(&ctl, SIGNAL(connected()));
     QCOMPARE(spy_connect.wait(1000), true);
 
-    QSignalSpy spy_reply(&ctl, SIGNAL(gotReply(::ds::tor::TorCtlReply)));
+    QSignalSpy spy_reply(&ctl, SIGNAL(torReply(::ds::tor::TorCtlReply)));
     ctl.sendCommand("PROTOCOLINFO 1", [&](const ::ds::tor::TorCtlReply& reply) {
         QVERIFY(reply.status == 250);
     });

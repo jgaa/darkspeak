@@ -7,7 +7,6 @@ void TestTorController::test_auth_cookie()
 {
     ds::tor::TorConfig cfg;
 
-    cfg.ctl_port = 9051;
     cfg.allowed_auth_methods.clear();
     cfg.allowed_auth_methods += "COOKIE";
 
@@ -21,7 +20,6 @@ void TestTorController::test_auth_safecookie()
 {
     ds::tor::TorConfig cfg;
 
-    cfg.ctl_port = 9051;
     cfg.allowed_auth_methods.clear();
     cfg.allowed_auth_methods += "SAFECOOKIE";
 
@@ -31,10 +29,13 @@ void TestTorController::test_auth_safecookie()
     QCOMPARE(spy_connect.wait(1000), true);
 }
 
+// To run this test, create a hashed password by running
+// tor --hash-password password and put the hash in torrc.
+// Then start the test with the environment variable DS_QT_TEST_TOR_PWD set
+// to that password.
 void TestTorController::test_auth_hashedpassword()
 {
     ds::tor::TorConfig cfg;
-    cfg.ctl_port = 9051;
     cfg.allowed_auth_methods.clear();
     cfg.allowed_auth_methods += "HASHEDPASSWORD";
     cfg.ctl_passwd = qgetenv("DS_QT_TEST_TOR_PWD");
@@ -48,4 +49,13 @@ void TestTorController::test_auth_hashedpassword()
     QSignalSpy spy_connect(&ctl, SIGNAL(autenticated()));
     ctl.start();
     QCOMPARE(spy_connect.wait(1000), true);
+}
+
+void TestTorController::test_ready()
+{
+    ds::tor::TorConfig cfg;
+    ds::tor::TorController ctl(cfg);
+    QSignalSpy spy_connect(&ctl, SIGNAL(ready()));
+    ctl.start();
+    QCOMPARE(spy_connect.wait(2000), true);
 }
