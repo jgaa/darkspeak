@@ -5,12 +5,14 @@ SUBDIRS = \
     torlib \
     test_tor \
     dscorelib \
-    src/dsprotlib
+    dsprotlib
 
 torlib.subdir = src/torlib
 dscorelib.subdir = src/dscorelib
+dsprotlib.subdir = src/dsprotlib
 
-dscorelib.depends = torlib
+dsprotlib.depends-= torlib
+dscorelib.depends = dsprotlib
 
 test_tor.subdir = tests/tor_tests
 test_tor.depends = torlib
