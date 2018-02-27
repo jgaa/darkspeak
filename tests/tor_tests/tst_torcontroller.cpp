@@ -72,3 +72,27 @@ void TestTorController::test_create_service()
     ctl.createService("test");
     QCOMPARE(spy_started.wait(2000), true);
 }
+
+void TestTorController::test_start_service()
+{
+    ds::tor::TorConfig cfg;
+    cfg.app_port = 12345; // TODO: Select a port no app listen to
+    ds::tor::TorController ctl(cfg);
+    QSignalSpy spy_connect(&ctl, SIGNAL(ready()));
+    ctl.start();
+    QCOMPARE(spy_connect.wait(2000), true);
+
+    QSignalSpy spy_created(&ctl, SIGNAL(serviceCreated(const ServiceProperties&)));
+    ctl.createService("test");
+    QCOMPARE(spy_created.wait(2000), true);
+    auto signal = spy_created.takeFirst();
+    auto service = signal.at(0).value<::ds::tor::ServiceProperties>();
+
+    QSignalSpy spy_stopped(&ctl, SIGNAL(serviceStopped(const QByteArray&)));
+    ctl.stopService(service.id);
+    QCOMPARE(spy_stopped.wait(2000), true);
+
+    QSignalSpy spy_started(&ctl, SIGNAL(serviceStarted(const QByteArray&)));
+    ctl.startService(service);
+    QCOMPARE(spy_started.wait(2000), true);
+}

@@ -62,6 +62,11 @@ public:
         ParseError(const char *what) : std::runtime_error(what) {}
     };
 
+    struct NoSuchServiceError : public std::runtime_error
+    {
+        NoSuchServiceError(const char *what) : std::runtime_error(what) {}
+    };
+
     TorController(const TorConfig& config);
 
     CtlState getCtlState() const;
@@ -75,6 +80,7 @@ signals:
     void serviceCreated(const ServiceProperties& service);
     void serviceFailed(const QByteArray& id, const QByteArray& reason);
     void serviceStarted(const QByteArray& id);
+    void serviceStopped(const QByteArray& id);
 
     // Emitted when we are authenticated and Tor is connected.
     void ready();
@@ -103,6 +109,16 @@ public slots:
      */
     void startService(const ServiceProperties& service);
 
+    /*! Stop a Tor hidden service
+     *
+     * \param id The Tor service id to stop. Corresponds
+     *      to ServiceProperties::id.
+     *
+     * Signals:
+     *  - serviceStopped
+     */
+    void stopService(const QByteArray& id);
+
 
 private slots:
     void startAuth();
@@ -129,6 +145,7 @@ private:
     static const QByteArray tor_safe_serverkey_;
     static const QByteArray tor_safe_clientkey_;
     std::mt19937 rnd_eng_;
+    QMap<QByteArray, QByteArray> service_map_;
 };
 
 }} // namespaces

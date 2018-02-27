@@ -1,5 +1,7 @@
 #ifndef SERVICEPROPERTIES_H
 #define SERVICEPROPERTIES_H
+
+#include <QMetaType>
 #include <QByteArray>
 
 namespace ds {
@@ -16,5 +18,7 @@ struct ServiceProperties {
 };
 
 }} // namespaces
+
+Q_DECLARE_METATYPE(ds::tor::ServiceProperties);
 
 #endif // SERVICEPROPERTIES_H

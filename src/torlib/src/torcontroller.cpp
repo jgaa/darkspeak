@@ -21,6 +21,12 @@ const QByteArray TorController::tor_safe_clientkey_
 TorController::TorController(const TorConfig &config)
     : config_{config}, rnd_eng_{std::random_device()()}
 {
+    static bool registered = false;
+    if (!registered) {
+        registered = true;
+        qRegisterMetaType<ds::tor::ServiceProperties>("ServiceProperties");
+        qRegisterMetaType<ds::tor::ServiceProperties>("::ds::tor::ServiceProperties");
+    }
 }
 
 void TorController::start()
@@ -53,7 +59,7 @@ void TorController::createService(const QByteArray &id)
 {
     std::uniform_int_distribution<quint16> distr(
                 config_.service_from_port,
-                config_.service_to_port_);
+                config_.service_to_port);
 
     ServiceProperties sp;
     sp.id = id;
@@ -75,6 +81,11 @@ void TorController::createService(const QByteArray &id)
             service.key_type = list.front();
             service.key = list.back();
 
+            service_map_[service.id] = service.service_id;
+
+            qDebug() << "Created Tor hidden service: " << service.service_id
+                     << " with id " << service.id;
+
             emit serviceCreated(service);
             emit serviceStarted(service.id);
         } else {
@@ -84,9 +95,56 @@ void TorController::createService(const QByteArray &id)
     });
 }
 
-void TorController::startService(const ServiceProperties &service)
+void TorController::startService(const ServiceProperties &sp)
 {
+    auto cmd = QStringLiteral("ADD_ONION %1:%2 Port=%3,%4:%5")
+                .arg(QLatin1String{sp.key_type})
+                .arg(QLatin1String{sp.key})
+                .arg(sp.port)
+                .arg(config_.app_host.toString())
+                .arg(config_.app_port)
+                .toLocal8Bit();
 
+    service_map_[sp.id] = sp.service_id;
+    const auto id = sp.id;
+    const auto service_id = sp.service_id;
+
+    ctl_->sendCommand(cmd, [this, id, service_id](const TorCtlReply& reply){
+
+        if (reply.status == 250) {
+
+            qDebug() << "Started Tor hidden service: " << service_id
+                     << " with id " << id;
+
+            emit serviceStarted(id);
+        } else {
+            auto msg = std::to_string(reply.status) + ' ' + reply.lines.front();
+            emit serviceFailed(id, msg.c_str());
+        }
+    });
+}
+
+void TorController::stopService(const QByteArray &id)
+{
+    const auto service_id = service_map_.value(id);
+    if (service_id.isEmpty()) {
+        throw NoSuchServiceError(id.data());
+    }
+
+    ctl_->sendCommand(QStringLiteral("DEL_ONION %1").arg(QLatin1String{service_id}).toLocal8Bit(),
+                      [this, id, service_id](const TorCtlReply& reply){
+        if (reply.status == 250) {
+
+            qDebug() << "Stopped Tor hidden service: " << service_id
+                     << " with id " << id;
+
+
+            emit serviceStopped(id);
+        } else {
+            auto msg = std::to_string(reply.status) + ' ' + reply.lines.front();
+            emit serviceFailed(id, msg.c_str());
+        }
+    });
 }
 
 void TorController::startAuth()
