@@ -25,6 +25,7 @@ SOURCES += \
         src/dsengine.cpp
 
 HEADERS += \
-        include/ds/dsengine.h
+        include/ds/dsengine.h \
+    include/ds/protocolmanager.h
 
 INCLUDEPATH += $$PWD/include
