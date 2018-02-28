@@ -6,6 +6,7 @@
 namespace ds {
 
 class Message;
+class MessageReport;
 
 /*! Generic interface to the IM protocol.
  *
@@ -20,10 +21,10 @@ public:
 
 signals:
     void incomingMessage(const Message&);
+    void messageReport(const MessageReport&);
 
 public slots:
     virtual void sendMessage(const Message&) = 0;
-
 };
 
 } // namepsace
