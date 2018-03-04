@@ -44,7 +44,7 @@ private:
     F fn_;
 };
 
-/*! Hold a C pointer until the instnce goes out of scope,
+/*! Hold a C pointer until the instance goes out of scope,
  * then call the destructor functor.
  *
  * Convenience function when dealing with resources in the openssl library
