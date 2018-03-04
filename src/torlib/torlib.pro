@@ -37,8 +37,3 @@ HEADERS += \
 INCLUDEPATH += $$PWD/include
 
 PKGCONFIG += openssl
-
-#unix {
-#    target.path = /usr/lib
-#    INSTALLS += target
-#}

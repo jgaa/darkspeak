@@ -1,14 +1,15 @@
 #-------------------------------------------------
 #
-# Project created by QtCreator 2018-02-27T16:15:44
+# Project created by QtCreator 2018-03-01T10:30:29
 #
 #-------------------------------------------------
 
 QT       -= gui
 
-TARGET = dscorelib
+TARGET = cryptolib
 TEMPLATE = lib
 CONFIG += staticlib
+
 
 # The following define makes your compiler emit warnings if you use
 # any feature of Qt which has been marked as deprecated (the exact warnings
@@ -22,10 +23,15 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-        src/dsengine.cpp
+    src/crypto.cpp \
+    src/rsacertimpl.cpp
 
 HEADERS += \
-    include/ds/dsengine.h \
-    include/ds/protocolmanager.h
+    include/ds/crypto.h \
+    include/ds/dscert.h \
+    include/ds/rsacertimpl.h \
+    include/ds/cvar.h
 
 INCLUDEPATH += $$PWD/include
+
+
