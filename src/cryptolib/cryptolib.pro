@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       -= gui
+QT       -= gui sql
 
 TARGET = cryptolib
 TEMPLATE = lib

@@ -4,6 +4,7 @@
 #
 #-------------------------------------------------
 
+QT       += core sql
 QT       -= gui
 
 TARGET = dscorelib
@@ -22,10 +23,14 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-        src/dsengine.cpp
+    src/dsengine.cpp \
+    src/database.cpp \
+    src/logging.cpp
 
 HEADERS += \
     include/ds/dsengine.h \
-    include/ds/protocolmanager.h
+    include/ds/protocolmanager.h \
+    include/ds/database.h \
+    include/ds/logging.h
 
 INCLUDEPATH += $$PWD/include

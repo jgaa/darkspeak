@@ -1,7 +1,12 @@
 #ifndef DSENGINE_H
 #define DSENGINE_H
 
+#include <memory>
+
 #include <QObject>
+#include <QSettings>
+
+#include "ds/database.h"
 
 namespace ds {
 namespace core {
@@ -24,7 +29,6 @@ class TransportHandleError;
 class DsEngine : public QObject
 {
     Q_OBJECT
-    DsEngine();
 
 public:
     enum State {
@@ -34,8 +38,15 @@ public:
         TERMINATED
     };
 
-    DsEngine& instance();
+    DsEngine();
+    DsEngine(std::unique_ptr<QSettings> settings);
+    ~DsEngine();
+
+
+    static DsEngine& instance();
     State getState() const;
+
+    QSettings& settings() noexcept { return *settings_; }
 
 public slots:
     void createIdentity(const IdentityReq&);
@@ -50,6 +61,12 @@ signals:
     void closing();
     void changedState(const State);
 
+protected:
+    void initialize();
+
+    std::unique_ptr<QSettings> settings_;
+    std::unique_ptr<Database> database_;
+    static DsEngine *instance_;
 };
 
 }} // namepsaces
