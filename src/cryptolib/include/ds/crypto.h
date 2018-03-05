@@ -1,6 +1,9 @@
 #ifndef CRYPTO_H
 #define CRYPTO_H
 
+#include <QByteArray>
+
+
 namespace ds {
 namespace crypto {
 
@@ -11,6 +14,9 @@ class Crypto
 public:
     Crypto();
     ~Crypto();
+
+    static QByteArray getHmacSha256(const QByteArray& key, std::initializer_list<const QByteArray*> data);
+
 };
 
 }} // namespaces

@@ -34,6 +34,7 @@ HEADERS += \
     include/ds/torconfig.h \
     include/ds/serviceproperties.h
 
-INCLUDEPATH += $$PWD/include
+INCLUDEPATH += \
+    $$PWD/include \
+    $$PWD/../cryptolib/include
 
-PKGCONFIG += openssl

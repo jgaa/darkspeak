@@ -4,11 +4,9 @@
 #include <QRandomGenerator>
 #include <assert.h>
 
-#include <openssl/evp.h>
-#include <openssl/hmac.h>
-
 #include "include/ds/torcontroller.h"
 #include "ds/torctlsocket.h"
+#include "ds/crypto.h"
 
 namespace ds {
 namespace tor {
@@ -325,34 +323,7 @@ QByteArray TorController::GetCookie(const QString &path)
 QByteArray TorController::ComputeHmac(const QByteArray &key,
                                       const QByteArray &serverNonce)
 {
-    QByteArray rval;
-    rval.resize(EVP_MAX_MD_SIZE);
-
-    auto ctx = std::shared_ptr<HMAC_CTX>(HMAC_CTX_new(), HMAC_CTX_free);
-    if (!ctx) {
-        throw CryptoError("HMAC_CTX_new()");
-    }
-
-    auto len = static_cast<unsigned int>(rval.size());
-    HMAC_Init_ex(ctx.get(), key.data(), key.size(), EVP_sha256(), NULL);
-
-    HMAC_Update(ctx.get(),
-                reinterpret_cast<const unsigned char *>(cookie_.data()),
-                static_cast<size_t>(cookie_.size()));
-
-    HMAC_Update(ctx.get(),
-                reinterpret_cast<const unsigned char *>(client_nonce_.data()),
-                static_cast<size_t>(client_nonce_.size()));
-
-    HMAC_Update(ctx.get(),
-                reinterpret_cast<const unsigned char *>(serverNonce.data()),
-                static_cast<size_t>(serverNonce.size()));
-
-    HMAC_Final(ctx.get(), reinterpret_cast<unsigned char *>(rval.data()), &len);
-
-    rval.resize(static_cast<int>(len));
-
-    return rval;
+    return ds::crypto::Crypto::getHmacSha256(key, {&cookie_, &client_nonce_, &serverNonce});
 }
 
 TorController::CtlState TorController::getCtlState() const

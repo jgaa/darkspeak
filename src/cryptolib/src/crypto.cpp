@@ -1,10 +1,14 @@
 #include <assert.h>
+
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/conf.h>
- #include <openssl/rand.h>
+#include <openssl/rand.h>
+#include <openssl/hmac.h>
+
 
 #include "ds/crypto.h"
+#include "ds/cvar.h"
 
 namespace ds {
 namespace crypto {
@@ -33,6 +37,31 @@ Crypto::~Crypto()
     EVP_cleanup();
     CRYPTO_cleanup_all_ex_data();
     ERR_free_strings();
+}
+
+QByteArray Crypto::getHmacSha256(const QByteArray& key,
+                                 std::initializer_list<const QByteArray*> data)
+{
+    QByteArray rval;
+    rval.resize(EVP_MAX_MD_SIZE);
+
+    auto ctx = make_cvar(HMAC_CTX_new(), HMAC_CTX_free, "HMAC_CTX_new()");
+
+    auto len = static_cast<unsigned int>(rval.size());
+    HMAC_Init_ex(ctx, key.data(), key.size(), EVP_sha256(), NULL);
+
+    for(const auto& d : data) {
+        assert(d);
+        HMAC_Update(ctx,
+                    reinterpret_cast<const unsigned char *>(d->data()),
+                    static_cast<size_t>(d->size()));
+    }
+
+    HMAC_Final(ctx, reinterpret_cast<unsigned char *>(rval.data()), &len);
+
+    rval.resize(static_cast<int>(len));
+
+    return rval;
 }
 
 }} // namespaces
