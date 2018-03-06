@@ -6,6 +6,7 @@
 #include <openssl/buffer.h>
 #include <openssl/pem.h>
 
+#include "ds/crypto.h"
 #include "ds/cvar.h"
 #include "ds/rsacertimpl.h"
 
@@ -95,6 +96,11 @@ QByteArray RsaCertImpl::getCertImpl(std::function<int (BIO *, RSA *)> fn) const
     return {mem->data, static_cast<int>(mem->length)};
 }
 
+QByteArray RsaCertImpl::getHash() const
+{
+    return Crypto::getSha256(getPubKey());
+}
+
 DsCert::ptr_t DsCert::create(const Type type) {
     size_t bits = {};
 
@@ -124,3 +130,4 @@ DsCert::ptr_t DsCert::create(const QByteArray& cert) {
 
 
 }} // namespaces
+

@@ -29,6 +29,7 @@ public:
 
     virtual QByteArray getCert() const = 0;
     virtual QByteArray getPubKey() const = 0;
+    virtual QByteArray getHash() const = 0;
 
     /*! Factory to create a cert */
     static ptr_t create(const Type type = Type::RSA_2048);

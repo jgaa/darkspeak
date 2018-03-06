@@ -1,13 +1,12 @@
 #-------------------------------------------------
 #
-# Project created by QtCreator 2018-02-27T16:15:44
+# Project created by QtCreator 2018-03-05T11:38:46
 #
 #-------------------------------------------------
 
-QT       += core sql network
-QT       -= gui
+QT       += core sql gui network
 
-TARGET = dscorelib
+TARGET = dsmodels
 TEMPLATE = lib
 CONFIG += staticlib
 
@@ -23,22 +22,14 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-    src/dsengine.cpp \
-    src/database.cpp \
-    src/logging.cpp \
-    src/protocolmanager.cpp
+        src/identitiesmodel.cpp
 
 HEADERS += \
-    include/ds/dsengine.h \
-    include/ds/protocolmanager.h \
-    include/ds/database.h \
-    include/ds/logging.h \
-    include/ds/task.h \
-    include/ds/identity.h \
-    include/ds/errors.h \
-    include/ds/transporthandle.h
+        include/ds/identitiesmodel.h
 
-INCLUDEPATH += $$PWD/include \
+INCLUDEPATH += \
+    $$PWD/include \
+    $$PWD/../dscorelib/include \
     $$PWD/../cryptolib/include \
-    $$PWD/../dsprotlib/include \
-    $$PWD/../torlib/include \
+    $$PWD/../dsprotlib/include
+

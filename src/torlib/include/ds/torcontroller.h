@@ -85,6 +85,9 @@ signals:
     // Emitted when we are authenticated and Tor is connected.
     void ready();
 
+    // Emitted when the tor service has been shut down.
+    void stopped();
+
 public slots:
     void start(); // Connect to Tor server
     void stop(); // Disconnect from Tor server

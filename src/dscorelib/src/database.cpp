@@ -58,7 +58,7 @@ void Database::createDatabase()
 
     try {
         exec(R"(CREATE TABLE "ds" ( `version` INTEGER NOT NULL))");
-
+        exec(R"(CREATE TABLE `identity` ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `hash` BLOB NOT NULL UNIQUE, `name` TEXT NOT NULL UNIQUE, `cert` TEXT NOT NULL, `address` TEXT NOT NULL, `notes` TEXT, `avatar` BLOB, `created` INTEGER NOT NULL ))");
         QSqlQuery query(db_);
         query.prepare("INSERT INTO ds (version) VALUES (:version)");
         query.bindValue(":version", currentVersion);

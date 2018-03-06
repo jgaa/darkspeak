@@ -179,6 +179,7 @@ void TorController::clear()
     qDebug() << "Torctl connection was closed";
     setState(CtlState::DISCONNECTED);
     setState(TorState::UNKNOWN);
+    emit stopped();
 }
 
 void TorController::torEvent(const TorCtlReply &reply)

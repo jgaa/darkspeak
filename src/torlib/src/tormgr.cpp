@@ -7,7 +7,6 @@ namespace tor {
 
 TorMgr::TorMgr(const TorConfig& config)
     : config_{config}
-    , ctl_{std::make_unique<TorController>(config)}
 {
 }
 
@@ -33,9 +32,54 @@ void TorMgr::start()
     }
 }
 
+void TorMgr::stop()
+{
+    if (ctl_) {
+        ctl_->stop();
+    }
+}
+
+void TorMgr::updateConfig(const TorConfig &config)
+{
+    config_ = config;
+}
+
+void TorMgr::onTorCtlStopped()
+{
+    emit stopped();
+    ctl_.reset();
+}
+
+void TorMgr::onTorCtlAutenticated()
+{
+    emit started();
+}
+
+void TorMgr::onTorCtlstateUpdate(TorController::CtlState state)
+{
+    if (state == TorController::CtlState::CONNECTED) {
+        emit online();
+    } else if (state == TorController::CtlState::DISCONNECTED) {
+        emit offline();
+    }
+}
+
 void TorMgr::startUseSystemInstance()
 {
+    assert(!ctl_);
+    ctl_ = std::make_unique<TorController>(config_);
+
+    connect(ctl_.get(), &TorController::stopped,
+            this, &TorMgr::onTorCtlStopped,
+            Qt::QueuedConnection);
+
+    connect(ctl_.get(), &TorController::autenticated,
+            this, &TorMgr::onTorCtlAutenticated);
+
+    connect(ctl_.get(), &TorController::stateUpdate,
+            this, &TorMgr::onTorCtlstateUpdate);
 
 }
 
 }} // namespaces
+

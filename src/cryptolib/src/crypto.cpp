@@ -5,7 +5,7 @@
 #include <openssl/conf.h>
 #include <openssl/rand.h>
 #include <openssl/hmac.h>
-
+#include <openssl/sha.h>
 
 #include "ds/crypto.h"
 #include "ds/cvar.h"
@@ -62,6 +62,16 @@ QByteArray Crypto::getHmacSha256(const QByteArray& key,
     rval.resize(static_cast<int>(len));
 
     return rval;
+}
+
+QByteArray Crypto::getSha256(const QByteArray &data)
+{
+    QByteArray hash(SHA256_DIGEST_LENGTH, '\0');
+    SHA256_CTX sha256 = {};
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, data.data(), static_cast<size_t>(data.size()));
+    SHA256_Final(reinterpret_cast<unsigned char *>(hash.data()), &sha256);
+    return hash;
 }
 
 }} // namespaces

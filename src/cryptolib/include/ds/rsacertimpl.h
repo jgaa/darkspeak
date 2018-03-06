@@ -18,6 +18,7 @@ public:
 
     QByteArray getCert() const override;
     QByteArray getPubKey() const override;
+    QByteArray getHash() const override;
 
 private:
     QByteArray getCertImpl(std::function<int (BIO *, RSA *)>) const;
