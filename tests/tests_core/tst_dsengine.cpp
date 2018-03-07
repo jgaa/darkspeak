@@ -25,13 +25,13 @@ void TestDsEngine::test_create_identity()
     }
 
     // Create an identity.
-    // Will be ready when the cert and the hiden service is ready
+    // Will be ready when the cert and the hidden service is ready
     {
         QSignalSpy spy_created(&engine, SIGNAL(identityCreated(const Identity&)));
         ds::core::IdentityReq req;
         req.name = "testid";
         engine.createIdentity(req);
-        QCOMPARE(spy_created.wait(300000), true);
+        QCOMPARE(spy_created.wait(5000), true);
         engine.close();
     }
 
