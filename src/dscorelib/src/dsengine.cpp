@@ -155,7 +155,6 @@ void DsEngine::whenOnline(std::function<void ()> fn)
 
 void DsEngine::online()
 {
-    emit ready();
     while(!when_online_.isEmpty()) {
         try {
             if (auto fn = when_online_.takeFirst()) {
@@ -199,7 +198,8 @@ void DsEngine::onTransportHandleError(const TransportHandleError &th)
 
 void DsEngine::close()
 {
-
+    setState(State::CLOSING);
+    tor_mgr_->stop();
 }
 
 void DsEngine::start()
@@ -231,8 +231,11 @@ void DsEngine::onStateChanged(const ProtocolManager::State /*old*/, const Protoc
 {
     switch (current) {
     case ProtocolManager::State::OFFLINE:
-        // TODO: Handle shutdown
-        setState(State::INITIALIZING);
+        if (state_ == State::CLOSING) {
+            setState(State::TERMINATED);
+        } else {
+            setState(State::INITIALIZING);
+        }
         break;
     case ProtocolManager::State::CONNECTING:
         setState(State::STARTING);

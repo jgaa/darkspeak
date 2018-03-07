@@ -37,3 +37,23 @@ void TestDsEngine::test_create_identity()
 
 }
 
+void TestDsEngine::test_create_identity_when_still_offline()
+{
+    auto settings = std::make_unique<QSettings>();
+    settings->clear();
+    settings->setValue("dbpath", ":memory:");
+    ds::core::DsEngine engine(std::move(settings));
+
+    // Create an identity.
+    // Will be ready when the cert and the hidden service is ready
+    {
+        QSignalSpy spy_created(&engine, SIGNAL(identityCreated(const Identity&)));
+        ds::core::IdentityReq req;
+        req.name = "testid";
+        engine.createIdentity(req);
+        engine.start();
+        QCOMPARE(spy_created.wait(5000), true);
+        engine.close();
+    }
+
+}

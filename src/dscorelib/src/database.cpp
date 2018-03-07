@@ -49,7 +49,11 @@ Database::Database(QSettings& settings)
 
 Database::~Database()
 {
-
+    // Close the database and remove the connection to make our tests happy (no warnings).
+    const auto name = db_.connectionName();
+    db_.close();
+    db_ = {};
+    db_.removeDatabase(name);
 }
 
 void Database::createDatabase()

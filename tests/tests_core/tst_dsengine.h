@@ -12,6 +12,7 @@ public:
 
 private slots:
     void test_create_identity();
+    void test_create_identity_when_still_offline();
 };
 
 #endif // TST_DSENGINE_H
