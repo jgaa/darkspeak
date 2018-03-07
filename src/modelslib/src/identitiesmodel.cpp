@@ -27,6 +27,7 @@ IdentitiesModel::IdentitiesModel(QSettings &settings)
     h_name_ = fieldIndex("name");
     h_cert_ = fieldIndex("cert");
     h_address_ = fieldIndex("address");
+    h_address_data_ = fieldIndex("address_data");
     h_notes_= fieldIndex("notes");
     h_avatar_ = fieldIndex("avatar");
     h_created_ = fieldIndex("created");
@@ -42,6 +43,7 @@ void IdentitiesModel::createIdentity(const ds::core::Identity &data)
     rec.setValue(QStringLiteral("name"), data.name);
     rec.setValue(QStringLiteral("cert"), data.cert);
     rec.setValue(QStringLiteral("address"), data.address);
+    rec.setValue(QStringLiteral("address_data"), data.addressData);
     if (!data.notes.isEmpty()) {
         rec.setValue(QStringLiteral("notes"), data.notes);
     }
@@ -92,6 +94,4 @@ bool IdentitiesModel::identityExists(QString name) const
 
 
 }} // namepaces
-
-
 

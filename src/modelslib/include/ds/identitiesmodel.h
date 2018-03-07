@@ -57,6 +57,7 @@ private:
     int h_name_ = {};
     int h_cert_ = {};
     int h_address_ = {};
+    int h_address_data_ = {};
     int h_notes_= {};
     int h_avatar_ = {};
     int h_created_ = {};

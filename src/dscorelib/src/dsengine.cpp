@@ -13,6 +13,8 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QJsonDocument>
+#include <QJsonDocument>
 
 using namespace ds::crypto;
 using namespace std;
@@ -96,7 +98,8 @@ void DsEngine::createIdentity(const IdentityReq& req)
     Task::schedule([this, name] {
         // TODO: Take cert type from settings
         try {
-            emit certCreated(name, DsCert::create(DsCert::Type::RSA_2048));
+            auto cert = DsCert::create(DsCert::Type::RSA_2048);
+            emit certCreated(name, cert);
         } catch (const std::exception& ex) {
             emit identityError({name, ex.what()});
         }
@@ -109,6 +112,8 @@ void DsEngine::onCertCreated(const QString &name, const DsCert::ptr_t cert)
         qWarning() << "Received a cert for a non-existing name: " << name;
         return;
     }
+
+    qDebug() << "Received cert for idenity " << name;
 
     auto& id = pending_identities_[name];
     id.cert = cert->getCert();
@@ -150,6 +155,7 @@ void DsEngine::whenOnline(std::function<void ()> fn)
 
 void DsEngine::online()
 {
+    emit ready();
     while(!when_online_.isEmpty()) {
         try {
             if (auto fn = when_online_.takeFirst()) {
@@ -174,6 +180,7 @@ void DsEngine::onTransportHandleReady(const TransportHandle &th)
     auto& pi = pending_identities_[name];
     if (pi.address.isEmpty()) {
         pi.address = th.handle;
+        pi.addressData = toJson(th.data);
     } else {
         qDebug() << "The identity " << name << " already have a transport";
         return;
@@ -200,7 +207,7 @@ void DsEngine::start()
     setState(State::STARTING);
     tor_mgr_ = ProtocolManager::create(*settings_, ProtocolManager::Transport::TOR);
 
-    connect(tor_mgr_.get(), &ProtocolManager::online, this, &DsEngine::online);
+    connect(tor_mgr_.get(), &ProtocolManager::stateChanged, this, &DsEngine::onStateChanged);
 
     connect(tor_mgr_.get(), &ProtocolManager::transportHandleReady,
             this, &DsEngine::onTransportHandleReady);
@@ -212,6 +219,32 @@ void DsEngine::start()
     connect(this, &DsEngine::retryIdentityReady,
             this, &DsEngine::addIdentityIfReady,
             Qt::QueuedConnection);
+
+    connect(this, &DsEngine::ready,
+            this, &DsEngine::online,
+            Qt::QueuedConnection);
+
+    tor_mgr_->start();
+}
+
+void DsEngine::onStateChanged(const ProtocolManager::State /*old*/, const ProtocolManager::State current)
+{
+    switch (current) {
+    case ProtocolManager::State::OFFLINE:
+        // TODO: Handle shutdown
+        setState(State::INITIALIZING);
+        break;
+    case ProtocolManager::State::CONNECTING:
+        setState(State::STARTING);
+        break;
+    case ProtocolManager::State::CONNECTED:
+        setState(State::RUNNING);
+        break;
+    case ProtocolManager::State::ONLINE:
+        break;
+    case ProtocolManager::State::SHUTTINGDOWN:
+        break;
+    }
 }
 
 
@@ -220,6 +253,14 @@ void DsEngine::initialize()
     assert(!instance_);
     instance_ = this;
     qDebug() << "Settings are in " << settings_->fileName();
+
+    static bool initialized = false;
+    if (!initialized) {
+        qRegisterMetaType<ds::core::Identity>("ds::core::Identity");
+        qRegisterMetaType<ds::core::Identity>("Identity");
+
+    }
+
 
     auto data_path = QStandardPaths::writableLocation(
                 QStandardPaths::AppDataLocation);
@@ -230,7 +271,7 @@ void DsEngine::initialize()
 
     switch(auto version = settings_->value("version").toInt()) {
         case 0: { // First use
-            qInfo() << "First use - initializing settings_->";
+            qInfo() << "First use - initializing settings";
             settings_->setValue("version", 1);
         } break;
     default:
@@ -269,7 +310,21 @@ void DsEngine::setState(DsEngine::State state)
         state_ = state;
         qDebug() << "DsEngine: Changing state from "
                  << getName(old) << " to " << getName(state);
-        emit changedState(old, state);
+        emit stateChanged(old, state);
+
+        switch(state) {
+        case State::INITIALIZING:
+            emit notReady();
+            break;
+        case State::RUNNING:
+            emit ready();
+            break;
+        case State::CLOSING:
+            emit closing();
+            break;
+        default:
+            ; // Do nothing
+        }
     }
 }
 
@@ -294,6 +349,22 @@ void DsEngine::tryMakeTransport(const QString &name)
             whenOnline([this, name]() { tryMakeTransport(name); });
         }
     }
+}
+
+QByteArray DsEngine::toJson(const QVariantMap &data)
+{
+    auto json = QJsonDocument::fromVariant(data);
+    return json.toJson();
+}
+
+QVariantMap DsEngine::fromJson(const QByteArray &json)
+{
+    auto doc = QJsonDocument::fromJson(json);
+    if (doc.isNull()) {
+        throw ParseError("Failed to parse json data");
+    }
+
+    return doc.toVariant().value<QVariantMap>();
 }
 
 

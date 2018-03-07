@@ -177,7 +177,7 @@ void TorController::close()
 void TorController::clear()
 {
     qDebug() << "Torctl connection was closed";
-    setState(CtlState::DISCONNECTED);
+    setState(CtlState::STOPPED);
     setState(TorState::UNKNOWN);
     emit stopped();
 }
@@ -190,15 +190,19 @@ void TorController::torEvent(const TorCtlReply &reply)
 
 void TorController::setState(TorController::CtlState state)
 {
-    ctl_state_ = state;
-    emit stateUpdate(ctl_state_);
+    if (ctl_state_ != state) {
+        ctl_state_ = state;
+        emit stateUpdate(ctl_state_);
+    }
 }
 
 void TorController::setState(TorController::TorState state,
                              int progress, const QString& summary)
 {
-    tor_state_ = state;
-    emit torStateUpdate(tor_state_, progress, summary);
+    if (tor_state_!= state) {
+        tor_state_ = state;
+        emit torStateUpdate(tor_state_, progress, summary);
+    }
 }
 
 void TorController::DoAuthentcate(const TorCtlReply &reply)
@@ -214,6 +218,7 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
             && methods.contains("HASHEDPASSWORD", Qt::CaseInsensitive)
             && !config_.ctl_passwd.isEmpty()) {
         QByteArray auth_data = '\"' + config_.ctl_passwd.toLocal8Bit().replace("\"", "\"") + '\"';
+        qDebug() << "Authenticating torctl with password";
         Authenticate(auth_data);
     } else if (config_.allowed_auth_methods.contains("SAFECOOKIE")
             && methods.contains("SAFECOOKIE", Qt::CaseInsensitive)) {
@@ -228,6 +233,8 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
         }
 
         assert(client_nonce_.size() == 32);
+
+        qDebug() << "Authenticating torctl with SAFECOOKIE";
 
         ctl_->sendCommand("AUTHCHALLENGE SAFECOOKIE " + client_nonce_.toHex(), [this](const TorCtlReply& reply){
             if (reply.status == 250) {
@@ -256,6 +263,7 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
             && methods.contains("COOKIE", Qt::CaseInsensitive)) {
         const auto path = auth_map.value("COOKIEFILE").toString();
         QByteArray auth_data = GetCookie(path).toHex();
+        qDebug() << "Authenticating torctl with COOKIE";
         Authenticate(auth_data);
     } else {
         throw AuthError("No usable authentication methods");
@@ -282,9 +290,10 @@ void TorController::OnAuthReply(const TorCtlReply &reply)
                 const auto summary = map.value("BOOTSTRAP").toMap().value("SUMMARY").toString();
                 const auto progress = map.value("BOOTSTRAP").toMap().value("PROGRESS").toInt();
 
-                setState(progress == 100 ? TorState::INITIALIZING : TorState::READY,
+                setState(progress == 100 ? TorState::READY : TorState::INITIALIZING,
                          progress, summary);
                 if (progress == 100) {
+                    setState(CtlState::ONLINE);
                     emit ready();
                 }
             } else {

@@ -12,6 +12,7 @@ struct Identity {
     QByteArray hash;
     QByteArray cert;
     QByteArray address;
+    QByteArray addressData;
     QString notes;
     QImage avatar;
 };
@@ -29,5 +30,9 @@ struct IdentityError {
 };
 
 }} // identities
+
+Q_DECLARE_METATYPE(ds::core::Identity)
+Q_DECLARE_METATYPE(ds::core::IdentityReq)
+Q_DECLARE_METATYPE(ds::core::IdentityError)
 
 #endif // IDENTITY_H

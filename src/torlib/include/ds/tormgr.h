@@ -19,9 +19,15 @@ class TorMgr : public QObject
     Q_OBJECT
 
 public:
+    struct OfflineError : public std::runtime_error
+    {
+        explicit OfflineError(const char *what) : std::runtime_error(what) {}
+        explicit OfflineError(const QString& what) : std::runtime_error(what.toStdString()) {}
+    };
+
     explicit TorMgr(const TorConfig& config);
 
-    TorController *getController() { return ctl_.get(); }
+    TorController *getController();
 
 signals:
     // Connected to the Tor control channel
@@ -36,6 +42,16 @@ signals:
     // stop() is complete
     void stopped();
 
+    // Proxied from the controller, as it is hard for consumers to subscribe
+    // to the controller. The manager will create new copntrollers if connectivity
+    // with the Tor service is lost.
+    void serviceCreated(const ServiceProperties& service);
+    void serviceFailed(const QByteArray& id, const QByteArray& reason);
+    void serviceStarted(const QByteArray& id);
+    void serviceStopped(const QByteArray& id);
+    void torStateUpdate(TorController::TorState state, int progress, const QString& summary);
+    void stateUpdate(TorController::CtlState state);
+
 public slots:
     /*! Start / connect to the Tor service */
     void start();
@@ -49,10 +65,43 @@ public slots:
      */
     void updateConfig(const TorConfig& config);
 
+    /*! Create a hidden service
+     *
+     * This will create and start a Tor hidden service.
+     *
+     * Signals:
+     *  - serviceCreated and serviceStarted if sucessful
+     *  - serviceFailed if the service was not created or failed to start.
+     */
+    void createService(const QByteArray& id);
+
+    /*! Start a hidden service
+     *
+     * This will start a Tor hidden service using the key provided in the service argument.
+     *
+     * Signals:
+     *  - serviceStarted is sucessful
+     *  - serviceFailed if the service failed to start.
+     */
+    void startService(const ServiceProperties& service);
+
+    /*! Stop a Tor hidden service
+     *
+     * \param id The Tor service id to stop. Corresponds
+     *      to ServiceProperties::id.
+     *
+     * Signals:
+     *  - serviceStopped
+     */
+    void stopService(const QByteArray& id);
+
 private slots:
-    void onTorCtlStopped();
-    void onTorCtlAutenticated();
-    void onTorCtlstateUpdate(TorController::CtlState state);
+    void onTorStateUpdate(TorController::TorState state, int progress, const QString& summary);
+    void onStateUpdate(TorController::CtlState state);
+    void onServiceCreated(const ServiceProperties& service);
+    void onServiceFailed(const QByteArray& id, const QByteArray& reason);
+    void onServiceStarted(const QByteArray& id);
+    void onServiceStopped(const QByteArray& id);
 
 private:
     void startUseSystemInstance();

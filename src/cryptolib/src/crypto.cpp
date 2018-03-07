@@ -7,7 +7,10 @@
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
 
+#include <QMetaType>
+
 #include "ds/crypto.h"
+#include "ds/dscert.h"
 #include "ds/cvar.h"
 
 namespace ds {
@@ -24,6 +27,9 @@ Crypto::Crypto()
           /* Load all digest and cipher algorithms */
           OpenSSL_add_all_algorithms();
           //OPENSSL_config (NULL); depricated in 1.1
+
+          qRegisterMetaType<ds::crypto::DsCert::ptr_t>("ds::crypto::DsCert::ptr_t");
+          qRegisterMetaType<ds::crypto::DsCert::ptr_t>("DsCert::ptr_t");
     }
 
     // TODO: Add mt callbacks if we use an openssl libraryn older than 1.1.0

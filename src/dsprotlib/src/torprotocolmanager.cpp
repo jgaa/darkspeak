@@ -1,7 +1,9 @@
 
 #include <assert.h>
+#include <array>
 
-#include "include/ds/torprotocolmanager.h"
+#include "ds/torprotocolmanager.h"
+#include "ds/errors.h"
 
 using namespace std;
 using namespace ds::core;
@@ -15,6 +17,16 @@ TorProtocolManager::TorProtocolManager(QSettings &settings)
     : settings_{settings}
 {
     tor_ = make_unique<TorMgr>(getConfig());
+
+    connect(tor_.get(), &TorMgr::serviceCreated, this, &TorProtocolManager::onServiceCreated);
+    connect(tor_.get(), &TorMgr::serviceStarted, this, &TorProtocolManager::onServiceStarted);
+    connect(tor_.get(), &TorMgr::serviceStopped, this, &TorProtocolManager::onServiceStopped);
+    connect(tor_.get(), &TorMgr::serviceFailed, this, &TorProtocolManager::onServiceFailed);
+
+    connect(tor_.get(), &TorMgr::started, this, &TorProtocolManager::torMgrStarted);
+    connect(tor_.get(), &TorMgr::online, this, &TorProtocolManager::torMgrOnline);
+    connect(tor_.get(), &TorMgr::offline, this, &TorProtocolManager::torMgrOffline);
+    connect(tor_.get(), &TorMgr::stopped, this, &TorProtocolManager::torMgrStopped);
 }
 
 TorProtocolManager::State TorProtocolManager::getState() const
@@ -22,12 +34,47 @@ TorProtocolManager::State TorProtocolManager::getState() const
     return state_;
 }
 
+const QByteArray& TorProtocolManager::getName(const ProtocolManager::State state)
+{
+    static const std::array<QByteArray, 5> names = {{
+       "OFFLINE",
+       "CONNECTING",
+       "CONNECTED",
+       "ONLINE",
+       "SHUTTINGDOWN"
+   }};
+
+   return names.at(static_cast<size_t>(state));
+}
+
 void TorProtocolManager::setState(ProtocolManager::State state)
 {
     const auto old = state_;
     state_ = state;
     if (old != state_) {
+
+        qDebug() << "TorProtocolManager changing state from " << getName(old)
+                 << " to " << getName(state);
+
         emit stateChanged(old, state_);
+
+        switch(state) {
+        case ProtocolManager::State::OFFLINE:
+            emit offline();
+            break;
+        case ProtocolManager::State::CONNECTING:
+            emit connecting();
+            break;
+        case ProtocolManager::State::CONNECTED:
+            emit connected();
+            break;
+        case ProtocolManager::State::ONLINE:
+            emit online();
+            break;
+        case ProtocolManager::State::SHUTTINGDOWN:
+            emit shutdown();
+            break;
+        }
     }
 }
 
@@ -37,16 +84,13 @@ TorConfig TorProtocolManager::getConfig() const
 
      config.ctl_host = QHostAddress(
                  settings_.value(QStringLiteral("tor.ctl.host"),
-                                 config.app_host.toString()).toString());
+                                 config.ctl_host.toString()).toString());
      config.ctl_port = static_cast<uint16_t>(
                  settings_.value(QStringLiteral("tor.ctl.port"),
-                                 config.app_port).toUInt());
+                                 config.ctl_port).toUInt());
      config.ctl_passwd = settings_.value(
                  QStringLiteral("tor.ctl.passwd"),
-                 config.app_host.toString()).toString();
-     config.ctl_passwd = settings_.value(
-                 QStringLiteral("tor.ctl.passwd"),
-                 config.app_host.toString()).toString();
+                 config.ctl_passwd).toString();
      config.service_from_port = static_cast<uint16_t>(
                  settings_.value(QStringLiteral("tor.service.from-port"),
                                  config.service_from_port).toUInt());
@@ -66,47 +110,84 @@ void TorProtocolManager::sendMessage(const core::Message &)
 {
 }
 
-}} // namespaces
-
-
-
-
-void ds::prot::TorProtocolManager::start()
+void TorProtocolManager::start()
 {
     tor_->updateConfig(getConfig());
     tor_->start();
+    setState(State::CONNECTING);
 }
 
-void ds::prot::TorProtocolManager::stop()
+void TorProtocolManager::stop()
 {
     tor_->stop();
+    setState(State::SHUTTINGDOWN);
 }
 
-void ds::prot::TorProtocolManager::torMgrStarted()
+void TorProtocolManager::torMgrStarted()
 {
-
+    setState(State::CONNECTED);
 }
 
-void ds::prot::TorProtocolManager::torMgrOnline()
-{
-    setState(State::ONLINE);
-    emit online();
-}
-
-void ds::prot::TorProtocolManager::torMgrOffline()
+void TorProtocolManager::torMgrOnline()
 {
     setState(State::ONLINE);
-    emit offline();
 }
 
-void ds::prot::TorProtocolManager::torMgrStopped()
+void TorProtocolManager::torMgrOffline()
+{
+    setState(State::ONLINE);
+}
+
+void TorProtocolManager::torMgrStopped()
+{
+    setState(State::OFFLINE);
+}
+
+void TorProtocolManager::createTransportHandle(const TransportHandleReq &req)
+{
+    tor_->createService(req.identityName.toLocal8Bit());
+}
+
+void TorProtocolManager::onServiceCreated(const ServiceProperties &service)
+{
+    // Convert he service data to a transport-handle
+    TransportHandle th;
+
+    th.identityName = service.id;
+    th.handle = service.service_id + ':' + QByteArray::number(service.port);
+
+    th.data["type"] = QByteArray("Tor hidden service");
+    th.data["key"] = service.key;
+    th.data["service_id"] = service.service_id;
+    th.data["key_type"] = service.key_type;
+    th.data["port"] = service.port;
+
+    // Stop the service. We require explicit start request to make it available.
+    try {
+        tor_->stopService(service.id);
+    } catch(const std::exception& ex) {
+        qWarning() << "Failed to request hidden service " << service.id
+                   << " to stop: " << ex.what();
+    }
+
+    emit transportHandleReady(th);
+}
+
+void TorProtocolManager::onServiceFailed(const QByteArray &id, const QByteArray &reason)
+{
+    emit transportHandleError({id, reason});
+}
+
+void TorProtocolManager::onServiceStarted(const QByteArray &/*id*/)
 {
 
 }
 
-
-void ds::prot::TorProtocolManager::createTransportHandle(const TransportHandleReq &)
+void TorProtocolManager::onServiceStopped(const QByteArray &/*id*/)
 {
-    // TODO: Implement
-    assert(false);
+
 }
+
+}} // namespaces
+
+

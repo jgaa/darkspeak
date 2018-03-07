@@ -19,6 +19,18 @@ struct ExistsError : public Error
     explicit ExistsError(const QString& what) : Error(what) {}
 };
 
+struct ParseError : public Error
+{
+    explicit ParseError(const char *what) : Error(what) {}
+    explicit ParseError(const QString& what) : Error(what) {}
+};
+
+struct OfflineError : public Error
+{
+    explicit OfflineError(const char *what) : Error(what) {}
+    explicit OfflineError(const QString& what) : Error(what) {}
+};
+
 }} // namespaces
 
 #endif // DS_CORE_ERRORS_H

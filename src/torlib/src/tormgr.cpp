@@ -10,6 +10,8 @@ TorMgr::TorMgr(const TorConfig& config)
 {
 }
 
+TorController *TorMgr::getController() { return ctl_.get(); }
+
 /* To start using a tor service, we need to connect over TCP to
  * the contol channel of a running server.
  * Then we need to get the authentication methods from the
@@ -44,24 +46,81 @@ void TorMgr::updateConfig(const TorConfig &config)
     config_ = config;
 }
 
-void TorMgr::onTorCtlStopped()
+void TorMgr::createService(const QByteArray &id)
 {
-    emit stopped();
-    ctl_.reset();
-}
-
-void TorMgr::onTorCtlAutenticated()
-{
-    emit started();
-}
-
-void TorMgr::onTorCtlstateUpdate(TorController::CtlState state)
-{
-    if (state == TorController::CtlState::CONNECTED) {
-        emit online();
-    } else if (state == TorController::CtlState::DISCONNECTED) {
-        emit offline();
+    if (!ctl_ || !ctl_->isConnected()) {
+        throw OfflineError("Tor is offline");
     }
+
+    ctl_->createService(id);
+}
+
+void TorMgr::startService(const ServiceProperties &service)
+{
+    if (!ctl_ || !ctl_->isConnected()) {
+        throw OfflineError("Tor is offline");
+    }
+
+    ctl_->startService(service);
+}
+
+void TorMgr::stopService(const QByteArray &id)
+{
+    if (!ctl_ || !ctl_->isConnected()) {
+        throw OfflineError("Tor is offline");
+    }
+
+    ctl_->stopService(id);
+}
+
+void TorMgr::onTorStateUpdate(TorController::TorState state, int progress, const QString &summary)
+{
+    emit torStateUpdate(state, progress, summary);
+}
+
+void TorMgr::onStateUpdate(TorController::CtlState state)
+{
+    emit stateUpdate(state);
+    switch(state) {
+    case TorController::CtlState::DISCONNECTED:
+        emit offline();
+        break;
+    case TorController::CtlState::CONNECTING:
+        break;
+    case TorController::CtlState::AUTHENTICATING:
+        break;
+    case TorController::CtlState::CONNECTED:
+        emit started();
+        break;
+    case TorController::CtlState::ONLINE:
+        emit online();
+        break;
+    case TorController::CtlState::STOPPING:
+        break;
+    case TorController::CtlState::STOPPED:
+        emit stopped();
+        break;
+    }
+}
+
+void TorMgr::onServiceCreated(const ServiceProperties &service)
+{
+    emit serviceCreated(service);
+}
+
+void TorMgr::onServiceFailed(const QByteArray &id, const QByteArray &reason)
+{
+    emit serviceFailed(id, reason);
+}
+
+void TorMgr::onServiceStarted(const QByteArray &id)
+{
+    emit serviceStarted(id);
+}
+
+void TorMgr::onServiceStopped(const QByteArray &id)
+{
+    emit serviceStopped(id);
 }
 
 void TorMgr::startUseSystemInstance()
@@ -69,15 +128,25 @@ void TorMgr::startUseSystemInstance()
     assert(!ctl_);
     ctl_ = std::make_unique<TorController>(config_);
 
-    connect(ctl_.get(), &TorController::stopped,
-            this, &TorMgr::onTorCtlStopped,
-            Qt::QueuedConnection);
-
-    connect(ctl_.get(), &TorController::autenticated,
-            this, &TorMgr::onTorCtlAutenticated);
-
     connect(ctl_.get(), &TorController::stateUpdate,
-            this, &TorMgr::onTorCtlstateUpdate);
+            this, &TorMgr::onStateUpdate);
+
+    connect(ctl_.get(), &TorController::torStateUpdate,
+            this, &TorMgr::onTorStateUpdate);
+
+    connect(ctl_.get(), &TorController::serviceCreated,
+            this, &TorMgr::onServiceCreated);
+
+    connect(ctl_.get(), &TorController::serviceFailed,
+            this, &TorMgr::onServiceFailed);
+
+    connect(ctl_.get(), &TorController::serviceStarted,
+            this, &TorMgr::onServiceStarted);
+
+    connect(ctl_.get(), &TorController::serviceStopped,
+            this, &TorMgr::onServiceStopped);
+
+    ctl_->start();
 
 }
 

@@ -26,8 +26,20 @@ public:
     using ptr_t = std::shared_ptr<ProtocolManager>;
 
     enum State {
+        // Not connected to anything
         OFFLINE,
-        ONLINE
+
+        // Connecting to transport (Tor server)
+        CONNECTING,
+
+        // Connected to transport. Can create identities
+        CONNECTED,
+
+        // Online. Can communicate with peers
+        ONLINE,
+
+        // In the process of shutting down
+        SHUTTINGDOWN
     };
 
     enum class Transport {
@@ -41,14 +53,20 @@ public:
     virtual bool isOnline() const { return getState() == State::ONLINE; }
 
 signals:
+    /*! We are trying to connect to the transport */
+    void connecting();
+
     /*! The protocol is running, but may still not be on-line */
-    void started();
+    void connected();
 
     /*! The protocol is running and on-line */
     void online();
 
-    /*! protocol is running but off-line */
+    /*! protocol is running but transport reported that it is not on-line anymore */
     void offline();
+
+    /*! We are shutting down */
+    void shutdown();
 
     /*! Incoming message */
     void incomingMessage(const Message&);

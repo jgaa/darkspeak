@@ -54,19 +54,21 @@ public slots:
     void start();
 
 private slots:
+    void onStateChanged(const ProtocolManager::State old, const ProtocolManager::State current);
     void onCertCreated(const QString& name, const ds::crypto::DsCert::ptr_t cert);
     void addIdentityIfReady(const QString& name);
     void whenOnline(std::function<void ()> fn);
-    void online();
     void onTransportHandleReady(const TransportHandle& th);
     void onTransportHandleError(const TransportHandleError& th);
+    void online();
 
 signals:
     void identityCreated(const Identity&);
     void identityError(const IdentityError&);
     void ready();
+    void notReady(); // If the transport goes offline
     void closing();
-    void changedState(const State from, const State to);
+    void stateChanged(const State from, const State to);
     void certCreated(const QString name, const ds::crypto::DsCert::ptr_t cert);
     void retryIdentityReady(const QString name); // internal
 
@@ -74,6 +76,8 @@ protected:
     void initialize();
     void setState(State state);
     void tryMakeTransport(const QString& name);
+    static QByteArray toJson(const QVariantMap& data);
+    static QVariantMap fromJson(const QByteArray& json);
 
     std::unique_ptr<QSettings> settings_;
     std::unique_ptr<Database> database_;

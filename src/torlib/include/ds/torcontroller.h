@@ -23,7 +23,9 @@ public:
         CONNECTING,
         AUTHENTICATING,
         CONNECTED,
+        ONLINE,
         STOPPING,
+        STOPPED
     };
 
     enum class TorState {
@@ -71,6 +73,12 @@ public:
 
     CtlState getCtlState() const;
     TorState getTorState() const;
+    bool isConnected() const {
+        const auto state = getCtlState();
+        return (state == CtlState::CONNECTED)
+                || (state == CtlState::ONLINE);
+
+    }
 
 signals:
     void torStateUpdate(TorState state, int progress, const QString& summary);

@@ -13,7 +13,7 @@ Database::Database(QSettings& settings)
     static const auto DRIVER{QStringLiteral("QSQLITE")};
 
     const auto dbpath = settings.value("dbpath").toString();
-    const bool new_database = !QFileInfo(dbpath).isFile();
+    const bool new_database = (dbpath == ":memory:") || (!QFileInfo(dbpath).isFile());
 
     if(!QSqlDatabase::isDriverAvailable(DRIVER)) {
         throw Error("Missing sqlite3 support");
@@ -58,7 +58,7 @@ void Database::createDatabase()
 
     try {
         exec(R"(CREATE TABLE "ds" ( `version` INTEGER NOT NULL))");
-        exec(R"(CREATE TABLE `identity` ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `hash` BLOB NOT NULL UNIQUE, `name` TEXT NOT NULL UNIQUE, `cert` TEXT NOT NULL, `address` TEXT NOT NULL, `notes` TEXT, `avatar` BLOB, `created` INTEGER NOT NULL ))");
+        exec(R"(CREATE TABLE "identity" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `hash` BLOB NOT NULL UNIQUE, `name` TEXT NOT NULL UNIQUE, `cert` TEXT NOT NULL, `address` TEXT NOT NULL, `address_data` TEXT, `notes` TEXT, `avatar` BLOB, `created` INTEGER NOT NULL ))");
         QSqlQuery query(db_);
         query.prepare("INSERT INTO ds (version) VALUES (:version)");
         query.bindValue(":version", currentVersion);

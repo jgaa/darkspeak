@@ -18,13 +18,21 @@ public slots:
     void start() override;
     void stop() override;
     void createTransportHandle(const core::TransportHandleReq &) override;
+
+private slots:
+    void onServiceCreated(const ds::tor::ServiceProperties& service);
+    void onServiceFailed(const QByteArray& id, const QByteArray& reason);
+    void onServiceStarted(const QByteArray& id);
+    void onServiceStopped(const QByteArray& id);
     void torMgrStarted();
     void torMgrOnline();
     void torMgrOffline();
     void torMgrStopped();
 
+
 public:
     State getState() const override;
+    static const QByteArray& getName(const State state);
 
 protected:
     void setState(State state);
