@@ -22,10 +22,12 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-        src/identitiesmodel.cpp
+    src/identitiesmodel.cpp \
+    src/contactsmodel.cpp
 
 HEADERS += \
-        include/ds/identitiesmodel.h
+    include/ds/identitiesmodel.h \
+    include/ds/contactsmodel.h
 
 INCLUDEPATH += \
     $$PWD/include \

@@ -7,10 +7,12 @@ TEMPLATE = app
 
 SOURCES +=  \
     main.cpp \
-    tst_identities.cpp
+    tst_identities.cpp \
+    tst_contactsmodel.cpp
 
 HEADERS += \
-    tst_identities.h
+    tst_identities.h \
+    tst_contactsmodel.h
 
 INCLUDEPATH += \
     $$PWD/include \

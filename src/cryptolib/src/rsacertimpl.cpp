@@ -5,6 +5,9 @@
 #include <openssl/bn.h>
 #include <openssl/buffer.h>
 #include <openssl/pem.h>
+#include <openssl/evp.h>
+
+#include <QDebug>
 
 #include "ds/crypto.h"
 #include "ds/cvar.h"
@@ -32,31 +35,12 @@ RsaCertImpl::RsaCertImpl(const size_t bits)
     }
 }
 
-RsaCertImpl::RsaCertImpl(const QByteArray &cert)
+RsaCertImpl::RsaCertImpl(const QByteArray &cert, const From from)
 {
-    auto bio = make_cvar(BIO_new_mem_buf(cert.data(),
-                                         cert.length()),
-                         BIO_free_all, "BIO_new_mem_buf");
-
-    auto key = make_cvar(PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL),
-                         EVP_PKEY_free, "PEM_read_bio_PUBKEY");
-
-    auto rsa = EVP_PKEY_get1_RSA(key);
-    if (!rsa) {
-        throw Error("EVP_PKEY_get1_RSA");
-    }
-
-
-    auto evp_key = make_cvar(EVP_PKEY_new(), EVP_PKEY_free, "EVP_PKEY_new");
-
-    if (!EVP_PKEY_set1_RSA(evp_key, rsa)) {
-        throw Error("EVP_PKEY_set_RSA");
-    }
-
-    key_ = evp_key.take();
-
-    if (!key_) {
-        throw Error("EVP_PKEY_set_RSA did not set the RSA key");
+    if (from == From::PRIVATE) {
+        initPrivate(cert);
+    } else {
+        initPublic(cert);
     }
 }
 
@@ -101,6 +85,56 @@ QByteArray RsaCertImpl::getHash() const
     return Crypto::getSha256(getPubKey());
 }
 
+void RsaCertImpl::initPublic(const QByteArray &pubkey)
+{
+    auto bio = make_cvar(BIO_new_mem_buf(pubkey.data(),
+                                         pubkey.length()),
+                         BIO_free_all, "BIO_new_mem_buf");
+
+    auto rsa = make_cvar(PEM_read_bio_RSAPublicKey(bio, NULL, NULL, NULL),
+                         RSA_free, "PEM_read_bio_PUBKEY");
+
+    auto evp_key = make_cvar(EVP_PKEY_new(), EVP_PKEY_free, "EVP_PKEY_new");
+
+    if (!EVP_PKEY_set1_RSA(evp_key, rsa)) {
+        throw Error("EVP_PKEY_set_RSA");
+    }
+
+    key_ = evp_key.take();
+
+    if (!key_) {
+        throw Error("EVP_PKEY_set_RSA did not set the RSA key");
+    }
+}
+
+void RsaCertImpl::initPrivate(const QByteArray &cert)
+{
+    auto bio = make_cvar(BIO_new_mem_buf(cert.data(),
+                                         cert.length()),
+                         BIO_free_all, "BIO_new_mem_buf");
+
+    auto key = make_cvar(PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL),
+                         EVP_PKEY_free, "PEM_read_bio_PrivateKey");
+
+    auto rsa = EVP_PKEY_get1_RSA(key);
+    if (!rsa) {
+        throw Error("EVP_PKEY_get1_RSA");
+    }
+
+
+    auto evp_key = make_cvar(EVP_PKEY_new(), EVP_PKEY_free, "EVP_PKEY_new");
+
+    if (!EVP_PKEY_set1_RSA(evp_key, rsa)) {
+        throw Error("EVP_PKEY_set_RSA");
+    }
+
+    key_ = evp_key.take();
+
+    if (!key_) {
+        throw Error("EVP_PKEY_set_RSA did not set the RSA key");
+    }
+}
+
 DsCert::ptr_t DsCert::create(const Type type) {
     size_t bits = {};
 
@@ -125,9 +159,12 @@ DsCert::ptr_t DsCert::create(const Type type) {
 }
 
 DsCert::ptr_t DsCert::create(const QByteArray& cert) {
-    return std::make_shared<RsaCertImpl>(cert);
+    return std::make_shared<RsaCertImpl>(cert, RsaCertImpl::From::PRIVATE);
 }
 
+DsCert::ptr_t DsCert::createFromPubkey(const QByteArray& pubkey) {
+    return  std::make_shared<RsaCertImpl>(pubkey, RsaCertImpl::From::PUBLIC);
+}
 
 }} // namespaces
 

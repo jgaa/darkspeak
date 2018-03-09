@@ -1,8 +1,6 @@
 #ifndef IDENTITIESMODEL_H
 #define IDENTITIESMODEL_H
 
-#include <stdexcept>
-
 #include <QSettings>
 #include <QSqlTableModel>
 #include <QImage>
@@ -14,19 +12,6 @@
 
 namespace ds {
 namespace models {
-
-struct CreateIdentityData {
-    QString name;
-    QByteArray hash;
-    QByteArray cert;
-    QByteArray address;
-    QString notes;
-    QImage avatar;
-};
-
-struct PendingIdentity {
-    CreateIdentityData data;
-};
 
 class IdentitiesModel : public QSqlTableModel
 {
@@ -61,13 +46,9 @@ private:
     int h_notes_= {};
     int h_avatar_ = {};
     int h_created_ = {};
-
-    QMap<QString, PendingIdentity> pending_identities_;
 };
 
 
 }} // namespaces
-
-Q_DECLARE_METATYPE(ds::models::CreateIdentityData)
 
 #endif // IDENTITIESMODEL_H

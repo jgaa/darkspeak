@@ -62,8 +62,6 @@ void IdentitiesModel::createIdentity(const ds::core::Identity &data)
     setEditStrategy(QSqlTableModel::OnFieldChange);
 
     qDebug() << "Added identity " << data.name << " to the database";
-
-    //this->select();
 }
 
 QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const

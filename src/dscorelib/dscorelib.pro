@@ -36,7 +36,8 @@ HEADERS += \
     include/ds/task.h \
     include/ds/identity.h \
     include/ds/errors.h \
-    include/ds/transporthandle.h
+    include/ds/transporthandle.h \
+    include/ds/contact.h
 
 INCLUDEPATH += $$PWD/include \
     $$PWD/../cryptolib/include \

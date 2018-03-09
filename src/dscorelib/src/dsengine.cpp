@@ -1,6 +1,7 @@
 
 #include <assert.h>
 #include <array>
+#include <regex>
 
 #include "ds/dsengine.h"
 #include "ds/errors.h"
@@ -78,6 +79,20 @@ bool DsEngine::isOnline() const
     return false;
 }
 
+QByteArray DsEngine::getIdentityHandle(const QByteArray &cert, const QByteArray &address)
+{
+    auto crt = DsCert::create(cert);
+    auto pubkey = crt->getPubKey();
+
+    QVariantMap map;
+    QVariantList list;
+    list.append(address);
+    map["pubkey"] = pubkey;
+    map.insert("address", list);
+
+    return toJson(map);
+}
+
 void DsEngine::createIdentity(const IdentityReq& req)
 {
     if (pending_identities_.contains(req.name)) {
@@ -104,6 +119,50 @@ void DsEngine::createIdentity(const IdentityReq& req)
             emit identityError({name, ex.what()});
         }
     });
+}
+
+void DsEngine::createContact(const ContactReq &req)
+{
+    static const regex valid_address{R"(^(onion):([a-z2-7]{16}|[a-z2-7]{56}):(\d{1,5})$)"};
+
+    // Parse handle
+    auto map = fromJson(req.contactHandle);
+
+    Contact c;
+    c.name = req.name;
+    c.nickname = req.nickname;
+    c.notes = req.notes;
+    c.group = req.group;
+    c.avatar = req.avatar;
+    c.whoInitiated = req.whoInitiated;
+
+    c.pubkey = map.value("pubkey").toByteArray();
+
+    auto addresses = map.value("address").toList();
+    if (addresses.size() != 1) {
+        throw ParseError(QStringLiteral(
+            "Unrecognized address format in contact %1").arg(req.name));
+    }
+    c.address = addresses.front().toByteArray();
+
+    // Validate
+    if (!regex_match(c.address.data(), valid_address)) {
+        qWarning() << "New contact " << req.name
+                   << " has an invalid address format : '"
+                   << c.address
+                   << "'";
+        throw ParseError(QStringLiteral(
+            "Invalid address format for contact %1").arg(req.name));
+    }
+
+    // TODO: Create a cert from the pubkey so we can hash it.
+    auto cert = ds::crypto::DsCert::createFromPubkey(c.pubkey);
+    c.hash = cert->getHash();
+
+    // Emit
+    qDebug() << "Contact " << c.name << " is ok.";
+    qDebug() << "Hash is: " << c.hash.toBase64();
+    emit contactCreated(c);
 }
 
 void DsEngine::onCertCreated(const QString &name, const DsCert::ptr_t cert)
@@ -261,9 +320,9 @@ void DsEngine::initialize()
     if (!initialized) {
         qRegisterMetaType<ds::core::Identity>("ds::core::Identity");
         qRegisterMetaType<ds::core::Identity>("Identity");
-
+        qRegisterMetaType<ds::core::Contact>("ds::core::Contact");
+        qRegisterMetaType<ds::core::Contact>("Contact");
     }
-
 
     auto data_path = QStandardPaths::writableLocation(
                 QStandardPaths::AppDataLocation);

@@ -8,6 +8,7 @@
 
 #include "ds/database.h"
 #include "ds/identity.h"
+#include "ds/contact.h"
 #include "ds/transporthandle.h"
 #include "ds/dscert.h"
 #include "ds/protocolmanager.h"
@@ -47,9 +48,14 @@ public:
     ProtocolManager& getProtocolMgr(ProtocolManager::Transport transport);
     static const QByteArray& getName(const State state);
     bool isOnline() const;
+    static QByteArray getIdentityHandle(const QByteArray& cert, const QByteArray& address);
+    static QByteArray toJson(const QVariantMap& data);
+    static QVariantMap fromJson(const QByteArray& json);
 
 public slots:
     void createIdentity(const IdentityReq&);
+    void createContact(const ContactReq&);
+
     void close();
     void start();
 
@@ -65,6 +71,7 @@ private slots:
 signals:
     void identityCreated(const Identity&);
     void identityError(const IdentityError&);
+    void contactCreated(const Contact& contact);
     void ready();
     void notReady(); // If the transport goes offline
     void closing();
@@ -76,8 +83,6 @@ protected:
     void initialize();
     void setState(State state);
     void tryMakeTransport(const QString& name);
-    static QByteArray toJson(const QVariantMap& data);
-    static QVariantMap fromJson(const QByteArray& json);
 
     std::unique_ptr<QSettings> settings_;
     std::unique_ptr<Database> database_;

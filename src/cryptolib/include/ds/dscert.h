@@ -34,6 +34,7 @@ public:
     /*! Factory to create a cert */
     static ptr_t create(const Type type = Type::RSA_2048);
     static ptr_t create(const QByteArray& cert);
+    static ptr_t createFromPubkey(const QByteArray& pubkey); // as returned by getPubKey()
 };
 
 }} // namespaces
