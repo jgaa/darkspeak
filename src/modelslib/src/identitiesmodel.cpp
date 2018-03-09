@@ -52,11 +52,16 @@ void IdentitiesModel::createIdentity(const ds::core::Identity &data)
     }
     rec.setValue(QStringLiteral("created"), QDateTime::currentDateTime().toTime_t());
 
-    if (!insertRecord(-1, rec)) {
-        qWarning() << "Failed to add identity " << data.name;
+    setEditStrategy(QSqlTableModel::OnManualSubmit);
+    if (!insertRecord(-1, rec) || !submit()) {
+        setEditStrategy(QSqlTableModel::OnFieldChange);
+        qWarning() << "Failed to add identity: " << data.name
+                   << this->lastError().text();
+        return;
     }
+    setEditStrategy(QSqlTableModel::OnFieldChange);
 
-    qDebug() << "Added identity " << data.name << " to the database.";
+    qDebug() << "Added identity " << data.name << " to the database";
 
     //this->select();
 }
