@@ -9,7 +9,8 @@ SUBDIRS = \
     modelslib \
     test_tor \
     test_crypto \
-    test_core
+    test_core \
+    test_models
 
 torlib.subdir = src/torlib
 dscorelib.subdir = src/dscorelib
@@ -30,3 +31,6 @@ test_tor.depends = torlib cryptolib
 
 test_crypto.subdir = tests/tests_crypto
 test_crypto.depends = cryptolib
+
+test_models.subdir = tests/tests_models
+test_crypto.depends = modelslib dscorelib torlib cryptolib dsprotlib
