@@ -38,6 +38,7 @@ public:
 
 private:
     int h_id_ = {};
+    int h_uuid_ = {};
     int h_hash_ = {};
     int h_name_ = {};
     int h_cert_ = {};

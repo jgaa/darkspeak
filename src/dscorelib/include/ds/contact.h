@@ -13,6 +13,7 @@ enum class InitiatedBy {
 };
 
 struct Contact {
+    int identity = {};
     QString name;
     QString nickname;
     QString notes;
@@ -29,6 +30,7 @@ struct Contact {
 };
 
 struct ContactReq {
+    int identity = {};
     QString name;
     QString nickname;
     QString notes;

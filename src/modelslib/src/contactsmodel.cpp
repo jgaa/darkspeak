@@ -26,6 +26,7 @@ ContactsModel::ContactsModel(QSettings& settings)
     setEditStrategy(QSqlTableModel::OnFieldChange);
 
     h_id_ = fieldIndex("id");
+    h_identity_ = fieldIndex("identity");
     h_uuid_ = fieldIndex("uuid");
     h_hash_ = fieldIndex("hash");
     h_name_ = fieldIndex("name");
@@ -64,7 +65,8 @@ bool ContactsModel::hashExists(QByteArray hash) const
 void ContactsModel::onContactCreated(const Contact &contact)
 {
     Strategy strategy(*this, QSqlTableModel::OnManualSubmit);
-    QSqlRecord rec{DsEngine::instance().getDb().record(this->tableName())};
+    QSqlRecord rec{DsEngine::instance().getDb().record(tableName())};
+    rec.setValue(h_identity_, contact.identity);
     rec.setValue(h_uuid_, QUuid().toString());
     if (!contact.nickname.isEmpty()) {
         rec.setValue(h_nickname_, contact.nickname);

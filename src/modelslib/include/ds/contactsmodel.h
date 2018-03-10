@@ -23,6 +23,7 @@ public slots:
 
 private:
     int h_id_ = {};
+    int h_identity_ = {};
     int h_uuid_ = {};
     int h_hash_ = {};
     int h_name_ = {};

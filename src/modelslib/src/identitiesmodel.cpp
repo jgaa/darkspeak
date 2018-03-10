@@ -6,6 +6,7 @@
 #include <QSqlRecord>
 #include <QSqlField>
 #include <QDateTime>
+#include <QUuid>
 
 #include "ds/identitiesmodel.h"
 #include "ds/errors.h"
@@ -25,6 +26,7 @@ IdentitiesModel::IdentitiesModel(QSettings &settings)
     setEditStrategy(QSqlTableModel::OnFieldChange);
 
     h_id_ = fieldIndex("id");
+    h_uuid_ = fieldIndex("uuid");
     h_hash_ = fieldIndex("hash");
     h_name_ = fieldIndex("name");
     h_cert_ = fieldIndex("cert");
@@ -43,6 +45,7 @@ void IdentitiesModel::createIdentity(const ds::core::Identity &data)
     Strategy strategy(*this, QSqlTableModel::OnManualSubmit);
     QSqlRecord rec{DsEngine::instance().getDb().record(this->tableName())};
 
+    rec.setValue(h_uuid_, QUuid().toString());
     rec.setValue(h_hash_, data.hash);
     rec.setValue(h_name_, data.name);
     rec.setValue(h_cert_, data.cert);

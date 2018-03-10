@@ -136,6 +136,7 @@ void DsEngine::createContact(const ContactReq &req)
     auto map = fromJson(req.contactHandle);
 
     Contact c;
+    c.identity = req.identity;
     c.name = req.name;
     c.nickname = req.nickname;
     c.notes = req.notes;

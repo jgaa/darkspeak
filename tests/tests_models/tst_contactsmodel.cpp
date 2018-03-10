@@ -42,8 +42,16 @@ void TestContactsModel::test_create_contact()
     // Start the engine, connect to Tor, get ready
     engine.start();
 
-    // Create an identity.
+    // Create a dummy identity just to meet the database contraint for contact.identity --> identity
+    QSqlQuery inject("INSERT INTO identity (uuid, hash, name, cert, address, address_data, created) "
+                     "VALUES ('uuid', '', 'test', '', '', '', 0)", engine.getDb());
+
+
+    // Create a contact.
     ds::core::ContactReq cr;
+
+    cr.identity = inject.lastInsertId().toInt();
+    QVERIFY(cr.identity > 0);
     cr.name = "test";
     cr.contactHandle = cr.contactHandle = engine.getIdentityHandle(cert, addr);
 
