@@ -30,6 +30,8 @@ public:
         DS_VERSION = 0
     };
 
+    QSqlDatabase& getDb() { return db_; }
+
 signals:
 
 public slots:

@@ -29,5 +29,9 @@ void TestIdentitiesModel::test_create_identity()
     engine.createIdentity(req);
 
     QCOMPARE(spy_rows_inserted.wait(3000), true);
+    QCOMPARE(idmodel.rowCount() , 1);
+    QCOMPARE(idmodel.data(idmodel.index(0, idmodel.fieldIndex("name"), {}), Qt::DisplayRole).toString(), req.name);
+    QCOMPARE(idmodel.identityExists(req.name), true);
+    QCOMPARE(idmodel.identityExists("nonexistant"), false);
 }
 

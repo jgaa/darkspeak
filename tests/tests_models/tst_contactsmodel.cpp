@@ -37,7 +37,7 @@ void TestContactsModel::test_create_contact()
     settings->setValue("dbpath", ":memory:");
     ds::core::DsEngine engine(std::move(settings));
     ds::models::ContactsModel cmodel(engine.settings());
-    QSignalSpy spy_rows_inserted(&cmodel, &ds::models::ContactsModel::modelReset);
+    QSignalSpy spy_rows_inserted(&cmodel, &ds::models::ContactsModel::rowsInserted);
 
     // Start the engine, connect to Tor, get ready
     engine.start();
@@ -57,10 +57,8 @@ void TestContactsModel::test_create_contact()
     const auto dscert = ds::crypto::DsCert::createFromPubkey(pubkey);
     const auto hash = dscert->getHash();
 
-    qDebug() << "The database has " << cmodel.rowCount() << " records.";
-
-    qDebug() << "Name: "
-             << cmodel.data(cmodel.index(0, 3, {})).toString();
-
+    QCOMPARE(cmodel.rowCount() , 1);
+    QCOMPARE(cmodel.data(cmodel.index(0, cmodel.fieldIndex("name"), {})).toString(), cr.name);
     QCOMPARE(cmodel.hashExists(hash), true);
+    QCOMPARE(cmodel.hashExists(QByteArray("Not a hash")), false);
 }

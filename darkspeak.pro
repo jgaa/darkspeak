@@ -21,7 +21,7 @@ modelslib.subdir = src/modelslib
 modelslib.depends = dscorelib
 
 dsprotlib.depends = torlib
-dscorelib.depends = dsprotlib cryptolib
+dscorelib.depends = torlib dsprotlib cryptolib
 
 test_core.subdir = tests/tests_core
 test_core.depends = dscorelib torlib cryptolib dsprotlib

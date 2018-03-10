@@ -43,6 +43,7 @@ public:
 
     static DsEngine& instance();
     State getState() const;
+    QSqlDatabase& getDb();
 
     QSettings& settings() noexcept { return *settings_; }
     ProtocolManager& getProtocolMgr(ProtocolManager::Transport transport);
@@ -51,6 +52,7 @@ public:
     static QByteArray getIdentityHandle(const QByteArray& cert, const QByteArray& address);
     static QByteArray toJson(const QVariantMap& data);
     static QVariantMap fromJson(const QByteArray& json);
+    static QByteArray imageToBytes(const QImage& img);
 
 public slots:
     void createIdentity(const IdentityReq&);

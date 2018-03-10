@@ -9,6 +9,7 @@
 #include "ds/dscert.h"
 #include "ds/dsengine.h"
 #include "ds/identity.h"
+#include "ds/model_util.h"
 
 namespace ds {
 namespace models {
@@ -25,7 +26,6 @@ protected:
 
 public slots:
     void createIdentity(const ds::core::Identity& data);
-
 
     // QAbstractItemModel interface
 public:

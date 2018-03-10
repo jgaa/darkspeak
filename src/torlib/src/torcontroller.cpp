@@ -1,7 +1,6 @@
 
 #include <QFile>
 #include <QFileInfo>
-#include <QRandomGenerator>
 #include <assert.h>
 
 #include "include/ds/torcontroller.h"

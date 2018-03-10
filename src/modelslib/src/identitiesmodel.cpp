@@ -4,10 +4,12 @@
 #include <QRunnable>
 #include <QDebug>
 #include <QSqlRecord>
+#include <QSqlField>
 #include <QDateTime>
 
 #include "ds/identitiesmodel.h"
 #include "ds/errors.h"
+#include "ds/strategy.h"
 
 using namespace ds::core;
 using namespace std;
@@ -38,28 +40,27 @@ IdentitiesModel::IdentitiesModel(QSettings &settings)
 
 void IdentitiesModel::createIdentity(const ds::core::Identity &data)
 {
-    QSqlRecord rec;
-    rec.setValue(QStringLiteral("hash"), data.hash);
-    rec.setValue(QStringLiteral("name"), data.name);
-    rec.setValue(QStringLiteral("cert"), data.cert);
-    rec.setValue(QStringLiteral("address"), data.address);
-    rec.setValue(QStringLiteral("address_data"), data.addressData);
+    Strategy strategy(*this, QSqlTableModel::OnManualSubmit);
+    QSqlRecord rec{DsEngine::instance().getDb().record(this->tableName())};
+
+    rec.setValue(h_hash_, data.hash);
+    rec.setValue(h_name_, data.name);
+    rec.setValue(h_cert_, data.cert);
+    rec.setValue(h_address_, data.address);
+    rec.setValue(h_address_data_, data.addressData);
     if (!data.notes.isEmpty()) {
-        rec.setValue(QStringLiteral("notes"), data.notes);
+        rec.setValue(h_notes_, data.notes);
     }
     if (!data.avatar.isNull()) {
-        rec.setValue(QStringLiteral("avatar"), data.avatar);
+        rec.setValue(h_avatar_, data.avatar);
     }
-    rec.setValue(QStringLiteral("created"), QDateTime::currentDateTime().toTime_t());
+    rec.setValue(h_created_, QDateTime::currentDateTime().toTime_t());
 
-    setEditStrategy(QSqlTableModel::OnManualSubmit);
-    if (!insertRecord(-1, rec) || !submit()) {
-        setEditStrategy(QSqlTableModel::OnFieldChange);
+    if (!insertRecord(-1, rec) || !submitAll()) {
         qWarning() << "Failed to add identity: " << data.name
                    << this->lastError().text();
         return;
     }
-    setEditStrategy(QSqlTableModel::OnFieldChange);
 
     qDebug() << "Added identity " << data.name << " to the database";
 }

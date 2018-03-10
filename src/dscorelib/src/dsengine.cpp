@@ -16,6 +16,7 @@
 #include <QTimer>
 #include <QJsonDocument>
 #include <QJsonDocument>
+#include <QBuffer>
 
 using namespace ds::crypto;
 using namespace std;
@@ -49,6 +50,12 @@ DsEngine &DsEngine::instance()
 {
     assert(instance_);
     return *instance_;
+}
+
+QSqlDatabase& DsEngine::getDb()
+{
+    assert(database_);
+    return database_->getDb();
 }
 
 ProtocolManager &DsEngine::getProtocolMgr(ProtocolManager::Transport)
@@ -427,6 +434,15 @@ QVariantMap DsEngine::fromJson(const QByteArray &json)
     }
 
     return doc.toVariant().value<QVariantMap>();
+}
+
+QByteArray DsEngine::imageToBytes(const QImage &img)
+{
+    QByteArray ba;
+    QBuffer buffer(&ba);
+    buffer.open(QIODevice::WriteOnly);
+    img.save(&buffer, "PNG");
+    return ba;
 }
 
 

@@ -27,7 +27,9 @@ SOURCES += \
 
 HEADERS += \
     include/ds/identitiesmodel.h \
-    include/ds/contactsmodel.h
+    include/ds/contactsmodel.h \
+    include/ds/strategy.h \
+    include/ds/model_util.h
 
 INCLUDEPATH += \
     $$PWD/include \
