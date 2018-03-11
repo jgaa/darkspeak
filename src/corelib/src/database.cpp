@@ -64,6 +64,7 @@ void Database::createDatabase()
         exec(R"(CREATE TABLE "ds" ( `version` INTEGER NOT NULL))");
         exec(R"(CREATE TABLE "identity" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `uuid` INTEGER NOT NULL, `hash` BLOB NOT NULL UNIQUE, `name` TEXT NOT NULL UNIQUE, `cert` TEXT NOT NULL, `address` TEXT NOT NULL, `address_data` TEXT, `notes` TEXT, `avatar` BLOB, `created` INTEGER NOT NULL ))");
         exec(R"(CREATE TABLE "contact" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `identity` INTEGER NOT NULL, `uuid` TEXT NOT NULL UNIQUE, `hash` BLOB NOT NULL UNIQUE, `name` TEXT NOT NULL, `nickname` TEXT UNIQUE, `pubkey` TEXT NOT NULL UNIQUE, `address` TEXT NOT NULL, `notes` TEXT, `contact_group` TEXT NOT NULL DEFAULT 'other', `avatar` BLOB, `created` INTEGER NOT NULL, `initiated_by` TEXT NOT NULL, `last_seen` INTEGER, `online` INTEGER DEFAULT 0, FOREIGN KEY(`identity`) REFERENCES identity(id) ))");
+        exec(R"(CREATE TABLE "conversation" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `identity` INTEGER NOT NULL, `type` INTEGER NOT NULL DEFAULT 0, `uuid` INTEGER, `hash` BLOB NOT NULL UNIQUE, `key` TEXT NOT NULL UNIQUE, `participants` TEXT, `topic` TEXT, FOREIGN KEY(`identity`) REFERENCES identity(id) ))");
         QSqlQuery query(db_);
         query.prepare("INSERT INTO ds (version) VALUES (:version)");
         query.bindValue(":version", currentVersion);

@@ -6,7 +6,7 @@
 
 QT       += core sql gui network
 
-TARGET = dsmodels
+TARGET = modelslib
 TEMPLATE = lib
 CONFIG += staticlib
 
@@ -23,17 +23,19 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
     src/identitiesmodel.cpp \
-    src/contactsmodel.cpp
+    src/contactsmodel.cpp \
+    src/conversationsmodel.cpp
 
 HEADERS += \
     include/ds/identitiesmodel.h \
     include/ds/contactsmodel.h \
     include/ds/strategy.h \
-    include/ds/model_util.h
+    include/ds/model_util.h \
+    include/ds/conversationsmodel.h
 
 INCLUDEPATH += \
     $$PWD/include \
-    $$PWD/../dscorelib/include \
+    $$PWD/../corelib/include \
     $$PWD/../cryptolib/include \
-    $$PWD/../dsprotlib/include
+    $$PWD/../protlib/include
 

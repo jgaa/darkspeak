@@ -43,10 +43,6 @@ ContactsModel::ContactsModel(QSettings& settings)
 
     connect(&DsEngine::instance(), &DsEngine::contactCreated,
             this, &ContactsModel::onContactCreated, Qt::QueuedConnection);
-
-    if (!select()) {
-        qWarning() << "Failed to select fropm database: " << lastError().text();
-    }
 }
 
 bool ContactsModel::hashExists(QByteArray hash) const

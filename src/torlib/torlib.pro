@@ -7,7 +7,7 @@
 QT       += core network
 QT       -= gui
 
-TARGET = tor
+TARGET = torlib
 TEMPLATE = lib
 CONFIG += staticlib
 

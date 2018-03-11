@@ -17,53 +17,39 @@ HEADERS += \
 INCLUDEPATH += \
     $$PWD/include \
     $$PWD/../../src/cryptolib/include \
-    $$PWD/../../src/dscorelib/include \
-    $$PWD/../../src/dsprotlib/include \
+    $$PWD/../../src/corelib/include \
+    $$PWD/../../src/protlib/include \
     $$PWD/../../src/modelslib/include
 
 
 unix:!macx: LIBS += -lcrypto
 
 
+win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/corelib/release/ -lcorelib
+else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/corelib/debug/ -lcorelib
+else:unix: LIBS += -L$$OUT_PWD/../../src/corelib/ -lcorelib
 
-win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/dscorelib/release/ -ldscorelib
-else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/dscorelib/debug/ -ldscorelib
-else:unix: LIBS += -L$$OUT_PWD/../../src/dscorelib/ -ldscorelib
+INCLUDEPATH += $$PWD/../../src/corelib
+DEPENDPATH += $$PWD/../../src/corelib
 
-INCLUDEPATH += $$PWD/../../src/dscorelib
-DEPENDPATH += $$PWD/../../src/dscorelib
+win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/corelib/release/libcorelib.a
+else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/corelib/debug/libcorelib.a
+else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/corelib/release/corelib.lib
+else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/corelib/debug/corelib.lib
+else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/corelib/libcorelib.a
 
-win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/dscorelib/release/libdscorelib.a
-else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/dscorelib/debug/libdscorelib.a
-else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/dscorelib/release/dscorelib.lib
-else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/dscorelib/debug/dscorelib.lib
-else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/dscorelib/libdscorelib.a
+win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/protlib/release/ -lprotlib
+else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/protlib/debug/ -lprotlib
+else:unix: LIBS += -L$$OUT_PWD/../../src/protlib/ -lprotlib
 
-win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/dsprotlib/release/ -ldsprotlib
-else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/dsprotlib/debug/ -ldsprotlib
-else:unix: LIBS += -L$$OUT_PWD/../../src/dsprotlib/ -ldsprotlib
+INCLUDEPATH += $$PWD/../../src/protlib
+DEPENDPATH += $$PWD/../../src/protlib
 
-INCLUDEPATH += $$PWD/../../src/dsprotlib
-DEPENDPATH += $$PWD/../../src/dsprotlib
-
-win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/dsprotlib/release/libdsprotlib.a
-else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/dsprotlib/debug/libdsprotlib.a
-else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/dsprotlib/release/dsprotlib.lib
-else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/dsprotlib/debug/dsprotlib.lib
-else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/dsprotlib/libdsprotlib.a
-
-win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/torlib/release/ -ltor
-else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/torlib/debug/ -ltor
-else:unix: LIBS += -L$$OUT_PWD/../../src/torlib/ -ltor
-
-INCLUDEPATH += $$PWD/../../src/torlib
-DEPENDPATH += $$PWD/../../src/torlib
-
-win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/release/libtor.a
-else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/debug/libtor.a
-else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/release/tor.lib
-else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/debug/tor.lib
-else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/libtor.a
+win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/protlib/release/libprotlib.a
+else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/protlib/debug/libprotlib.a
+else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/protlib/release/protlib.lib
+else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/protlib/debug/protlib.lib
+else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/protlib/libprotlib.a
 
 win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/cryptolib/release/ -lcryptolib
 else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/cryptolib/debug/ -lcryptolib
@@ -78,15 +64,29 @@ else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PW
 else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/cryptolib/debug/cryptolib.lib
 else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/cryptolib/libcryptolib.a
 
-win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/modelslib/release/ -ldsmodels
-else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/modelslib/debug/ -ldsmodels
-else:unix: LIBS += -L$$OUT_PWD/../../src/modelslib/ -ldsmodels
+win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/torlib/release/ -ltorlib
+else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/torlib/debug/ -ltorlib
+else:unix: LIBS += -L$$OUT_PWD/../../src/torlib/ -ltorlib
+
+INCLUDEPATH += $$PWD/../../src/torlib
+DEPENDPATH += $$PWD/../../src/torlib
+
+win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/release/libtorlib.a
+else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/debug/libtorlib.a
+else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/release/torlib.lib
+else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/debug/torlib.lib
+else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/libtorlib.a
+
+
+win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/modelslib/release/ -lmodelslib
+else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/modelslib/debug/ -lmodelslib
+else:unix: LIBS += -L$$OUT_PWD/../../src/modelslib/ -lmodelslib
 
 INCLUDEPATH += $$PWD/../../src/modelslib
 DEPENDPATH += $$PWD/../../src/modelslib
 
-win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/release/libdsmodels.a
-else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/debug/libdsmodels.a
-else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/release/dsmodels.lib
-else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/debug/dsmodels.lib
-else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/libdsmodels.a
+win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/release/libmodelslib.a
+else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/debug/libmodelslib.a
+else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/release/modelslib.lib
+else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/debug/modelslib.lib
+else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/libmodelslib.a

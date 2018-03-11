@@ -3,8 +3,8 @@ TEMPLATE = subdirs
 
 SUBDIRS = \
     torlib \
-    dscorelib \
-    dsprotlib \
+    corelib \
+    protlib \
     cryptolib \
     modelslib \
     test_tor \
@@ -13,18 +13,18 @@ SUBDIRS = \
     test_models
 
 torlib.subdir = src/torlib
-dscorelib.subdir = src/dscorelib
-dsprotlib.subdir = src/dsprotlib
+corelib.subdir = src/corelib
+protlib.subdir = src/protlib
 cryptolib.subdir = src/cryptolib
 modelslib.subdir = src/modelslib
 
-modelslib.depends = dscorelib
+modelslib.depends = corelib
 
-dsprotlib.depends = torlib
-dscorelib.depends = torlib dsprotlib cryptolib
+protlib.depends = torlib
+corelib.depends = torlib protlib cryptolib
 
 test_core.subdir = tests/tests_core
-test_core.depends = dscorelib torlib cryptolib dsprotlib
+test_core.depends = corelib torlib cryptolib protlib
 
 test_tor.subdir = tests/tests_tor
 test_tor.depends = torlib cryptolib
@@ -33,4 +33,4 @@ test_crypto.subdir = tests/tests_crypto
 test_crypto.depends = cryptolib
 
 test_models.subdir = tests/tests_models
-test_crypto.depends = modelslib dscorelib torlib cryptolib dsprotlib
+test_models.depends = modelslib

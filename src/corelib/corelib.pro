@@ -7,7 +7,7 @@
 QT       += core sql network
 QT       -= gui
 
-TARGET = dscorelib
+TARGET = corelib
 TEMPLATE = lib
 CONFIG += staticlib
 
@@ -41,5 +41,5 @@ HEADERS += \
 
 INCLUDEPATH += $$PWD/include \
     $$PWD/../cryptolib/include \
-    $$PWD/../dsprotlib/include \
+    $$PWD/../protlib/include \
     $$PWD/../torlib/include \

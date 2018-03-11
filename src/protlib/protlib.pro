@@ -8,7 +8,7 @@ QT       += core network
 
 QT       -= gui
 
-TARGET = dsprotlib
+TARGET = protlib
 TEMPLATE = lib
 CONFIG += staticlib
 
@@ -33,5 +33,5 @@ HEADERS += \
 
 INCLUDEPATH += $$PWD/include \
     $$PWD/../torlib/include \
-    $$PWD/../dscorelib/include
+    $$PWD/../corelib/include
 
