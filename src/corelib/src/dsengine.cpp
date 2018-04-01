@@ -163,7 +163,7 @@ void DsEngine::createContact(const ContactReq &req)
             "Invalid address format for contact %1").arg(req.name));
     }
 
-    // TODO: Create a cert from the pubkey so we can hash it.
+    // Create a cert from the pubkey so we can hash it.
     auto cert = ds::crypto::DsCert::createFromPubkey(c.pubkey);
     c.hash = cert->getHash();
 

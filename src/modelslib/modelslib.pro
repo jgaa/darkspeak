@@ -24,14 +24,16 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
     src/identitiesmodel.cpp \
     src/contactsmodel.cpp \
-    src/conversationsmodel.cpp
+    src/conversationsmodel.cpp \
+    src/messagemodel.cpp
 
 HEADERS += \
     include/ds/identitiesmodel.h \
     include/ds/contactsmodel.h \
     include/ds/strategy.h \
     include/ds/model_util.h \
-    include/ds/conversationsmodel.h
+    include/ds/conversationsmodel.h \
+    include/ds/messagemodel.h
 
 INCLUDEPATH += \
     $$PWD/include \
