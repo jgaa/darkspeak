@@ -43,7 +43,7 @@ signals:
     void stopped();
 
     // Proxied from the controller, as it is hard for consumers to subscribe
-    // to the controller. The manager will create new copntrollers if connectivity
+    // to the controller. The manager will create new controllers if connectivity
     // with the Tor service is lost.
     void serviceCreated(const ServiceProperties& service);
     void serviceFailed(const QByteArray& id, const QByteArray& reason);

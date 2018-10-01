@@ -11,7 +11,6 @@ class TorProtocolManager : public ds::core::ProtocolManager
 {
 public:
     TorProtocolManager(QSettings& settings);
-    virtual ~TorProtocolManager() = default;
 
 public slots:
     void sendMessage(const core::Message &) override;
@@ -38,9 +37,9 @@ protected:
     void setState(State state);
     ds::tor::TorConfig getConfig() const;
 
-    State state_ = State::OFFLINE;
     std::unique_ptr<::ds::tor::TorMgr> tor_;
     QSettings& settings_;
+    State state_ = State::OFFLINE;
 
     // ProtocolManager interface
 public slots:

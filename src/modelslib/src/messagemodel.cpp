@@ -3,7 +3,7 @@
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QDebug>
-#include <QStringLiteral>
+//#include <QStringLiteral>
 
 namespace ds {
 namespace models {
@@ -44,11 +44,16 @@ void MessageModel::onMessageCreated(const core::Message &message)
 void MessageModel::sendMessage(const QString &content, const QByteArray &conversation)
 {
     // TODO: Create a message-request and send it to the core
+    //  - Create request
+    //  - Sign
+    //  - Store to DB (unless the message is memory only)
+    //  - Add the message to the UI?
+    //  - Send to core
 }
 
 void MessageModel::onMessageSent(const int id)
 {
-    // TODO: Optimize. Only realod if we are viewing this conversation
+    // TODO: Optimize. Only reload if we are viewing this conversation
 
     Q_UNUSED(id);
 

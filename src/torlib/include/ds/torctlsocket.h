@@ -27,8 +27,8 @@ QString toKey(const T& key) {
 }
 
 struct TorCtlReply {
-    int status = {};
     std::deque<std::string> lines;
+    int status = {};
 
     struct ParseError : public std::runtime_error
     {

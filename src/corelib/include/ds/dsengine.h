@@ -69,6 +69,7 @@ private slots:
     void onTransportHandleReady(const TransportHandle& th);
     void onTransportHandleError(const TransportHandleError& th);
     void online();
+    void sendMessage(Message message);
 
 signals:
     void identityCreated(const Identity&);
