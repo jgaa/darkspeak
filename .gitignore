@@ -4,8 +4,6 @@ build
 /cmake-build-*/
 generated-doc
 */*.rej
-include/restc-cpp/config.h
-lib
 *.kdev4
 /.idea/
 /.vs/
