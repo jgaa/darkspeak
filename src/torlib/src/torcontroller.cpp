@@ -282,7 +282,7 @@ void TorController::OnAuthReply(const TorCtlReply &reply)
     if (reply.status == 250) {
         setState(CtlState::CONNECTED);
         emit autenticated();
-        ctl_->sendCommand("SETEVENTS EXTENDED STATUS_CLIENT", {});
+        ctl_->sendCommand("SETEVENTS STATUS_CLIENT", {});
         ctl_->sendCommand("GETINFO status/bootstrap-phase", [this](const TorCtlReply& reply) {
             if (reply.status == 250) {
                 auto map = reply.parse();
