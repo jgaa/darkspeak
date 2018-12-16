@@ -233,6 +233,11 @@ void DsEngine::online()
     }
 }
 
+void DsEngine::sendMessage(const Message &message)
+{
+
+}
+
 void DsEngine::onTransportHandleReady(const TransportHandle &th)
 {
     const auto name = th.identityName;
