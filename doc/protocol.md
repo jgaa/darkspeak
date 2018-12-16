@@ -111,7 +111,7 @@ Response:
 {
     "type" : "Ack",
     "what" : "AddMe",
-    "status": "added" | "Pending" | "Rejected"
+    "status": "Added" | "Pending" | "Rejected"
 }
 ```
 
@@ -195,7 +195,7 @@ Response:
     "type" : "Ack",
     "what" : "Join",
     "conversation" : "67676ggg",
-    "status" : "joined" | "rejected"
+    "status" : "Joined" | "Rejected"
 }
 ```
 
@@ -232,7 +232,7 @@ Reply:
     "type" : "Ack",
     "what" : "Message",
     "message-id" : "sjdaghfjasghdf87",
-    "status" : "received" | "rejected" | "rejected-encoding",
+    "status" : "Received" | "Rejected" | "Rejected-Encoding",
     "signature" : "..."
 }
 ```
@@ -243,6 +243,7 @@ Reply:
 {
     "type" : "IncomingFile",
     "name" : "cutecat.jpg",
+    "sha512" : "GfE6564...",
     "size" : 12345,
     "type" : "binary" | "text",
     "rest" : 50,
@@ -252,6 +253,7 @@ Reply:
 
 - what: IncomingFile
 - name: Suggested name of the file. Cannot contain slashes. May be restricted to us-ascii at some clients.
+- sha512: Sha512 hash of the file
 - size: Size of the file in bytes
 - type: Binary or text. DarkSpeak will convert text-files to UNIX format, and save in the local format for the operating system used by the client. This feature makes it harder to deduce the operating system used by a client.
 - rest: Restore point. Used to continue an aborted or incomplete transfer. The transfer will start at the file-offset (in bytes) specified here.
@@ -264,7 +266,7 @@ Reply:
     "type" : "Ack",
     "what" : "IncomingFile",
     "file-id" : "123",
-    "status" : "proceed" | "rejected" | "rejected-encoding" | "completed" | "abort" | "resume"
+    "status" : "Proceed" | "Rejected" | "Rejected-Encoding" | "Completed" | "Abort" | "Resume"
     "channel" : 5,
     "rest" : 123
 }
@@ -326,7 +328,7 @@ Reply:
     "path" : "/pub/cats",
 
     "list" : [
-        {"name" : "cutecat.jpg", "type" : "file", "size" : 12345, "sha1" : "a769a1c29ba5428c7f4e260db495c040641404d9"},
+        {"name" : "cutecat.jpg", "type" : "file", "size" : 12345, "Sha512" : "a769a1c29ba5428c7f4e260db495c040641404d9..."},
         {"name" : "even.cuter.cats", "type" : "dir"},
     ]
 }
