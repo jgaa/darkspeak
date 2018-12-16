@@ -1,0 +1,44 @@
+.kdev4
+build
+?build
+/cmake-build-*/
+generated-doc
+*/*.rej
+include/restc-cpp/config.h
+lib
+*.kdev4
+/.idea/
+/.vs/
+*.user
+
+
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
