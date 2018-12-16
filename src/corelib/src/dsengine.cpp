@@ -120,7 +120,7 @@ void DsEngine::createIdentity(const IdentityReq& req)
     Task::schedule([this, name] {
         // TODO: Take cert type from settings
         try {
-            auto cert = DsCert::create(DsCert::Type::RSA_2048);
+            auto cert = DsCert::create();
             emit certCreated(name, cert);
         } catch (const std::exception& ex) {
             emit identityError({name, ex.what()});

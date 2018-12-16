@@ -22,7 +22,7 @@ INCLUDEPATH += \
     $$PWD/../../src/modelslib/include
 
 
-unix:!macx: LIBS += -lcrypto
+unix:!macx: LIBS += -lsodium
 
 
 win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/corelib/release/ -lcorelib

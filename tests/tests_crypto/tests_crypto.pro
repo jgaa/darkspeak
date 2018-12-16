@@ -19,7 +19,7 @@ DEPENDPATH += $$PWD/../../src/cryptolib
 HEADERS += \
     tst_certs.h
 
-unix:!macx: LIBS += -lcrypto
+unix:!macx: LIBS += -lsodium
 
 win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/cryptolib/release/ -lcryptolib
 else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/cryptolib/debug/ -lcryptolib

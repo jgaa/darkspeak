@@ -4,7 +4,7 @@
 
 void TestCerts::test_create_cert()
 {
-    auto first = ds::crypto::DsCert::create(ds::crypto::DsCert::Type::RSA_512);
+    auto first = ds::crypto::DsCert::create();
 
     QVERIFY(first != nullptr);
 

@@ -8,7 +8,7 @@ namespace ds {
 namespace crypto {
 
 
-// Initializes openssl library. We need one instance in  main().
+// Initializes sodium library. We need one instance in  main().
 class Crypto
 {
 public:

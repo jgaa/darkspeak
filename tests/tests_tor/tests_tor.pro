@@ -20,7 +20,7 @@ HEADERS += \
     tst_torcontroller.h
 
 
-unix:!macx: LIBS += -lcrypto
+unix:!macx: LIBS += -lsodium
 
 win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/torlib/release/ -ltorlib
 else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/torlib/debug/ -ltorlib

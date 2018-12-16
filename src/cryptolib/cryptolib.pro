@@ -24,14 +24,15 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
     src/crypto.cpp \
-    src/rsacertimpl.cpp
+    #src/rsacertimpl.cpp \
+    src/certimpl.cpp
 
 HEADERS += \
     include/ds/crypto.h \
     include/ds/dscert.h \
-    include/ds/rsacertimpl.h \
-    include/ds/cvar.h
+    #include/ds/rsacertimpl.h \
+    include/ds/cvar.h \
+    include/ds/certimpl.h
 
 INCLUDEPATH += $$PWD/include
-
 

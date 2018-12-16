@@ -319,7 +319,7 @@ std::string TorCtlReply::unescape(const std::string::const_iterator start,
 
                     assert(!octet.empty());
 
-                    auto ch = static_cast<char>(std::stoi(octet, 0, 8));
+                    auto ch = static_cast<char>(std::stoi(octet, nullptr, 8));
                     rval += ch;
 
                 } else {
