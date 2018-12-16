@@ -49,7 +49,7 @@ public:
     ProtocolManager& getProtocolMgr(ProtocolManager::Transport transport);
     static const QByteArray& getName(const State state);
     bool isOnline() const;
-    static QByteArray getIdentityHandle(const QByteArray& cert, const QByteArray& address);
+    static QByteArray getIdentityHandle(const QByteArray& pubkey, const QByteArray& address);
     static QByteArray toJson(const QVariantMap& data);
     static QVariantMap fromJson(const QByteArray& json);
     static QByteArray imageToBytes(const QImage& img);

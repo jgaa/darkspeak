@@ -86,15 +86,12 @@ bool DsEngine::isOnline() const
     return false;
 }
 
-QByteArray DsEngine::getIdentityHandle(const QByteArray &cert, const QByteArray &address)
+QByteArray DsEngine::getIdentityHandle(const QByteArray &pubkey, const QByteArray &address)
 {
-    auto crt = DsCert::create(cert);
-    auto pubkey = crt->getPubKey();
-
     QVariantMap map;
     QVariantList list;
     list.append(address);
-    map["pubkey"] = pubkey;
+    map["pubkey"] = pubkey.toBase64();
     map.insert("address", list);
 
     return toJson(map);
@@ -144,7 +141,7 @@ void DsEngine::createContact(const ContactReq &req)
     c.avatar = req.avatar;
     c.whoInitiated = req.whoInitiated;
 
-    c.pubkey = map.value("pubkey").toByteArray();
+    c.pubkey = QByteArray::fromBase64(map.value("pubkey").toByteArray());
 
     auto addresses = map.value("address").toList();
     if (addresses.size() != 1) {

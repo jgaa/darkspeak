@@ -65,21 +65,7 @@ void TestDsEngine::test_create_identity_when_still_offline()
 
 void TestDsEngine::test_get_identity_handle()
 {
-    QByteArray cert{"-----BEGIN RSA PRIVATE KEY-----\n"
-                    "MIICXQIBAAKBgQDQi1vRvVZbzXhMGyeiz6GaKFGXVBIxhxkMXRRMcbHgn8Mx1rxt\n"
-                    "1VfPyJvuu22lpHV9N+hYQmguY8T9eyyXJ2z2K2cKGZoR6G4giKjLa2lvG5BSChHU\n"
-                    "rEG2mz5MpvOE203aTBW0DmADUFDVAvDivASyx2KzxlaK4sUBjBD4RgwY6wIEAQUY\n"
-                    "tQKBgBnkbvU7NsRb44LI91OkyU49ui2U0qbccCgx4/6aUr4x3BUS+RT7bN9Wu+5m\n"
-                    "cLr1ExHNnxdKnJJ8k1MfmehaSniq5/mJwYxfCD6bsaiqYmn10lf47RzEmC4T+a/0\n"
-                    "zMUU+32d8FbczpSelSJP+X1syVWqIMfTmCzDBM88ChFwK6z9AkEA8Oz39TXz9SpA\n"
-                    "aPmnMHGtfZpj7TKYgLmT2BnFIeJUZI0DmjsqdqM78izHZ59Ci2M30Lg6DMUnzkBf\n"
-                    "46LinTzsbwJBAN2XuN+lNiVFifdsSrPnBocQYQgpt9N++l7IQICZ9RiG4+wTaoDR\n"
-                    "R8nM6iTx+5MyFzS4brN+4YYXR1ElPDZjEUUCQQCFaWCpm5Ok0y0Ffl9hxXQPhyqe\n"
-                    "jIaEWhQZOKxCimecp9UOiJQCx5uYFR06kISChpFeMCGkjW6JPyPTZKZxGYxXAkAa\n"
-                    "HJ1k1owVn5Jd5FWnrk2jsonWwo4Myc5asX7GpSsAadba9m9XBsHvHLvQb6SqAdsd\n"
-                    "Y0B84m8pt0IGJLBs65MNAkBpd8mZQiLc1VHDY/2NPHaC2Fy4sdI/y38DFGKnwD/l\n"
-                    "LYnD7uFnhVVU+avNatvOpEkTInRVy/DWHxYh3gWv44hl\n"
-                    "-----END RSA PRIVATE KEY-----"};
+    const auto cert = QByteArray::fromBase64("TX0l2CDyVR/E9peviEe5gIemqZZ3ecH3LO5wtlQlPC/VlT9htg+yEeuqr7ylw9cBrIRBpONP0A1YYGUbhxqMcg==");
     QByteArray addr{"onion:dstest3wkx5oyral:12345"};
 
     auto handle = ds::core::DsEngine::getIdentityHandle(cert, addr);
@@ -91,21 +77,7 @@ void TestDsEngine::test_get_identity_handle()
 
 void TestDsEngine::test_create_contact()
 {
-    QByteArray cert{"-----BEGIN RSA PRIVATE KEY-----\n"
-                    "MIICXQIBAAKBgQDQi1vRvVZbzXhMGyeiz6GaKFGXVBIxhxkMXRRMcbHgn8Mx1rxt\n"
-                    "1VfPyJvuu22lpHV9N+hYQmguY8T9eyyXJ2z2K2cKGZoR6G4giKjLa2lvG5BSChHU\n"
-                    "rEG2mz5MpvOE203aTBW0DmADUFDVAvDivASyx2KzxlaK4sUBjBD4RgwY6wIEAQUY\n"
-                    "tQKBgBnkbvU7NsRb44LI91OkyU49ui2U0qbccCgx4/6aUr4x3BUS+RT7bN9Wu+5m\n"
-                    "cLr1ExHNnxdKnJJ8k1MfmehaSniq5/mJwYxfCD6bsaiqYmn10lf47RzEmC4T+a/0\n"
-                    "zMUU+32d8FbczpSelSJP+X1syVWqIMfTmCzDBM88ChFwK6z9AkEA8Oz39TXz9SpA\n"
-                    "aPmnMHGtfZpj7TKYgLmT2BnFIeJUZI0DmjsqdqM78izHZ59Ci2M30Lg6DMUnzkBf\n"
-                    "46LinTzsbwJBAN2XuN+lNiVFifdsSrPnBocQYQgpt9N++l7IQICZ9RiG4+wTaoDR\n"
-                    "R8nM6iTx+5MyFzS4brN+4YYXR1ElPDZjEUUCQQCFaWCpm5Ok0y0Ffl9hxXQPhyqe\n"
-                    "jIaEWhQZOKxCimecp9UOiJQCx5uYFR06kISChpFeMCGkjW6JPyPTZKZxGYxXAkAa\n"
-                    "HJ1k1owVn5Jd5FWnrk2jsonWwo4Myc5asX7GpSsAadba9m9XBsHvHLvQb6SqAdsd\n"
-                    "Y0B84m8pt0IGJLBs65MNAkBpd8mZQiLc1VHDY/2NPHaC2Fy4sdI/y38DFGKnwD/l\n"
-                    "LYnD7uFnhVVU+avNatvOpEkTInRVy/DWHxYh3gWv44hl\n"
-                    "-----END RSA PRIVATE KEY-----"};
+    const auto pubkey = QByteArray::fromBase64("jvYAcNYJ0RIVu2axMQ5CIm7m9Cf08+dVz8Q/bgb4lzA=");
     QByteArray addr{"onion:testpzpcswyktnpd:12345"};
 
     auto settings = std::make_unique<QSettings>();
@@ -117,7 +89,7 @@ void TestDsEngine::test_create_contact()
 
     ds::core::ContactReq cr;
     cr.name = "test";
-    cr.contactHandle = engine.getIdentityHandle(cert, addr);
+    cr.contactHandle = engine.getIdentityHandle(pubkey, addr);
 
     engine.createContact(cr);
     QCOMPARE(verifier.verified, true);

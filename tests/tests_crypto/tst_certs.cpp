@@ -21,6 +21,10 @@ void TestCerts::test_create_cert()
 
         QCOMPARE(cert, second->getCert());
         QCOMPARE(pubkey, second->getPubKey());
+
+        qDebug() << "Created cert: " << first->getCert().toBase64();
+        qDebug() << "         key: " << first->getKey().toBase64();
+        qDebug() << "      pubkey: " << first->getPubKey().toBase64();
     } catch(const std::exception& ex) {
         auto msg = std::string{"Caught exception: "} + ex.what();
         QFAIL(msg.c_str());
