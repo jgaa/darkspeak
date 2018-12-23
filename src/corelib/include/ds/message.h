@@ -30,7 +30,15 @@ struct Message
     QDateTime sent_time;
     QDateTime received_time;
     QByteArray content;
+    QByteArray from;
+    Encoding encoding = Encoding::US_ACSII;
     QByteArray signature;
+};
+
+struct MessageReq
+{
+    QByteArray conversation;
+    QByteArray content;
     QByteArray from;
     Encoding encoding = Encoding::US_ACSII;
 };

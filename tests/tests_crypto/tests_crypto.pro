@@ -19,8 +19,6 @@ DEPENDPATH += $$PWD/../../src/cryptolib
 HEADERS += \
     tst_certs.h
 
-unix:!macx: LIBS += -lsodium
-
 win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/cryptolib/release/ -lcryptolib
 else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/cryptolib/debug/ -lcryptolib
 else:unix: LIBS += -L$$OUT_PWD/../../src/cryptolib/ -lcryptolib
@@ -33,3 +31,5 @@ else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../s
 else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/cryptolib/release/cryptolib.lib
 else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/cryptolib/debug/cryptolib.lib
 else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/cryptolib/libcryptolib.a
+
+LIBS += -lsodium

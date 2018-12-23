@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QSettings>
 
+#include "ds/message.h"
 #include "ds/database.h"
 #include "ds/identity.h"
 #include "ds/contact.h"
@@ -57,7 +58,7 @@ public:
 public slots:
     void createIdentity(const IdentityReq&);
     void createContact(const ContactReq&);
-
+    void sendMessage(const MessageReq& message, const Identity& identity);
     void close();
     void start();
 
@@ -69,7 +70,6 @@ private slots:
     void onTransportHandleReady(const TransportHandle& th);
     void onTransportHandleError(const TransportHandleError& th);
     void online();
-    void sendMessage(const Message& message);
 
 signals:
     void identityCreated(const Identity&);
@@ -81,8 +81,10 @@ signals:
     void stateChanged(const State from, const State to);
     void certCreated(const QString name, const ds::crypto::DsCert::ptr_t cert);
     void retryIdentityReady(const QString name); // internal
+    void messagePrepared(const Message& message);
 
 protected:
+    static QByteArray generateId();
     void initialize();
     void setState(State state);
     void tryMakeTransport(const QString& name);

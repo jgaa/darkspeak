@@ -18,9 +18,6 @@ INCLUDEPATH += \
     $$PWD/../../src/corelib/include \
     $$PWD/../../src/protlib/include
 
-
-unix:!macx: LIBS += -lsodium
-
 win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/corelib/release/ -lcorelib
 else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/corelib/debug/ -lcorelib
 else:unix: LIBS += -L$$OUT_PWD/../../src/corelib/ -lcorelib
@@ -72,3 +69,5 @@ else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../s
 else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/release/torlib.lib
 else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/debug/torlib.lib
 else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/libtorlib.a
+
+LIBS += -lsodium

@@ -1,9 +1,12 @@
-#include "include/ds/messagemodel.h"
+#include "ds/messagemodel.h"
+#include "ds/dsengine.h"
 
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QDebug>
-//#include <QStringLiteral>
+
+using namespace std;
+using namespace ds::core;
 
 namespace ds {
 namespace models {
@@ -14,7 +17,7 @@ MessageModel::MessageModel(QSettings &settings)
     select();
 }
 
-void MessageModel::onMessageCreated(const core::Message &message)
+void MessageModel::onMessagePrepared(const core::Message &message)
 {
     QString sql = "INSERT INTO message (direction, conversation, contact, message_id, "
             "composed_time, sent_time, received_time, content, signature, from, encoding) "
@@ -41,14 +44,18 @@ void MessageModel::onMessageCreated(const core::Message &message)
     }
 }
 
-void MessageModel::sendMessage(const QString &content, const QByteArray &conversation)
+void MessageModel::sendMessage(const QString &content,
+                               const core::Identity& from,
+                               const QByteArray &conversation)
 {
-    // TODO: Create a message-request and send it to the core
-    //  - Create request
-    //  - Sign
-    //  - Store to DB (unless the message is memory only)
-    //  - Add the message to the UI?
-    //  - Send to core
+    MessageReq msg;
+    // TODO: Support usascii as an alternative
+    msg.content = content.toUtf8();
+    msg.encoding = Encoding::UTF8;
+
+    msg.from = from.hash;
+    msg.conversation = conversation;
+    DsEngine::instance().sendMessage(msg, from);
 }
 
 void MessageModel::onMessageSent(const int id)

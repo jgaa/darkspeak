@@ -4,6 +4,7 @@
 #include <QSettings>
 #include <QSqlQueryModel>
 
+#include "ds/identity.h"
 #include "ds/message.h"
 
 namespace ds {
@@ -36,7 +37,7 @@ public slots:
      * the message to the database. Once stored, it will be sent
      * by the delivery framework as soon as possible.
      */
-    void onMessageCreated(const ds::core::Message& message);
+    void onMessagePrepared(const ds::core::Message& message);
 
     /*! Send a message
      *
@@ -44,7 +45,9 @@ public slots:
      * is delivered to the dsengine where it is processed and
      * returned for storage trough a messageCreated signal.
      */
-    void sendMessage(const QString& content, const QByteArray& conversation);
+    void sendMessage(const QString& content,
+                     const core::Identity& from,
+                     const QByteArray& conversation);
 
     /*! Notification that an outbound message is delivered. */
     void onMessageSent(const int id);

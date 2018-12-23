@@ -92,6 +92,29 @@ const QByteArray& CertImpl::getHash() const
     return hash_;
 }
 
+QByteArray CertImpl::sign(std::initializer_list<QByteArray> data)
+{
+    QByteArray hash(crypto_generichash_BYTES, 0);
+    crypto_generichash_state state = {};
+
+    crypto_generichash_init(&state,
+                            reinterpret_cast<const unsigned char *>(key_.data()),
+                            static_cast<size_t>(key_.size()),
+                            static_cast<size_t>(hash_.size()));
+
+    for(const auto& d : data) {
+        crypto_generichash_update(&state,
+                                  reinterpret_cast<const unsigned char *>(d.data()),
+                                  static_cast<size_t>(d.size()));
+    }
+
+    crypto_generichash_final(&state,
+                             reinterpret_cast<unsigned char *>(hash_.data()),
+                             static_cast<size_t>(hash_.size()));
+
+    return hash;
+}
+
 
 DsCert::ptr_t DsCert::create() {
     return std::make_shared<CertImpl>();

@@ -25,10 +25,12 @@ public:
     virtual const QByteArray& getPubKey() const = 0;
     virtual const QByteArray& getHash() const = 0;
 
+    virtual QByteArray sign(std::initializer_list<QByteArray> data) = 0;
+
     /*! Factory to create a cert */
     static ptr_t create();
     static ptr_t create(const QByteArray& cert);
-    static ptr_t createFromPubkey(const QByteArray& pubkey); // as returned by getPubKey()
+    static ptr_t createFromPubkey(const QByteArray& pubkey); // as returned by getPubKey()    
 };
 
 }} // namespaces
