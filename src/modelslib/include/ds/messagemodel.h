@@ -2,7 +2,7 @@
 #define MESSAGEMODEL_H
 
 #include <QSettings>
-#include <QSqlQueryModel>
+#include <QSqlTableModel>
 
 #include "ds/identity.h"
 #include "ds/message.h"
@@ -10,34 +10,40 @@
 namespace ds {
 namespace models {
 
-class MessageModel : public QSqlQueryModel
+class MessageModel : public QSqlTableModel
 {
+    Q_OBJECT
 public:
+
+    // Message, with some extra fields to reference database id's
+    class ModelMessage : public ds::core::Message {
+    public:
+        int conversation_id = {};
+        int contact_id = {};
+    };
+
     enum Headers {
         H_ID,
         H_DIRECTION,
-        H_CONVERSATION,
-        H_CONTACT,
         H_COMPOSED_TIME,
         H_SENT_TIME,
         H_RECEIVED_TIME,
         H_CONTENT,
-        H_SIGNATURE,
-        H_FROM,
+        H_SENDER,
         H_ENCODING
     };
 
     MessageModel(QSettings& settings);
 
+signals:
+    void outgoingMessage(const core::Message& msg);
+
 public slots:
 
-    /*! Signal that a message is created.
+    /*! Save a message
      *
-     * It's now the responsibility of the MessageModel to store
-     * the message to the database. Once stored, it will be sent
-     * by the delivery framework as soon as possible.
      */
-    void onMessagePrepared(const ds::core::Message& message);
+    void save(const ds::core::Message& message);
 
     /*! Send a message
      *
@@ -52,12 +58,26 @@ public slots:
     /*! Notification that an outbound message is delivered. */
     void onMessageSent(const int id);
 
-    /*! Re-query the table */
-    void select();
+    void setConversation(int conversationId, const QByteArray& conversation);
 
 private:
     QSettings& settings_;
     QString conversation_;
+    int conversation_id_ = {};
+
+
+    int h_id_ = {};
+    int h_direction_ = {};
+    int h_conversation_id_ = {};
+    int h_conversation_ = {};
+    int h_message_id_ = {};
+    int h_composed_time_ = {};
+    int h_sent_time_ = {};
+    int h_received_time_ = {};
+    int h_content_ = {};
+    int h_signature_ = {};
+    int h_sender_ = {};
+    int h_encoding_ = {};
 };
 
 }} // namespaces

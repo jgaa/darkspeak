@@ -3,6 +3,7 @@
 #include "ds/crypto.h"
 #include "tst_identities.h"
 #include "tst_contactsmodel.h"
+#include "tst_messages.h"
 
 int main(int argc, char** argv)
 {
@@ -11,7 +12,7 @@ int main(int argc, char** argv)
     qDebug() << "Pwd is " << app.applicationDirPath();
 
 
-    // initialize openssl
+    // initialize crypto
     ds::crypto::Crypto crypto;
 
     int status = 0;
@@ -26,6 +27,10 @@ int main(int argc, char** argv)
         status |= QTest::qExec(&tc, argc, argv);
     }
 
+    {
+        TestMessagesModel tc;
+        status |= QTest::qExec(&tc, argc, argv);
+    }
 
     return status;
 }

@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QDateTime>
 
+#include "ds/dscert.h"
 
 namespace ds {
 namespace core {
@@ -19,28 +20,23 @@ enum class Direction {
     INCOMING
 };
 
-struct Message
+class Message
 {
-    int id = {};
+public:
     Direction direction = Direction::OUTGOING;
     QByteArray conversation;
-    int contact = {};
     QByteArray message_id;
     QDateTime composed_time;
     QDateTime sent_time;
     QDateTime received_time;
     QByteArray content;
-    QByteArray from;
+    QByteArray sender;
     Encoding encoding = Encoding::US_ACSII;
     QByteArray signature;
-};
 
-struct MessageReq
-{
-    QByteArray conversation;
-    QByteArray content;
-    QByteArray from;
-    Encoding encoding = Encoding::US_ACSII;
+    void init();
+    void sign(const crypto::DsCert& cert);
+    bool validate(const crypto::DsCert& cert) const;
 };
 
 }} // Namespaces

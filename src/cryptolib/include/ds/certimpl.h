@@ -29,7 +29,9 @@ public:
     const QByteArray& getPubKey() const override;
     const QByteArray& getHash() const override;
 
-    QByteArray sign(std::initializer_list<QByteArray> data) override;
+    QByteArray sign(std::initializer_list<QByteArray> data) const override;
+    bool verify(const QByteArray& signature,
+                std::initializer_list<QByteArray> data) const override;
 private:
     void CalculateHash();
 

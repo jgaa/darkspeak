@@ -58,7 +58,7 @@ public:
 public slots:
     void createIdentity(const IdentityReq&);
     void createContact(const ContactReq&);
-    void sendMessage(const MessageReq& message, const Identity& identity);
+    void sendMessage(const Message& message);
     void close();
     void start();
 
@@ -81,10 +81,8 @@ signals:
     void stateChanged(const State from, const State to);
     void certCreated(const QString name, const ds::crypto::DsCert::ptr_t cert);
     void retryIdentityReady(const QString name); // internal
-    void messagePrepared(const Message& message);
 
 protected:
-    static QByteArray generateId();
     void initialize();
     void setState(State state);
     void tryMakeTransport(const QString& name);

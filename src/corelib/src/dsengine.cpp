@@ -17,7 +17,6 @@
 #include <QJsonDocument>
 #include <QJsonDocument>
 #include <QBuffer>
-#include <QUuid>
 
 using namespace ds::crypto;
 using namespace std;
@@ -231,47 +230,8 @@ void DsEngine::online()
     }
 }
 
-QByteArray DsEngine::generateId()
+void DsEngine::sendMessage(const Message& msg)
 {
-    auto uuid = QUuid::createUuid().toByteArray();
-    return crypto::Crypto::getSha256(uuid);
-}
-
-void DsEngine::sendMessage(const MessageReq& req, const Identity& identity)
-{
-    Message msg;
-    msg.from = req.from;
-    msg.content = req.content;
-    msg.encoding = req.encoding;
-    msg.direction = Direction::OUTGOING;
-    msg.message_id = generateId();
-    msg.conversation = req.conversation;
-
-    // Don't expose the exact time the mesage was composed
-    auto secs = QDateTime::currentDateTime().currentSecsSinceEpoch();
-    secs /= 60;
-    secs *= 60;
-    msg.composed_time = QDateTime::fromSecsSinceEpoch(secs);
-
-    // Sign the message
-    auto cert = DsCert::create(identity.cert);
-
-    // TODO: Move the signing method somewhere appropriate
-    msg.signature = cert->sign({msg.conversation,
-                                msg.message_id,
-                                QString::number(msg.composed_time.currentSecsSinceEpoch()).toUtf8(),
-                                msg.content,
-                                msg.from,
-                                QString::number(static_cast<int>(msg.encoding)).toUtf8()});
-
-    // Notify the caller that the message is accepted for delivery
-    /// TODO: Bind to model / onMessagePrepared
-    messagePrepared(msg);
-
-    // TODO: Try to deliver the message
-    //      Shall we use the message-mode to try / retry delivery, or
-    //      shall we do it here?
-    //      How do we resume retries after a re-start?
 }
 
 void DsEngine::onTransportHandleReady(const TransportHandle &th)

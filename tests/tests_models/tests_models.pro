@@ -8,11 +8,13 @@ TEMPLATE = app
 SOURCES +=  \
     main.cpp \
     tst_identities.cpp \
-    tst_contactsmodel.cpp
+    tst_contactsmodel.cpp \
+    tst_messages.cpp
 
 HEADERS += \
     tst_identities.h \
-    tst_contactsmodel.h
+    tst_contactsmodel.h \
+    tst_messages.h
 
 INCLUDEPATH += \
     $$PWD/include \
@@ -20,6 +22,20 @@ INCLUDEPATH += \
     $$PWD/../../src/corelib/include \
     $$PWD/../../src/protlib/include \
     $$PWD/../../src/modelslib/include
+
+win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/modelslib/release/ -lmodelslib
+else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/modelslib/debug/ -lmodelslib
+else:unix: LIBS += -L$$OUT_PWD/../../src/modelslib/ -lmodelslib
+
+INCLUDEPATH += $$PWD/../../src/modelslib
+DEPENDPATH += $$PWD/../../src/modelslib
+
+win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/release/libmodelslib.a
+else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/debug/libmodelslib.a
+else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/release/modelslib.lib
+else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/debug/modelslib.lib
+else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/libmodelslib.a
+
 
 win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/corelib/release/ -lcorelib
 else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/corelib/debug/ -lcorelib
@@ -72,19 +88,5 @@ else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../s
 else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/release/torlib.lib
 else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/debug/torlib.lib
 else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/torlib/libtorlib.a
-
-
-win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../../src/modelslib/release/ -lmodelslib
-else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../../src/modelslib/debug/ -lmodelslib
-else:unix: LIBS += -L$$OUT_PWD/../../src/modelslib/ -lmodelslib
-
-INCLUDEPATH += $$PWD/../../src/modelslib
-DEPENDPATH += $$PWD/../../src/modelslib
-
-win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/release/libmodelslib.a
-else:win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/debug/libmodelslib.a
-else:win32:!win32-g++:CONFIG(release, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/release/modelslib.lib
-else:win32:!win32-g++:CONFIG(debug, debug|release): PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/debug/modelslib.lib
-else:unix: PRE_TARGETDEPS += $$OUT_PWD/../../src/modelslib/libmodelslib.a
 
 LIBS += -lsodium

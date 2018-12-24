@@ -3,6 +3,7 @@
 #include <sodium.h>
 
 #include <QMetaType>
+#include <QUuid>
 
 #include "ds/crypto.h"
 #include "ds/dscert.h"
@@ -56,6 +57,12 @@ QByteArray Crypto::getSha256(const QByteArray &data)
                        reinterpret_cast<const unsigned char *>(data.data()),
                        static_cast<size_t>(data.size()));
     return hash;
+}
+
+QByteArray Crypto::generateId()
+{
+    auto uuid = QUuid::createUuid().toByteArray();
+    return crypto::Crypto::getSha256(uuid);
 }
 
 }} // namespaces

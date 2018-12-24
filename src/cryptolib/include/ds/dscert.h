@@ -25,7 +25,12 @@ public:
     virtual const QByteArray& getPubKey() const = 0;
     virtual const QByteArray& getHash() const = 0;
 
-    virtual QByteArray sign(std::initializer_list<QByteArray> data) = 0;
+    // Sign data with the private key
+    virtual QByteArray sign(std::initializer_list<QByteArray> data) const = 0;
+
+    // Verify a signature using the public key
+    virtual bool verify(const QByteArray& signature,
+                        std::initializer_list<QByteArray> data) const = 0;
 
     /*! Factory to create a cert */
     static ptr_t create();
