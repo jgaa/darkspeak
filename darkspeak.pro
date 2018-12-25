@@ -10,7 +10,8 @@ SUBDIRS = \
     test_tor \
     test_crypto \
     test_core \
-    test_models
+    test_models \
+    qt_quick_app
 
 torlib.subdir = src/torlib
 corelib.subdir = src/corelib
