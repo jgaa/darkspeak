@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <locale>
 
+#include "logfault/logfault.h"
 #include "ds/torctlsocket.h"
 
 namespace ds {
@@ -105,7 +106,7 @@ void TorCtlSocket::processIn()
         if (current_reply_.status >= 600 && current_reply_.status < 700) {
 
             // Asynchronous response.
-            qDebug() << "Torctl received event: "
+            LFLOG_DEBUG << "Torctl received event: "
                      << current_reply_.status << ' '
                      << current_reply_.lines.front().c_str();
             emit torEvent(current_reply_);
@@ -122,7 +123,7 @@ void TorCtlSocket::processIn()
 
         const auto handler = pending_.takeFirst();
         try {
-            qDebug() << "Torctl received reply: "
+            LFLOG_DEBUG << "Torctl received reply: "
                      << current_reply_.status << ' '
                      << current_reply_.lines.front().c_str();
             if (handler) {
@@ -141,7 +142,7 @@ void TorCtlSocket::processIn()
 
 void TorCtlSocket::clear()
 {
-    qDebug() << "TorCtlSocket is disconnected";
+    LFLOG_DEBUG << "TorCtlSocket is disconnected";
 }
 
 void TorCtlSocket::setError(QString errorMsg)

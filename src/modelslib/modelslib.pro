@@ -5,7 +5,7 @@
 #-------------------------------------------------
 
 QT       += core sql gui network
-
+INCLUDEPATH += $$PWD/../../dependencies/logfault/include/
 TARGET = modelslib
 TEMPLATE = lib
 CONFIG += staticlib

@@ -1,4 +1,6 @@
 #include <QtTest>
+#include <iostream>
+#include "logfault/logfault.h"
 
 #include "tst_torctlsocket.h"
 #include "tst_tormanager.h"
@@ -9,7 +11,11 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
 
-    qDebug() << "Pwd is " << app.applicationDirPath();
+    logfault::LogManager::Instance().AddHandler(
+                std::make_unique<logfault::StreamHandler>(
+                    std::clog, logfault::LogLevel::DEBUGGING));
+
+    LFLOG_DEBUG << "Pwd is " << app.applicationDirPath();
 
     int status = 0;
 

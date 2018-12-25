@@ -10,6 +10,8 @@
 #include <QSqlRecord>
 #include <QUuid>
 
+#include "logfault/logfault.h"
+
 using namespace std;
 using namespace ds::core;
 
@@ -36,7 +38,7 @@ ConversationsModel::ConversationsModel(QSettings& settings)
 
 bool ConversationsModel::keyExists(QByteArray key) const
 {
-    qDebug() << "Checking if key exists: " << key.toBase64();
+    LFLOG_DEBUG << "Checking if key exists: " << key.toBase64();
 
     QSqlQuery query;
     query.prepare("SELECT 1 from conversation where key=:key");

@@ -34,3 +34,4 @@ test_crypto.depends = cryptolib
 
 test_models.subdir = tests/tests_models
 test_models.depends = modelslib
+

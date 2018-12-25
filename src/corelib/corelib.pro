@@ -6,7 +6,6 @@
 
 QT       += core sql network
 QT       -= gui
-
 TARGET = corelib
 TEMPLATE = lib
 CONFIG += staticlib
@@ -25,7 +24,6 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
     src/dsengine.cpp \
     src/database.cpp \
-    src/logging.cpp \
     src/protocolmanager.cpp \
     src/message.cpp
 
@@ -33,7 +31,6 @@ HEADERS += \
     include/ds/dsengine.h \
     include/ds/protocolmanager.h \
     include/ds/database.h \
-    include/ds/logging.h \
     include/ds/task.h \
     include/ds/identity.h \
     include/ds/errors.h \
@@ -41,7 +38,9 @@ HEADERS += \
     include/ds/contact.h \
     include/ds/message.h
 
-INCLUDEPATH += $$PWD/include \
+INCLUDEPATH += \
+    $$PWD/../../dependencies/logfault/include \
+    $$PWD/include \
     $$PWD/../cryptolib/include \
     $$PWD/../protlib/include \
     $$PWD/../torlib/include \

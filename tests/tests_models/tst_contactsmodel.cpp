@@ -9,6 +9,8 @@
 #include "ds/dscert.h"
 #include "tst_contactsmodel.h"
 
+#include "logfault/logfault.h"
+
 TestContactsModel::TestContactsModel()
 {
 }
@@ -41,7 +43,7 @@ void TestContactsModel::test_create_contact()
     cr.name = "test";
     cr.contactHandle = cr.contactHandle = engine.getIdentityHandle(pubkey, addr);
 
-    qDebug() << "Trying to create contact from handle: " << cr.contactHandle;
+    LFLOG_DEBUG << "Trying to create contact from handle: " << cr.contactHandle;
     engine.createContact(cr);
     QCOMPARE(spy_rows_inserted.wait(3000), true);
 

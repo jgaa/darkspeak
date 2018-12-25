@@ -6,7 +6,7 @@
 
 QT       += core network
 QT       -= gui
-
+INCLUDEPATH += $$PWD/../../dependencies/logfault/include/
 TARGET = torlib
 TEMPLATE = lib
 CONFIG += staticlib

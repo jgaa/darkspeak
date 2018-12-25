@@ -2,7 +2,7 @@ QT += testlib network core sql
 
 CONFIG += qt console warn_on depend_includepath testcase
 CONFIG -= app_bundle
-
+INCLUDEPATH += $$PWD/../../src/torlib/include
 TEMPLATE = app
 
 SOURCES +=  \
@@ -17,6 +17,7 @@ HEADERS += \
     tst_messages.h
 
 INCLUDEPATH += \
+    $$PWD/../../dependencies/logfault/include \
     $$PWD/include \
     $$PWD/../../src/cryptolib/include \
     $$PWD/../../src/corelib/include \

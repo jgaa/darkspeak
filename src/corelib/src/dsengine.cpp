@@ -18,6 +18,8 @@
 #include <QJsonDocument>
 #include <QBuffer>
 
+#include "logfault/logfault.h"
+
 using namespace ds::crypto;
 using namespace std;
 
@@ -165,8 +167,8 @@ void DsEngine::createContact(const ContactReq &req)
     c.hash = cert->getHash();
 
     // Emit
-    qDebug() << "Contact " << c.name << " is ok.";
-    qDebug() << "Hash is: " << c.hash.toBase64();
+    LFLOG_DEBUG << "Contact " << c.name << " is ok.";
+    LFLOG_DEBUG << "Hash is: " << c.hash.toBase64();
     emit contactCreated(c);
 }
 
@@ -177,7 +179,7 @@ void DsEngine::onCertCreated(const QString &name, const DsCert::ptr_t cert)
         return;
     }
 
-    qDebug() << "Received cert for idenity " << name;
+    LFLOG_DEBUG << "Received cert for idenity " << name;
 
     auto& id = pending_identities_[name];
     id.cert = cert->getCert();
@@ -198,13 +200,13 @@ void DsEngine::addIdentityIfReady(const QString &name)
     {
         const auto& pi = pending_identities_[name];
         if (pi.cert.isEmpty() || pi.address.isEmpty()) {
-            qDebug() << "The identity " << name << " is still not ready";
+            LFLOG_DEBUG << "The identity " << name << " is still not ready";
             return;
         }
     }
 
     auto id = pending_identities_.take(name);
-    qDebug() << "Identity " << id.name << " is ready";
+    LFLOG_DEBUG << "Identity " << id.name << " is ready";
     emit identityCreated(id);
 }
 
@@ -249,7 +251,7 @@ void DsEngine::onTransportHandleReady(const TransportHandle &th)
         pi.address = th.handle;
         pi.addressData = toJson(th.data);
     } else {
-        qDebug() << "The identity " << name << " already have a transport";
+        LFLOG_DEBUG << "The identity " << name << " already have a transport";
         return;
     }
 
@@ -259,7 +261,7 @@ void DsEngine::onTransportHandleReady(const TransportHandle &th)
 void DsEngine::onTransportHandleError(const TransportHandleError &th)
 {
     auto name = th.identityName;
-    qDebug() << "Transport-handle creaton failed: " << name
+    LFLOG_DEBUG << "Transport-handle creaton failed: " << name
              << ". I Will try again.";
     whenOnline([this, name]() { tryMakeTransport(name); });
 }
@@ -323,7 +325,7 @@ void DsEngine::initialize()
 {
     assert(!instance_);
     instance_ = this;
-    qDebug() << "Settings are in " << settings_->fileName();
+    LFLOG_DEBUG << "Settings are in " << settings_->fileName();
 
     static bool initialized = false;
     if (!initialized) {
@@ -336,7 +338,7 @@ void DsEngine::initialize()
     auto data_path = QStandardPaths::writableLocation(
                 QStandardPaths::AppDataLocation);
     if (!QDir(data_path).exists()) {
-        qDebug() << "Creating path: " << data_path;
+        LFLOG_DEBUG << "Creating path: " << data_path;
         QDir().mkpath(data_path);
     }
 
@@ -346,7 +348,7 @@ void DsEngine::initialize()
             settings_->setValue("version", 1);
         } break;
     default:
-        qDebug() << "Settings are OK at version " << version;
+        LFLOG_DEBUG << "Settings are OK at version " << version;
     }
 
     if (settings_->value("dbpath", "").toString().isEmpty()) {
@@ -379,7 +381,7 @@ void DsEngine::setState(DsEngine::State state)
     if (state_ != state) {
         auto old = state_;
         state_ = state;
-        qDebug() << "DsEngine: Changing state from "
+        LFLOG_DEBUG << "DsEngine: Changing state from "
                  << getName(old) << " to " << getName(state);
         emit stateChanged(old, state);
 
@@ -406,7 +408,7 @@ void DsEngine::tryMakeTransport(const QString &name)
     try {
         tor_mgr_->createTransportHandle(req);
     } catch (const std::exception& ex) {
-        qDebug() << "Failed to create transport for " << name
+        LFLOG_DEBUG << "Failed to create transport for " << name
                  << " (will try again later): "
                  << ex.what();
 

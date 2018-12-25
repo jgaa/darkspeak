@@ -1,0 +1,3 @@
+[submodule "dependencies/logfault"]
+	path = dependencies/logfault
+	url = https://github.com/jgaa/logfault.git

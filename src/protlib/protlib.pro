@@ -5,9 +5,8 @@
 #-------------------------------------------------
 
 QT       += core network
-
 QT       -= gui
-
+INCLUDEPATH += $$PWD/../../dependencies/logfault/include/
 TARGET = protlib
 TEMPLATE = lib
 CONFIG += staticlib

@@ -4,6 +4,8 @@
 
 #include "ds/database.h"
 
+#include "logfault/logfault.h"
+
 namespace ds {
 namespace core {
 
@@ -40,7 +42,7 @@ Database::Database(QSettings& settings)
     }
 
     const auto dbver = query.value(DS_VERSION).toInt();
-    qDebug() << "Database schema version is " << dbver;
+    LFLOG_DEBUG << "Database schema version is " << dbver;
     if (dbver != currentVersion) {
         qWarning() << "Database schema version is "
                    << dbver

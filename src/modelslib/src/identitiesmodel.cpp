@@ -11,6 +11,7 @@
 #include "ds/identitiesmodel.h"
 #include "ds/errors.h"
 #include "ds/strategy.h"
+#include "logfault/logfault.h"
 
 using namespace ds::core;
 using namespace std;
@@ -65,7 +66,7 @@ void IdentitiesModel::createIdentity(const ds::core::Identity &data)
         return;
     }
 
-    qDebug() << "Added identity " << data.name << " to the database";
+    LFLOG_DEBUG << "Added identity " << data.name << " to the database";
 }
 
 QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const

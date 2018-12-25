@@ -1,13 +1,20 @@
 #include <QtTest>
 
+#include <iostream>
 #include "ds/crypto.h"
 #include "tst_certs.h"
+#include "logfault/logfault.h"
 
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
 
-    qDebug() << "Pwd is " << app.applicationDirPath();
+    logfault::LogManager::Instance().AddHandler(
+                std::make_unique<logfault::StreamHandler>(
+                    std::clog, logfault::LogLevel::DEBUGGING));
+
+
+    LFLOG_DEBUG << "Pwd is " << app.applicationDirPath();
 
 
     // initialize openssl

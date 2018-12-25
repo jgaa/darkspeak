@@ -7,6 +7,8 @@
 #include "ds/torctlsocket.h"
 #include "ds/crypto.h"
 
+#include "logfault/logfault.h"
+
 namespace ds {
 namespace tor {
 
@@ -36,7 +38,7 @@ void TorController::start()
     connect(ctl_.get(), &TorCtlSocket::disconnected, this, &TorController::clear);
     connect(ctl_.get(), &TorCtlSocket::torEvent, this, &TorController::torEvent);
 
-    qDebug() << "Connecting to Torctl on "
+    LFLOG_DEBUG << "Connecting to Torctl on "
              << config_.ctl_host
              << " port " << config_.ctl_port;
 
@@ -47,7 +49,7 @@ void TorController::start()
 
 void TorController::stop()
 {
-    qDebug() << "Closing the connection to the tor server.";
+    LFLOG_DEBUG << "Closing the connection to the tor server.";
     setState(CtlState::STOPPING);
     ctl_->close();
 }
@@ -80,7 +82,7 @@ void TorController::createService(const QByteArray &id)
 
             service_map_[service.id] = service.service_id;
 
-            qDebug() << "Created Tor hidden service: " << service.service_id
+            LFLOG_DEBUG << "Created Tor hidden service: " << service.service_id
                      << " with id " << service.id;
 
             emit serviceCreated(service);
@@ -110,7 +112,7 @@ void TorController::startService(const ServiceProperties &sp)
 
         if (reply.status == 250) {
 
-            qDebug() << "Started Tor hidden service: " << service_id
+            LFLOG_DEBUG << "Started Tor hidden service: " << service_id
                      << " with id " << id;
 
             emit serviceStarted(id);
@@ -132,7 +134,7 @@ void TorController::stopService(const QByteArray &id)
                       [this, id, service_id](const TorCtlReply& reply){
         if (reply.status == 250) {
 
-            qDebug() << "Stopped Tor hidden service: " << service_id
+            LFLOG_DEBUG << "Stopped Tor hidden service: " << service_id
                      << " with id " << id;
 
 
@@ -146,7 +148,7 @@ void TorController::stopService(const QByteArray &id)
 
 void TorController::startAuth()
 {
-    qDebug() << "Connected to Torctl. Initiating Authentication Procedure.";
+    LFLOG_DEBUG << "Connected to Torctl. Initiating Authentication Procedure.";
 
     setState(CtlState::AUTHENTICATING);
 
@@ -168,14 +170,14 @@ void TorController::startAuth()
 void TorController::close()
 {
     if (ctl_ && ctl_->isOpen()) {
-        qDebug() << "Torctl Closing connection";
+        LFLOG_DEBUG << "Torctl Closing connection";
         ctl_->abort();
     }
 }
 
 void TorController::clear()
 {
-    qDebug() << "Torctl connection was closed";
+    LFLOG_DEBUG << "Torctl connection was closed";
     setState(CtlState::STOPPED);
     setState(TorState::UNKNOWN);
     emit stopped();
@@ -184,7 +186,7 @@ void TorController::clear()
 void TorController::torEvent(const TorCtlReply &reply)
 {
     const auto map = reply.parse();
-    qDebug() << "Received tor event: " << reply.lines.front().c_str();
+    LFLOG_DEBUG << "Received tor event: " << reply.lines.front().c_str();
 }
 
 void TorController::setState(TorController::CtlState state)
@@ -217,7 +219,7 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
             && methods.contains("HASHEDPASSWORD", Qt::CaseInsensitive)
             && !config_.ctl_passwd.isEmpty()) {
         QByteArray auth_data = '\"' + config_.ctl_passwd.toLocal8Bit().replace("\"", "\"") + '\"';
-        qDebug() << "Authenticating torctl with password";
+        LFLOG_DEBUG << "Authenticating torctl with password";
         Authenticate(auth_data);
     } else if (config_.allowed_auth_methods.contains("SAFECOOKIE")
             && methods.contains("SAFECOOKIE", Qt::CaseInsensitive)) {
@@ -233,11 +235,11 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
 
         assert(client_nonce_.size() == 32);
 
-        qDebug() << "Authenticating torctl with SAFECOOKIE";
+        LFLOG_DEBUG << "Authenticating torctl with SAFECOOKIE";
 
         ctl_->sendCommand("AUTHCHALLENGE SAFECOOKIE " + client_nonce_.toHex(), [this](const TorCtlReply& reply){
             if (reply.status == 250) {
-                qDebug() << "Torctl AUTHCHALLENGE successful - proceeding with authenticating";
+                LFLOG_DEBUG << "Torctl AUTHCHALLENGE successful - proceeding with authenticating";
             }
 
             const auto map = reply.parse();
@@ -262,7 +264,7 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
             && methods.contains("COOKIE", Qt::CaseInsensitive)) {
         const auto path = auth_map.value("COOKIEFILE").toString();
         QByteArray auth_data = GetCookie(path).toHex();
-        qDebug() << "Authenticating torctl with COOKIE";
+        LFLOG_DEBUG << "Authenticating torctl with COOKIE";
         Authenticate(auth_data);
     } else {
         throw AuthError("No usable authentication methods");
@@ -277,7 +279,7 @@ void TorController::Authenticate(const QByteArray &data)
 
 void TorController::OnAuthReply(const TorCtlReply &reply)
 {
-    qDebug() << QStringLiteral("Torctl AUTHENTICATE command returned status=%1").arg(reply.status);
+    LFLOG_DEBUG << QStringLiteral("Torctl AUTHENTICATE command returned status=%1").arg(reply.status);
 
     if (reply.status == 250) {
         setState(CtlState::CONNECTED);

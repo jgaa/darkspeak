@@ -4,6 +4,7 @@
 
 #include "ds/torprotocolmanager.h"
 #include "ds/errors.h"
+#include "logfault/logfault.h"
 
 using namespace std;
 using namespace ds::core;
@@ -53,7 +54,7 @@ void TorProtocolManager::setState(ProtocolManager::State state)
     state_ = state;
     if (old != state_) {
 
-        qDebug() << "TorProtocolManager changing state from " << getName(old)
+        LFLOG_DEBUG << "TorProtocolManager changing state from " << getName(old)
                  << " to " << getName(state);
 
         emit stateChanged(old, state_);

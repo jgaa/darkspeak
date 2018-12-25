@@ -13,6 +13,7 @@ HEADERS += \
     tst_dsengine.h
 
 INCLUDEPATH += \
+    $$PWD/../../dependencies/logfault/include \
     $$PWD/include \
     $$PWD/../../src/cryptolib/include \
     $$PWD/../../src/corelib/include \

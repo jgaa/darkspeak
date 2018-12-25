@@ -5,6 +5,7 @@
 #include "tst_dsengine.h"
 #include "ds/dsengine.h"
 
+#include "logfault/logfault.h"
 
 void Verifier::contactCreated(const ds::core::Contact&) {
     verified = true;
@@ -72,7 +73,7 @@ void TestDsEngine::test_get_identity_handle()
 
     QVERIFY(!handle.isEmpty());
 
-    qDebug() << "handle is: " << handle;
+    LFLOG_DEBUG << "handle is: " << handle;
 }
 
 void TestDsEngine::test_create_contact()

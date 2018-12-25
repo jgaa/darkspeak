@@ -5,7 +5,7 @@
 #-------------------------------------------------
 
 QT       -= gui sql
-
+INCLUDEPATH += $$PWD/../../dependencies/logfault/include/
 TARGET = cryptolib
 TEMPLATE = lib
 CONFIG += staticlib

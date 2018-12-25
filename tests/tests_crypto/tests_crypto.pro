@@ -6,6 +6,7 @@ CONFIG -= app_bundle
 
 TEMPLATE = app
 
+INCLUDEPATH += $$PWD/../../dependencies/logfault/include/
 INCLUDEPATH += $$PWD/../../src/cryptolib/include
 
 SOURCES +=  \

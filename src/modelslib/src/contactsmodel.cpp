@@ -12,6 +12,8 @@
 #include <QSqlRecord>
 #include <QUuid>
 
+#include "logfault/logfault.h"
+
 using namespace std;
 using namespace ds::core;
 
@@ -47,7 +49,7 @@ ContactsModel::ContactsModel(QSettings& settings)
 
 bool ContactsModel::hashExists(QByteArray hash) const
 {
-    qDebug() << "Checking if hash exists: " << hash.toBase64();
+    LFLOG_DEBUG << "Checking if hash exists: " << hash.toBase64();
 
     QSqlQuery query;
     query.prepare("SELECT 1 from contact where hash=:hash");
@@ -92,7 +94,7 @@ void ContactsModel::onContactCreated(const Contact &contact)
         return;
     }
 
-    qDebug() << "Added contact " << contact.name << " to the database";
+    LFLOG_DEBUG << "Added contact " << contact.name << " to the database";
 }
 
 }} // namnespaces

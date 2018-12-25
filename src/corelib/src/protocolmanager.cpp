@@ -1,6 +1,5 @@
 #include <memory>
 
-#include "ds/logging.h"
 #include "ds/torprotocolmanager.h"
 
 using namespace std;
