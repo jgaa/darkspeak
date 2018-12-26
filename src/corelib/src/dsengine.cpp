@@ -297,7 +297,7 @@ void DsEngine::start()
     tor_mgr_->start();
 }
 
-void DsEngine::onStateChanged(const ProtocolManager::State /*old*/, const ProtocolManager::State current)
+void DsEngine::onStateChanged(const ProtocolManager::State old, const ProtocolManager::State current)
 {
     switch (current) {
     case ProtocolManager::State::OFFLINE:
@@ -318,6 +318,8 @@ void DsEngine::onStateChanged(const ProtocolManager::State /*old*/, const Protoc
     case ProtocolManager::State::SHUTTINGDOWN:
         break;
     }
+
+    emit onlineStateChanged(old, current);
 }
 
 

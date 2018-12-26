@@ -18,6 +18,11 @@ The [original implementation](https://github.com/jgaa/darkspeak/tree/original-im
 
 I am currently designing the new protocol and application architecture.
 
+# Todo (development tasks)
+
+- [ ] Add toolbar with appstatus icon, online status icon, connect/disconnect button
+- [ ] Add first use wizard to select database path etc.
+
 
 # Links to related and relevant projects
  - [Ricochet, anonymous peer-to-peer instant messaging](https://github.com/ricochet-im/ricochet)

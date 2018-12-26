@@ -79,6 +79,7 @@ signals:
     void notReady(); // If the transport goes offline
     void closing();
     void stateChanged(const State from, const State to);
+    void onlineStateChanged(const ProtocolManager::State old, const ProtocolManager::State current);
     void certCreated(const QString name, const ds::crypto::DsCert::ptr_t cert);
     void retryIdentityReady(const QString name); // internal
 

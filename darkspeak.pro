@@ -7,17 +7,20 @@ SUBDIRS = \
     protlib \
     cryptolib \
     modelslib \
+    qt_quick_app \
     test_tor \
     test_crypto \
     test_core \
-    test_models \
-    qt_quick_app
+    test_models
 
 torlib.subdir = src/torlib
 corelib.subdir = src/corelib
 protlib.subdir = src/protlib
 cryptolib.subdir = src/cryptolib
 modelslib.subdir = src/modelslib
+qt_quick_app.subdir = src/qt_quick_app
+
+qt_quick_app.depends = modelslib
 
 modelslib.depends = corelib
 
