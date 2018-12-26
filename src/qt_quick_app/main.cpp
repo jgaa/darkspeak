@@ -4,6 +4,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QStandardPaths>
+#include <QQmlContext>
 
 #include "ds/manager.h"
 
@@ -32,7 +33,15 @@ int main(int argc, char *argv[])
 
     auto manager = make_unique<Manager>();
 
+    {
+        QString no_create_message = "ContactsModel is a global sigeleton.";
+        qmlRegisterUncreatableType<ds::models::Manager>("com.jgaa.darkspeak", 1, 0, "Manager", no_create_message);
+    }
+
     QQmlApplicationEngine engine;
+
+    engine.rootContext()->setContextProperty("manager", manager.get());
+
     engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
     if (engine.rootObjects().isEmpty()) {
         LFLOG_ERROR << "No root object after loading main.qml. Aborting mission.";

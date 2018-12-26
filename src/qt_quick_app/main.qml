@@ -1,33 +1,74 @@
 import QtQuick 2.12
 import QtQuick.Controls 2.5
+import com.jgaa.darkspeak 1.0
 
 ApplicationWindow {
     visible: true
     width: 640
     height: 480
-    title: qsTr("Tabs")
+    title: manager.programNameAndVersion
+
+    header: MainToolBar {
+        id: mainToolBar
+        height: 32
+        width: parent.width
+    }
 
     SwipeView {
         id: swipeView
         anchors.fill: parent
-        currentIndex: tabBar.currentIndex
+        currentIndex: manager.currentPage
 
-        Page1Form {
+        onCurrentIndexChanged: {
+            manager.currentPage = currentIndex
         }
 
-        Page2Form {
+        LogForm {
         }
+
+        IdentitiesForm {
+        }
+
+        ContactsForm {
+        }
+
+        HomeForm {
+        }
+
+        ConversationsForm {
+        }
+
+        ChatForm {
+        }
+
     }
 
     footer: TabBar {
         id: tabBar
-        currentIndex: swipeView.currentIndex
+        currentIndex: manager.currentPage
+        visible: width > 400
+
+        onCurrentIndexChanged: {
+            manager.currentPage = currentIndex
+        }
 
         TabButton {
-            text: qsTr("Page 1")
+            text: qsTr("Log")
         }
         TabButton {
-            text: qsTr("Page 2")
+            text: qsTr("Identities")
+        }
+        TabButton {
+            text: qsTr("Contacts")
+        }
+        TabButton {
+            text: qsTr("Home")
+        }
+        TabButton {
+            text: qsTr("Conversations")
+        }
+        TabButton {
+            text: qsTr("Chat")
         }
     }
 }

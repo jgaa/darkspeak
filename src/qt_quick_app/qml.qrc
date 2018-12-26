@@ -1,8 +1,25 @@
 <RCC>
     <qresource prefix="/">
         <file>main.qml</file>
-        <file>Page1Form.ui.qml</file>
-        <file>Page2Form.ui.qml</file>
+        <file>LogForm.ui.qml</file>
+        <file>HomeForm.ui.qml</file>
         <file>qtquickcontrols2.conf</file>
+        <file>ContactsForm.ui.qml</file>
+        <file>ConversationsForm.ui.qml</file>
+        <file>ChatForm.ui.qml</file>
+        <file>IdentitiesForm.ui.qml</file>
+        <file>images/Connected-32.png</file>
+        <file>images/Connecting-32.png</file>
+        <file>images/Disconnected-32.png</file>
+        <file>images/Disconnecting-32.png</file>
+        <file>images/High-contrast-network-online.svg</file>
+        <file>images/network_connected.svg</file>
+        <file>images/network_connecting.svg</file>
+        <file>images/network_disconnect.svg</file>
+        <file>images/network_offline.svg</file>
+        <file>images/network_online.svg</file>
+        <file>images/Secured_Global_Network_Cartoon.svg</file>
+        <file>main.cpp</file>
+        <file>MainToolBar.qml</file>
     </qresource>
 </RCC>

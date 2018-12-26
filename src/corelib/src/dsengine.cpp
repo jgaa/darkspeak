@@ -269,7 +269,9 @@ void DsEngine::onTransportHandleError(const TransportHandleError &th)
 void DsEngine::close()
 {
     setState(State::CLOSING);
-    tor_mgr_->stop();
+    if (tor_mgr_) {
+        tor_mgr_->stop();
+    }
 }
 
 void DsEngine::start()
@@ -319,6 +321,7 @@ void DsEngine::onStateChanged(const ProtocolManager::State old, const ProtocolMa
         break;
     }
 
+    LFLOG_DEBUG << "DsEngine: Emitting online state changed to " << current;
     emit onlineStateChanged(old, current);
 }
 
@@ -376,6 +379,13 @@ void DsEngine::initialize()
     database_ = std::make_unique<Database>(*settings_);
 
     connect(this, &DsEngine::certCreated, this, &DsEngine::onCertCreated);
+
+//    connect(tor_mgr_.get(), &::ds::core::ProtocolManager::stateChanged,
+//            [this] (const ProtocolManager::State old,
+//            const ProtocolManager::State current) {
+//        LFLOG_DEBUG << "DsEngine: Emittiong state changed to " << current;
+//        emit onStateChanged(old, current);
+//    });
 }
 
 void DsEngine::setState(DsEngine::State state)

@@ -6,13 +6,15 @@ Page {
     height: 400
 
     header: Label {
-        text: qsTr("Page 1")
+        text: qsTr("Conversations")
         font.pixelSize: Qt.application.font.pixelSize * 2
         padding: 10
     }
 
-    Label {
-        text: qsTr("You are on Page 1.")
-        anchors.centerIn: parent
+    Row {
+        id: row
+        anchors.fill: parent
     }
+
+
 }
