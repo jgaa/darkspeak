@@ -19,6 +19,7 @@ public:
     static QByteArray getSha256(const QByteArray& data);
     static QByteArray generateId();
 
+
 };
 
 }} // namespaces
