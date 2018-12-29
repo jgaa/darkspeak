@@ -9,6 +9,8 @@
 #include "ds/dscert.h"
 #include "ds/dsengine.h"
 #include "ds/identity.h"
+#include "ds/logmodel.h"
+#include "ds/identitiesmodel.h"
 
 #ifndef PROGRAM_VERSION
     #define PROGRAM_VERSION "develop"
@@ -32,7 +34,8 @@ public:
     Q_PROPERTY(int onlineState READ getOnlineState NOTIFY onlineStateChanged)
     Q_PROPERTY(QUrl onlineStatusIcon READ getOnlineStatusIcon NOTIFY onlineStatusIconChanged)
 
-    Q_INVOKABLE
+    Q_INVOKABLE LogModel *logModel();
+    Q_INVOKABLE IdentitiesModel *identitiesModel();
 
     Manager();
 
@@ -57,6 +60,8 @@ private:
     AppState app_state_ = ds::core::DsEngine::State::INITIALIZING;
     OnlineState online_state_ = ds::core::ProtocolManager::State::OFFLINE;
     std::unique_ptr<ds::core::DsEngine> engine_;
+    std::unique_ptr<LogModel> log_;
+    std::unique_ptr<IdentitiesModel> identities_;
     int page_ = 3; // Home
 };
 

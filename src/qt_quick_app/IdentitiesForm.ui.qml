@@ -1,5 +1,6 @@
 import QtQuick 2.12
 import QtQuick.Controls 2.5
+import com.jgaa.darkspeak 1.0
 
 Page {
     width: 600
@@ -18,6 +19,7 @@ Page {
 
     ListView {
         id: listView
+        model: identities
         anchors.fill: parent
         delegate: Item {
             x: 5
@@ -26,38 +28,26 @@ Page {
             Row {
                 id: row1
                 spacing: 10
+
                 Rectangle {
-                    width: 40
-                    height: 40
-                    color: colorCode
+                    width: 32
+                    height: 32
+                    color: blue
                 }
 
                 Text {
-                    text: name
+                    color: "#9891f7"
+                    text: model.name
                     font.bold: true
                     anchors.verticalCenter: parent.verticalCenter
                 }
-            }
-        }
-        model: ListModel {
-            ListElement {
-                name: "Grey"
-                colorCode: "grey"
-            }
 
-            ListElement {
-                name: "Red"
-                colorCode: "red"
-            }
-
-            ListElement {
-                name: "Blue"
-                colorCode: "blue"
-            }
-
-            ListElement {
-                name: "Green"
-                colorCode: "green"
+                Text {
+                    color: "#9891f7"
+                    text: created
+                    font.bold: true
+                    anchors.verticalCenter: parent.verticalCenter
+                }
             }
         }
     }

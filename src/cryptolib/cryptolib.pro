@@ -8,7 +8,7 @@ QT       -= gui sql
 INCLUDEPATH += $$PWD/../../dependencies/logfault/include/
 TARGET = cryptolib
 TEMPLATE = lib
-CONFIG += staticlib
+CONFIG += staticlib c++17
 
 
 # The following define makes your compiler emit warnings if you use

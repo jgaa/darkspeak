@@ -7,6 +7,8 @@
 #include <QQmlContext>
 
 #include "ds/manager.h"
+#include "ds/logmodel.h"
+#include "ds/crypto.h"
 
 #include "logfault/logfault.h"
 
@@ -31,16 +33,42 @@ int main(int argc, char *argv[])
 
     QGuiApplication app(argc, argv);
 
+    app.setOrganizationName("TheLastViking");
+    app.setOrganizationDomain("lastviking.eu");
+
+    // Initialize crypto
+    ds::crypto::Crypto crypto;
+
+#ifdef QT_DEBUG
+    app.setApplicationName("DarkSpeak-debug");
+#else
+    app.setApplicationName("DarkSpeak");
+#endif
+
     auto manager = make_unique<Manager>();
+
+    LFLOG_INFO << manager->getProgramNameAndVersion() << " is ready.";
 
     {
         QString no_create_message = "ContactsModel is a global sigeleton.";
         qmlRegisterUncreatableType<ds::models::Manager>("com.jgaa.darkspeak", 1, 0, "Manager", no_create_message);
     }
 
+    {
+        QString no_create_message = "LogModel is a global sigeleton.";
+        qmlRegisterUncreatableType<ds::models::LogModel>("com.jgaa.darkspeak", 1, 0, "LogModel", no_create_message);
+    }
+
+    {
+        QString no_create_message = "IdentitiesModel is a global sigeleton.";
+        qmlRegisterUncreatableType<ds::models::IdentitiesModel>("com.jgaa.darkspeak", 1, 0, "IdentitiesModel", no_create_message);
+    }
+
     QQmlApplicationEngine engine;
 
     engine.rootContext()->setContextProperty("manager", manager.get());
+    engine.rootContext()->setContextProperty("log", manager->logModel());
+    engine.rootContext()->setContextProperty("identities", manager->identitiesModel());
 
     engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
     if (engine.rootObjects().isEmpty()) {

@@ -17,6 +17,12 @@ namespace models {
 class IdentitiesModel : public QSqlTableModel
 {
     Q_OBJECT
+
+    enum Roles {
+        NAME_ROLE = Qt::UserRole,
+        CREATED_ROLE
+    };
+
 public:
 
     IdentitiesModel(QSettings& settings);
@@ -25,14 +31,18 @@ protected:
     QSettings& settings_;
 
 public slots:
-    void createIdentity(const ds::core::Identity& data);
+    void createIdentity(QString name);
+
+private slots:
+    void saveIdentity(const ds::core::Identity& data);
 
     // QAbstractItemModel interface
 public:
     QVariant data(const QModelIndex &index, int role) const override;
     bool setData(const QModelIndex &index, const QVariant &value, int role) override;
-    QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
-    Qt::ItemFlags flags(const QModelIndex &index) const override;
+    //QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
+   // Qt::ItemFlags flags(const QModelIndex &index) const override;
+    virtual QHash<int, QByteArray> roleNames() const override;
 
     bool identityExists(QString name) const;
 

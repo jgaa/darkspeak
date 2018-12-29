@@ -1,6 +1,7 @@
 import QtQuick 2.9
 import QtQuick.Controls 2.4
 import QtQuick.Layouts 1.12
+import QtQuick.Dialogs 1.2
 import com.jgaa.darkspeak 1.0
 
 ToolBar {
@@ -14,7 +15,7 @@ ToolBar {
             icon.source: manager.onlineStatusIcon
             checkable: false
             Layout.preferredHeight: parent.height
-            anchors.top: parent.top
+            //anchors.top: parent.top
 
             icon.color: {
                 switch(manager.onlineState) {
@@ -37,5 +38,19 @@ ToolBar {
                 }
             }
         }
+
+        ToolButton {
+            text: qsTr("+Identity")
+            checkable: false
+            Layout.preferredHeight: parent.height
+            visible: manager.currentPage === 1
+
+             onClicked: {
+                 var popupComponent = Qt.createComponent("qrc:/CreateIdentityDialog.qml")
+                 var dlg = popupComponent.createObject(mainWindow, {"parent" : mainWindow});
+                 dlg.open()
+             }
+        }
+
     }
 }

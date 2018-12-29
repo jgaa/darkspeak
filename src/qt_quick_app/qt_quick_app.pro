@@ -1,5 +1,5 @@
 QT += network core sql quick
-CONFIG += c++14
+CONFIG += c++17
 
 DEFINES += QT_DEPRECATED_WARNINGS
 

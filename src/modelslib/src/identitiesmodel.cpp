@@ -38,18 +38,32 @@ IdentitiesModel::IdentitiesModel(QSettings &settings)
     h_created_ = fieldIndex("created");
 
     connect(&DsEngine::instance(), &DsEngine::identityCreated,
-            this, &IdentitiesModel::createIdentity);
+            this, &IdentitiesModel::saveIdentity);
+
+    select();
+
+    const auto names = roleNames();
+    for(const auto& n : names) {
+        LFLOG_DEBUG << n;
+    }
 }
 
-void IdentitiesModel::createIdentity(const ds::core::Identity &data)
+void IdentitiesModel::createIdentity(QString name)
+{
+    IdentityReq req;
+    req.name = name;
+    DsEngine::instance().createIdentity(req);
+}
+
+void IdentitiesModel::saveIdentity(const ds::core::Identity &data)
 {
     Strategy strategy(*this, QSqlTableModel::OnManualSubmit);
     QSqlRecord rec{DsEngine::instance().getDb().record(this->tableName())};
 
     rec.setValue(h_uuid_, QUuid().toString());
-    rec.setValue(h_hash_, data.hash);
+    rec.setValue(h_hash_, data.hash.toBase64());
     rec.setValue(h_name_, data.name);
-    rec.setValue(h_cert_, data.cert);
+    rec.setValue(h_cert_, data.cert.toBase64());
     rec.setValue(h_address_, data.address);
     rec.setValue(h_address_data_, data.addressData);
     if (!data.notes.isEmpty()) {
@@ -58,10 +72,17 @@ void IdentitiesModel::createIdentity(const ds::core::Identity &data)
     if (!data.avatar.isNull()) {
         rec.setValue(h_avatar_, data.avatar);
     }
-    rec.setValue(h_created_, QDateTime::currentDateTime().toTime_t());
+    rec.setValue(h_created_, QDateTime::currentDateTime());
 
-    if (!insertRecord(-1, rec) || !submitAll()) {
-        qWarning() << "Failed to add identity: " << data.name
+    if (!insertRecord(-1, rec)) {
+        qWarning() << "Failed to insert identity: " << data.name
+                   << this->lastError().text();
+        return;
+    }
+
+    if (!submitAll()) {
+
+        qWarning() << "Failed to flush identity: " << data.name
                    << this->lastError().text();
         return;
     }
@@ -69,25 +90,72 @@ void IdentitiesModel::createIdentity(const ds::core::Identity &data)
     LFLOG_DEBUG << "Added identity " << data.name << " to the database";
 }
 
-QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const
-{
+QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const {
+
+    LFLOG_DEBUG << "IdentitiesModel::data(" << ix.row() << ", " << ix.column() << ", " << role << ") called";
+
+    if (!ix.isValid()) {
+        return {};
+    }
+
+    switch(role) {
+        case NAME_ROLE:
+            return data(index(ix.row(), h_name_), Qt::DisplayRole);
+        case CREATED_ROLE:
+            return data(index(ix.row(), h_created_), Qt::DisplayRole);
+    }
+
+    if (role == Qt::DecorationRole) {
+        if (ix.column() == h_name_) {
+            // TODO: Add Onion status icon
+            // TODO: Add note icon if we have a note
+        }
+    } else if (role == Qt::DisplayRole) {
+        if (ix.column() == h_created_) {
+            return QSqlTableModel::data(index(ix.row(), h_created_), Qt::DisplayRole).toDate().toString();
+        }
+        if (ix.column() == h_hash_) {
+             auto nix = index(ix.row(), h_hash_, {});
+             return QSqlTableModel::data(nix, Qt::DisplayRole).toByteArray().toBase64();
+        }
+    }
+
     return QSqlTableModel::data(ix, role);
 }
 
-bool IdentitiesModel::setData(const QModelIndex &ix, const QVariant &value, int role)
-{
+bool IdentitiesModel::setData(const QModelIndex &ix,
+                              const QVariant &value,
+                              int role) {
     return QSqlTableModel::setData(ix, value, role);
 }
 
-QVariant IdentitiesModel::headerData(int section, Qt::Orientation orientation, int role) const
+QHash<int, QByteArray> IdentitiesModel::roleNames() const
 {
-    return QSqlTableModel::headerData(section, orientation, role);
+    QHash<int, QByteArray> names = {
+        {NAME_ROLE, "name"},
+        {CREATED_ROLE, "created"}
+    };
+
+    return names;
 }
 
-Qt::ItemFlags IdentitiesModel::flags(const QModelIndex &ix) const
-{
-    return QSqlTableModel::flags(ix);
-}
+//QVariant IdentitiesModel::headerData(int section, Qt::Orientation orientation, int role) const
+//{
+////    if (role == Qt::DisplayRole && orientation == Qt::Horizontal) {
+////        if (section == h_name_ ) {
+////            return tr("Nickname");
+////        } else if (section == h_created_ ) {
+////            return tr("Created");
+////        }
+////    }
+
+//    return QSqlTableModel::headerData(section, orientation, role);
+//}
+
+//Qt::ItemFlags IdentitiesModel::flags(const QModelIndex &ix) const
+//{
+//    return QSqlTableModel::flags(ix); //& ~Qt::EditRole;
+//}
 
 bool IdentitiesModel::identityExists(QString name) const
 {

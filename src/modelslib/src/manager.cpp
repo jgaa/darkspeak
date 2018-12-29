@@ -9,6 +9,16 @@ using namespace ds::crypto;
 namespace ds {
 namespace models {
 
+LogModel *Manager::logModel()
+{
+    return log_.get();
+}
+
+IdentitiesModel *Manager::identitiesModel()
+{
+    return identities_.get();
+}
+
 Manager::Manager()
 {
     engine_ = make_unique<DsEngine>();
@@ -27,6 +37,9 @@ Manager::Manager()
         emit onlineStateChanged(to);
         emit onlineStatusIconChanged();
     });
+
+    log_ = make_unique<LogModel>(engine_->settings());
+    identities_ = make_unique<IdentitiesModel>(engine_->settings());
 }
 
 Manager::AppState Manager::getAppState() const

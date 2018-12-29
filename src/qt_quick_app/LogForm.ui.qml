@@ -1,10 +1,12 @@
 import QtQuick 2.12
 import QtQuick.Controls 2.5
+import com.jgaa.darkspeak 1.0
 
 Page {
     id: page
     width: 600
     height: 400
+    title: qsTr("Log")
 
     header: Label {
         text: qsTr("Log")
@@ -14,46 +16,22 @@ Page {
 
     ListView {
         id: listView
+        model: log
         anchors.fill: parent
         delegate: Item {
-            x: 5
-            width: 80
-            height: 40
+            height: logText.height + 2
             Row {
                 id: row1
-                spacing: 10
-                Rectangle {
-                    width: 40
-                    height: 40
-                    color: colorCode
-                }
-
                 Text {
-                    text: name
+                    id: logText
+                    color: "#aecbe8"
+                    text: display
+                    renderType: Text.QtRendering
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WordWrap
                     font.bold: true
                     anchors.verticalCenter: parent.verticalCenter
                 }
-            }
-        }
-        model: ListModel {
-            ListElement {
-                name: "Grey"
-                colorCode: "grey"
-            }
-
-            ListElement {
-                name: "Red"
-                colorCode: "red"
-            }
-
-            ListElement {
-                name: "Blue"
-                colorCode: "blue"
-            }
-
-            ListElement {
-                name: "Green"
-                colorCode: "green"
             }
         }
     }

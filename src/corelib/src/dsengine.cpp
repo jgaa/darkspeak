@@ -29,9 +29,7 @@ namespace core {
 DsEngine *DsEngine::instance_;
 
 DsEngine::DsEngine()
-    : settings_{std::make_unique<QSettings>(
-                    QStringLiteral("Jgaas Internet"),
-                    QStringLiteral("DarkSpeak"))}
+    : settings_{std::make_unique<QSettings>()}
 {
     initialize();
 }
@@ -115,9 +113,8 @@ void DsEngine::createIdentity(const IdentityReq& req)
     auto name = req.name;
     whenOnline([this, name]() { tryMakeTransport(name); });
 
-    // Create a RSA cert for the user. This may take some time on slow devices.
+    // Create a cert for the user. This may take some time on slow devices.
     Task::schedule([this, name] {
-        // TODO: Take cert type from settings
         try {
             auto cert = DsCert::create();
             emit certCreated(name, cert);
@@ -154,7 +151,7 @@ void DsEngine::createContact(const ContactReq &req)
 
     // Validate
     if (!regex_match(c.address.data(), valid_address)) {
-        qWarning() << "New contact " << req.name
+        LFLOG_WARN << "New contact " << req.name
                    << " has an invalid address format : '"
                    << c.address
                    << "'";
@@ -175,7 +172,7 @@ void DsEngine::createContact(const ContactReq &req)
 void DsEngine::onCertCreated(const QString &name, const DsCert::ptr_t cert)
 {
     if (!pending_identities_.contains(name)) {
-        qWarning() << "Received a cert for a non-existing name: " << name;
+        LFLOG_WARN << "Received a cert for a non-existing name: " << name;
         return;
     }
 
@@ -192,7 +189,7 @@ void DsEngine::addIdentityIfReady(const QString &name)
 {
     if (!pending_identities_.contains(name)) {
         const auto msg = QStringLiteral("No pending identity with that name");
-        qWarning() << msg << ": " << name;
+        LFLOG_WARN << msg << ": " << name;
         emit identityError({name, msg});
         return;
     }
@@ -227,12 +224,12 @@ void DsEngine::online()
                 fn();
             }
         } catch (std::exception& ex) {
-            qWarning() << "Failed to execute function when getting online: " << ex.what();
+            LFLOG_WARN << "Failed to execute function when getting online: " << ex.what();
         }
     }
 }
 
-void DsEngine::sendMessage(const Message& msg)
+void DsEngine::sendMessage(const Message& /*msg*/)
 {
 }
 
@@ -241,7 +238,7 @@ void DsEngine::onTransportHandleReady(const TransportHandle &th)
     const auto name = th.identityName;
     if (!pending_identities_.contains(name)) {
         const auto msg = QStringLiteral("No pending identity with that name");
-        qWarning() << msg << ": " << name;
+        LFLOG_WARN << msg << ": " << name;
         emit identityError({name, msg});
         return;
     }
