@@ -27,13 +27,11 @@ Page {
                 Text {
                     id: logText
                     anchors.margins: 3
-                    color: "#aecbe8"
                     text: display
                     width: root.width - 10
                     renderType: Text.QtRendering
                     textFormat: Text.PlainText
                     wrapMode: Text.WordWrap
-                    font.bold: true
                     anchors.verticalCenter: parent.verticalCenter
                     font.pointSize: 8
                 }

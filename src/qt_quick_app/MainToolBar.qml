@@ -5,17 +5,16 @@ import QtQuick.Dialogs 1.2
 import com.jgaa.darkspeak 1.0
 
 ToolBar {
-    id: mainToolBar
+    id: root
 
-    RowLayout{
-        height: parent.height
+    Flow {
+        anchors.fill: parent
+        spacing: 6
 
         ToolButton {
             text: qsTr("Connect")
             icon.source: manager.onlineStatusIcon
-            checkable: false
-            Layout.preferredHeight: parent.height
-            //anchors.top: parent.top
+            height: parent.height
 
             icon.color: {
                 switch(manager.onlineState) {
@@ -41,16 +40,14 @@ ToolBar {
 
         ToolButton {
             text: qsTr("+Identity")
-            checkable: false
-            Layout.preferredHeight: parent.height
+            height: parent.height
             visible: manager.currentPage === 1
 
-             onClicked: {
+            onClicked: {
                  var popupComponent = Qt.createComponent("qrc:/CreateIdentityDialog.qml")
                  var dlg = popupComponent.createObject(mainWindow, {"parent" : mainWindow});
                  dlg.open()
-             }
+            }
         }
-
     }
 }

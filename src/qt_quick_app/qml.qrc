@@ -7,7 +7,7 @@
         <file>ContactsForm.ui.qml</file>
         <file>ConversationsForm.ui.qml</file>
         <file>ChatForm.ui.qml</file>
-        <file>IdentitiesForm.ui.qml</file>
+        <file>IdentitiesForm.qml</file>
         <file>images/Connected-32.png</file>
         <file>images/Connecting-32.png</file>
         <file>images/Disconnected-32.png</file>
@@ -19,7 +19,6 @@
         <file>images/network_offline.svg</file>
         <file>images/network_online.svg</file>
         <file>images/Secured_Global_Network_Cartoon.svg</file>
-        <file>main.cpp</file>
         <file>MainToolBar.qml</file>
         <file>CreateIdentityDialog.qml</file>
     </qresource>

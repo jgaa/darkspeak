@@ -18,37 +18,47 @@ Page {
     }
 
     ListView {
-        id: listView
+        id: list
+        interactive: true
         model: identities
         anchors.fill: parent
+        highlight: highlightBar
+
         delegate: Item {
-            x: 5
-            width: 80
+            id: itemDelegate
+            width: parent.width
             height: 40
             Row {
-                id: row1
                 spacing: 10
-
-                Rectangle {
-                    width: 32
-                    height: 32
-                    color: blue
-                }
-
                 Text {
-                    color: "#9891f7"
-                    text: model.name
-                    font.bold: true
+                    //color: "#adadc5"
+
+                    color: itemDelegate.ListView.isCurrentItem ? "white" : "#9891f7"
+                    text: name
+                    font.bold: itemDelegate.ListView.isCurrentItem
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
                 Text {
                     color: "#9891f7"
                     text: created
-                    font.bold: true
                     anchors.verticalCenter: parent.verticalCenter
                 }
             }
+            MouseArea {
+                anchors.fill: parent
+                onClicked: list.currentIndex = index
+            }
         }
     }
+
+    Component {
+         id: highlightBar
+         Rectangle {
+             y: listView.currentItem.y;
+             anchors.fill: listView.currentItem.width
+             color: "#1a5b0d"
+             Behavior on y { SpringAnimation { spring: 2; damping: 0.1 } }
+         }
+     }
 }

@@ -41,11 +41,6 @@ IdentitiesModel::IdentitiesModel(QSettings &settings)
             this, &IdentitiesModel::saveIdentity);
 
     select();
-
-    const auto names = roleNames();
-    for(const auto& n : names) {
-        LFLOG_DEBUG << n;
-    }
 }
 
 void IdentitiesModel::createIdentity(QString name)
@@ -98,29 +93,27 @@ QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const {
         return {};
     }
 
-    switch(role) {
-        case NAME_ROLE:
-            return data(index(ix.row(), h_name_), Qt::DisplayRole);
-        case CREATED_ROLE:
-            return data(index(ix.row(), h_created_), Qt::DisplayRole);
+    // Map the QML field name mapping back to normal column based access
+    auto model_ix = ix;
+    if (role >= Qt::UserRole) {
+        model_ix = index(ix.row(), role - Qt::UserRole);
+        role = Qt::DisplayRole;
     }
 
     if (role == Qt::DecorationRole) {
-        if (ix.column() == h_name_) {
+        if (model_ix.column() == h_name_) {
             // TODO: Add Onion status icon
             // TODO: Add note icon if we have a note
         }
-    } else if (role == Qt::DisplayRole) {
-        if (ix.column() == h_created_) {
-            return QSqlTableModel::data(index(ix.row(), h_created_), Qt::DisplayRole).toDate().toString();
-        }
-        if (ix.column() == h_hash_) {
-             auto nix = index(ix.row(), h_hash_, {});
-             return QSqlTableModel::data(nix, Qt::DisplayRole).toByteArray().toBase64();
+    }
+
+    if (role == Qt::DisplayRole) {
+        if (model_ix.column() == h_created_) {
+            return QSqlTableModel::data(index(model_ix.row(), h_created_), Qt::DisplayRole).toDate().toString();
         }
     }
 
-    return QSqlTableModel::data(ix, role);
+    return QSqlTableModel::data(model_ix, role);
 }
 
 bool IdentitiesModel::setData(const QModelIndex &ix,
@@ -132,8 +125,8 @@ bool IdentitiesModel::setData(const QModelIndex &ix,
 QHash<int, QByteArray> IdentitiesModel::roleNames() const
 {
     QHash<int, QByteArray> names = {
-        {NAME_ROLE, "name"},
-        {CREATED_ROLE, "created"}
+        {h_name_ + Qt::UserRole, "name"},
+        {h_created_ + Qt::UserRole, "created"}
     };
 
     return names;

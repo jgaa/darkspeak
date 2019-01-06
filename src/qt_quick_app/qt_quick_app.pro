@@ -1,5 +1,6 @@
-QT += network core sql quick
+QT += network core sql quick quickcontrols2
 CONFIG += c++17
+TARGET = darkspeak
 
 DEFINES += QT_DEPRECATED_WARNINGS
 
@@ -10,8 +11,7 @@ INCLUDEPATH += \
     $$PWD/../../src/protlib/include \
     $$PWD/../../src/modelslib/include
 
-SOURCES += \
-        main.cpp
+SOURCES += main.cpp
 
 RESOURCES += qml.qrc
 

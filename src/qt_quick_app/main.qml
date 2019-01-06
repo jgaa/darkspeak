@@ -3,7 +3,7 @@ import QtQuick.Controls 2.5
 import com.jgaa.darkspeak 1.0
 
 ApplicationWindow {
-    id: mainWindow
+    id: root
     visible: true
     width: 640
     height: 480
@@ -40,14 +40,25 @@ ApplicationWindow {
         }
 
         ChatForm {
-        }
 
+        }
+    }
+
+    PageIndicator {
+        id: indicator
+        visible: !tabBar.visible
+
+        count: swipeView.count
+        currentIndex: swipeView.currentIndex
+
+        anchors.bottom: swipeView.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
     }
 
     footer: TabBar {
         id: tabBar
         currentIndex: manager.currentPage
-        visible: width > 400
+        visible: width > 600
 
         onCurrentIndexChanged: {
             manager.currentPage = currentIndex

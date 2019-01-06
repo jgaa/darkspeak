@@ -5,6 +5,7 @@
 #include <QQmlApplicationEngine>
 #include <QStandardPaths>
 #include <QQmlContext>
+#include <QQuickStyle>
 
 #include "ds/manager.h"
 #include "ds/logmodel.h"
@@ -69,6 +70,8 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("manager", manager.get());
     engine.rootContext()->setContextProperty("log", manager->logModel());
     engine.rootContext()->setContextProperty("identities", manager->identitiesModel());
+
+    //QQuickStyle::setStyle("Fusion");
 
     engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
     if (engine.rootObjects().isEmpty()) {
