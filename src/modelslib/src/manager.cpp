@@ -69,9 +69,11 @@ int Manager::getCurrentPage()
 
 void Manager::setCurrentPage(int page)
 {
-    LFLOG_DEBUG << "Changing to page " << page;
-    page_ = page;
-    emit currentPageChanged(page);
+    if (page != page_) {
+        LFLOG_DEBUG << "Changing to page " << page;
+        page_ = page;
+        emit currentPageChanged(page);
+    }
 }
 
 QUrl Manager::getOnlineStatusIcon() const
