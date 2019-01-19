@@ -8,7 +8,7 @@ generated-doc
 /.idea/
 /.vs/
 *.user
-
+*.directory
 
 
 # Compiled Object files
