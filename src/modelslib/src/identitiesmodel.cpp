@@ -11,6 +11,7 @@
 #include "ds/identitiesmodel.h"
 #include "ds/errors.h"
 #include "ds/strategy.h"
+#include "ds/base58.h"
 #include "logfault/logfault.h"
 
 using namespace ds::core;
@@ -95,6 +96,16 @@ QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const {
 
     // Map the QML field name mapping back to normal column based access
     auto model_ix = ix;
+
+    switch(role) {
+        case HANDLE_ROLE: {
+            auto cert_data = QSqlTableModel::data(index(model_ix.row(), h_cert_), Qt::DisplayRole).toByteArray();
+            return crypto::DsCert::create(QByteArray::fromBase64(cert_data))->getB58PubKey();
+        }
+        default:
+            ; // Continue below
+    };
+
     if (role >= Qt::UserRole) {
         model_ix = index(ix.row(), role - Qt::UserRole);
         role = Qt::DisplayRole;
@@ -126,7 +137,9 @@ QHash<int, QByteArray> IdentitiesModel::roleNames() const
 {
     QHash<int, QByteArray> names = {
         {h_name_ + Qt::UserRole, "name"},
-        {h_created_ + Qt::UserRole, "created"}
+        {h_created_ + Qt::UserRole, "created"},
+        {h_address_ + Qt::UserRole, "onion"},
+        {HANDLE_ROLE, "handle"}
     };
 
     return names;

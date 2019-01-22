@@ -20,7 +20,8 @@ class IdentitiesModel : public QSqlTableModel
 
     enum Roles {
         NAME_ROLE = Qt::UserRole,
-        CREATED_ROLE
+        CREATED_ROLE,
+        HANDLE_ROLE
     };
 
 public:

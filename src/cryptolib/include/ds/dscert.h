@@ -4,6 +4,8 @@
 #include <QByteArray>
 #include <memory>
 
+#include "base58.h"
+
 namespace ds {
 namespace crypto {
 
@@ -24,6 +26,9 @@ public:
     virtual const QByteArray& getKey() const = 0;
     virtual const QByteArray& getPubKey() const = 0;
     virtual const QByteArray& getHash() const = 0;
+    virtual const QByteArray getB58PubKey() {
+        return b58check_enc<QByteArray>(getPubKey(), {249, 50});
+    }
 
     // Sign data with the private key
     virtual QByteArray sign(std::initializer_list<QByteArray> data) const = 0;

@@ -21,5 +21,6 @@
         <file>images/Secured_Global_Network_Cartoon.svg</file>
         <file>MainToolBar.qml</file>
         <file>CreateIdentityDialog.qml</file>
+        <file>images/anonymous.svg</file>
     </qresource>
 </RCC>

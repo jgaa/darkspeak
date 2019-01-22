@@ -33,7 +33,49 @@ namespace ds {
 namespace crypto {
 
 bool b58tobin_(void *bin, size_t *binszp, const std::string b58);
-bool b58enc_(std::string& b58, const void *data, size_t binsz);
+
+template <typename T>
+bool b58enc_(T& b58, const void *data, size_t binsz)
+{
+    static constexpr char b58digits_ordered[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+    const uint8_t *bin = reinterpret_cast<const unsigned char *>(data);;
+    int carry = 0;
+    size_t i = 0, j = 0, high = 0, zcount = 0;
+    size_t size = 0;
+
+    while (zcount < binsz && !bin[zcount])
+        ++zcount;
+
+    size = (binsz - zcount) * 138 / 100 + 1;
+    std::vector<uint8_t> buf(size);
+
+    for (i = zcount, high = size - 1; i < binsz; ++i, high = j)
+    {
+        for (carry = bin[i], j = size - 1; (j > high) || carry; --j)
+        {
+            carry += 256 * buf[j];
+            buf[j] = carry % 58;
+            carry /= 58;
+        }
+    }
+
+    for (j = 0; j < size && !buf[j]; ++j);
+
+    b58.resize(zcount + size - j);
+
+    if (zcount) {
+        for(size_t ix = 0; ix < zcount; ++ix) {
+            b58[static_cast<int>(ix)] = '1';
+        }
+    }
+    for (i = zcount; j < size; ++i, ++j)
+        b58[static_cast<int>(i)] = b58digits_ordered[buf[j]];
+    b58.resize(i);
+
+    return true;
+}
+
 
 template <typename T>
 T b58tobin(const std::string& in, size_t bytes) {
@@ -98,19 +140,19 @@ T b58tobin_check(const std::string& in, size_t bytes, std::initializer_list<uint
     return bin;
 }
 
-template <typename T>
-std::string b58enc(const T& in) {
-    std::string out;
+template <typename Tout=std::string, typename T>
+Tout b58enc(const T& in) {
+    Tout out;
 
-    if (b58enc_(out, in.data(), in.size())) {
+    if (b58enc_<Tout>(out, in.data(), in.size())) {
         return out;
     }
 
     return {};
 }
 
-template <typename T>
-std::string b58check_enc(const T& data, std::initializer_list<uint8_t> ver)
+template <typename Tout=std::string, typename T>
+Tout b58check_enc(const T& data, std::initializer_list<uint8_t> ver)
 {
     const auto bufsize = data.size() + ver.size() + 4;
     std::vector<unsigned char> buf;
@@ -128,7 +170,7 @@ std::string b58check_enc(const T& data, std::initializer_list<uint8_t> ver)
     crypto_hash_sha256(hash.data(), buf.data(), buf.size());
     std::copy(hash.begin(), hash.begin() + 4, std::back_inserter(buf));
 
-    return b58enc(buf);
+    return b58enc<Tout>(buf);
 }
 
 

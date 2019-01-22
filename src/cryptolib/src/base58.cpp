@@ -23,7 +23,7 @@ static constexpr int8_t b58digits_map[] = {
     47,48,49,50,51,52,53,54, 55,56,57,-1,-1,-1,-1,-1,
 };
 
-static constexpr char b58digits_ordered[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+//static constexpr char b58digits_ordered[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 } // anonymous namespace
 
@@ -105,45 +105,5 @@ bool b58tobin_(void *bin, size_t *binszp, const std::string b58) {
 
     return true;
 }
-
-bool b58enc_(std::string& b58, const void *data, size_t binsz)
-{
-    const uint8_t *bin = reinterpret_cast<const unsigned char *>(data);;
-    int carry = 0;
-    size_t i = 0, j = 0, high = 0, zcount = 0;
-    size_t size = 0;
-
-    while (zcount < binsz && !bin[zcount])
-        ++zcount;
-
-    size = (binsz - zcount) * 138 / 100 + 1;
-    std::vector<uint8_t> buf(size);
-
-    for (i = zcount, high = size - 1; i < binsz; ++i, high = j)
-    {
-        for (carry = bin[i], j = size - 1; (j > high) || carry; --j)
-        {
-            carry += 256 * buf[j];
-            buf[j] = carry % 58;
-            carry /= 58;
-        }
-    }
-
-    for (j = 0; j < size && !buf[j]; ++j);
-
-    b58.resize(zcount + size - j);
-
-    if (zcount) {
-        for(size_t ix = 0; ix < zcount; ++ix) {
-            b58.at(ix) = '1';
-        }
-    }
-    for (i = zcount; j < size; ++i, ++j)
-        b58[i] = b58digits_ordered[buf[j]];
-    b58.resize(i);
-
-    return true;
-}
-
 
 }} // namespaces
