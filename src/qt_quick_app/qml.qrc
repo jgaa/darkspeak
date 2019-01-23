@@ -22,5 +22,8 @@
         <file>MainToolBar.qml</file>
         <file>CreateIdentityDialog.qml</file>
         <file>images/anonymous.svg</file>
+        <file>images/onion.svg</file>
+        <file>images/onion-bw.svg</file>
+        <file>images/user.svg</file>
     </qresource>
 </RCC>

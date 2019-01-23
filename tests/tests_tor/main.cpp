@@ -13,7 +13,7 @@ int main(int argc, char** argv)
 
     logfault::LogManager::Instance().AddHandler(
                 std::make_unique<logfault::StreamHandler>(
-                    std::clog, logfault::LogLevel::DEBUGGING));
+                    std::clog, logfault::LogLevel::TRACE));
 
     LFLOG_DEBUG << "Pwd is " << app.applicationDirPath();
 

@@ -32,10 +32,17 @@ Manager::Manager()
     connect(engine_.get(), &ds::core::DsEngine::onlineStateChanged,
             [this] (const ds::core::ProtocolManager::State /*from*/,
             const ds::core::ProtocolManager::State to) {
-        online_state_ = to;
-        LFLOG_DEBUG << "Manager: Online state changed to " << online_state_;
-        emit onlineStateChanged(to);
-        emit onlineStatusIconChanged();
+
+        if (to != online_state_) {
+            const auto was_online = isOnline();
+            online_state_ = to;
+            LFLOG_DEBUG << "Manager: Online state changed to " << online_state_;
+            emit onlineStateChanged(to);
+            emit onlineStatusIconChanged();
+            if (was_online != isOnline()) {
+                emit onlineChanged();
+            }
+        }
     });
 
     log_ = make_unique<LogModel>(engine_->settings());
@@ -50,6 +57,11 @@ Manager::AppState Manager::getAppState() const
 Manager::OnlineState Manager::getOnlineState() const
 {
     return online_state_;
+}
+
+bool Manager::isOnline() const
+{
+    return online_state_ == ProtocolManager::State::ONLINE;
 }
 
 QString Manager::getProgramName() const

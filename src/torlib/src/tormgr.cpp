@@ -1,5 +1,7 @@
 #include <assert.h>
+#include <ds/torcontroller.h>
 #include "ds/tormgr.h"
+#include "logfault/logfault.h"
 
 namespace ds {
 namespace tor {
@@ -70,7 +72,14 @@ void TorMgr::stopService(const QByteArray &id)
         throw OfflineError("Tor is offline");
     }
 
-    ctl_->stopService(id);
+    try {
+        ctl_->stopService(id);
+    } catch(const TorController::NoSuchServiceError&) {
+        LFLOG_WARN << "Cannot stop non-existing service with id " << id;
+        emit serviceStopped(id);
+    }
+
+
 }
 
 void TorMgr::onTorStateUpdate(TorController::TorState state, int progress, const QString &summary)

@@ -17,6 +17,8 @@ public slots:
     void start() override;
     void stop() override;
     void createTransportHandle(const core::TransportHandleReq &) override;
+    void startService(const QByteArray& id, const QVariantMap& data) override;
+    void stopService(const QByteArray& id) override;
 
 private slots:
     void onServiceCreated(const ds::tor::ServiceProperties& service);
@@ -27,7 +29,6 @@ private slots:
     void torMgrOnline();
     void torMgrOffline();
     void torMgrStopped();
-
 
 public:
     State getState() const override;

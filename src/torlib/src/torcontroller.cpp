@@ -137,7 +137,6 @@ void TorController::stopService(const QByteArray &id)
             LFLOG_DEBUG << "Stopped Tor hidden service: " << service_id
                      << " with id " << id;
 
-
             emit serviceStopped(id);
         } else {
             auto msg = std::to_string(reply.status) + ' ' + reply.lines.front();
@@ -201,6 +200,13 @@ void TorController::setState(TorController::TorState state,
                              int progress, const QString& summary)
 {
     if (tor_state_!= state) {
+
+        if (tor_state_ == TorState::READY) {
+            for(const auto& k : service_map_.keys()) {
+                emit serviceStopped(k);
+            }
+        }
+
         tor_state_ = state;
         emit torStateUpdate(tor_state_, progress, summary);
     }

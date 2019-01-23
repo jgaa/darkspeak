@@ -32,6 +32,7 @@ public:
 
     Q_PROPERTY(int appState READ getAppState NOTIFY appStateChanged)
     Q_PROPERTY(int onlineState READ getOnlineState NOTIFY onlineStateChanged)
+    Q_PROPERTY(int online READ isOnline NOTIFY onlineChanged)
     Q_PROPERTY(QUrl onlineStatusIcon READ getOnlineStatusIcon NOTIFY onlineStatusIconChanged)
 
     Q_INVOKABLE LogModel *logModel();
@@ -42,19 +43,21 @@ public:
 public slots:
     AppState getAppState() const;
     OnlineState getOnlineState() const;
+    bool isOnline() const;
     QString getProgramName() const;
     QString getProgramNameAndVersion() const;
     int getCurrentPage();
     void setCurrentPage(int page);
     QUrl getOnlineStatusIcon() const;
-    Q_INVOKABLE void goOnline();
-    Q_INVOKABLE void goOffline();
+    void goOnline();
+    void goOffline();
 
 signals:
     void appStateChanged(const AppState state);
     void onlineStateChanged(const OnlineState state);
     void currentPageChanged(int page);
     void onlineStatusIconChanged();
+    void onlineChanged();
 
 private:
     AppState app_state_ = ds::core::DsEngine::State::INITIALIZING;

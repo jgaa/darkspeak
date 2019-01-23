@@ -58,7 +58,7 @@ public:
 public slots:
     void createIdentity(const IdentityReq&);
     void createContact(const ContactReq&);
-    void sendMessage(const Message& message);
+    void sendMessage(const Message& message);    
     void close();
     void start();
 
@@ -70,6 +70,9 @@ private slots:
     void onTransportHandleReady(const TransportHandle& th);
     void onTransportHandleError(const TransportHandleError& th);
     void online();
+    void onServiceFailed(const QByteArray& id, const QByteArray& reason);
+    void onServiceStarted(const QByteArray& id);
+    void onServiceStopped(const QByteArray& id);
 
 signals:
     void identityCreated(const Identity&);
@@ -82,6 +85,9 @@ signals:
     void onlineStateChanged(const ProtocolManager::State old, const ProtocolManager::State current);
     void certCreated(const QString name, const ds::crypto::DsCert::ptr_t cert);
     void retryIdentityReady(const QString name); // internal
+    void serviceFailed(const QByteArray& id, const QByteArray& reason);
+    void serviceStarted(const QByteArray& id);
+    void serviceStopped(const QByteArray& id);
 
 protected:
     void initialize();

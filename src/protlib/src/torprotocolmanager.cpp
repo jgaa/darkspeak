@@ -149,6 +149,23 @@ void TorProtocolManager::createTransportHandle(const TransportHandleReq &req)
     tor_->createService(req.identityName.toLocal8Bit());
 }
 
+void TorProtocolManager::startService(const QByteArray &id, const QVariantMap& data)
+{
+    ServiceProperties sp;
+    sp.id = id;
+    sp.key = data["key"].toByteArray();
+    sp.port = static_cast<decltype(sp.port)>(data["port"].toInt());
+    sp.key_type = data["key_type"].toByteArray();
+    sp.service_id = data["service_id"].toByteArray();
+
+    tor_->startService(sp);
+}
+
+void TorProtocolManager::stopService(const QByteArray &id)
+{
+    tor_->stopService(id);
+}
+
 void TorProtocolManager::onServiceCreated(const ServiceProperties &service)
 {
     // Convert he service data to a transport-handle
@@ -176,17 +193,18 @@ void TorProtocolManager::onServiceCreated(const ServiceProperties &service)
 
 void TorProtocolManager::onServiceFailed(const QByteArray &id, const QByteArray &reason)
 {
+    emit serviceFailed(id, reason);
     emit transportHandleError({id, reason});
 }
 
-void TorProtocolManager::onServiceStarted(const QByteArray &/*id*/)
+void TorProtocolManager::onServiceStarted(const QByteArray &id)
 {
-
+    emit serviceStarted(id);
 }
 
-void TorProtocolManager::onServiceStopped(const QByteArray &/*id*/)
+void TorProtocolManager::onServiceStopped(const QByteArray &id)
 {
-
+    emit serviceStopped(id);
 }
 
 }} // namespaces

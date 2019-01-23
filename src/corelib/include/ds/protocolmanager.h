@@ -79,6 +79,10 @@ signals:
     void transportHandleReady(const TransportHandle&);
     void transportHandleError(const TransportHandleError&);
 
+    void serviceFailed(const QByteArray& id, const QByteArray& reason);
+    void serviceStarted(const QByteArray& id);
+    void serviceStopped(const QByteArray& id);
+
 public slots:
 
     /*! Start the protocol */
@@ -98,6 +102,27 @@ public slots:
 
     /*! Create a hidden service for an identity */
     virtual void createTransportHandle(const TransportHandleReq&) = 0;
+
+    /*! Start a service for an identity
+     *
+     * \param id Persistent, unique identifier for the Identity and the service
+     *      This is an opaque argument for the engine, but status changes will
+     *      be identified by this id, so the caller must be able to map it to
+     *      an Identity.
+     * \param handle Data reqired to start a communication service.
+     *
+     * Signals emitted later: serviceStarted or serviceFailed.
+     */
+    virtual void startService(const QByteArray& id, const QVariantMap& data) = 0;
+
+    /*! Stop a service for an identity
+     *
+     * \param id The same id that was provided when the service was started.
+     *
+     * Signals emitted later: serviceStopped or serviceFailed.
+     */
+    virtual void stopService(const QByteArray& id) = 0;
+
 
 public:
     static ptr_t create(QSettings& settings, Transport transport);

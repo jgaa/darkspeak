@@ -7,6 +7,8 @@
 #include <QSqlField>
 #include <QDateTime>
 #include <QUuid>
+#include <QJsonObject>
+#include <QJsonDocument>
 
 #include "ds/identitiesmodel.h"
 #include "ds/errors.h"
@@ -41,7 +43,28 @@ IdentitiesModel::IdentitiesModel(QSettings &settings)
     connect(&DsEngine::instance(), &DsEngine::identityCreated,
             this, &IdentitiesModel::saveIdentity);
 
+    connect(&DsEngine::instance(),
+            &ds::core::DsEngine::serviceStarted,
+            this, &IdentitiesModel::onServiceStarted);
+
+    connect(&DsEngine::instance(),
+            &ds::core::DsEngine::serviceStopped,
+            this, &IdentitiesModel::onServiceStopped);
+
+    connect(&DsEngine::instance(),
+            &ds::core::DsEngine::serviceFailed,
+            this, &IdentitiesModel::onServiceFailed);
+
     select();
+}
+
+bool IdentitiesModel::getOnlineStatus(int row) const
+{
+    if (auto e = getExtra(row)) {
+        return e->online;
+    }
+
+    return false;
 }
 
 void IdentitiesModel::createIdentity(QString name)
@@ -49,6 +72,45 @@ void IdentitiesModel::createIdentity(QString name)
     IdentityReq req;
     req.name = name;
     DsEngine::instance().createIdentity(req);
+}
+
+void IdentitiesModel::deleteIdentity(int row)
+{
+    // TODO: Delete contacts and messages
+    // TODO: Delete files, folders owned by this identity
+
+    LFLOG_DEBUG << "Deleting identity "
+                << data(index(row,0), h_name_ + Qt::UserRole).toString();
+
+    removeRows(row, 1);
+    if (!submitAll()) {
+
+        qWarning() << "Failed to delete identity at index: " << row
+                   << ": " << this->lastError().text();
+        return;
+    }
+
+    select();
+}
+
+
+void IdentitiesModel::startService(int row)
+{
+    auto id = getIdFromRow(row);
+    if (!id.isEmpty()) {
+        auto d = DsEngine::fromJson(data(index(row, h_address_data_), Qt::DisplayRole).toByteArray());
+        DsEngine::instance().getProtocolMgr(
+                    ProtocolManager::Transport::TOR).startService(id, d);
+    }
+}
+
+void IdentitiesModel::stopService(int row)
+{
+    auto id = getIdFromRow(row);
+    if (!id.isEmpty()) {
+        DsEngine::instance().getProtocolMgr(
+                    ProtocolManager::Transport::TOR).stopService(id);
+    }
 }
 
 void IdentitiesModel::saveIdentity(const ds::core::Identity &data)
@@ -86,6 +148,36 @@ void IdentitiesModel::saveIdentity(const ds::core::Identity &data)
     LFLOG_DEBUG << "Added identity " << data.name << " to the database";
 }
 
+void IdentitiesModel::onServiceStarted(const QByteArray &id)
+{
+    auto e = getExtra(id);
+    e->online = true;
+
+    auto row = getRowFromId(id);
+    auto ix = index(row, 0);
+    emit dataChanged(ix, ix, { Qt::EditRole, ONLINE_ROLE});
+}
+
+void IdentitiesModel::onServiceStopped(const QByteArray &id)
+{
+    auto e = getExtra(id);
+
+    e->online = false;
+
+    auto row = getRowFromId(id);
+    auto ix = index(row, 0);
+    emit dataChanged(ix, ix, { Qt::EditRole, ONLINE_ROLE});
+}
+
+void IdentitiesModel::onServiceFailed(const QByteArray &id,
+                                      const QByteArray &reason)
+{
+    Q_UNUSED(id);
+    Q_UNUSED(reason);
+
+    // TODO: Show error notification?
+}
+
 QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const {
 
     LFLOG_DEBUG << "IdentitiesModel::data(" << ix.row() << ", " << ix.column() << ", " << role << ") called";
@@ -97,13 +189,21 @@ QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const {
     // Map the QML field name mapping back to normal column based access
     auto model_ix = ix;
 
+    // Extra fields, generated fields
     switch(role) {
         case HANDLE_ROLE: {
             auto cert_data = QSqlTableModel::data(index(model_ix.row(), h_cert_), Qt::DisplayRole).toByteArray();
+            if (cert_data.isEmpty()) {
+                return {};
+            }
             return crypto::DsCert::create(QByteArray::fromBase64(cert_data))->getB58PubKey();
         }
+
+        case ONLINE_ROLE:
+            return getOnlineStatus(ix.row());
+
         default:
-            ; // Continue below
+                ; // Continue below
     };
 
     if (role >= Qt::UserRole) {
@@ -139,29 +239,12 @@ QHash<int, QByteArray> IdentitiesModel::roleNames() const
         {h_name_ + Qt::UserRole, "name"},
         {h_created_ + Qt::UserRole, "created"},
         {h_address_ + Qt::UserRole, "onion"},
-        {HANDLE_ROLE, "handle"}
+        {HANDLE_ROLE, "handle"},
+        {ONLINE_ROLE, "online"}
     };
 
     return names;
 }
-
-//QVariant IdentitiesModel::headerData(int section, Qt::Orientation orientation, int role) const
-//{
-////    if (role == Qt::DisplayRole && orientation == Qt::Horizontal) {
-////        if (section == h_name_ ) {
-////            return tr("Nickname");
-////        } else if (section == h_created_ ) {
-////            return tr("Created");
-////        }
-////    }
-
-//    return QSqlTableModel::headerData(section, orientation, role);
-//}
-
-//Qt::ItemFlags IdentitiesModel::flags(const QModelIndex &ix) const
-//{
-//    return QSqlTableModel::flags(ix); //& ~Qt::EditRole;
-//}
 
 bool IdentitiesModel::identityExists(QString name) const
 {
@@ -174,6 +257,49 @@ bool IdentitiesModel::identityExists(QString name) const
     return query.next();
 }
 
+QByteArray IdentitiesModel::getIdFromRow(const int row) const
+{
+    auto id = data(index(row, h_id_), Qt::DisplayRole).toByteArray();
+
+    if (id.isEmpty()) {
+        LFLOG_WARN << "Unable to get Identity id from row " << row;
+    }
+
+    return id;
+}
+
+int IdentitiesModel::getRowFromId(const QByteArray &id) const
+{
+    for(int i = 0 ; i < rowCount(); ++i) {
+        if (data(index(i, h_id_), Qt::DisplayRole).toByteArray() == id) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+IdentitiesModel::ExtraInfo::ptr_t IdentitiesModel::getExtra(const int row) const
+{
+    const auto id = getIdFromRow(row);
+    if (id.isEmpty()) {
+        return {};
+    }
+
+    return getExtra(id);
+}
+
+IdentitiesModel::ExtraInfo::ptr_t IdentitiesModel::getExtra(const QByteArray &id) const
+{
+    auto it = extras_.find(id);
+    if (it == extras_.end()) {
+        auto ptr = make_shared<ExtraInfo>();
+        extras_[id] = make_shared<ExtraInfo>();
+        return ptr;
+    }
+
+    return extras_[id];
+}
 
 }} // namepaces
 

@@ -3,7 +3,7 @@ import QtQuick.Controls 2.5
 import com.jgaa.darkspeak 1.0
 
 ApplicationWindow {
-    id: root
+    id: mainWindow
     visible: true
     width: 640
     height: 480

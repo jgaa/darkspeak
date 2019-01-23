@@ -19,23 +19,39 @@ class IdentitiesModel : public QSqlTableModel
     Q_OBJECT
 
     enum Roles {
-        NAME_ROLE = Qt::UserRole,
-        CREATED_ROLE,
+        // Fields that don't exist in the database
+        ONLINE_ROLE = Qt::UserRole + 100,
         HANDLE_ROLE
+    };
+
+    // Details kept in memory
+    class ExtraInfo {
+    public:
+        using ptr_t = std::shared_ptr<ExtraInfo>;
+
+        bool online = false;
     };
 
 public:
 
     IdentitiesModel(QSettings& settings);
 
+
 protected:
     QSettings& settings_;
 
 public slots:
     void createIdentity(QString name);
+    void deleteIdentity(int index);
+    void startService(int row);
+    void stopService(int row);
+    bool getOnlineStatus(int row) const;
 
 private slots:
     void saveIdentity(const ds::core::Identity& data);
+    void onServiceStarted(const QByteArray& id);
+    void onServiceStopped(const QByteArray& id);
+    void onServiceFailed(const QByteArray& id, const QByteArray& reason);
 
     // QAbstractItemModel interface
 public:
@@ -48,6 +64,11 @@ public:
     bool identityExists(QString name) const;
 
 private:
+    QByteArray getIdFromRow(const int row) const;
+    int getRowFromId(const QByteArray& id) const;
+    ExtraInfo::ptr_t getExtra(const int row) const;
+    ExtraInfo::ptr_t getExtra(const QByteArray& id) const;
+
     int h_id_ = {};
     int h_uuid_ = {};
     int h_hash_ = {};
@@ -58,6 +79,8 @@ private:
     int h_notes_= {};
     int h_avatar_ = {};
     int h_created_ = {};
+
+    mutable std::map<QByteArray, ExtraInfo::ptr_t> extras_;
 };
 
 

@@ -39,7 +39,8 @@ ToolBar {
         }
 
         ToolButton {
-            text: qsTr("+Identity")
+            text: qsTr("Identity")
+            icon.name: "document-new"
             height: parent.height
             visible: manager.currentPage === 1
 

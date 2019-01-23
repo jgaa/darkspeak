@@ -26,6 +26,8 @@ TorCtlSocket::TorCtlSocket()
 void TorCtlSocket::sendCommand(QByteArray command,
                                TorCtlSocket::handler_t handler)
 {
+    LFLOG_DEBUG << "Sending Tor command: " << command.toStdString();
+
     if (!command.endsWith("\r\n")) {
         command += "\r\n";
     }

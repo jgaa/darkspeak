@@ -11,10 +11,11 @@ Creates a new identify for a user of the application.
 - [x] Creates a new private and public key.
 - [x] Creates a new hidden Tor service.
 - [x] Creates an entry in the local identities table in the Sqlite storage.
+- [ ] Deny creation of existing name
 
 **Delete an identity**
-- [ ] Context menu
-- [ ] Confirm this via input dialog
+- [x] Context menu
+- [x] Confirm this via input dialog
 - [ ] Delete all contacts associated with this identity
 - [ ] Delete all conversations for this identity
 - [ ] If there are files, ask if they should be deleted as well, and delete them if conformed. 
@@ -30,7 +31,7 @@ Creates a new identify for a user of the application.
 - [ ] If no hidden service was exported, create a new hidden service. 
 
 **Create a new Tor hidden service**
-- [ ] Context menu
+- [x] Context menu
 - [ ] Ask the user to confirm.
 - [ ] Create a new Tor hidden service and replace it with the old one. If the old one was on-line, shut it down before deleting the key. 
 
@@ -72,5 +73,7 @@ Creates a new identify for a user of the application.
 - [ ] Notify connected contacts about the change.
 
 **Connect / Disconnect Tor hidden service**
-- [ ] Context menu. (Show text "Connect" | "Disconnect" depending on state)
-- [ ] Start connecting or disconnecting depending on current state.
+- [x] Context menu. (Show text "Connect" | "Disconnect" depending on state)
+- [x] Start connecting or disconnecting depending on current state.
+- [x] Start / stop the Tor hidden service for that identity
+

@@ -1,6 +1,7 @@
 import QtQuick 2.12
 import QtQuick.Controls 2.5
 import QtQuick.Layouts 1.3
+import QtQuick.Dialogs 1.3
 import com.jgaa.darkspeak 1.0
 
 Page {
@@ -13,10 +14,6 @@ Page {
         padding: 10
     }
 
-    Row {
-        id: row
-        anchors.fill: parent
-    }
 
     ListView {
         id: list
@@ -24,6 +21,7 @@ Page {
         model: identities
         anchors.fill: parent
         highlight: highlightBar
+        property bool isOnline : model.getOnlineStatus(currentIndex)
 
         delegate: Item {
             id: itemDelegate
@@ -35,36 +33,50 @@ Page {
                 anchors.fill: parent
                 spacing: 8
 
-                    Image {
-                        id: avatar
-                        height: 96
+                    Rectangle {
+                        id: avatarFrame
+                        height: 100
+                        width: 100
+                        radius: 5
+                        anchors.left: parent.left
+                        anchors.leftMargin: 4
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 96
-                        fillMode: Image.PreserveAspectFit
-                        source: "qrc:///images/anonymous.svg"
+                        border.color: online ? "lime" : "firebrick"
+                        color: "black"
 
-                        Rectangle {
-                            height: parent.width / 3
-                            color: "#0219ca"
-                            width: height
-                            anchors.right: parent.right
-                            anchors.top: parent.top
-                            anchors.topMargin: 0
-                            radius: width*0.5
+                        Image {
+                            id: avatar
+                            fillMode: Image.PreserveAspectFit
+                            height: 96
+                            width: 96
+                            x: 2
+                            y: 2
+                            source: "qrc:///images/anonymous.svg"
 
-                            Image {
-                                id: torStatus
-                                anchors.fill: parent
-                                source: "qrc:///images/network_offline.svg"
+                            Rectangle {
+                                height: parent.width / 3
+                                color: online ? "lime" : "firebrick"
+                                width: height
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.topMargin: 0
+                                radius: width*0.5
+
+                                Image {
+                                    id: torStatus
+                                    anchors.fill: parent
+                                    source: "qrc:///images/onion-bw.svg"
+                                }
                             }
                         }
                     }
 
                 Column {
                     spacing: 10
+                    x: 116
                     Text {
                         font.pointSize: 14
-                        color: itemDelegate.ListView.isCurrentItem ? "white" : "#9891f7"
+                        color: "white"
                         text: name
                         font.bold: itemDelegate.ListView.isCurrentItem
                     }
@@ -80,19 +92,19 @@ Page {
 
                         Text {
                             font.pointSize: 9;
-                            color: "#9891f7"
+                            color: "skyblue"
                             text: created
                         }
 
                         Text {
                             font.pointSize: 9;
-                            color: "#9891f7"
+                            color: "skyblue"
                             text: handle
                         }
 
                         Text {
                             font.pointSize: 9;
-                            color: "#9891f7"
+                            color: "skyblue"
                             text: onion
                         }
                     }
@@ -100,8 +112,34 @@ Page {
             }
 
             MouseArea {
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
                 anchors.fill: parent
-                onClicked: list.currentIndex = index
+                onClicked: {
+                    list.currentIndex = index
+                    if (mouse.button === Qt.RightButton) {
+                        contextMenu.x = mouse.x;
+                        contextMenu.y = mouse.y;
+                        contextMenu.open();
+                    }
+                }
+
+                onPressAndHold: {
+                    contextMenu.x = mouse.x;
+                    contextMenu.y = mouse.y;
+                    contextMenu.open();
+                }
+            }
+        }
+
+        function deleteCurrent() {
+            identities.deleteIdentity(currentIndex);
+        }
+
+        function toggleOnline() {
+            if (isOnline) {
+                model.stopService(currentIndex);
+            } else {
+                model.startService(currentIndex);
             }
         }
     }
@@ -109,10 +147,96 @@ Page {
     Component {
          id: highlightBar
          Rectangle {
+             radius: 5
              y: list.currentItem.y;
              anchors.fill: list.currentItem.width
-             color: "#1a5b0d"
+             color: "#19462a"
+             border.color: "lime"
              //Behavior on y { SpringAnimation { spring: 2; damping: 0.1 } }
          }
      }
+
+    Menu {
+        id: contextMenu
+
+        onVisibleChanged: prepare()
+
+        function prepare() {
+            online.text =  list.isOnline ? qsTr("Stop Tor service") : qsTr("Start Tor service")
+        }
+
+        MenuItem {
+            id: online
+            //text: list.isOnline ? qsTr("Stop Tor service") : qsTr("Start Tor service")
+            icon.source: "qrc:///images/onion-bw.svg"
+            onTriggered: list.toggleOnline()
+            enabled: manager.online
+        }
+
+        MenuItem {
+            text: qsTr("Copy identity")
+            icon.name: "edit-copy"
+        }
+
+        MenuItem {
+            text: qsTr("Copy identity as json")
+            icon.name: "edit-copy"
+        }
+
+        MenuItem {
+            text: qsTr("Copy handle")
+            icon.name: "edit-copy"
+        }
+
+        MenuItem {
+            text: qsTr("Copy onion")
+            icon.name: "edit-copy"
+        }
+
+        MenuItem {
+            text: qsTr("Change nickname")
+            icon.source: "qrc:///images/user.svg"
+        }
+
+        MenuItem {
+            text: qsTr("Select avatar image")
+            icon.name: "document-open"
+        }
+
+        MenuItem {
+            text: qsTr("Export identity")
+            icon.name: "document-save"
+        }
+
+        MenuItem {
+            text: qsTr("Create new Tor service")
+            icon.name: "document-new"
+        }
+
+        MenuItem {
+            text: qsTr("Export Tor service")
+            icon.name: "document-save"
+        }
+
+        MenuItem {
+            text: qsTr("Import Tor service")
+            icon.name: "document-open"
+        }
+
+        MenuItem {
+            text: qsTr("Delete")
+            icon.name: "edit-delete"
+            onTriggered: confirmDelete.open()
+        }
+    }
+
+    MessageDialog {
+        id: confirmDelete
+        icon: StandardIcon.Warning
+        title: "Delete Identity"
+        text: "Do you really want to delete this identity?"
+        standardButtons: MessageDialog.Yes | MessageDialog.Cancel
+        detailedText: "If you delete this identity, all its related contacts and messages will also be deleted."
+        onYes: list.deleteCurrent()
+    }
 }

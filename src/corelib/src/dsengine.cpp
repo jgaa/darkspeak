@@ -229,6 +229,21 @@ void DsEngine::online()
     }
 }
 
+void DsEngine::onServiceFailed(const QByteArray &id, const QByteArray &reason)
+{
+    emit serviceFailed(id, reason);
+}
+
+void DsEngine::onServiceStarted(const QByteArray &id)
+{
+    emit serviceStarted(id);
+}
+
+void DsEngine::onServiceStopped(const QByteArray &id)
+{
+    serviceStopped(id);
+}
+
 void DsEngine::sendMessage(const Message& /*msg*/)
 {
 }
@@ -293,6 +308,18 @@ void DsEngine::start()
             this, &DsEngine::online,
             Qt::QueuedConnection);
 
+    connect(tor_mgr_.get(),
+            &ds::core::ProtocolManager::serviceStarted,
+            this, &DsEngine::onServiceStarted);
+
+    connect(tor_mgr_.get(),
+            &ds::core::ProtocolManager::serviceStopped,
+            this, &DsEngine::onServiceStopped);
+
+    connect(tor_mgr_.get(),
+            &ds::core::ProtocolManager::serviceFailed,
+            this, &DsEngine::onServiceFailed);
+
     tor_mgr_->start();
 }
 
@@ -335,6 +362,7 @@ void DsEngine::initialize()
         qRegisterMetaType<ds::core::Identity>("Identity");
         qRegisterMetaType<ds::core::Contact>("ds::core::Contact");
         qRegisterMetaType<ds::core::Contact>("Contact");
+        qRegisterMetaType<ds::core::TransportHandleError>("TransportHandleError");
     }
 
     auto data_path = QStandardPaths::writableLocation(
@@ -436,7 +464,7 @@ void DsEngine::tryMakeTransport(const QString &name)
 QByteArray DsEngine::toJson(const QVariantMap &data)
 {
     auto json = QJsonDocument::fromVariant(data);
-    return json.toJson();
+    return json.toJson(QJsonDocument::Compact);
 }
 
 QVariantMap DsEngine::fromJson(const QByteArray &json)
