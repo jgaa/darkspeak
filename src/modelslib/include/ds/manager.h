@@ -37,6 +37,7 @@ public:
 
     Q_INVOKABLE LogModel *logModel();
     Q_INVOKABLE IdentitiesModel *identitiesModel();
+    Q_INVOKABLE void textToClipboard(QString text);
 
     Manager();
 

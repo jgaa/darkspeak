@@ -1,4 +1,6 @@
 
+#include <array>
+
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QRunnable>
@@ -9,6 +11,7 @@
 #include <QUuid>
 #include <QJsonObject>
 #include <QJsonDocument>
+#include <QtEndian>
 
 #include "ds/identitiesmodel.h"
 #include "ds/errors.h"
@@ -18,6 +21,54 @@
 
 using namespace ds::core;
 using namespace std;
+
+namespace {
+
+// Refactored from eschalot.c
+QByteArray onion16decode(const QByteArray& src) {
+
+//    static const array<uint8_t, 32> alphabet = {
+//        'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
+//        'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
+//        's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '2',
+//        '3', '4', '5', '6', '7'
+//    };
+
+    array<uint8_t, 16> tmp;
+    unsigned int i = 0;
+
+    assert(src.size() == 16);
+
+    for (i = 0; i < static_cast<unsigned int>(src.size()); i++) {
+        if (src[i] >= 'a' && src[i] <= 'z') {
+            tmp[i] = static_cast<unsigned char>((src[i]) - ('a'));
+        } else {
+            if (src[i] >= '2' && src[i] <= '7')
+                tmp[i] = static_cast<unsigned char>(src[i] - '1' + ('z' - 'a'));
+            else {
+                /* Bad character detected.
+                 * This should not happen, but just in case
+                 * we will replace it with 'z' character. */
+                tmp[i] = 26;
+            }
+        }
+    }
+    QByteArray dst;
+    dst += static_cast<char>((tmp[ 0] << 3) | (tmp[1] >> 2));
+    dst +=static_cast<char>((tmp[ 1] << 6) | (tmp[2] << 1) | (tmp[3] >> 4));
+    dst += static_cast<char>((tmp[ 3] << 4) | (tmp[4] >> 1));
+    dst += static_cast<char>((tmp[ 4] << 7) | (tmp[5] << 2) | (tmp[6] >> 3));
+    dst += static_cast<char>((tmp[ 6] << 5) |  tmp[7]);
+    dst += static_cast<char>((tmp[ 8] << 3) | (tmp[9] >> 2));
+    dst += static_cast<char>((tmp[ 9] << 6) | (tmp[10] << 1) | (tmp[11] >> 4));
+    dst += static_cast<char>((tmp[11] << 4) | (tmp[12] >> 1));
+    dst += static_cast<char>((tmp[12] << 7) | (tmp[13] << 2) | (tmp[14] >> 3));
+    dst += static_cast<char>((tmp[14] << 5) |  tmp[15]);
+
+    return dst;
+}
+
+}
 
 namespace ds {
 namespace models {
@@ -54,6 +105,10 @@ IdentitiesModel::IdentitiesModel(QSettings &settings)
     connect(&DsEngine::instance(),
             &ds::core::DsEngine::serviceFailed,
             this, &IdentitiesModel::onServiceFailed);
+
+    connect(&DsEngine::instance(),
+            &ds::core::DsEngine::transportHandleReady,
+            this, &IdentitiesModel::onTransportHandleReady);
 
     select();
 }
@@ -176,6 +231,110 @@ void IdentitiesModel::onServiceFailed(const QByteArray &id,
     Q_UNUSED(reason);
 
     // TODO: Show error notification?
+}
+
+void IdentitiesModel::onTransportHandleReady(const TransportHandle &th)
+{
+    static const QRegExp re("\\d+");
+    if (!re.exactMatch(th.identityName)) {
+        LFLOG_DEBUG << "Discarding transport. Name is not a database index id: "
+                    << th.identityName;
+        return;
+    }
+
+    const auto row = getRowFromId(th.identityName.toUtf8());
+    if (row < 0) {
+        LFLOG_WARN << "Discarding transport. Cannot map id ("
+                    << th.identityName
+                    << ") to row.";
+        return;
+    }
+
+    auto rec = record(row);
+
+    rec.setValue(h_address_, th.handle);
+    rec.setValue(h_address_data_, DsEngine::toJson(th.data));
+
+    if (!setRecord(row, rec)) {
+        LFLOG_WARN << "Failed to update identity: " << rec.value(h_name_).toString()
+                   << lastError().text();
+        return;
+    }
+
+    if (!submitAll()) {
+
+        LFLOG_WARN << "Failed to flush identity: " << rec.value(h_name_).toString()
+                   << this->lastError().text();
+        return;
+    }
+
+    LFLOG_DEBUG << "Updated identity " << rec.value(h_name_).toString() << " in the database";
+
+}
+
+// https://stackoverflow.com/questions/24906202/get-data-from-a-specific-column-in-a-tableview-qml
+QVariantMap IdentitiesModel::get(int idx) const {
+    QVariantMap map;
+    foreach(int k, roleNames().keys()) {
+        map[roleNames().value(k)] = data(index(idx, 0), k);
+    }
+    return map;
+}
+
+QString IdentitiesModel::getIdentityAsBase58(int row) const
+{
+    // Format:
+    //  1 byte version (1)
+    //  32 byte pubkey
+    //  n bytes onion address
+    //  2 bytes port
+
+    // B58 tag: {11, 176}
+
+    QByteArray bytes;
+    auto d = DsEngine::fromJson(data(index(row, h_address_data_), Qt::DisplayRole).toByteArray());
+
+    bytes.append('\1'); // Version
+    auto cert_data = QSqlTableModel::data(index(row, h_cert_), Qt::DisplayRole).toByteArray();
+    if (cert_data.isEmpty()) {
+        return {};
+    }
+    const auto pubkey = crypto::DsCert::create(QByteArray::fromBase64(cert_data))->getPubKey();
+    bytes += pubkey;
+
+    auto onion = d["service_id"].toByteArray();
+
+    if (onion.size() < 16) {
+        LFLOG_ERROR << "getIdentityAsBase58: Invalid Tor addresses!";
+        return {};
+    }
+
+    const uint16_t port_num = qToBigEndian(static_cast<uint16_t>(d["port"].toInt()));
+
+    if (onion.size() == 16) {
+        // Legacy onion address
+        bytes += onion16decode(onion);
+    } else {
+        // TODO: Implement
+        LFLOG_ERROR << "getIdentityAsBase58 NOT IMPLEMENTED for modern Tor addresses!";
+        return "Sorry, Not implemented";
+    }
+
+    // Add the port
+    bytes += (port_num << 8) & 0xff;
+    bytes += port_num & 0xff;
+
+    QByteArray result;
+
+    return crypto::b58check_enc<QByteArray>(bytes, {11, 176});
+}
+
+void IdentitiesModel::createNewTransport(int row)
+{
+    LFLOG_NOTICE << "Requesting a new Tor service for "
+                 << data(index(row, h_name_), Qt::DisplayRole).toString();
+
+    DsEngine::instance().createNewTransport(getIdFromRow(row));
 }
 
 QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const {

@@ -32,8 +32,8 @@ Creates a new identify for a user of the application.
 
 **Create a new Tor hidden service**
 - [x] Context menu
-- [ ] Ask the user to confirm.
-- [ ] Create a new Tor hidden service and replace it with the old one. If the old one was on-line, shut it down before deleting the key. 
+- [x] Ask the user to confirm.
+- [x] Create a new Tor hidden service and replace it with the old one. If the old one was on-line, shut it down before deleting the key. 
 
 **Import a Tor hidden service**
 - [ ] Context menu
@@ -42,20 +42,15 @@ Creates a new identify for a user of the application.
 - [ ] Allow the user to import a file created from the output of eschalot directly. Select a random port.
 
 **Copy identity as Base58 data.**
-- [ ] Context menu
-- [ ] Create a binary array with the public key and the onion address and the port, encode it to base58check, and copy it to the clipboard. Prefix the data with the users nickname. 
-- [ ] Same as above, but save as a file. Let the user select file-name and directory.
-
-**Copy the identity as json**
-- [ ] Context menu
-- [ ] Create a binary array with the public key and encode it to base58check. Compose a json payload with the nickname, pubkey, onion address and port. Copy it to the clipboard.
+- [x] Context menu
+- [x] Create a binary array with the public key and the onion address and the port, encode it to base58check, and copy it to the clipboard. Prefix the data with the users nickname. 
 - [ ] Same as above, but save as a file. Let the user select file-name and directory.
 
 **Display identity in the UI**
-- [ ] Show the nickname.
-- [ ] Show the base58check encoded pubkey
-- [ ] Show the Onion address and port
-- [ ] Show online-status for the Tor hidden service
+- [x] Show the nickname.
+- [x] Show the base58check encoded pubkey
+- [x] Show the Onion address and port
+- [x] Show online-status for the Tor hidden service
 - [ ] Show a slider / checkbox that enables / disable auto-connect for the identity
 - [ ] Show the avatar image if the user has added one
 
@@ -76,4 +71,4 @@ Creates a new identify for a user of the application.
 - [x] Context menu. (Show text "Connect" | "Disconnect" depending on state)
 - [x] Start connecting or disconnecting depending on current state.
 - [x] Start / stop the Tor hidden service for that identity
-
+- [ ] Start a local socket for each identity and use that for the Tor service

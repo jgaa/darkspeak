@@ -34,6 +34,10 @@ class IdentitiesModel : public QSqlTableModel
 
 public:
 
+    Q_INVOKABLE QVariantMap get(int row) const;
+    Q_INVOKABLE QString getIdentityAsBase58(int row) const;
+    Q_INVOKABLE void createNewTransport(int row);
+
     IdentitiesModel(QSettings& settings);
 
 
@@ -52,6 +56,7 @@ private slots:
     void onServiceStarted(const QByteArray& id);
     void onServiceStopped(const QByteArray& id);
     void onServiceFailed(const QByteArray& id, const QByteArray& reason);
+    void onTransportHandleReady(const core::TransportHandle& th);
 
     // QAbstractItemModel interface
 public:

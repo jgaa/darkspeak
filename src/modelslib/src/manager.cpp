@@ -1,3 +1,7 @@
+
+#include <QClipboard>
+#include <QGuiApplication>
+
 #include "ds/manager.h"
 
 #include "logfault/logfault.h"
@@ -17,6 +21,12 @@ LogModel *Manager::logModel()
 IdentitiesModel *Manager::identitiesModel()
 {
     return identities_.get();
+}
+
+void Manager::textToClipboard(QString text)
+{
+    auto cb = QGuiApplication::clipboard();
+    cb->setText(text);
 }
 
 Manager::Manager()

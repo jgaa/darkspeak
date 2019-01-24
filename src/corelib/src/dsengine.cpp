@@ -169,6 +169,11 @@ void DsEngine::createContact(const ContactReq &req)
     emit contactCreated(c);
 }
 
+void DsEngine::createNewTransport(const QByteArray &id)
+{
+    tryMakeTransport(id);
+}
+
 void DsEngine::onCertCreated(const QString &name, const DsCert::ptr_t cert)
 {
     if (!pending_identities_.contains(name)) {
@@ -250,6 +255,9 @@ void DsEngine::sendMessage(const Message& /*msg*/)
 
 void DsEngine::onTransportHandleReady(const TransportHandle &th)
 {
+    // Relay
+    emit transportHandleReady(th);
+
     const auto name = th.identityName;
     if (!pending_identities_.contains(name)) {
         const auto msg = QStringLiteral("No pending identity with that name");
@@ -270,9 +278,11 @@ void DsEngine::onTransportHandleReady(const TransportHandle &th)
     emit retryIdentityReady(name);
 }
 
-void DsEngine::onTransportHandleError(const TransportHandleError &th)
+void DsEngine::onTransportHandleError(const TransportHandleError &the)
 {
-    auto name = th.identityName;
+    emit transportHandleError(the);
+
+    auto name = the.identityName;
     LFLOG_DEBUG << "Transport-handle creaton failed: " << name
              << ". I Will try again.";
     whenOnline([this, name]() { tryMakeTransport(name); });

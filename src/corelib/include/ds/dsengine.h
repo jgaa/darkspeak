@@ -58,6 +58,7 @@ public:
 public slots:
     void createIdentity(const IdentityReq&);
     void createContact(const ContactReq&);
+    void createNewTransport(const QByteArray& id);
     void sendMessage(const Message& message);    
     void close();
     void start();
@@ -88,6 +89,8 @@ signals:
     void serviceFailed(const QByteArray& id, const QByteArray& reason);
     void serviceStarted(const QByteArray& id);
     void serviceStopped(const QByteArray& id);
+    void transportHandleReady(const TransportHandle& th);
+    void transportHandleError(const TransportHandleError& th);
 
 protected:
     void initialize();

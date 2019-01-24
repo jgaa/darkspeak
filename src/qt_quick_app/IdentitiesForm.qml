@@ -7,6 +7,7 @@ import com.jgaa.darkspeak 1.0
 Page {
     width: 600
     height: 400
+    clip: false
 
     header: Label {
         text: qsTr("Your Identities")
@@ -143,6 +144,24 @@ Page {
                 model.startService(currentIndex);
             }
         }
+
+        function copyHandle() {
+            manager.textToClipboard(identities.get(currentIndex).handle)
+        }
+
+        function copyOnion() {
+            manager.textToClipboard(identities.get(currentIndex).onion)
+        }
+
+        function copyIdentity() {
+            manager.textToClipboard(
+                        identities.get(currentIndex).name + ':' +
+                        identities.getIdentityAsBase58(currentIndex))
+        }
+
+        function createNewTransport() {
+            identities.createNewTransport(currentIndex)
+        }
     }
 
     Component {
@@ -160,7 +179,7 @@ Page {
     Menu {
         id: contextMenu
 
-        onVisibleChanged: prepare()
+        onAboutToShow: prepare()
 
         function prepare() {
             online.text =  list.isOnline ? qsTr("Stop Tor service") : qsTr("Start Tor service")
@@ -168,7 +187,6 @@ Page {
 
         MenuItem {
             id: online
-            //text: list.isOnline ? qsTr("Stop Tor service") : qsTr("Start Tor service")
             icon.source: "qrc:///images/onion-bw.svg"
             onTriggered: list.toggleOnline()
             enabled: manager.online
@@ -177,21 +195,19 @@ Page {
         MenuItem {
             text: qsTr("Copy identity")
             icon.name: "edit-copy"
-        }
-
-        MenuItem {
-            text: qsTr("Copy identity as json")
-            icon.name: "edit-copy"
+            onTriggered: list.copyIdentity();
         }
 
         MenuItem {
             text: qsTr("Copy handle")
             icon.name: "edit-copy"
+            onTriggered: list.copyHandle()
         }
 
         MenuItem {
             text: qsTr("Copy onion")
             icon.name: "edit-copy"
+            onTriggered: list.copyOnion()
         }
 
         MenuItem {
@@ -200,7 +216,7 @@ Page {
         }
 
         MenuItem {
-            text: qsTr("Select avatar image")
+            text: qsTr("Select picture")
             icon.name: "document-open"
         }
 
@@ -210,8 +226,10 @@ Page {
         }
 
         MenuItem {
-            text: qsTr("Create new Tor service")
+            text: qsTr("New Tor service")
             icon.name: "document-new"
+            onTriggered: confirmNewTransport.open()
+            enabled: manager.online
         }
 
         MenuItem {
@@ -234,10 +252,20 @@ Page {
     MessageDialog {
         id: confirmDelete
         icon: StandardIcon.Warning
-        title: "Delete Identity"
-        text: "Do you really want to delete this identity?"
+        title: qsTr("Delete Identity")
+        text: qsTr("Do you really want to delete this identity?")
         standardButtons: MessageDialog.Yes | MessageDialog.Cancel
-        detailedText: "If you delete this identity, all its related contacts and messages will also be deleted."
+        detailedText: qsTr("If you delete this identity, all its related contacts and messages will also be deleted.")
         onYes: list.deleteCurrent()
+    }
+
+    MessageDialog {
+        id: confirmNewTransport
+        icon: StandardIcon.Warning
+        title: qsTr("New Transport")
+        text: qsTr("Do you really want to change the Transport address?")
+        standardButtons: MessageDialog.Yes | MessageDialog.Cancel
+        detailedText: qsTr("If you change your transport address, none of your current contacts or anyone else will be able to contact you on your current address.")
+        onYes: list.createNewTransport();
     }
 }
