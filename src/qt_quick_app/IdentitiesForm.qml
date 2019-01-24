@@ -124,6 +124,7 @@ Page {
                 }
 
                 onPressAndHold: {
+                    list.currentIndex = index
                     contextMenu.x = mouse.x;
                     contextMenu.y = mouse.y;
                     contextMenu.open();
