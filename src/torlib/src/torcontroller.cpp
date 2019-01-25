@@ -202,7 +202,8 @@ void TorController::setState(TorController::TorState state,
     if (tor_state_!= state) {
 
         if (tor_state_ == TorState::READY) {
-            for(const auto& k : service_map_.keys()) {
+            auto keys = service_map_.keys();
+            for(const auto& k : keys) {
                 emit serviceStopped(k);
             }
         }

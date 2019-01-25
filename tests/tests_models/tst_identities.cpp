@@ -33,5 +33,6 @@ void TestIdentitiesModel::test_create_identity()
     QCOMPARE(idmodel.data(idmodel.index(0, idmodel.fieldIndex("name"), {}), Qt::DisplayRole).toString(), req.name);
     QCOMPARE(idmodel.identityExists(req.name), true);
     QCOMPARE(idmodel.identityExists("nonexistant"), false);
+    engine.close();
 }
 

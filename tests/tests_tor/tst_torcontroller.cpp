@@ -14,6 +14,7 @@ void TestTorController::test_auth_cookie()
     QSignalSpy spy_connect(&ctl, SIGNAL(autenticated()));
     ctl.start();
     QCOMPARE(spy_connect.wait(1000), true);
+    ctl.stop();
 }
 
 void TestTorController::test_auth_safecookie()
@@ -27,6 +28,7 @@ void TestTorController::test_auth_safecookie()
     QSignalSpy spy_connect(&ctl, SIGNAL(autenticated()));
     ctl.start();
     QCOMPARE(spy_connect.wait(1000), true);
+    ctl.stop();
 }
 
 // To run this test, create a hashed password by running
@@ -49,6 +51,7 @@ void TestTorController::test_auth_hashedpassword()
     QSignalSpy spy_connect(&ctl, SIGNAL(autenticated()));
     ctl.start();
     QCOMPARE(spy_connect.wait(1000), true);
+    ctl.stop();
 }
 
 void TestTorController::test_ready()
@@ -58,6 +61,7 @@ void TestTorController::test_ready()
     QSignalSpy spy_connect(&ctl, SIGNAL(ready()));
     ctl.start();
     QCOMPARE(spy_connect.wait(2000), true);
+    ctl.stop();
 }
 
 void TestTorController::test_create_service()
@@ -71,6 +75,7 @@ void TestTorController::test_create_service()
     QSignalSpy spy_started(&ctl, SIGNAL(serviceStarted(const QByteArray&)));
     ctl.createService("test");
     QCOMPARE(spy_started.wait(2000), true);
+    ctl.stop();
 }
 
 void TestTorController::test_start_service()
@@ -95,4 +100,5 @@ void TestTorController::test_start_service()
     QSignalSpy spy_started(&ctl, SIGNAL(serviceStarted(const QByteArray&)));
     ctl.startService(service);
     QCOMPARE(spy_started.wait(2000), true);
+    ctl.stop();
 }
