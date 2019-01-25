@@ -25,7 +25,6 @@ private:
     int h_id_ = {};
     int h_identity_ = {};
     int h_uuid_ = {};
-    int h_hash_ = {};
     int h_name_ = {};
     int h_nickname_ = {};
     int h_pubkey_ = {};
@@ -37,6 +36,9 @@ private:
     int h_initiated_by = {};
     int h_last_seen_ = {};
     int h_online_ = {};
+    int h_blocked_ = {};
+    int h_autoconnect_ = {};
+    int h_hash_ = {};
 
     QSettings& settings_;
 };

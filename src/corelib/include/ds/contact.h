@@ -3,26 +3,77 @@
 
 #include <QString>
 #include <QtGui/QImage>
+#include <QDateTime>
 
 namespace ds {
 namespace core {
 
-enum class InitiatedBy {
-    ME,
-    THEM
-};
-
 struct Contact {
+
+    enum InitiatedBy {
+        ME,
+        THEM
+    };
+
+    enum OnlineStatus {
+        DISCONNECTED, // We are not trying to connect so we don't know
+        OFFLINE, // We are unable to connect
+        CONNECTING,
+        ONLINE
+    };
+
+
+    // Reference to the database-id to the Identity that own this contact
     int identity = {};
+
+    // Our name for the contact. If unset, same as nickname
     QString name;
+
+    // UUID for this contact. Used if we need a folder-name or file-name
+    // uniqely for this contanct. We don't want to use a hash for this, as
+    // potential contacts - for example the US government trying to
+    // prove what wistleblower a journalist communicated with.
+    QByteArray uuid;
+
+    // The contacts own, chosen nickname
     QString nickname;
-    QString notes;
-    QString group;
+
+    // A hash from the pubkey.
+    // Used for database lookups.
     QByteArray hash;
+
+    // Our notes about the contact
+    QString notes;
+
+    // The group we place the contact in. If unset; 'Default'
+    QString group;
+
+    // The users public key. Stored as base-64 of the 32 bit binary key
     QByteArray pubkey;
+
+    // The users onion address and port
     QByteArray address;
+
+    // An optional image the contact can chose
     QImage avatar;
+
+    // When the contact was created
+    QDateTime crated;
+
+    // Who sent the initial addme request?
     InitiatedBy whoInitiated = InitiatedBy::ME;
+
+    // Updated when we receive data from the contact, rounded to minute.
+    QDateTime lastSeen;
+
+    // The current online status
+    OnlineStatus onlineStatus = DISCONNECTED;
+
+    // true if the contact is blocked
+    bool blocked = false;
+
+    // true if we want to connect automatically when the related Identity is online
+    bool autoConnect = true;
 
     int getInitiatedBy() const noexcept {
         return static_cast<int>(whoInitiated);
@@ -37,7 +88,7 @@ struct ContactReq {
     QString group;
     QByteArray contactHandle;
     QImage avatar;
-    InitiatedBy whoInitiated = InitiatedBy::ME;
+    Contact::InitiatedBy whoInitiated = Contact::ME;
 };
 
 struct ContactError {

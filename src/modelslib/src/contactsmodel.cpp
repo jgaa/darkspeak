@@ -30,7 +30,6 @@ ContactsModel::ContactsModel(QSettings& settings)
     h_id_ = fieldIndex("id");
     h_identity_ = fieldIndex("identity");
     h_uuid_ = fieldIndex("uuid");
-    h_hash_ = fieldIndex("hash");
     h_name_ = fieldIndex("name");
     h_nickname_ = fieldIndex("nickname");
     h_pubkey_ = fieldIndex("pubkey");
@@ -42,6 +41,9 @@ ContactsModel::ContactsModel(QSettings& settings)
     h_initiated_by = fieldIndex("initiated_by");
     h_last_seen_ = fieldIndex("last_seen");
     h_online_ = fieldIndex("online");
+    h_blocked_ = fieldIndex("blocked");
+    h_autoconnect_ = fieldIndex("autoconnect");
+    h_hash_ = fieldIndex("hash");
 
     connect(&DsEngine::instance(), &DsEngine::contactCreated,
             this, &ContactsModel::onContactCreated, Qt::QueuedConnection);
@@ -75,9 +77,9 @@ void ContactsModel::onContactCreated(const Contact &contact)
         rec.setValue(h_group_, contact.group);
     }
     rec.setValue(h_initiated_by, contact.getInitiatedBy());
-    rec.setValue(h_hash_, contact.hash);
     rec.setValue(h_pubkey_, contact.pubkey);
     rec.setValue(h_address_, contact.address);
+    rec.setValue(h_hash_, contact.hash);
     rec.setValue(h_name_, contact.name);
     rec.setValue(h_initiated_by, contact.getInitiatedBy());
     if (!contact.notes.isEmpty()) {
@@ -86,7 +88,10 @@ void ContactsModel::onContactCreated(const Contact &contact)
     if (!contact.avatar.isNull()) {
         rec.setValue(h_avatar_, DsEngine::imageToBytes(contact.avatar));
     }
-    rec.setValue(h_created_, QDateTime::currentDateTime().toTime_t());
+    rec.setValue(h_created_, QDateTime::currentDateTime());
+    rec.setValue(h_online_, contact.onlineStatus);
+    rec.setValue(h_blocked_, contact.blocked);
+    rec.setValue(h_autoconnect_, contact.autoConnect);
 
     if (!insertRecord(-1, rec) || !submitAll()) {
         qWarning() << "Failed to add contact: " << contact.name

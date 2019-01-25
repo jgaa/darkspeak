@@ -72,3 +72,43 @@ Creates a new identify for a user of the application.
 - [x] Start connecting or disconnecting depending on current state.
 - [x] Start / stop the Tor hidden service for that identity
 - [ ] Start a local socket for each identity and use that for the Tor service
+
+
+## Contacts
+
+**Add a contact**
+
+[ ] Add "Add Contact" icon in the toolbar
+[ ] Check the clipboard for a valid contact (name:base58pubkey) and offer to use it if it exists.
+[ ] Show a contact dialog with nickname (read only), name, transport, base58pubkkey, notes, Attributes: blocked, Favorite, autoconnect
+[ ] Provide a means to add a message with the addme request
+
+**Present contacts**
+[ ] Show a view similar to the Identities list (verbose)
+[ ] Show a toggle verbose/brief view mode icon in the toolbar
+[ ] Show a shortlist with a smaller avatar, name and blocked / unread messages icon
+
+**Copy contact**
+[ ] Add context menu
+[ ] Copy nickname:base58pubkey to the clipboard
+
+**Connect / disconnect**
+[ ] Add context menu
+[ ] Add functionality to establish a connection with the contact
+
+**Autoconnect**
+[ ] If the autoconnect flag is set, connect to this client when we go online
+
+**Block contact**
+[ ] Provide a button in the contact dialog to block the contact
+[ ] If blocked, disallow the client to connect to us.
+[ ] If blocked, disable the connect context menu and the autoconnect feature
+[ ] Show a bloched icon where we usually show the online status in the contact listings
+
+**Online status**
+[ ] Show an overlay icon over the avatar with the online status: disconnected, offline, connecting, online
+[ ] Update the status as the Transport layer notifies us about changes
+
+**Last seen**
+[ ] Update a property for the contact as the Transport layer notifies us about changes
+
