@@ -50,26 +50,29 @@ int main(int argc, char *argv[])
 
     LFLOG_INFO << manager->getProgramNameAndVersion() << " is ready.";
 
-    {
-        QString no_create_message = "ContactsModel is a global sigeleton.";
-        qmlRegisterUncreatableType<ds::models::Manager>("com.jgaa.darkspeak", 1, 0, "Manager", no_create_message);
-    }
+    qmlRegisterUncreatableType<ds::models::Manager>("com.jgaa.darkspeak", 1, 0,
+                                                    "Manager",
+                                                    "ContactsModel is a global sigeleton.");
 
-    {
-        QString no_create_message = "LogModel is a global sigeleton.";
-        qmlRegisterUncreatableType<ds::models::LogModel>("com.jgaa.darkspeak", 1, 0, "LogModel", no_create_message);
-    }
+    qmlRegisterUncreatableType<ds::models::LogModel>("com.jgaa.darkspeak", 1, 0,
+                                                     "LogModel",
+                                                     "LogModel is a global sigeleton.");
 
-    {
-        QString no_create_message = "IdentitiesModel is a global sigeleton.";
-        qmlRegisterUncreatableType<ds::models::IdentitiesModel>("com.jgaa.darkspeak", 1, 0, "IdentitiesModel", no_create_message);
-    }
+    qmlRegisterUncreatableType<ds::models::IdentitiesModel>("com.jgaa.darkspeak", 1, 0,
+                                                            "IdentitiesModel",
+                                                            "IdentitiesModel is a global sigeleton.");
+
+
+    qmlRegisterUncreatableType<ds::models::ContactsModel>("com.jgaa.darkspeak", 1, 0,
+                                                           "ContactsModel",
+                                                           "Cannot create OnlineStatus in QML");
 
     QQmlApplicationEngine engine;
 
     engine.rootContext()->setContextProperty("manager", manager.get());
     engine.rootContext()->setContextProperty("log", manager->logModel());
     engine.rootContext()->setContextProperty("identities", manager->identitiesModel());
+    engine.rootContext()->setContextProperty("contacts", manager->contactsModel());
 
     //QQuickStyle::setStyle("Fusion");
 

@@ -27,10 +27,10 @@ ApplicationWindow {
         LogForm {
         }
 
-        IdentitiesForm {
+        Identities {
         }
 
-        ContactsForm {
+        Contacts {
         }
 
         HomeForm {

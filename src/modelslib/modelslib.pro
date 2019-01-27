@@ -9,7 +9,7 @@ INCLUDEPATH += $$PWD/../../dependencies/logfault/include/
 TARGET = modelslib
 TEMPLATE = lib
 CONFIG += staticlib
-DEFINES += QT_DEPRECATED_WARNINGS
+DEFINES += QT_DEPRECATED_WARNINGS LOGFAULT_ENABLE_LOCATION=1
 
 SOURCES += \
     src/identitiesmodel.cpp \

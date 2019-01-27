@@ -15,14 +15,6 @@ struct Contact {
         THEM
     };
 
-    enum OnlineStatus {
-        DISCONNECTED, // We are not trying to connect so we don't know
-        OFFLINE, // We are unable to connect
-        CONNECTING,
-        ONLINE
-    };
-
-
     // Reference to the database-id to the Identity that own this contact
     int identity = {};
 
@@ -66,18 +58,15 @@ struct Contact {
     // Updated when we receive data from the contact, rounded to minute.
     QDateTime lastSeen;
 
-    // The current online status
-    OnlineStatus onlineStatus = DISCONNECTED;
-
     // true if the contact is blocked
     bool blocked = false;
+
+    // True if the contact rejected our addme request
+    bool rejected = false;
 
     // true if we want to connect automatically when the related Identity is online
     bool autoConnect = true;
 
-    int getInitiatedBy() const noexcept {
-        return static_cast<int>(whoInitiated);
-    }
 };
 
 struct ContactReq {
@@ -88,7 +77,10 @@ struct ContactReq {
     QString group;
     QByteArray contactHandle;
     QImage avatar;
+    QByteArray pubkey;
+    QByteArray address;
     Contact::InitiatedBy whoInitiated = Contact::ME;
+    bool autoConnect = true;
 };
 
 struct ContactError {

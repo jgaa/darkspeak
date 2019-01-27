@@ -37,6 +37,7 @@ public:
     Q_INVOKABLE QVariantMap get(int row) const;
     Q_INVOKABLE QString getIdentityAsBase58(int row) const;
     Q_INVOKABLE void createNewTransport(int row);
+    Q_INVOKABLE int row2Id(int row);
 
     IdentitiesModel(QSettings& settings);
 
@@ -62,8 +63,6 @@ private slots:
 public:
     QVariant data(const QModelIndex &index, int role) const override;
     bool setData(const QModelIndex &index, const QVariant &value, int role) override;
-    //QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
-   // Qt::ItemFlags flags(const QModelIndex &index) const override;
     virtual QHash<int, QByteArray> roleNames() const override;
 
     bool identityExists(QString name) const;

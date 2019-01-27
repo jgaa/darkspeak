@@ -1,8 +1,13 @@
 
+#include <regex>
+
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QtEndian>
 
 #include "ds/manager.h"
+#include "ds/base58.h"
+#include "ds/base32.h"
 
 #include "logfault/logfault.h"
 
@@ -23,10 +28,66 @@ IdentitiesModel *Manager::identitiesModel()
     return identities_.get();
 }
 
+ContactsModel *Manager::contactsModel()
+{
+    return contacts_.get();
+}
+
 void Manager::textToClipboard(QString text)
 {
     auto cb = QGuiApplication::clipboard();
     cb->setText(text);
+}
+
+QVariantMap Manager::getIdenityFromClipboard() const
+{
+    // name : base58 for version, pubkey and legacy tor service and port
+    static const regex legacy_onion_pattern(R"(^(.+)\:([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{69})$)");
+    std::smatch match;
+
+    QVariantMap values;
+
+    const auto text =  QGuiApplication::clipboard()->text().toStdString();
+    if (!text.empty() && regex_match(text, match, legacy_onion_pattern)) {
+        if (match.size() == 3) {
+            const auto nick = match[1].str();
+            const auto blob = match[2].str();
+            values["nickName"] = nick.c_str();
+
+            // See IdentitiesModel::getIdentityAsBase58 for data-format
+
+            // 16 bytes onion address
+            auto const assumed_len = 1 + 32 + 10 + 2;
+            auto data = b58tobin_check<QByteArray>(blob, assumed_len,  {11, 176});
+            assert(data.size() == assumed_len);
+            if (data.at(0) != 1) { // Version
+                LFLOG_NOTICE << "Unsupported version of identity payload: v="
+                             << static_cast<int>(data.at(0));
+                return {};
+            }
+
+            const auto pubkey = data.mid(1, 32);
+            const auto host = data.mid(33, 10);
+            const auto port = data.mid(43,2);
+
+            const auto address = onion16encode(host);
+
+            union {
+                char bytes[2];
+                uint16_t port;
+            } port_u;
+
+            port_u.bytes[0] = port.at(0);
+            port_u.bytes[1] = port.at(1);
+
+            values["address"] = QString("onion:") + address
+                    + ":" + QString::number(qFromBigEndian(port_u.port));
+
+            values["handle"] = b58check_enc<QByteArray>(pubkey, {249, 50});
+        }
+    }
+
+    return values;
 }
 
 Manager::Manager()
@@ -57,6 +118,7 @@ Manager::Manager()
 
     log_ = make_unique<LogModel>(engine_->settings());
     identities_ = make_unique<IdentitiesModel>(engine_->settings());
+    contacts_ = make_unique<ContactsModel>(engine_->settings());
 }
 
 Manager::AppState Manager::getAppState() const
@@ -105,7 +167,6 @@ QUrl Manager::getOnlineStatusIcon() const
        QUrl("qrc:/images/network_connecting.svg"),
        QUrl("qrc:/network_connected.svg"),
        QUrl("qrc:/images/network_online.svg"),
-       //QUrl("qrc:/images/network_disconnect.svg")
        QUrl("qrc:/images/network_offline.svg"),
    };
 

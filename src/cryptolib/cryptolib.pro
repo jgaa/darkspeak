@@ -9,6 +9,7 @@ INCLUDEPATH += $$PWD/../../dependencies/logfault/include/
 TARGET = cryptolib
 TEMPLATE = lib
 CONFIG += staticlib c++17
+DEFINES += LOGFAULT_ENABLE_LOCATION=1
 
 
 # The following define makes your compiler emit warnings if you use
@@ -26,7 +27,8 @@ SOURCES += \
     src/crypto.cpp \
     #src/rsacertimpl.cpp \
     src/certimpl.cpp \
-    src/base58.cpp
+    src/base58.cpp \
+    src/base32.cpp
 
 HEADERS += \
     include/ds/crypto.h \
@@ -34,7 +36,8 @@ HEADERS += \
     #include/ds/rsacertimpl.h \
     include/ds/cvar.h \
     include/ds/certimpl.h \
-    include/ds/base58.h
+    include/ds/base58.h \
+    include/ds/base32.h
 
 INCLUDEPATH += $$PWD/include
 

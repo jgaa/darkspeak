@@ -12,6 +12,7 @@
 #include <QString>
 #include <QDebug>
 #include <QDir>
+#include <QUuid>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QJsonDocument>
@@ -126,28 +127,20 @@ void DsEngine::createIdentity(const IdentityReq& req)
 
 void DsEngine::createContact(const ContactReq &req)
 {
-    static const regex valid_address{R"(^(onion):([a-z2-7]{16}|[a-z2-7]{56}):(\d{1,5})$)"};
-
-    // Parse handle
-    auto map = fromJson(req.contactHandle);
+    static const regex valid_address{R"((^(onion):)?([a-z2-7]{16}|[a-z2-7]{56})\:(\d{1,5})$)"};
 
     Contact c;
     c.identity = req.identity;
+    c.uuid = QUuid::createUuid().toByteArray();
     c.name = req.name;
     c.nickname = req.nickname;
     c.notes = req.notes;
     c.group = req.group;
     c.avatar = req.avatar;
     c.whoInitiated = req.whoInitiated;
-
-    c.pubkey = QByteArray::fromBase64(map.value("pubkey").toByteArray());
-
-    auto addresses = map.value("address").toList();
-    if (addresses.size() != 1) {
-        throw ParseError(QStringLiteral(
-            "Unrecognized address format in contact %1").arg(req.name));
-    }
-    c.address = addresses.front().toByteArray();
+    c.pubkey = req.pubkey;
+    c.address = req.address;
+    c.autoConnect = req.autoConnect;
 
     // Validate
     if (!regex_match(c.address.data(), valid_address)) {

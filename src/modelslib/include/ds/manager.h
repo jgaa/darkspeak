@@ -11,6 +11,7 @@
 #include "ds/identity.h"
 #include "ds/logmodel.h"
 #include "ds/identitiesmodel.h"
+#include "ds/contactsmodel.h"
 
 #ifndef PROGRAM_VERSION
     #define PROGRAM_VERSION "develop"
@@ -37,7 +38,9 @@ public:
 
     Q_INVOKABLE LogModel *logModel();
     Q_INVOKABLE IdentitiesModel *identitiesModel();
+    Q_INVOKABLE ContactsModel *contactsModel();
     Q_INVOKABLE void textToClipboard(QString text);
+    Q_INVOKABLE QVariantMap getIdenityFromClipboard() const;
 
     Manager();
 
@@ -66,6 +69,7 @@ private:
     std::unique_ptr<ds::core::DsEngine> engine_;
     std::unique_ptr<LogModel> log_;
     std::unique_ptr<IdentitiesModel> identities_;
+    std::unique_ptr<ContactsModel> contacts_;
     int page_ = 3; // Home
 };
 

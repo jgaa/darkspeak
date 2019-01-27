@@ -10,7 +10,7 @@ Dialog {
 
     Column {
         anchors.fill: parent
-        Text {
+        Label {
             id: topText
             color: "#2a1e1e"
             text:  qsTr("What is your unique avatar name?")
@@ -35,7 +35,7 @@ Dialog {
             }
         }
 
-        Text{
+        Label {
             anchors.margins: 16
             text: qsTr("Please note that you must be connected to the Tor network
 in order to create an identity.
@@ -59,17 +59,6 @@ until the identity becomes visible.")
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
 
 
 

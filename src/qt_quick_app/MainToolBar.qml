@@ -50,5 +50,24 @@ ToolBar {
                  dlg.open()
             }
         }
+
+        ToolButton {
+            text: qsTr("Contact")
+            icon.name: "document-new"
+            height: parent.height
+            visible: manager.currentPage === 2
+
+            onClicked: {
+                var clip = manager.getIdenityFromClipboard()
+                var popupComponent = Qt.createComponent("qrc:/NewContactDialog.qml")
+                var dlg = popupComponent.createObject(mainWindow, {
+                    "parent" : mainWindow,
+                    "nickName" : clip.nickName ? clip.nickName : qsTr("Anonymous Coward"),
+                    "handle": clip.handle,
+                    "address": clip.address
+                });
+                dlg.open()
+            }
+        }
     }
 }

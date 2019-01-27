@@ -5,9 +5,7 @@ import QtQuick.Dialogs 1.3
 import com.jgaa.darkspeak 1.0
 
 Page {
-    width: 600
-    height: 400
-    clip: false
+    clip: true
 
     header: Label {
         text: qsTr("Your Identities")
@@ -133,6 +131,11 @@ Page {
             }
         }
 
+        onCurrentItemChanged: {
+            // This is where we synchronize the Contacts with the current identity
+            contacts.onIdentityChanged(identities.row2Id(currentIndex));
+        }
+
         function deleteCurrent() {
             identities.deleteIdentity(currentIndex);
         }
@@ -150,7 +153,7 @@ Page {
         }
 
         function copyOnion() {
-            manager.textToClipboard(identities.get(currentIndex).onion)
+            manager.textToClipboard("onion:" + identities.get(currentIndex).onion)
         }
 
         function copyIdentity() {
@@ -169,10 +172,9 @@ Page {
          Rectangle {
              radius: 5
              y: list.currentItem.y;
-             anchors.fill: list.currentItem.width
              color: "#19462a"
              border.color: "lime"
-             //Behavior on y { SpringAnimation { spring: 2; damping: 0.1 } }
+             Behavior on y { SpringAnimation { spring: 1; damping: 0.1 } }
          }
      }
 

@@ -16,59 +16,12 @@
 #include "ds/identitiesmodel.h"
 #include "ds/errors.h"
 #include "ds/strategy.h"
+#include "ds/base32.h"
 #include "ds/base58.h"
 #include "logfault/logfault.h"
 
 using namespace ds::core;
 using namespace std;
-
-namespace {
-
-// Refactored from eschalot.c
-QByteArray onion16decode(const QByteArray& src) {
-
-//    static const array<uint8_t, 32> alphabet = {
-//        'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
-//        'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
-//        's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '2',
-//        '3', '4', '5', '6', '7'
-//    };
-
-    array<uint8_t, 16> tmp;
-    unsigned int i = 0;
-
-    assert(src.size() == 16);
-
-    for (i = 0; i < static_cast<unsigned int>(src.size()); i++) {
-        if (src[i] >= 'a' && src[i] <= 'z') {
-            tmp[i] = static_cast<unsigned char>((src[i]) - ('a'));
-        } else {
-            if (src[i] >= '2' && src[i] <= '7')
-                tmp[i] = static_cast<unsigned char>(src[i] - '1' + ('z' - 'a'));
-            else {
-                /* Bad character detected.
-                 * This should not happen, but just in case
-                 * we will replace it with 'z' character. */
-                tmp[i] = 26;
-            }
-        }
-    }
-    QByteArray dst;
-    dst += static_cast<char>((tmp[ 0] << 3) | (tmp[1] >> 2));
-    dst +=static_cast<char>((tmp[ 1] << 6) | (tmp[2] << 1) | (tmp[3] >> 4));
-    dst += static_cast<char>((tmp[ 3] << 4) | (tmp[4] >> 1));
-    dst += static_cast<char>((tmp[ 4] << 7) | (tmp[5] << 2) | (tmp[6] >> 3));
-    dst += static_cast<char>((tmp[ 6] << 5) |  tmp[7]);
-    dst += static_cast<char>((tmp[ 8] << 3) | (tmp[9] >> 2));
-    dst += static_cast<char>((tmp[ 9] << 6) | (tmp[10] << 1) | (tmp[11] >> 4));
-    dst += static_cast<char>((tmp[11] << 4) | (tmp[12] >> 1));
-    dst += static_cast<char>((tmp[12] << 7) | (tmp[13] << 2) | (tmp[14] >> 3));
-    dst += static_cast<char>((tmp[14] << 5) |  tmp[15]);
-
-    return dst;
-}
-
-}
 
 namespace ds {
 namespace models {
@@ -286,7 +239,7 @@ QString IdentitiesModel::getIdentityAsBase58(int row) const
     // Format:
     //  1 byte version (1)
     //  32 byte pubkey
-    //  n bytes onion address
+    //  10 bytes onion address
     //  2 bytes port
 
     // B58 tag: {11, 176}
@@ -309,11 +262,9 @@ QString IdentitiesModel::getIdentityAsBase58(int row) const
         return {};
     }
 
-    const uint16_t port_num = qToBigEndian(static_cast<uint16_t>(d["port"].toInt()));
-
     if (onion.size() == 16) {
         // Legacy onion address
-        bytes += onion16decode(onion);
+        bytes += crypto::onion16decode(onion);
     } else {
         // TODO: Implement
         LFLOG_ERROR << "getIdentityAsBase58 NOT IMPLEMENTED for modern Tor addresses!";
@@ -321,8 +272,14 @@ QString IdentitiesModel::getIdentityAsBase58(int row) const
     }
 
     // Add the port
-    bytes += (port_num << 8) & 0xff;
-    bytes += port_num & 0xff;
+    union {
+        char bytes[2];
+        uint16_t port;
+    } port_u;
+
+    port_u.port = qToBigEndian(static_cast<uint16_t>(d["port"].toInt()));
+    bytes += port_u.bytes[0];
+    bytes += port_u.bytes[1];
 
     QByteArray result;
 
@@ -337,9 +294,14 @@ void IdentitiesModel::createNewTransport(int row)
     DsEngine::instance().createNewTransport(getIdFromRow(row));
 }
 
+int IdentitiesModel::row2Id(int row)
+{
+    return data(index(row, h_id_), Qt::DisplayRole).toInt();
+}
+
 QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const {
 
-    LFLOG_DEBUG << "IdentitiesModel::data(" << ix.row() << ", " << ix.column() << ", " << role << ") called";
+    //LFLOG_DEBUG << "IdentitiesModel::data(" << ix.row() << ", " << ix.column() << ", " << role << ") called";
 
     if (!ix.isValid()) {
         return {};
@@ -360,9 +322,6 @@ QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const {
 
         case ONLINE_ROLE:
             return getOnlineStatus(ix.row());
-
-        default:
-                ; // Continue below
     };
 
     if (role >= Qt::UserRole) {
@@ -370,16 +329,13 @@ QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const {
         role = Qt::DisplayRole;
     }
 
-    if (role == Qt::DecorationRole) {
-        if (model_ix.column() == h_name_) {
-            // TODO: Add Onion status icon
-            // TODO: Add note icon if we have a note
-        }
-    }
-
     if (role == Qt::DisplayRole) {
         if (model_ix.column() == h_created_) {
             return QSqlTableModel::data(index(model_ix.row(), h_created_), Qt::DisplayRole).toDate().toString();
+        }
+
+        if (model_ix.column() == h_id_) {
+            return QSqlTableModel::data(index(model_ix.row(), h_id_), Qt::DisplayRole).toInt();
         }
     }
 
@@ -395,6 +351,7 @@ bool IdentitiesModel::setData(const QModelIndex &ix,
 QHash<int, QByteArray> IdentitiesModel::roleNames() const
 {
     QHash<int, QByteArray> names = {
+        {h_id_ + Qt::UserRole, "identityId"},
         {h_name_ + Qt::UserRole, "name"},
         {h_created_ + Qt::UserRole, "created"},
         {h_address_ + Qt::UserRole, "onion"},

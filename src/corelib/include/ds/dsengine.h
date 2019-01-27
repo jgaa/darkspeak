@@ -5,6 +5,7 @@
 
 #include <QObject>
 #include <QSettings>
+#include <QMap>
 
 #include "ds/message.h"
 #include "ds/database.h"

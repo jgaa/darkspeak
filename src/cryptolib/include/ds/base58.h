@@ -127,7 +127,7 @@ T b58tobin_check(const std::string& in, size_t bytes, std::initializer_list<uint
     auto it = full.cbegin();
     for(auto v : ver) {
         if (v != static_cast<uint8_t>(*it)) {
-            return {}; // Not the expected version
+            throw std::runtime_error("Not the expected b58 version");
         }
         ++it;
     }

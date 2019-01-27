@@ -4,10 +4,10 @@
         <file>LogForm.ui.qml</file>
         <file>HomeForm.ui.qml</file>
         <file>qtquickcontrols2.conf</file>
-        <file>ContactsForm.ui.qml</file>
+        <file>Contacts.qml</file>
         <file>ConversationsForm.ui.qml</file>
         <file>ChatForm.ui.qml</file>
-        <file>IdentitiesForm.qml</file>
+        <file>Identities.qml</file>
         <file>images/Connected-32.png</file>
         <file>images/Connecting-32.png</file>
         <file>images/Disconnected-32.png</file>
@@ -25,5 +25,6 @@
         <file>images/onion.svg</file>
         <file>images/onion-bw.svg</file>
         <file>images/user.svg</file>
+        <file>NewContactDialog.qml</file>
     </qresource>
 </RCC>

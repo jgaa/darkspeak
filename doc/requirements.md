@@ -78,37 +78,48 @@ Creates a new identify for a user of the application.
 
 **Add a contact**
 
-[ ] Add "Add Contact" icon in the toolbar
-[ ] Check the clipboard for a valid contact (name:base58pubkey) and offer to use it if it exists.
-[ ] Show a contact dialog with nickname (read only), name, transport, base58pubkkey, notes, Attributes: blocked, Favorite, autoconnect
-[ ] Provide a means to add a message with the addme request
+- [x] Add "Add Contact" icon in the toolbar
+- [x] Check the clipboard for a valid contact (name:base58pubkey) and offer to use it if it exists.
+- [x] Show a contact dialog with nickname (read only), name, transport, base58pubkkey, notes, Attributes: blocked, Favorite, autoconnect
+- [ ] Provide a means to add a message with the addme request
+- [ ] For default name, show sequence numbered nickanme if the name is in use
+- [ ] Validate input: Name (extistying name), hash from pubkey (existing contact), onion address correctness, handle correctnes. Ony allow to preceed when all calidations are OK.
+
 
 **Present contacts**
-[ ] Show a view similar to the Identities list (verbose)
-[ ] Show a toggle verbose/brief view mode icon in the toolbar
-[ ] Show a shortlist with a smaller avatar, name and blocked / unread messages icon
+- [v] Show a view similar to the Identities list (verbose)
+- [ ] Show a toggle verbose/brief view mode icon in the toolbar
+- [ ] Show a shortlist with a smaller avatar, name and blocked / unread messages icon
 
 **Copy contact**
-[ ] Add context menu
-[ ] Copy nickname:base58pubkey to the clipboard
+- [ ] Add context menu
+- [ ] Copy nickname:base58pubkey to the clipboard
 
 **Connect / disconnect**
-[ ] Add context menu
-[ ] Add functionality to establish a connection with the contact
+- [x] Add context menu
+- [ ] Add functionality to establish a connection with the contact
 
 **Autoconnect**
-[ ] If the autoconnect flag is set, connect to this client when we go online
+- [ ] If the autoconnect flag is set, connect to this client when we go online
 
 **Block contact**
-[ ] Provide a button in the contact dialog to block the contact
-[ ] If blocked, disallow the client to connect to us.
-[ ] If blocked, disable the connect context menu and the autoconnect feature
-[ ] Show a bloched icon where we usually show the online status in the contact listings
+- [ ] Provide a button in the contact dialog to block the contact
+- [ ] If blocked, disallow the client to connect to us.
+- [ ] If blocked, disable the connect context menu and the autoconnect feature
+- [ ] Show a bloched icon where we usually show the online status in the contact listings
 
 **Online status**
-[ ] Show an overlay icon over the avatar with the online status: disconnected, offline, connecting, online
-[ ] Update the status as the Transport layer notifies us about changes
+- [ ] Show an overlay icon over the avatar with the online status: contacting, disconnected, offline, connecting, online, rejected
+- [ ] Update the status as the Transport layer notifies us about changes
 
 **Last seen**
-[ ] Update a property for the contact as the Transport layer notifies us about changes
+- [ ] Update a property for the contact as the Transport layer notifies us about changes
+
+
+**Unread messages**
+- [ ] Update a property for the contact if he has unread messages. Do not flag this if the associated messages view is active and have focus
+
+**Remember selected contact for identity**
+- [ ] When changing identity, remember the selected contact (by hash), and try to re-select it when we change back to the same identity. 
+
 

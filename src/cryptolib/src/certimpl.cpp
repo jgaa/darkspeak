@@ -63,12 +63,16 @@ void CertImpl::CalculateHash()
         throw runtime_error("Invalid size of pubkey");
     }
 
+    hash_.resize(crypto_generichash_BYTES);
+
     crypto_generichash(
                 reinterpret_cast<unsigned char *>(hash_.data()),
                 static_cast<size_t>(hash_.size()),
                 reinterpret_cast<const unsigned char *>(pubkey_.data()),
                 static_cast<size_t>(pubkey_.size()),
                 nullptr, 0);
+
+    assert(!hash_.isEmpty());
 }
 
 const QByteArray& CertImpl::getCert() const
