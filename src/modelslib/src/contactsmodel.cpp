@@ -18,6 +18,9 @@
 using namespace std;
 using namespace ds::core;
 
+// TODO: Handle incoming signals (connected, disconnected, failed;
+//      even for connections for other than the selected identity)
+
 namespace ds {
 namespace models {
 
@@ -51,6 +54,15 @@ ContactsModel::ContactsModel(QSettings& settings)
 
     connect(&DsEngine::instance(), &DsEngine::contactCreated,
             this, &ContactsModel::onContactCreated, Qt::QueuedConnection);
+
+    connect(&DsEngine::instance(), &DsEngine::connectedTo,
+            this, &ContactsModel::onConnectedTo);
+
+    connect(&DsEngine::instance(), &DsEngine::disconnectedFrom,
+            this, &ContactsModel::onDisconnectedFrom);
+
+    connect(&DsEngine::instance(), &DsEngine::connectionFailed,
+            this, &ContactsModel::onConnectionFailed);
 }
 
 QVariant ContactsModel::data(const QModelIndex &ix, int role) const
@@ -239,7 +251,7 @@ void ContactsModel::createContact(const QString &nickName,
 
         DsEngine::instance().createContact(cr);
 
-    } catch (std::runtime_error) {
+    } catch (const std::runtime_error&) {
         // TODO: Propagate the error to the UI
         return;
     }
@@ -256,6 +268,64 @@ void ContactsModel::onIdentityChanged(int identityId)
 
         LFLOG_DEBUG << "Changed identity from " << old << " to " << identity_;
         emit identityChanged(old, identity_);
+    }
+}
+
+void ContactsModel::connectTransport(int row)
+{
+    doIfValid(row, [this, row](const QByteArray& id, ExtraInfo& extra) {
+        auto addr = data(index(row, h_address_), Qt::DisplayRole).toByteArray();
+
+        extra.outbound_connection_uuid = DsEngine::instance().getProtocolMgr(
+                    ProtocolManager::Transport::TOR).connectTo(id, addr);
+    });
+}
+
+void ContactsModel::disconnectTransport(int row)
+{
+    doIfValid(row, [this, row](const QByteArray& id, ExtraInfo& extra) {
+        auto addr = data(index(row, h_address_), Qt::DisplayRole).toByteArray();
+
+        DsEngine::instance().getProtocolMgr(
+                    ProtocolManager::Transport::TOR).disconnectedFrom(id, addr);
+
+        extra.outbound_connection_uuid = {};
+    });
+}
+
+void ContactsModel::onConnectedTo(const QByteArray &serviceId, const QUuid &uuid)
+{
+    Q_UNUSED(serviceId)
+    try {
+        getExtra(uuid)->onlineStatus = ONLINE;
+    } catch (const std::exception& ex) {
+        LFLOG_WARN << "Caught exception: " << ex.what();
+    }
+
+    // TODO: Update last seen
+    // TODO: Send addme request?
+    // TODO: Send queued messages
+}
+
+void ContactsModel::onDisconnectedFrom(const QByteArray &serviceId, const QUuid &uuid)
+{
+    Q_UNUSED(serviceId)
+    try {
+        getExtra(uuid)->onlineStatus = DISCONNECTED;
+    } catch (const std::exception& ex) {
+        LFLOG_WARN << "Caught exception: " << ex.what();
+    }
+}
+
+void ContactsModel::onConnectionFailed(const QByteArray &serviceId, const QUuid &uuid,
+                                       const QAbstractSocket::SocketError &socketError)
+{
+    Q_UNUSED(serviceId)
+    Q_UNUSED(socketError)
+    try {
+        getExtra(uuid)->onlineStatus = DISCONNECTED;
+    } catch (const std::exception& ex) {
+        LFLOG_WARN << "Caught exception: " << ex.what();
     }
 }
 
@@ -303,11 +373,63 @@ ContactsModel::ExtraInfo::ptr_t ContactsModel::getExtra(const QByteArray &id) co
     return extras_[id];
 }
 
+ContactsModel::ExtraInfo::ptr_t ContactsModel::getExtra(const QUuid &uuid) const
+{
+    for(auto& p : extras_) {
+        if (p.second->outbound_connection_uuid == uuid) {
+            return p.second;
+        }
+    }
+
+    throw runtime_error("No such uuid "s + uuid.toString().toStdString());
+}
+
 QString ContactsModel::getOnlineIcon(int row) const
 {
     Q_UNUSED(row);
     //auto status = getExtra(row)->onlineStatus;
     return "qrc:///images/online-bw.svg";
 }
+
+void ContactsModel::doIfOnline(int row,
+                               std::function<void (const QByteArray& id,
+                                                   ContactsModel::ExtraInfo& extra)> fn,
+                               bool throwIfNot)
+{
+    doIfValid(row, [&](const QByteArray& id, ContactsModel::ExtraInfo& extra) {
+        if (!extra.isOnline()) {
+            if (throwIfNot) {
+                throw runtime_error("Not online");
+            }
+            return;
+        }
+
+        fn(id, extra);
+    }, throwIfNot);
+}
+
+void ContactsModel::doIfValid(int row,
+                               std::function<void (const QByteArray& id,
+                                                   ContactsModel::ExtraInfo& extra)> fn,
+                               bool throwIfNot)
+{
+    doIfValid(row, [&](const QByteArray& id) {
+        fn(id, *getExtra(id));
+    }, throwIfNot);
+}
+void ContactsModel::doIfValid(int row, std::function<void (const QByteArray& id)> fn,
+                               bool throwIfNot)
+{
+    auto id = getIdFromRow(row);
+    if (id.isEmpty()) {
+        if (throwIfNot) {
+            throw runtime_error("Invalid row");
+        }
+        return;
+    }
+
+    fn(id);
+}
+
 
 }} // namnespaces

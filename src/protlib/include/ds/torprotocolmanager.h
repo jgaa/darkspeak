@@ -3,6 +3,7 @@
 
 #include "ds/protocolmanager.h"
 #include "ds/tormgr.h"
+#include "ds/torserviceinterface.h"
 
 namespace ds {
 namespace prot {
@@ -19,6 +20,8 @@ public slots:
     void createTransportHandle(const core::TransportHandleReq &) override;
     void startService(const QByteArray& id, const QVariantMap& data) override;
     void stopService(const QByteArray& id) override;
+    QUuid connectTo(const QByteArray &serviceId, const QByteArray &address) override;
+    void disconnectFrom(const QByteArray &serviceId, const QUuid &uuid) override;
 
 private slots:
     void onServiceCreated(const ds::tor::ServiceProperties& service);
@@ -37,14 +40,13 @@ public:
 protected:
     void setState(State state);
     ds::tor::TorConfig getConfig() const;
+    TorServiceInterface& getService(const QByteArray& serviceId);
 
     std::unique_ptr<::ds::tor::TorMgr> tor_;
     QSettings& settings_;
     State state_ = State::OFFLINE;
 
-    // ProtocolManager interface
-public slots:
-
+    std::map<QByteArray, TorServiceInterface::ptr_t> services_;
 };
 
 }} // namespaces

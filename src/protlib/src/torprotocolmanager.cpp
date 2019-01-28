@@ -107,6 +107,16 @@ TorConfig TorProtocolManager::getConfig() const
      return config;
 }
 
+TorServiceInterface& TorProtocolManager::getService(const QByteArray &serviceId)
+{
+    auto it = services_.find(serviceId);
+    if (it == services_.end()) {
+        throw runtime_error("No such service"s + serviceId.constData());
+    }
+
+    return *it->second;
+}
+
 void TorProtocolManager::sendMessage(const core::Message &)
 {
 }
@@ -154,16 +164,61 @@ void TorProtocolManager::startService(const QByteArray &id, const QVariantMap& d
     ServiceProperties sp;
     sp.id = id;
     sp.key = data["key"].toByteArray();
-    sp.port = static_cast<decltype(sp.port)>(data["port"].toInt());
+    sp.service_port = static_cast<decltype(sp.service_port)>(data["port"].toInt());
     sp.key_type = data["key_type"].toByteArray();
     sp.service_id = data["service_id"].toByteArray();
 
+    // Add listening port
+    auto service = make_shared<TorServiceInterface>();
+    auto properties = service->startService();
+    assert(properties.port);
+
+    auto it = services_.find(id);
+    if (it != services_.end()) {
+        it->second->stopService();
+    }
+
+    services_[id] = service;
+    sp.app_port = properties.port;
     tor_->startService(sp);
+
+    connect(service.get(), &TorServiceInterface::connectedToService,
+            this, [this, id](const QUuid& uuid) {
+        emit connectedTo(id, uuid);
+    });
+
+    connect(service.get(), &TorServiceInterface::disconnectedFromService,
+            this, [this, id](const QUuid& uuid) {
+        emit disconnectedFrom(id, uuid);
+    });
+
+    connect(service.get(), &TorServiceInterface::connectionFailed,
+            this, [this, id](const QUuid& uuid,
+            const QAbstractSocket::SocketError& socketError) {
+        emit connectionFailed(id, uuid, socketError);
+    });
 }
 
 void TorProtocolManager::stopService(const QByteArray &id)
 {
     tor_->stopService(id);
+}
+
+QUuid TorProtocolManager::connectTo(const QByteArray &serviceId, const QByteArray &address)
+{
+    // address may be "onion:hostname:port" or "hostname:port"
+    auto parts = address.split(':');
+    if (parts.size() < 2 || parts.size() > 3) {
+        throw runtime_error("Expected: [onion:]address:port");
+    }
+
+    const auto port = static_cast<uint16_t>(parts.at(parts.size() -1).toUInt());
+    return getService(serviceId).connectToService(parts.at(parts.size() - 2), port);
+}
+
+void TorProtocolManager::disconnectFrom(const QByteArray &serviceId, const QUuid &uuid)
+{
+    return getService(serviceId).close(uuid);
 }
 
 void TorProtocolManager::onServiceCreated(const ServiceProperties &service)
@@ -172,13 +227,13 @@ void TorProtocolManager::onServiceCreated(const ServiceProperties &service)
     TransportHandle th;
 
     th.identityName = service.id;
-    th.handle = service.service_id + ':' + QByteArray::number(service.port);
+    th.handle = service.service_id + ':' + QByteArray::number(service.service_port);
 
     th.data["type"] = QByteArray("Tor hidden service");
     th.data["key"] = service.key;
     th.data["service_id"] = service.service_id;
     th.data["key_type"] = service.key_type;
-    th.data["port"] = service.port;
+    th.data["port"] = service.service_port;
 
     // Stop the service. We require explicit start request to make it available.
     try {

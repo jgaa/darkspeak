@@ -122,4 +122,6 @@ Creates a new identify for a user of the application.
 **Remember selected contact for identity**
 - [ ] When changing identity, remember the selected contact (by hash), and try to re-select it when we change back to the same identity. 
 
+**Search / filter**
+- [ ] Add a serach-bar to find contacts fast, and show only matching contacts.
 

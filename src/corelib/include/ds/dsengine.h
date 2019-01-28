@@ -92,6 +92,11 @@ signals:
     void serviceStopped(const QByteArray& id);
     void transportHandleReady(const TransportHandle& th);
     void transportHandleError(const TransportHandleError& th);
+    void connectedTo(const QByteArray& serviceId, const QUuid& uuid);
+    void disconnectedFrom(const QByteArray& serviceId, const QUuid& uuid);
+    void connectionFailed(const QByteArray& serviceId,
+                          const QUuid& uuid,
+                          const QAbstractSocket::SocketError& socketError);
 
 protected:
     void initialize();

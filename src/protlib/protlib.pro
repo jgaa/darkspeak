@@ -24,11 +24,15 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-    src/torprotocolmanager.cpp
+    src/torprotocolmanager.cpp \
+    src/torserviceinterface.cpp \
+    src/connectionsocket.cpp
 
 
 HEADERS += \
-    include/ds/torprotocolmanager.h
+    include/ds/torprotocolmanager.h \
+    include/ds/torserviceinterface.h \
+    include/ds/connectionsocket.h
 
 
 INCLUDEPATH += $$PWD/include \

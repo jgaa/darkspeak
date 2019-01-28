@@ -51,7 +51,7 @@ Page {
                     anchors.left: parent.left
                     anchors.leftMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
-                    border.color: online ? "lime" : "firebrick"
+                    border.color: online ? "aquamarine" : "firebrick"
                     color: "black"
 
                     Image {
@@ -68,7 +68,7 @@ Page {
                             color: online === ContactsModel.DISCONNECTED ? "firebrick"
                                  : online === ContactsModel.OFFLINE ? "blue"
                                  : online === ContactsModel.CONNECTING ? "yellow"
-                                 : online === ContactsModel.ONLINE ? "lime" : "red"
+                                 : online === ContactsModel.ONLINE ? "aquamarine" : "red"
                             width: height
                             anchors.right: parent.right
                             anchors.top: parent.top
@@ -171,8 +171,8 @@ Page {
          Rectangle {
              radius: 5
              y: list.currentItem.y;
-             color: "#19462a"
-             border.color: "lime"
+             color: "midnightblue"
+             border.color: "aquamarine"
              Behavior on y { SpringAnimation { spring: 1; damping: 0.1 } }
          }
     }

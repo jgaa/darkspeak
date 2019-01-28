@@ -323,6 +323,26 @@ void DsEngine::start()
             &ds::core::ProtocolManager::serviceFailed,
             this, &DsEngine::onServiceFailed);
 
+    connect(tor_mgr_.get(),
+            &ds::core::ProtocolManager::connectedTo,
+            this, [this](const QByteArray& serviceId, const QUuid& uuid) {
+        emit connectedTo(serviceId, uuid);
+    });
+
+    connect(tor_mgr_.get(),
+            &ds::core::ProtocolManager::disconnectedFrom,
+            this, [this](const QByteArray& serviceId, const QUuid& uuid) {
+        emit disconnectedFrom(serviceId, uuid);
+    });
+
+    connect(tor_mgr_.get(),
+            &ds::core::ProtocolManager::connectionFailed,
+            this, [this](const QByteArray& serviceId,
+            const QUuid& uuid,
+            const QAbstractSocket::SocketError& socketError) {
+        emit connectionFailed(serviceId, uuid, socketError);
+    });
+
     tor_mgr_->start();
 }
 

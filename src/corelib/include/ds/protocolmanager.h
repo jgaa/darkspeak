@@ -3,8 +3,10 @@
 
 #include <memory>
 
+#include <QUuid>
 #include <QObject>
 #include <QSettings>
+#include <QAbstractSocket>
 
 #include "ds/transporthandle.h"
 
@@ -83,6 +85,12 @@ signals:
     void serviceStarted(const QByteArray& id);
     void serviceStopped(const QByteArray& id);
 
+    void connectedTo(const QByteArray& serviceId, const QUuid& uuid);
+    void disconnectedFrom(const QByteArray& serviceId, const QUuid& uuid);
+    void connectionFailed(const QByteArray& serviceId,
+                          const QUuid& uuid,
+                          const QAbstractSocket::SocketError& socketError);
+
 public slots:
 
     /*! Start the protocol */
@@ -122,6 +130,17 @@ public slots:
      * Signals emitted later: serviceStopped or serviceFailed.
      */
     virtual void stopService(const QByteArray& id) = 0;
+
+    /*! Create a connection to a contact */
+    virtual QUuid connectTo(const QByteArray& serviceId,
+                            const QByteArray& address) = 0;
+
+    /*! Close or cancel a connection to a contact
+     *
+     * When the method returns, the uuid is no longer valid.
+     */
+    virtual void disconnectFrom(const QByteArray& serviceId,
+                                const QUuid& uuid) = 0;
 
 
 public:

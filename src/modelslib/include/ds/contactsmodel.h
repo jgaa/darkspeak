@@ -7,6 +7,8 @@
 #include <QSqlTableModel>
 #include <QImage>
 #include <QMetaType>
+#include <QUuid>
+#include <QAbstractSocket>
 
 #include "ds/contact.h"
 
@@ -45,9 +47,14 @@ private:
     public:
         using ptr_t = std::shared_ptr<ExtraInfo>;
 
-        OnlineStatus onlineStatus = OnlineStatus::DISCONNECTED;
+        OnlineStatus onlineStatus = DISCONNECTED;
         int numPendingDeliveries = {}; // messages waiting to be sent
         bool unreadMessages = false;
+        QUuid outbound_connection_uuid;
+
+        bool isOnline() const noexcept {
+            return onlineStatus == ONLINE;
+        }
     };
 
 public:
@@ -71,16 +78,35 @@ public slots:
                        const QString& notes, bool autoConnect);
 
     void onIdentityChanged(int identityId);
+    void connectTransport(int row);
+    void disconnectTransport(int row);
 
 signals:
     void identityChanged(int from, int to);
+
+private slots:
+    void onConnectedTo(const QByteArray& serviceId, const QUuid& uuid);
+    void onDisconnectedFrom(const QByteArray& serviceId, const QUuid& uuid);
+    void onConnectionFailed(const QByteArray& serviceId,
+                            const QUuid& uuid,
+                            const QAbstractSocket::SocketError& socketError);
 
 private:
     QByteArray getIdFromRow(const int row) const;
     int getRowFromId(const QByteArray& id) const;
     ExtraInfo::ptr_t getExtra(const int row) const;
     ExtraInfo::ptr_t getExtra(const QByteArray& id) const;
+    ExtraInfo::ptr_t getExtra(const QUuid& uuid) const;
     QString getOnlineIcon(int row) const;
+    void doIfOnline(int row,
+                    std::function<void (const QByteArray&, ExtraInfo&)> fn,
+                    bool throwIfNot = false);
+    void doIfValid(int row,
+                    std::function<void (const QByteArray&, ExtraInfo&)> fn,
+                    bool throwIfNot = false);
+    void doIfValid(int row,
+                    std::function<void (const QByteArray&)> fn,
+                    bool throwIfNot = false);
 
     int col2Role(int col) const noexcept { return col + Qt::UserRole; }
 
@@ -103,6 +129,8 @@ private:
     int h_hash_ = {};
 
     QSettings& settings_;
+
+    // Keeps infor about contacts for all online identities.
     mutable std::map<QByteArray, ExtraInfo::ptr_t> extras_;
     int identity_ = -1;
 };

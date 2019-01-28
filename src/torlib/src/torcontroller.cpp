@@ -62,9 +62,9 @@ void TorController::createService(const QByteArray &id)
 
     ServiceProperties sp;
     sp.id = id;
-    sp.port = distr(rnd_eng_);
+    sp.service_port = distr(rnd_eng_);
 
-    ctl_->sendCommand(QStringLiteral("ADD_ONION NEW:BEST Port=%1").arg(sp.port).toLocal8Bit(),
+    ctl_->sendCommand(QStringLiteral("ADD_ONION NEW:BEST Port=%1").arg(sp.service_port).toLocal8Bit(),
                       [this, sp](const TorCtlReply& reply){
 
         if (reply.status == 250) {
@@ -96,12 +96,19 @@ void TorController::createService(const QByteArray &id)
 
 void TorController::startService(const ServiceProperties &sp)
 {
+    LFLOG_DEBUG << "Starting hidden service for id "
+                << sp.id
+                << " as " << sp.service_id
+                << ":" << sp.service_port
+                << " forwarding to local port "
+                << sp.app_port;
+
     auto cmd = QStringLiteral("ADD_ONION %1:%2 Port=%3,%4:%5")
                 .arg(QLatin1String{sp.key_type})
                 .arg(QLatin1String{sp.key})
-                .arg(sp.port)
+                .arg(sp.service_port)
                 .arg(config_.app_host.toString())
-                .arg(config_.app_port)
+                .arg(sp.app_port)
                 .toLocal8Bit();
 
     service_map_[sp.id] = sp.service_id;
