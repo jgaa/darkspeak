@@ -26,13 +26,15 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
     src/torprotocolmanager.cpp \
     src/torserviceinterface.cpp \
-    src/connectionsocket.cpp
+    src/connectionsocket.cpp \
+    src/dsclient.cpp
 
 
 HEADERS += \
     include/ds/torprotocolmanager.h \
     include/ds/torserviceinterface.h \
-    include/ds/connectionsocket.h
+    include/ds/connectionsocket.h \
+    include/ds/dsclient.h
 
 
 INCLUDEPATH += $$PWD/include \

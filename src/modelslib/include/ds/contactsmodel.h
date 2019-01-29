@@ -45,12 +45,14 @@ private:
     // Details kept in memory
     class ExtraInfo {
     public:
+        ExtraInfo(const QByteArray& dbId) : id{dbId} {}
         using ptr_t = std::shared_ptr<ExtraInfo>;
 
         OnlineStatus onlineStatus = DISCONNECTED;
         int numPendingDeliveries = {}; // messages waiting to be sent
         bool unreadMessages = false;
         QUuid outbound_connection_uuid;
+        const QByteArray id; // Database ID
 
         bool isOnline() const noexcept {
             return onlineStatus == ONLINE;
@@ -83,6 +85,7 @@ public slots:
 
 signals:
     void identityChanged(int from, int to);
+    void onlineStatusChanged();
 
 private slots:
     void onConnectedTo(const QByteArray& serviceId, const QUuid& uuid);
@@ -98,6 +101,7 @@ private:
     ExtraInfo::ptr_t getExtra(const QByteArray& id) const;
     ExtraInfo::ptr_t getExtra(const QUuid& uuid) const;
     QString getOnlineIcon(int row) const;
+    void setOnlineStatus(const QUuid& uuid, OnlineStatus status);
     void doIfOnline(int row,
                     std::function<void (const QByteArray&, ExtraInfo&)> fn,
                     bool throwIfNot = false);

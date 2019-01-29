@@ -154,7 +154,7 @@ void DsEngine::createContact(const ContactReq &req)
 
     // Create a cert from the pubkey so we can hash it.
     auto cert = ds::crypto::DsCert::createFromPubkey(c.pubkey);
-    c.hash = cert->getHash();
+    c.hash = cert->getHash().toByteArray();
 
     // Emit
     LFLOG_DEBUG << "Contact " << c.name << " is ok.";
@@ -178,7 +178,7 @@ void DsEngine::onCertCreated(const QString &name, const DsCert::ptr_t cert)
 
     auto& id = pending_identities_[name];
     id.cert = cert->getCert();
-    id.hash = cert->getHash();
+    id.hash = cert->getHash().toByteArray();
 
     addIdentityIfReady(name);
 }
@@ -427,13 +427,6 @@ void DsEngine::initialize()
     database_ = std::make_unique<Database>(*settings_);
 
     connect(this, &DsEngine::certCreated, this, &DsEngine::onCertCreated);
-
-//    connect(tor_mgr_.get(), &::ds::core::ProtocolManager::stateChanged,
-//            [this] (const ProtocolManager::State old,
-//            const ProtocolManager::State current) {
-//        LFLOG_DEBUG << "DsEngine: Emittiong state changed to " << current;
-//        emit onStateChanged(old, current);
-//    });
 }
 
 void DsEngine::setState(DsEngine::State state)

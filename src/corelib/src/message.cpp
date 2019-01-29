@@ -3,6 +3,7 @@
 
 #include "ds/crypto.h"
 #include "ds/message.h"
+#include "ds/memoryview.h"
 
 using namespace ds::crypto;
 using namespace std;
@@ -26,7 +27,7 @@ void Message::sign(const DsCert &cert)
     assert(!message_id.isEmpty());
     assert(composed_time.isValid());
 
-    signature = cert.sign({
+    signature = cert.sign<QByteArray>({
         conversation,
         message_id,
         QString::number(composed_time.currentSecsSinceEpoch()).toUtf8(),

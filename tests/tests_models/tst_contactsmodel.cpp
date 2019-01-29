@@ -55,6 +55,6 @@ void TestContactsModel::test_create_contact()
 
     QCOMPARE(cmodel.rowCount() , 1);
     QCOMPARE(cmodel.data(cmodel.index(0, cmodel.fieldIndex("name"), {})).toString(), cr.name);
-    QCOMPARE(cmodel.hashExists(hash), true);
+    QCOMPARE(cmodel.hashExists(hash.toByteArray()), true);
     QCOMPARE(cmodel.hashExists(QByteArray("Not a hash")), false);
 }

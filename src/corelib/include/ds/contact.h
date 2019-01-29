@@ -5,6 +5,8 @@
 #include <QtGui/QImage>
 #include <QDateTime>
 
+#include "ds/dscert.h"
+
 namespace ds {
 namespace core {
 

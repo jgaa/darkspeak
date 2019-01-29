@@ -1,6 +1,7 @@
 #ifndef IDENTITY_H
 #define IDENTITY_H
 
+#include "ds/dscert.h"
 #include <QString>
 #include <QtGui/QImage>
 
@@ -10,7 +11,7 @@ namespace core {
 struct Identity {
     QString name;
     QByteArray hash;
-    QByteArray cert;
+    crypto::DsCert::safe_array_t cert;
     QByteArray address;
     QByteArray addressData;
     QString notes;

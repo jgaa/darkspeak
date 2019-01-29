@@ -21,24 +21,25 @@ public:
     };
 
     CertImpl();
-    CertImpl(const QByteArray& cert, const What what);
+    CertImpl(const safe_array_t& cert, const What what);
     ~CertImpl() override;
 
-    const QByteArray& getCert() const override;
-    const QByteArray& getKey() const override;
-    const QByteArray& getPubKey() const override;
-    const QByteArray& getHash() const override;
+    const safe_array_t& getCert() const override;
+    const safe_view_t& getKey() const override;
+    const safe_view_t& getPubKey() const override;
+    const safe_array_t& getHash() const override;
 
-    QByteArray sign(std::initializer_list<QByteArray> data) const override;
-    bool verify(const QByteArray& signature,
-                std::initializer_list<QByteArray> data) const override;
+//    safe_array_t sign(std::initializer_list<const safe_view_t> data) const override;
+//    bool verify(const safe_array_t& signature,
+//                std::initializer_list<const safe_view_t> data) const override;
 private:
     void CalculateHash();
+    void init();
 
-    QByteArray cert_;
-    QByteArray key_;
-    QByteArray pubkey_;
-    QByteArray hash_;
+    safe_array_t cert_;
+    safe_view_t key_;
+    safe_view_t pubkey_;
+    safe_array_t hash_;
 };
 
 }} // namespaces

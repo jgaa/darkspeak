@@ -278,6 +278,8 @@ void ContactsModel::connectTransport(int row)
 
         extra.outbound_connection_uuid = DsEngine::instance().getProtocolMgr(
                     ProtocolManager::Transport::TOR).connectTo(id, addr);
+
+        setOnlineStatus(extra.outbound_connection_uuid, CONNECTING);
     });
 }
 
@@ -296,11 +298,7 @@ void ContactsModel::disconnectTransport(int row)
 void ContactsModel::onConnectedTo(const QByteArray &serviceId, const QUuid &uuid)
 {
     Q_UNUSED(serviceId)
-    try {
-        getExtra(uuid)->onlineStatus = ONLINE;
-    } catch (const std::exception& ex) {
-        LFLOG_WARN << "Caught exception: " << ex.what();
-    }
+    setOnlineStatus(uuid, ONLINE);
 
     // TODO: Update last seen
     // TODO: Send addme request?
@@ -310,11 +308,7 @@ void ContactsModel::onConnectedTo(const QByteArray &serviceId, const QUuid &uuid
 void ContactsModel::onDisconnectedFrom(const QByteArray &serviceId, const QUuid &uuid)
 {
     Q_UNUSED(serviceId)
-    try {
-        getExtra(uuid)->onlineStatus = DISCONNECTED;
-    } catch (const std::exception& ex) {
-        LFLOG_WARN << "Caught exception: " << ex.what();
-    }
+    setOnlineStatus(uuid, DISCONNECTED);
 }
 
 void ContactsModel::onConnectionFailed(const QByteArray &serviceId, const QUuid &uuid,
@@ -322,11 +316,7 @@ void ContactsModel::onConnectionFailed(const QByteArray &serviceId, const QUuid 
 {
     Q_UNUSED(serviceId)
     Q_UNUSED(socketError)
-    try {
-        getExtra(uuid)->onlineStatus = DISCONNECTED;
-    } catch (const std::exception& ex) {
-        LFLOG_WARN << "Caught exception: " << ex.what();
-    }
+    setOnlineStatus(uuid, DISCONNECTED);
 }
 
 QByteArray ContactsModel::getIdFromRow(const int row) const
@@ -365,12 +355,12 @@ ContactsModel::ExtraInfo::ptr_t ContactsModel::getExtra(const QByteArray &id) co
 {
     auto it = extras_.find(id);
     if (it == extras_.end()) {
-        auto ptr = make_shared<ExtraInfo>();
-        extras_[id] = make_shared<ExtraInfo>();
+        auto ptr = make_shared<ExtraInfo>(id);
+        extras_[id] = ptr;
         return ptr;
     }
 
-    return extras_[id];
+    return it->second;
 }
 
 ContactsModel::ExtraInfo::ptr_t ContactsModel::getExtra(const QUuid &uuid) const
@@ -388,7 +378,31 @@ QString ContactsModel::getOnlineIcon(int row) const
 {
     Q_UNUSED(row);
     //auto status = getExtra(row)->onlineStatus;
-    return "qrc:///images/online-bw.svg";
+    return "qrc:///images/onion-bw.svg";
+}
+
+void ContactsModel::setOnlineStatus(const QUuid &uuid, ContactsModel::OnlineStatus status)
+{
+    try {
+        auto extra = getExtra(uuid);
+        if (extra->onlineStatus != status) {
+            LFLOG_DEBUG << "Contact with id " << extra->id
+                        << " changes state from " << extra->onlineStatus
+                        << " to " << status;
+            extra->onlineStatus = status;
+            const auto row = getRowFromId(extra->id);
+            if (row >= 0) {
+                auto ix = index(row, 0);
+                emit dataChanged(ix, ix, { Qt::EditRole,
+                                           ONLINE_ROLE,
+                                           ONLINE_ICON_ROLE
+                                 });
+                emit onlineStatusChanged();
+            }
+        }
+    } catch (const std::exception& ex) {
+        LFLOG_WARN << "Caught exception: " << ex.what();
+    }
 }
 
 void ContactsModel::doIfOnline(int row,

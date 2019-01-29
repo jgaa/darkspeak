@@ -213,7 +213,8 @@ QUuid TorProtocolManager::connectTo(const QByteArray &serviceId, const QByteArra
     }
 
     const auto port = static_cast<uint16_t>(parts.at(parts.size() -1).toUInt());
-    return getService(serviceId).connectToService(parts.at(parts.size() - 2), port);
+    const auto host = parts.at(parts.size() - 2) + ".onion";
+    return getService(serviceId).connectToService(host, port);
 }
 
 void TorProtocolManager::disconnectFrom(const QByteArray &serviceId, const QUuid &uuid)

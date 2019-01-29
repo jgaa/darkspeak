@@ -37,7 +37,9 @@ HEADERS += \
     include/ds/cvar.h \
     include/ds/certimpl.h \
     include/ds/base58.h \
-    include/ds/base32.h
+    include/ds/base32.h \
+    include/ds/safememory.h \
+    include/ds/memoryview.h
 
 INCLUDEPATH += $$PWD/include
 

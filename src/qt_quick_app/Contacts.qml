@@ -51,7 +51,7 @@ Page {
                     anchors.left: parent.left
                     anchors.leftMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
-                    border.color: online ? "aquamarine" : "firebrick"
+                    border.color: online === ContactsModel.ONLINE ? "lime" : "firebrick"
                     color: "black"
 
                     Image {
@@ -67,8 +67,8 @@ Page {
                             height: parent.width / 3
                             color: online === ContactsModel.DISCONNECTED ? "firebrick"
                                  : online === ContactsModel.OFFLINE ? "blue"
-                                 : online === ContactsModel.CONNECTING ? "yellow"
-                                 : online === ContactsModel.ONLINE ? "aquamarine" : "red"
+                                 : online === ContactsModel.CONNECTING ? "orange"
+                                 : online === ContactsModel.ONLINE ? "lime" : "red"
                             width: height
                             anchors.right: parent.right
                             anchors.top: parent.top

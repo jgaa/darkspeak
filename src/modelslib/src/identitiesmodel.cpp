@@ -19,6 +19,7 @@
 #include "ds/base32.h"
 #include "ds/base58.h"
 #include "logfault/logfault.h"
+#include "ds/dscert.h"
 
 using namespace ds::core;
 using namespace std;
@@ -129,7 +130,7 @@ void IdentitiesModel::saveIdentity(const ds::core::Identity &data)
     rec.setValue(h_uuid_, QUuid().toString());
     rec.setValue(h_hash_, data.hash.toBase64());
     rec.setValue(h_name_, data.name);
-    rec.setValue(h_cert_, data.cert.toBase64());
+    rec.setValue(h_cert_, data.cert.toByteArray()); // TODO: Se if we can avoid a temporary string
     rec.setValue(h_address_, data.address);
     rec.setValue(h_address_data_, data.addressData);
     if (!data.notes.isEmpty()) {
@@ -248,12 +249,12 @@ QString IdentitiesModel::getIdentityAsBase58(int row) const
     auto d = DsEngine::fromJson(data(index(row, h_address_data_), Qt::DisplayRole).toByteArray());
 
     bytes.append('\1'); // Version
-    auto cert_data = QSqlTableModel::data(index(row, h_cert_), Qt::DisplayRole).toByteArray();
+    ds::crypto::DsCert::safe_array_t cert_data{QSqlTableModel::data(index(row, h_cert_), Qt::DisplayRole).toByteArray()};
     if (cert_data.isEmpty()) {
         return {};
     }
-    const auto pubkey = crypto::DsCert::create(QByteArray::fromBase64(cert_data))->getPubKey();
-    bytes += pubkey;
+
+    bytes += crypto::DsCert::create(cert_data)->getPubKey().toByteArray();
 
     auto onion = d["service_id"].toByteArray();
 
@@ -313,11 +314,11 @@ QVariant IdentitiesModel::data(const QModelIndex &ix, int role) const {
     // Extra fields, generated fields
     switch(role) {
         case HANDLE_ROLE: {
-            auto cert_data = QSqlTableModel::data(index(model_ix.row(), h_cert_), Qt::DisplayRole).toByteArray();
+            ds::crypto::DsCert::safe_array_t cert_data{QSqlTableModel::data(index(model_ix.row(), h_cert_), Qt::DisplayRole).toByteArray()};
             if (cert_data.isEmpty()) {
                 return {};
             }
-            return crypto::DsCert::create(QByteArray::fromBase64(cert_data))->getB58PubKey();
+            return crypto::DsCert::create(cert_data)->getB58PubKey();
         }
 
         case ONLINE_ROLE:

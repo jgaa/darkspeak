@@ -24,9 +24,9 @@ void TestCerts::test_create_cert()
         QCOMPARE(pubkey, second->getPubKey());
         QCOMPARE("ds", ds::crypto::b58check_enc(first->getPubKey(), {249, 50}).substr(0,2));
 
-        LFLOG_DEBUG << "  Created cert: " << first->getCert().toBase64();
-        LFLOG_DEBUG << "           key: " << first->getKey().toBase64();
-        LFLOG_DEBUG << "        pubkey: " << first->getPubKey().toBase64();
+        LFLOG_DEBUG << "  Created cert: " << first->getCert().toByteArray().toBase64();
+        LFLOG_DEBUG << "           key: " << first->getKey().toByteArray().toBase64();
+        LFLOG_DEBUG << "        pubkey: " << first->getPubKey().toByteArray().toBase64();
 
 //        for(unsigned char i = 1; i < 255; ++i) {
 //            for(unsigned char ii = 0; ii < 255; ++ii) {
