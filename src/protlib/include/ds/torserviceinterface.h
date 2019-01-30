@@ -8,7 +8,10 @@
 #include <QTcpSocket>
 #include <QUuid>
 
+#include "ds/protocolmanager.h"
 #include "ds/connectionsocket.h"
+#include "ds/dscert.h"
+#include "ds/dsclient.h"
 
 namespace ds {
 namespace prot {
@@ -52,7 +55,8 @@ public:
     StopServiceResult stopService();
 
     /*! Connect to a Tor hidden service */
-    QUuid connectToService(const QByteArray& host, const std::uint16_t port);
+    QUuid connectToService(const QByteArray& host, const std::uint16_t port,
+                           core::ConnectData cd);
 
     /*! Close / destroy the socket to a hidden service.
      *
@@ -85,7 +89,7 @@ private:
     static QNetworkProxy& getTorProxy();
 
     std::shared_ptr<QTcpServer> server_;
-    std::map<QUuid, ConnectionSocket::ptr_t> connections_;
+    std::map<QUuid, DsClient::ptr_t> clients_;
 };
 
 }} //namespaces

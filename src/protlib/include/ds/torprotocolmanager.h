@@ -20,7 +20,7 @@ public slots:
     void createTransportHandle(const core::TransportHandleReq &) override;
     void startService(const QByteArray& id, const QVariantMap& data) override;
     void stopService(const QByteArray& id) override;
-    QUuid connectTo(const QByteArray &serviceId, const QByteArray &address) override;
+    QUuid connectTo(core::ConnectData cd) override;
     void disconnectFrom(const QByteArray &serviceId, const QUuid &uuid) override;
 
 private slots:

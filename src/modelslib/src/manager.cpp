@@ -18,6 +18,8 @@ using namespace ds::crypto;
 namespace ds {
 namespace models {
 
+Manager *Manager::instance_;
+
 LogModel *Manager::logModel()
 {
     return log_.get();
@@ -119,6 +121,7 @@ Manager::Manager()
     log_ = make_unique<LogModel>(engine_->settings());
     identities_ = make_unique<IdentitiesModel>(engine_->settings());
     contacts_ = make_unique<ContactsModel>(engine_->settings());
+    instance_ = this;
 }
 
 Manager::AppState Manager::getAppState() const

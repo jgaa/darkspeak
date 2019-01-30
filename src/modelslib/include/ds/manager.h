@@ -44,6 +44,11 @@ public:
 
     Manager();
 
+    static Manager& instance() noexcept {
+        assert(instance_);
+        return *instance_;
+    }
+
 public slots:
     AppState getAppState() const;
     OnlineState getOnlineState() const;
@@ -64,6 +69,7 @@ signals:
     void onlineChanged();
 
 private:
+    static Manager *instance_;
     AppState app_state_ = ds::core::DsEngine::State::INITIALIZING;
     OnlineState online_state_ = ds::core::ProtocolManager::State::OFFLINE;
     std::unique_ptr<ds::core::DsEngine> engine_;

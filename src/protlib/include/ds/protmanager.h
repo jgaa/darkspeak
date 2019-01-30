@@ -9,6 +9,7 @@ namespace proto {
 class ProtManager
 {
 public:
+    using ptr_t = shatred_ptr<ProtManager>;
 
     ProtManager();
 

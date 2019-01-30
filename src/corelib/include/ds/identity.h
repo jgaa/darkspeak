@@ -11,6 +11,7 @@ namespace core {
 struct Identity {
     QString name;
     QByteArray hash;
+    QByteArray uuid;
     crypto::DsCert::safe_array_t cert;
     QByteArray address;
     QByteArray addressData;

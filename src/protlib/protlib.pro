@@ -39,5 +39,6 @@ HEADERS += \
 
 INCLUDEPATH += $$PWD/include \
     $$PWD/../torlib/include \
-    $$PWD/../corelib/include
+    $$PWD/../corelib/include \
+    $$PWD/../cryptolib/include
 

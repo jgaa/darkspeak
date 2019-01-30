@@ -30,6 +30,7 @@ class IdentitiesModel : public QSqlTableModel
         using ptr_t = std::shared_ptr<ExtraInfo>;
 
         bool online = false;
+        crypto::DsCert::ptr_t cert;
     };
 
 public:
@@ -66,6 +67,7 @@ public:
     virtual QHash<int, QByteArray> roleNames() const override;
 
     bool identityExists(QString name) const;
+    crypto::DsCert::ptr_t getCert(const int identityId);
 
 private:
     QByteArray getIdFromRow(const int row) const;

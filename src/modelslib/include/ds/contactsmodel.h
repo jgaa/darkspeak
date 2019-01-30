@@ -111,8 +111,8 @@ private:
     void doIfValid(int row,
                     std::function<void (const QByteArray&)> fn,
                     bool throwIfNot = false);
-
     int col2Role(int col) const noexcept { return col + Qt::UserRole; }
+    crypto::DsCert::ptr_t getCert(const int identityId);
 
     int h_id_ = {};
     int h_identity_ = {};

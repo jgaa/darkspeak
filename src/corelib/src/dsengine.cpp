@@ -108,6 +108,7 @@ void DsEngine::createIdentity(const IdentityReq& req)
     id.name = req.name;
     id.avatar = req.avatar;
     id.notes = req.notes;
+    id.uuid = QUuid::createUuid().toByteArray();
 
     pending_identities_.insert(req.name, id);
 

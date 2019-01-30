@@ -63,7 +63,8 @@ StopServiceResult TorServiceInterface::stopService()
     return r;
 }
 
-QUuid TorServiceInterface::connectToService(const QByteArray &host, const uint16_t port)
+QUuid TorServiceInterface::connectToService(const QByteArray &host, const uint16_t port,
+                                            core::ConnectData cd)
 {
     auto connection = make_shared<ConnectionSocket>();
 
@@ -78,36 +79,38 @@ QUuid TorServiceInterface::connectToService(const QByteArray &host, const uint16
     connect(connection.get(), &ConnectionSocket::socketFailed,
             this, &TorServiceInterface::onSocketFailed);
 
+    auto client = make_shared<DsClient>(connection, move(cd));
+
     connection->setProxy(getTorProxy());
     connection->connectToHost(host, port);
 
-    connections_[connection->getUuid()] = connection;
+    clients_[connection->getUuid()] = client;
 
     return connection->getUuid();
 }
 
 void TorServiceInterface::close(const QUuid &uuid)
 {
-    auto it = connections_.find(uuid);
-    if (it == connections_.end()) {
+    auto it = clients_.find(uuid);
+    if (it == clients_.end()) {
         return;
     }
 
     LFLOG_DEBUG << "Closing connection for " << uuid.toString();
-    if (it->second->isOpen()) {
-        it->second->close();
+    if (it->second->getConnection().isOpen()) {
+        it->second->getConnection().close();
     }
-    connections_.erase(it);
+    clients_.erase(it);
 }
 
 ConnectionSocket &TorServiceInterface::getSocket(const QUuid &uuid)
 {
-    auto it = connections_.find(uuid);
-    if (it == connections_.end()) {
+    auto it = clients_.find(uuid);
+    if (it == clients_.end()) {
         throw runtime_error("No such connection: "s + uuid.toString().toStdString());
     }
 
-    return *it->second;
+    return it->second->getConnection();
 }
 
 void TorServiceInterface::onSocketConnected(const QUuid &uuid)
@@ -149,12 +152,12 @@ QNetworkProxy &TorServiceInterface::getTorProxy()
 
 ConnectionSocket::ptr_t TorServiceInterface::getSocketPtr(const QUuid &uuid)
 {
-    auto it = connections_.find(uuid);
-    if (it == connections_.end()) {
+    auto it = clients_.find(uuid);
+    if (it == clients_.end()) {
         return {};
     }
 
-    return it->second;
+    return it->second->getConnectionPtr();
 }
 
 

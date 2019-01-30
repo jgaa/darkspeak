@@ -9,12 +9,20 @@
 #include <QAbstractSocket>
 
 #include "ds/transporthandle.h"
+#include "ds/dscert.h"
 
 namespace ds {
 namespace core {
 
 class Message;
 class MessageReport;
+
+struct ConnectData {
+    QByteArray serviceId; // Identity
+    QByteArray address;  // Onion address
+    QByteArray contactsPubkey;
+    crypto::DsCert::ptr_t identitysCert;
+};
 
 /*! Generic interface to the IM protocol.
  *
@@ -132,8 +140,7 @@ public slots:
     virtual void stopService(const QByteArray& id) = 0;
 
     /*! Create a connection to a contact */
-    virtual QUuid connectTo(const QByteArray& serviceId,
-                            const QByteArray& address) = 0;
+    virtual QUuid connectTo(ConnectData cd) = 0;
 
     /*! Close or cancel a connection to a contact
      *

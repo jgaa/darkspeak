@@ -1,22 +1,31 @@
 
 #include "include/ds/dsclient.h"
+#include "logfault/logfault.h"
 
 namespace ds {
 namespace prot {
 
 using namespace  std;
 
-DsClient::DsClient(ConnectionSocket::ptr_t connection)
-    : connection_{move(connection)}
+DsClient::DsClient(ConnectionSocket::ptr_t connection, core::ConnectData connectionData)
+    : connection_{move(connection)}, connectionData_{move(connectionData)}
 {
     // TODO: Set timeout
-    advance();
+    connect(connection.get(), &QTcpSocket::connected,
+            this, [this]() {
+
+
+        advance();
+    });
 }
 
 void DsClient::advance()
 {
     switch(state_) {
         case State::CONNECTED:
+            LFLOG_DEBUG << "Connected to " << connectionData_.address
+                        << " with id " << connection_->getUuid().toString()
+                        << ". Starting DS protocol.";
             sayHello();
         break;
     }

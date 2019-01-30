@@ -96,45 +96,6 @@ const DsCert::safe_array_t& CertImpl::getHash() const
     return hash_;
 }
 
-//DsCert::safe_array_t CertImpl::sign(std::initializer_list<const safe_view_t> data) const
-//{
-//    assert(!key_.empty());
-
-//    safe_array_t signature(crypto_sign_BYTES);
-//    crypto_sign_state state = {};
-
-//    crypto_sign_init(&state);
-
-//    for(const auto& d : data) {
-//        crypto_sign_update(&state, d.cdata(), d.size());
-//    }
-
-//    crypto_sign_final_create(&state, signature.data(),
-//                             nullptr, key_.cdata());
-
-//    return signature;
-//}
-
-
-//bool CertImpl::verify(const safe_array_t &signature,
-//                      std::initializer_list<const safe_view_t> data) const
-//{
-//    assert(!pubkey_.empty());
-
-//    crypto_sign_state state = {};
-
-//    crypto_sign_init(&state);
-
-//    for(const auto& d : data) {
-//        crypto_sign_update(&state, d.cdata(), d.size());
-//    }
-
-//    safe_array_t sign = signature; // libsodium wants non-const signature
-//    const auto result = crypto_sign_final_verify(&state, sign.data(), pubkey_.cdata());
-
-//    return result == 0;
-//}
-
 DsCert::ptr_t DsCert::create() {
     return std::make_shared<CertImpl>();
 }
@@ -143,10 +104,17 @@ DsCert::ptr_t DsCert::create(const safe_array_t& cert) {
     return std::make_shared<CertImpl>(cert, CertImpl::What::CERT);
 }
 
+// TODO: Remove when we encrypt secrets in the database
+DsCert::ptr_t DsCert::create(const QByteArray& cert) {
+    safe_array_t crt{cert};
+    return create(crt);
+}
+
 DsCert::ptr_t DsCert::createFromPubkey(const safe_array_t& pubkey) {
     return  std::make_shared<CertImpl>(pubkey, CertImpl::What::PUBLIC);
 }
 
+// TODO: Remove when we encrypt secrets in the database
 DsCert::ptr_t DsCert::createFromPubkey(const QByteArray& pubkey) {
     safe_array_t pk{pubkey};
     return createFromPubkey(pk);

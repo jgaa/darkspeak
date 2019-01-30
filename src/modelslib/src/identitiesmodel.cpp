@@ -127,8 +127,8 @@ void IdentitiesModel::saveIdentity(const ds::core::Identity &data)
     Strategy strategy(*this, QSqlTableModel::OnManualSubmit);
     QSqlRecord rec{DsEngine::instance().getDb().record(this->tableName())};
 
-    rec.setValue(h_uuid_, QUuid().toString());
-    rec.setValue(h_hash_, data.hash.toBase64());
+    rec.setValue(h_uuid_, data.uuid);
+    rec.setValue(h_hash_, data.hash);
     rec.setValue(h_name_, data.name);
     rec.setValue(h_cert_, data.cert.toByteArray()); // TODO: Se if we can avoid a temporary string
     rec.setValue(h_address_, data.address);
@@ -374,6 +374,11 @@ bool IdentitiesModel::identityExists(QString name) const
     return query.next();
 }
 
+crypto::DsCert::ptr_t IdentitiesModel::getCert(const int identityId)
+{
+    return getExtra(QByteArray::number(identityId))->cert;
+}
+
 QByteArray IdentitiesModel::getIdFromRow(const int row) const
 {
     auto id = data(index(row, h_id_), Qt::DisplayRole).toByteArray();
@@ -410,9 +415,12 @@ IdentitiesModel::ExtraInfo::ptr_t IdentitiesModel::getExtra(const QByteArray &id
 {
     auto it = extras_.find(id);
     if (it == extras_.end()) {
-        auto ptr = make_shared<ExtraInfo>();
-        extras_[id] = make_shared<ExtraInfo>();
-        return ptr;
+        auto extra = make_shared<ExtraInfo>();
+
+        extra->cert = crypto::DsCert::create(data(index(id.toInt(), h_cert_),
+                                                  Qt::DisplayRole).toByteArray());
+        extras_[id] = extra;
+        return extra;
     }
 
     return extras_[id];

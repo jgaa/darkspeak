@@ -86,6 +86,7 @@ public:
     /*! Factory to create a cert */
     static ptr_t create();
     static ptr_t create(const safe_array_t& cert);
+    static ptr_t create(const QByteArray& cert);
     static ptr_t createFromPubkey(const safe_array_t& pubkey); // as returned by getPubKey()
     static ptr_t createFromPubkey(const QByteArray& pubkey);
 };

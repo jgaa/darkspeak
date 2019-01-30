@@ -6,6 +6,7 @@
 #include "ds/model_util.h"
 #include "ds/base58.h"
 #include "ds/strategy.h"
+#include "ds/manager.h"
 
 #include <QBuffer>
 #include <QDateTime>
@@ -81,7 +82,7 @@ QVariant ContactsModel::data(const QModelIndex &ix, int role) const
             if (pkey_data.isEmpty()) {
                 return {};
             }
-            return crypto::DsCert::createFromPubkey(QByteArray::fromBase64(pkey_data))->getB58PubKey();
+            return crypto::DsCert::createFromPubkey(pkey_data)->getB58PubKey();
         }
 
         case ONLINE_ROLE:
@@ -192,7 +193,7 @@ void ContactsModel::onContactCreated(const Contact &contact)
     } else {
         rec.setValue(h_group_, contact.group);
     }
-    rec.setValue(h_pubkey_, contact.pubkey.toBase64());
+    rec.setValue(h_pubkey_, contact.pubkey);
     rec.setValue(h_address_, contact.address);
     rec.setValue(h_hash_, contact.hash);
     rec.setValue(h_name_, contact.name);
@@ -228,7 +229,7 @@ ContactsModel::OnlineStatus ContactsModel::getOnlineStatus(int row) const
 
 void ContactsModel::createContact(const QString &nickName,
                                   const QString &name,
-                                  const QString &handle,
+                                  const QString &handle, // b58check encoded pubkey
                                   const QString &address,
                                   const QString & /*message*/, // TODO: Store it somewhere
                                   const QString &notes,
@@ -274,10 +275,16 @@ void ContactsModel::onIdentityChanged(int identityId)
 void ContactsModel::connectTransport(int row)
 {
     doIfValid(row, [this, row](const QByteArray& id, ExtraInfo& extra) {
-        auto addr = data(index(row, h_address_), Qt::DisplayRole).toByteArray();
+
+
+        ConnectData cd;
+        cd.address = data(index(row, h_address_), Qt::DisplayRole).toByteArray();
+        cd.serviceId = id;
+        cd.contactsPubkey = data(index(row, h_pubkey_), Qt::DisplayRole).toByteArray();
+        cd.identitysCert = getCert(identity_);
 
         extra.outbound_connection_uuid = DsEngine::instance().getProtocolMgr(
-                    ProtocolManager::Transport::TOR).connectTo(id, addr);
+                    ProtocolManager::Transport::TOR).connectTo(cd);
 
         setOnlineStatus(extra.outbound_connection_uuid, CONNECTING);
     });
@@ -443,6 +450,11 @@ void ContactsModel::doIfValid(int row, std::function<void (const QByteArray& id)
     }
 
     fn(id);
+}
+
+crypto::DsCert::ptr_t ContactsModel::getCert(const int identityId)
+{
+    return Manager::instance().identitiesModel()->getCert(identityId);
 }
 
 

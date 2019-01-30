@@ -204,17 +204,17 @@ void TorProtocolManager::stopService(const QByteArray &id)
     tor_->stopService(id);
 }
 
-QUuid TorProtocolManager::connectTo(const QByteArray &serviceId, const QByteArray &address)
+QUuid TorProtocolManager::connectTo(core::ConnectData cd)
 {
     // address may be "onion:hostname:port" or "hostname:port"
-    auto parts = address.split(':');
+    auto parts = cd.address.split(':');
     if (parts.size() < 2 || parts.size() > 3) {
         throw runtime_error("Expected: [onion:]address:port");
     }
 
     const auto port = static_cast<uint16_t>(parts.at(parts.size() -1).toUInt());
     const auto host = parts.at(parts.size() - 2) + ".onion";
-    return getService(serviceId).connectToService(host, port);
+    return getService(cd.serviceId).connectToService(host, port, move(cd));
 }
 
 void TorProtocolManager::disconnectFrom(const QByteArray &serviceId, const QUuid &uuid)
