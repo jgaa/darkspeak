@@ -18,27 +18,30 @@ CertImpl::CertImpl()
     init();
 
     // Generate a private / public key pair
-    crypto_box_keypair(pubkey_.data(), key_.data());
+    crypto_sign_keypair(signPubKey_.data(), signKey_.data());
+    deriveCryptoKeys(true);
     CalculateHash();
 }
 
 CertImpl::CertImpl(const safe_array_t &cert, const What what)
 {
     if (what == What::CERT) {
-        if (cert.size() != (crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES)) {
+        if (cert.size() != (crypto_sign_SECRETKEYBYTES + crypto_sign_PUBLICKEYBYTES
+                          + crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES)) {
             throw runtime_error("Invalid cert size");
         }
 
         init();
         cert_ = cert;
     } else {
-        if (cert.size() != crypto_box_PUBLICKEYBYTES) {
+        if (cert.size() != crypto_sign_PUBLICKEYBYTES) {
             throw runtime_error("Invalid pubkey size");
         }
 
         init();
-        assert(cert.size() == pubkey_.size());
-        memcpy(pubkey_.data(), cert.cdata(), pubkey_.size());
+        assert(cert.size() == signPubKey_.size());
+        memcpy(signPubKey_.data(), cert.cdata(), signPubKey_.size());
+        deriveCryptoKeys(false);
     }
 
     CalculateHash();
@@ -51,14 +54,14 @@ CertImpl::~CertImpl()
 void CertImpl::CalculateHash()
 {
     // Calculate the fingerprint
-    if (pubkey_.size() != crypto_box_PUBLICKEYBYTES) {
+    if (signPubKey_.size() != crypto_sign_PUBLICKEYBYTES) {
         throw runtime_error("Invalid size of pubkey");
     }
 
     hash_.resize(crypto_generichash_BYTES);
 
     crypto_generichash(hash_.data(),hash_.size(),
-                       pubkey_.data(), pubkey_.size(),
+                       signPubKey_.data(), signPubKey_.size(),
                        nullptr, 0);
 
     assert(!hash_.empty());
@@ -67,12 +70,28 @@ void CertImpl::CalculateHash()
 void CertImpl::init()
 {
     hash_.resize(crypto_generichash_BYTES);
-    cert_.resize(crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES);
+    cert_.resize(crypto_sign_SECRETKEYBYTES + crypto_sign_PUBLICKEYBYTES
+                 + crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES);
 
     // The cert is the combination of the key and pubkey
     // We share the memory in the certs buffer-space.
-    key_.assign(cert_.data(), crypto_box_SECRETKEYBYTES);
-    pubkey_.assign(key_.end(), crypto_box_PUBLICKEYBYTES);
+    signKey_.assign(cert_.data(), crypto_sign_SECRETKEYBYTES);
+    signPubKey_.assign(signKey_.end(), crypto_sign_PUBLICKEYBYTES);
+    encrKey_.assign(signPubKey_.end(), crypto_box_SECRETKEYBYTES);
+    encrPubKey_.assign(encrKey_.end(), crypto_box_PUBLICKEYBYTES);
+}
+
+void CertImpl::deriveCryptoKeys(bool deriveKey)
+{
+    if (deriveKey) {
+        if (crypto_sign_ed25519_sk_to_curve25519(encrKey_.data(), signKey_.cdata()) != 0) {
+            throw runtime_error("Failed to derive crypto key");
+        }
+    }
+
+    if (crypto_sign_ed25519_pk_to_curve25519(encrPubKey_.data(), signPubKey_.cdata()) != 0) {
+        throw runtime_error("Failed to derive crypto pubkey");
+    }
 }
 
 const DsCert::safe_array_t& CertImpl::getCert() const
@@ -80,14 +99,24 @@ const DsCert::safe_array_t& CertImpl::getCert() const
     return cert_;
 }
 
-const DsCert::safe_view_t &CertImpl::getKey() const
+const DsCert::safe_view_t &CertImpl::getSigningKey() const
 {
-    return key_;
+    return signKey_;
 }
 
-const DsCert::safe_view_t& CertImpl::getPubKey() const
+const DsCert::safe_view_t& CertImpl::getSigningPubKey() const
 {
-   return pubkey_;
+   return signPubKey_;
+}
+
+const DsCert::safe_view_t &CertImpl::getEncryptionKey() const
+{
+    return signKey_;
+}
+
+const DsCert::safe_view_t& CertImpl::getEncryptionPubKey() const
+{
+   return encrPubKey_;
 }
 
 

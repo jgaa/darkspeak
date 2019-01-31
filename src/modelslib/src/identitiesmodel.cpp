@@ -169,13 +169,14 @@ void IdentitiesModel::onServiceStarted(const QByteArray &id)
 
 void IdentitiesModel::onServiceStopped(const QByteArray &id)
 {
-    auto e = getExtra(id);
-
-    e->online = false;
-
-    auto row = getRowFromId(id);
-    auto ix = index(row, 0);
-    emit dataChanged(ix, ix, { Qt::EditRole, ONLINE_ROLE});
+    if (auto e = getExtra(id, false)) {
+        if (e->online) {
+            e->online = false;
+            auto row = getRowFromId(id);
+            auto ix = index(row, 0);
+            emit dataChanged(ix, ix, { Qt::EditRole, ONLINE_ROLE});
+        }
+    }
 }
 
 void IdentitiesModel::onServiceFailed(const QByteArray &id,
@@ -254,7 +255,7 @@ QString IdentitiesModel::getIdentityAsBase58(int row) const
         return {};
     }
 
-    bytes += crypto::DsCert::create(cert_data)->getPubKey().toByteArray();
+    bytes += crypto::DsCert::create(cert_data)->getSigningPubKey().toByteArray();
 
     auto onion = d["service_id"].toByteArray();
 
@@ -411,14 +412,19 @@ IdentitiesModel::ExtraInfo::ptr_t IdentitiesModel::getExtra(const int row) const
     return getExtra(id);
 }
 
-IdentitiesModel::ExtraInfo::ptr_t IdentitiesModel::getExtra(const QByteArray &id) const
+IdentitiesModel::ExtraInfo::ptr_t IdentitiesModel::getExtra(const QByteArray &id,
+                                                            bool createIfMissing) const
 {
     auto it = extras_.find(id);
     if (it == extras_.end()) {
+        if (!createIfMissing) {
+            return {};
+        }
         auto extra = make_shared<ExtraInfo>();
 
-        extra->cert = crypto::DsCert::create(data(index(id.toInt(), h_cert_),
-                                                  Qt::DisplayRole).toByteArray());
+        // TODO: Fetch directly from database
+        const auto d = QSqlTableModel::data(index(getRowFromId(id), h_cert_), Qt::DisplayRole).toByteArray();
+        extra->cert = crypto::DsCert::create(d);
         extras_[id] = extra;
         return extra;
     }

@@ -2,6 +2,9 @@
 #define DSCLIENT_H
 
 #include <memory>
+
+#include <sodium.h>
+
 #include "ds/protocolmanager.h"
 #include "ds/connectionsocket.h"
 
@@ -19,7 +22,8 @@ public:
     using ptr_t = std::shared_ptr<DsClient>;
 
     enum class State {
-        CONNECTED
+        CONNECTED,
+        GET_SERVER_HELLO,
     };
 
     DsClient(ConnectionSocket::ptr_t connection, core::ConnectData connectionData);
@@ -43,10 +47,12 @@ private slots:
 
 private:
     void sayHello();
+    void getHelloReply();
 
     ConnectionSocket::ptr_t connection_;
     State state_ = State::CONNECTED;
     core::ConnectData connectionData_;
+    crypto_secretstream_xchacha20poly1305_state stateOut;
 };
 
 }} // namespaces

@@ -73,7 +73,7 @@ private:
     QByteArray getIdFromRow(const int row) const;
     int getRowFromId(const QByteArray& id) const;
     ExtraInfo::ptr_t getExtra(const int row) const;
-    ExtraInfo::ptr_t getExtra(const QByteArray& id) const;
+    ExtraInfo::ptr_t getExtra(const QByteArray& id, bool createIfMissing = true) const;
 
     int h_id_ = {};
     int h_uuid_ = {};

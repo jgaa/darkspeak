@@ -30,20 +30,27 @@ public:
     virtual ~DsCert() = default;
 
     virtual const safe_array_t& getCert() const = 0;
-    virtual const safe_view_t& getKey() const = 0;
-    virtual const safe_view_t& getPubKey() const = 0;
+    virtual const safe_view_t& getSigningKey() const = 0;
+    virtual const safe_view_t& getSigningPubKey() const = 0;\
+    virtual const safe_view_t& getEncryptionKey() const = 0;
+    virtual const safe_view_t& getEncryptionPubKey() const = 0;
     virtual const safe_array_t& getHash() const = 0;
     virtual const QByteArray getB58PubKey() {
-        return b58check_enc<QByteArray>(getPubKey(), {249, 50});
+        return b58check_enc<QByteArray>(getEncryptionPubKey(), {249, 50});
     }
 
     template <typename Tsign, typename T>
-    Tsign sign(std::initializer_list<T> data) const
-    {
-        assert(!getKey().empty());
-
+    Tsign sign(std::initializer_list<T> data) const {
         Tsign signature;
         signature.resize(crypto_sign_BYTES);
+        sign(signature, data);
+        return signature;
+    }
+
+    template <typename Tsign, typename T>
+    void sign(Tsign signature, std::initializer_list<T> data) const {
+        assert(!getSigningKey().empty());
+        assert(signature.size() == crypto_sign_BYTES);
 
         crypto_sign_state state = {};
         crypto_sign_init(&state);
@@ -55,14 +62,12 @@ public:
         }
         crypto_sign_final_create(&state,
                                  reinterpret_cast<unsigned char *>(signature.data()),
-                                 nullptr, getKey().cdata());
-        return signature;
+                                 nullptr, getSigningKey().cdata());
     }
 
     template <typename T, typename Tsign>
-    bool verify(const Tsign &signature, std::initializer_list<T> data) const
-    {
-        assert(!getKey().empty());
+    bool verify(const Tsign &signature, std::initializer_list<T> data) const {
+        assert(!getSigningPubKey().empty());
         crypto_sign_state state = {};
         crypto_sign_init(&state);
         for(const auto& d : data) {
@@ -72,16 +77,10 @@ public:
         }
         Tsign sign = signature; // libsodium wants non-const signature
         const auto result = crypto_sign_final_verify(&state,
-                                                     sign.data(), getPubKey().cdata());
+                                                     sign.data(),
+                                                     getSigningPubKey().cdata());
         return result == 0;
     }
-
-//    // Sign data with the private key
-//    virtual safe_array_t sign(std::initializer_list<const safe_view_t> data) const = 0;
-
-//    // Verify a signature using the public key
-//    virtual bool verify(const safe_array_t& signature,
-//                        std::initializer_list<const safe_view_t> data) const = 0;
 
     /*! Factory to create a cert */
     static ptr_t create();

@@ -25,21 +25,18 @@ The Transport Layer is a simple binary format with a header and a payload.
 
 The header is a flat, binary structure with the following fields:
 
-- **size**    2 bytes unsigned integer in Big Endian format. Size in bytes of the payload.
-
-*encrypted part*. Everything following the size is encrypted with the receivers public key.
-
 - **version** 1 byte
-- **md5** 16 byte md5 checksum for the remainder of the packet.
+- **size**    2 bytes unsigned integer in Big Endian format. Size in bytes of the payload.
 - **channel** 2 bytes unsigned integer in Big Endian format
+- **md5**    16 bytes md5 checksum for the remainder of the packet.
 
 The payload follows directly after the header.
 
 - **payload** The payload.
 
-**Size**: Size of the packet in bytes, excluding the 2 byte size header.
-
 **Version**: Version of the Dark Speak protocol used.
+
+**Size**: Size of the payload in bytes.
 
 **Md5**: Checksum to detect transmission errors. Since the checksum is encrypted it is tamper-proof, and should be safe to use. We use prefer md5 here because it is fast to calculate and occupies only 16 bytes.
 
