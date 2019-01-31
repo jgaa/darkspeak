@@ -79,12 +79,11 @@ void DsClient::sayHello()
     assert(pubkey.size() == connectionData_.identitysCert->getSigningPubKey().size());
     memcpy(pubkey.data(), connectionData_.identitysCert->getSigningPubKey().cdata(), pubkey.size());
 
-    const auto peer_cert = crypto::DsCert::createFromPubkey(connectionData_.contactsPubkey);
-
     // Sign the payload, so the server know we have the private key for our announced pubkey.
     connectionData_.identitysCert->sign(signature, {version, key, header, pubkey});
 
     // Encrypt the payload with the receipients public encryption key
+    const auto peer_cert = crypto::DsCert::createFromPubkey(connectionData_.contactsPubkey);
     array<uint8_t, hello.size() + crypto_box_SEALBYTES> ciphertext;
     if (crypto_box_seal(
                 ciphertext.data(),
