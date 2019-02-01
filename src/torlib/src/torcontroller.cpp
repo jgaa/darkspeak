@@ -79,14 +79,17 @@ void TorController::createService(const QUuid& serviceId)
             service.service_id = map.value("SERVICEID").toByteArray();
             service.key_type = list.front();
             service.key = list.back();
+            service.uuid = sp.uuid;
 
-            service_map_[sp.uuid] = service.service_id;
+            assert(!service.uuid.isNull());
+
+            service_map_[service.uuid ] = service.service_id;
 
             LFLOG_DEBUG << "Created Tor hidden service: " << service.service_id
                      << " with id " << service.uuid.toString();
 
             emit serviceCreated(service);
-            emit serviceStarted(service.uuid);
+            emit serviceStarted(service.uuid, true);
         } else {
             auto msg = std::to_string(reply.status) + ' ' + reply.lines.front();
             emit serviceFailed(sp.uuid, msg.c_str());
@@ -122,7 +125,7 @@ void TorController::startService(const ServiceProperties &sp)
             LFLOG_DEBUG << "Started Tor hidden service: " << service_id
                      << " with id " << uuid.toString();
 
-            emit serviceStarted(uuid);
+            emit serviceStarted(uuid, false);
         } else {
             auto msg = std::to_string(reply.status) + ' ' + reply.lines.front();
             emit serviceFailed(uuid, msg.c_str());

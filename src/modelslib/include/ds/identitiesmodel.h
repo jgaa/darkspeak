@@ -56,7 +56,7 @@ public slots:
 
 private slots:
     void saveIdentity(const ds::core::Identity& data);
-    void onServiceStarted(const QUuid& servive);
+    void onServiceStarted(const QUuid& servive, const bool newService);
     void onServiceStopped(const QUuid& servive);
     void onServiceFailed(const QUuid& servive, const QByteArray& reason);
     void onTransportHandleReady(const core::TransportHandle& th);

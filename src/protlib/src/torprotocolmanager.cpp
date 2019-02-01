@@ -21,8 +21,8 @@ TorProtocolManager::TorProtocolManager(QSettings &settings)
 
     connect(tor_.get(), &TorMgr::serviceCreated, this, &TorProtocolManager::onServiceCreated);
 
-    connect(tor_.get(), &TorMgr::serviceStarted, this, [this](const QUuid& service) {
-        emit serviceStarted(service);
+    connect(tor_.get(), &TorMgr::serviceStarted, this, [this](const QUuid& service, const bool newService) {
+        emit serviceStarted(service, newService);
     });
 
     connect(tor_.get(), &TorMgr::serviceStopped, this, [this](const QUuid& service) {
@@ -159,7 +159,7 @@ void TorProtocolManager::stop()
 
 void TorProtocolManager::createTransportHandle(const TransportHandleReq &req)
 {
-    tor_->createService(req.identityName.toLocal8Bit());
+    tor_->createService(req.uuid);
 }
 
 void TorProtocolManager::startService(const QUuid& serviceId,

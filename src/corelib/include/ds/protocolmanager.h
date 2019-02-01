@@ -92,7 +92,7 @@ signals:
     void transportHandleError(const TransportHandleError&);
 
     void serviceFailed(const QUuid& service, const QByteArray& reason);
-    void serviceStarted(const QUuid& service);
+    void serviceStarted(const QUuid& service, const bool newService);
     void serviceStopped(const QUuid& service);
 
     void connectedTo(const QUuid& connection);

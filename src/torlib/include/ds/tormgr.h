@@ -47,7 +47,7 @@ signals:
     // with the Tor service is lost.
     void serviceCreated(const ServiceProperties& service);
     void serviceFailed(const QUuid& service, const QByteArray& reason);
-    void serviceStarted(const QUuid& service);
+    void serviceStarted(const QUuid& service, const bool newService);
     void serviceStopped(const QUuid& service);
     void torStateUpdate(TorController::TorState state, int progress, const QString& summary);
     void stateUpdate(TorController::CtlState state);
@@ -100,7 +100,7 @@ private slots:
     void onStateUpdate(TorController::CtlState state);
     void onServiceCreated(const ServiceProperties& service);
     void onServiceFailed(const QUuid& service, const QByteArray& reason);
-    void onServiceStarted(const QUuid& service);
+    void onServiceStarted(const QUuid& service, const bool newService);
     void onServiceStopped(const QUuid& service);
 
 private:

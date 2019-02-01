@@ -73,7 +73,7 @@ private slots:
     void onTransportHandleError(const TransportHandleError& th);
     void online();
     void onServiceFailed(const QUuid& id, const QByteArray& reason);
-    void onServiceStarted(const QUuid& id);
+    void onServiceStarted(const QUuid& id, const bool newService);
     void onServiceStopped(const QUuid& id);
 
 signals:
@@ -88,7 +88,7 @@ signals:
     void certCreated(const QUuid& uuid, const ds::crypto::DsCert::ptr_t cert);
     void retryIdentityReady(const QUuid& id); // internal
     void serviceFailed(const QUuid& uuid, const QByteArray& reason);
-    void serviceStarted(const QUuid& uuid);
+    void serviceStarted(const QUuid& uuid, const bool newService);
     void serviceStopped(const QUuid& uuid);
     void transportHandleReady(const TransportHandle& th);
     void transportHandleError(const TransportHandleError& th);

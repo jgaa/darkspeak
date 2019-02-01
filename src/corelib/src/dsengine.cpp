@@ -110,7 +110,7 @@ void DsEngine::createIdentity(const IdentityReq& req)
     id.notes = req.notes;
     id.uuid = req.uuid;
 
-    pending_identities_.insert(req.name, id);
+    pending_identities_.insert(req.uuid, id);
 
     auto name = req.name;
     auto uuid = id.uuid;
@@ -234,9 +234,9 @@ void DsEngine::onServiceFailed(const QUuid& serviceId, const QByteArray &reason)
     emit serviceFailed(serviceId, reason);
 }
 
-void DsEngine::onServiceStarted(const QUuid& serviceId)
+void DsEngine::onServiceStarted(const QUuid& serviceId, const bool newService)
 {
-    emit serviceStarted(serviceId);
+    emit serviceStarted(serviceId, newService);
 }
 
 void DsEngine::onServiceStopped(const QUuid& serviceId)

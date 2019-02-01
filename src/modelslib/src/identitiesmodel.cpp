@@ -159,8 +159,13 @@ void IdentitiesModel::saveIdentity(const ds::core::Identity &data)
     LFLOG_DEBUG << "Added identity " << data.name << " to the database";
 }
 
-void IdentitiesModel::onServiceStarted(const QUuid& service)
+void IdentitiesModel::onServiceStarted(const QUuid& service, const bool newService)
 {
+    if (newService) {
+        LFLOG_DEBUG << "Discarding service started notification for new Tor service "
+                    << service.toString();
+        return;
+    }
     auto e = getExtra(service);
     e->online = true;
 
@@ -191,14 +196,7 @@ void IdentitiesModel::onServiceFailed(const QUuid& service,
 }
 
 void IdentitiesModel::onTransportHandleReady(const TransportHandle &th)
-{
-    static const QRegExp re("\\d+");
-    if (!re.exactMatch(th.identityName)) {
-        LFLOG_DEBUG << "Discarding transport. Name is not a database index id: "
-                    << th.identityName;
-        return;
-    }
-
+{    
     const auto row = getRowFromUuid(th.uuid);
     if (row < 0) {
         LFLOG_WARN << "Discarding transport. Cannot map service ("
@@ -413,7 +411,7 @@ int IdentitiesModel::getIdFromUuid(const QUuid &uuid) const
 int IdentitiesModel::getRowFromUuid(const QUuid &uuid) const
 {
     for(int i = 0 ; i < rowCount(); ++i) {
-        if (data(index(i, h_id_), Qt::DisplayRole).toUuid() == uuid) {
+        if (data(index(i, h_uuid_), Qt::DisplayRole).toUuid() == uuid) {
             return i;
         }
     }

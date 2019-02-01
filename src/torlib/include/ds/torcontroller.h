@@ -87,7 +87,7 @@ signals:
     void authFailed(const QString& reason);
     void serviceCreated(const ServiceProperties& service);
     void serviceFailed(const QUuid& service, const QByteArray& reason);
-    void serviceStarted(const QUuid& service);
+    void serviceStarted(const QUuid& service, const bool newService);
     void serviceStopped(const QUuid& service);
 
     // Emitted when we are authenticated and Tor is connected.

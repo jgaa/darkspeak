@@ -122,9 +122,9 @@ void TorMgr::onServiceFailed(const QUuid& service, const QByteArray &reason)
     emit serviceFailed(service, reason);
 }
 
-void TorMgr::onServiceStarted(const QUuid& service)
+void TorMgr::onServiceStarted(const QUuid& service, const bool newService)
 {
-    emit serviceStarted(service);
+    emit serviceStarted(service, newService);
 }
 
 void TorMgr::onServiceStopped(const QUuid& service)
