@@ -12,6 +12,7 @@ namespace prot {
 class ConnectionSocket : public QTcpSocket
 {
     Q_OBJECT
+
 public:
     using ptr_t = std::shared_ptr<ConnectionSocket>;
 
@@ -49,5 +50,9 @@ private:
 };
 
 }} // namespaces
+
+
+Q_DECLARE_SMART_POINTER_METATYPE(std::shared_ptr)
+Q_DECLARE_METATYPE(ds::prot::ConnectionSocket::ptr_t)
 
 #endif // CONNECTIONSOCKET_H

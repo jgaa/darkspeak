@@ -11,7 +11,7 @@
 #include "ds/torsocketlistener.h"
 #include "ds/connectionsocket.h"
 #include "ds/dscert.h"
-#include "ds/dsclient.h"
+#include "ds/peer.h"
 
 namespace ds {
 namespace prot {
@@ -83,14 +83,14 @@ private slots:
     void onSocketDisconnected(const QUuid& uuid);
     void onSocketFailed(const QUuid& uuid,
                         const QAbstractSocket::SocketError& socketError);
-    void onNewConnection();
+    void onNewIncomingConnection(const ConnectionSocket::ptr_t& connection);
 
 private:
     static QNetworkProxy& getTorProxy();
 
     crypto::DsCert::ptr_t cert_;
     std::shared_ptr<TorSocketListener> server_;
-    std::map<QUuid, DsClient::ptr_t> clients_;
+    std::map<QUuid, Peer::ptr_t> peers_;
 };
 
 }} //namespaces

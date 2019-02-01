@@ -2,6 +2,8 @@
 #include <QNetworkProxy>
 
 #include "ds/torserviceinterface.h"
+#include "ds/dsserver.h"
+#include "ds/dsclient.h"
 #include "logfault/logfault.h"
 
 namespace ds {
@@ -25,10 +27,10 @@ StartServiceResult TorServiceInterface::startService()
 
     r.stopped = stopService();
 
-    server_ = make_shared<TorSocketListener>();
-
-    connect(server_.get(), &QTcpServer::newConnection,
-            this, &TorServiceInterface::onNewConnection);
+    server_ = make_shared<TorSocketListener>(
+                [this](ConnectionSocket::ptr_t connection) {
+        onNewIncomingConnection(move(connection));
+    });
 
     if (!server_->listen(QHostAddress::LocalHost)) {
         LFLOG_ERROR << "Failed to start listener: "
@@ -85,15 +87,15 @@ QUuid TorServiceInterface::connectToService(const QByteArray &host, const uint16
     connection->setProxy(getTorProxy());
     connection->connectToHost(host, port);
 
-    clients_[connection->getUuid()] = client;
+    peers_[connection->getUuid()] = client;
 
     return connection->getUuid();
 }
 
 void TorServiceInterface::close(const QUuid &uuid)
 {
-    auto it = clients_.find(uuid);
-    if (it == clients_.end()) {
+    auto it = peers_.find(uuid);
+    if (it == peers_.end()) {
         return;
     }
 
@@ -101,13 +103,13 @@ void TorServiceInterface::close(const QUuid &uuid)
     if (it->second->getConnection().isOpen()) {
         it->second->getConnection().close();
     }
-    clients_.erase(it);
+    peers_.erase(it);
 }
 
 ConnectionSocket &TorServiceInterface::getSocket(const QUuid &uuid)
 {
-    auto it = clients_.find(uuid);
-    if (it == clients_.end()) {
+    auto it = peers_.find(uuid);
+    if (it == peers_.end()) {
         throw runtime_error("No such connection: "s + uuid.toString().toStdString());
     }
 
@@ -136,10 +138,24 @@ void TorServiceInterface::onSocketFailed(const QUuid &uuid,
     emit connectionFailed(uuid, socketError);
 }
 
-void TorServiceInterface::onNewConnection()
+void TorServiceInterface::onNewIncomingConnection(
+        const ConnectionSocket::ptr_t &connection)
 {
-    LFLOG_DEBUG << "Accepting new connection";
+    LFLOG_DEBUG << "Plugging in a new incoming connection: "
+                << connection->getUuid().toString();
 
+    connect(connection.get(), &ConnectionSocket::connectedToHost,
+            this, &TorServiceInterface::onSocketConnected);
+    connect(connection.get(), &ConnectionSocket::disconnectedFromHost,
+            this, &TorServiceInterface::onSocketDisconnected);
+    connect(connection.get(), &ConnectionSocket::socketFailed,
+            this, &TorServiceInterface::onSocketFailed);
+
+    core::ConnectData cd;
+    cd.identitysCert = cert_;
+    auto server = make_shared<DsServer>(connection, move(cd));
+
+    peers_[connection->getUuid()] = server;
 }
 
 QNetworkProxy &TorServiceInterface::getTorProxy()
@@ -154,8 +170,8 @@ QNetworkProxy &TorServiceInterface::getTorProxy()
 
 ConnectionSocket::ptr_t TorServiceInterface::getSocketPtr(const QUuid &uuid)
 {
-    auto it = clients_.find(uuid);
-    if (it == clients_.end()) {
+    auto it = peers_.find(uuid);
+    if (it == peers_.end()) {
         return {};
     }
 

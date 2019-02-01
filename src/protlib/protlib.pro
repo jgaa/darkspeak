@@ -28,7 +28,9 @@ SOURCES += \
     src/torserviceinterface.cpp \
     src/connectionsocket.cpp \
     src/dsclient.cpp \
-    src/torsocketlistener.cpp
+    src/torsocketlistener.cpp \
+    src/peer.cpp \
+    src/dsserver.cpp
 
 
 HEADERS += \
@@ -36,7 +38,9 @@ HEADERS += \
     include/ds/torserviceinterface.h \
     include/ds/connectionsocket.h \
     include/ds/dsclient.h \
-    include/ds/torsocketlistener.h
+    include/ds/torsocketlistener.h \
+    include/ds/peer.h \
+    include/ds/dsserver.h
 
 
 INCLUDEPATH += $$PWD/include \

@@ -1,5 +1,4 @@
 
-#include <array>
 #include <vector>
 #include <sodium.h>
 #include "include/ds/dsclient.h"
@@ -10,8 +9,9 @@ namespace prot {
 
 using namespace  std;
 
-DsClient::DsClient(ConnectionSocket::ptr_t connection, core::ConnectData connectionData)
-    : connection_{move(connection)}, connectionData_{move(connectionData)}
+DsClient::DsClient(ConnectionSocket::ptr_t connection,
+                   core::ConnectData connectionData)
+    : Peer{move(connection), move(connectionData)}
 {
     // TODO: Set timeout
     connect(connection_.get(), &QTcpSocket::connected,
@@ -52,43 +52,39 @@ void DsClient::sayHello()
         return;
     }
 
-    array<uint8_t, 1 /* version */
-            + crypto_secretstream_xchacha20poly1305_KEYBYTES
-            + crypto_secretstream_xchacha20poly1305_HEADERBYTES
-            + crypto_sign_PUBLICKEYBYTES /* our pubkey */
-            + crypto_sign_BYTES> hello;
+    Hello hello;
 
     // We don't need a nounce here, as we have a randomly generated key
 
-    hello[0] = '\1'; // Version of the hello structure
-    crypto::MemoryView<uint8_t> version(hello.data(), 1);
-    crypto::MemoryView<uint8_t> key{version.end(), crypto_secretstream_xchacha20poly1305_KEYBYTES};
-    crypto::MemoryView<uint8_t> header{key.end(), crypto_secretstream_xchacha20poly1305_HEADERBYTES};
-    crypto::MemoryView<uint8_t> pubkey{header.end(), crypto_sign_PUBLICKEYBYTES};
-    crypto::MemoryView<uint8_t> signature{pubkey.end(), crypto_sign_BYTES};
-
-    assert((1 + key.size() + header.size() + pubkey.size() + signature.size()) == hello.size());
+    hello.version.at(0) = '\1'; // Version of the hello structure
 
     /* Shared secret key required to encrypt/decrypt the stream */
-    crypto_secretstream_xchacha20poly1305_keygen(key.data());
+    crypto_secretstream_xchacha20poly1305_keygen(hello.key.data());
 
     /* Set up a new stream: initialize the state and create the header */
-    crypto_secretstream_xchacha20poly1305_init_push(&stateOut, header.data(), key.data());
+    crypto_secretstream_xchacha20poly1305_init_push(
+                &stateOut, hello.header.data(), hello.key.data());
 
     // Copy our pubkey
-    assert(pubkey.size() == connectionData_.identitysCert->getSigningPubKey().size());
-    memcpy(pubkey.data(), connectionData_.identitysCert->getSigningPubKey().cdata(), pubkey.size());
+    assert(hello.pubkey.size()
+           == connectionData_.identitysCert->getSigningPubKey().size());
+    memcpy(hello.pubkey.data(),
+           connectionData_.identitysCert->getSigningPubKey().cdata(),
+           hello.pubkey.size());
 
     // Sign the payload, so the server know we have the private key for our announced pubkey.
-    connectionData_.identitysCert->sign(signature, {version, key, header, pubkey});
+    connectionData_.identitysCert->sign(
+                hello.signature,
+                {hello.version, hello.key, hello.header, hello.pubkey});
 
     // Encrypt the payload with the receipients public encryption key
-    const auto peer_cert = crypto::DsCert::createFromPubkey(connectionData_.contactsPubkey);
-    array<uint8_t, hello.size() + crypto_box_SEALBYTES> ciphertext;
+    const auto peer_cert = crypto::DsCert::createFromPubkey(
+                connectionData_.contactsPubkey);
+    array<uint8_t, hello.buffer.size() + crypto_box_SEALBYTES> ciphertext;
     if (crypto_box_seal(
                 ciphertext.data(),
-                hello.data(),
-                hello.size(),
+                hello.buffer.data(),
+                hello.buffer.size(),
                 peer_cert->getEncryptionPubKey().cdata()) != 0) {
         throw runtime_error("Failed to encrypt hello message");
     }

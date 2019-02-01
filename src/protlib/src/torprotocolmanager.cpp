@@ -175,6 +175,8 @@ void TorProtocolManager::startService(const QUuid& serviceId,
 
     // Add listening port
     auto service = make_shared<TorServiceInterface>(cert);
+
+
     auto properties = service->startService();
     assert(properties.port);
 
