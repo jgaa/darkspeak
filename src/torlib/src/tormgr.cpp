@@ -48,13 +48,13 @@ void TorMgr::updateConfig(const TorConfig &config)
     config_ = config;
 }
 
-void TorMgr::createService(const QByteArray &id)
+void TorMgr::createService(const QUuid& service)
 {
     if (!ctl_ || !ctl_->isConnected()) {
         throw OfflineError("Tor is offline");
     }
 
-    ctl_->createService(id);
+    ctl_->createService(service);
 }
 
 void TorMgr::startService(const ServiceProperties &service)
@@ -66,17 +66,17 @@ void TorMgr::startService(const ServiceProperties &service)
     ctl_->startService(service);
 }
 
-void TorMgr::stopService(const QByteArray &id)
+void TorMgr::stopService(const QUuid& service)
 {
     if (!ctl_ || !ctl_->isConnected()) {
         throw OfflineError("Tor is offline");
     }
 
     try {
-        ctl_->stopService(id);
+        ctl_->stopService(service);
     } catch(const TorController::NoSuchServiceError&) {
-        LFLOG_WARN << "Cannot stop non-existing service with id " << id;
-        emit serviceStopped(id);
+        LFLOG_WARN << "Cannot stop non-existing service with id " << service.toString();
+        emit serviceStopped(service);
     }
 
 
@@ -117,19 +117,19 @@ void TorMgr::onServiceCreated(const ServiceProperties &service)
     emit serviceCreated(service);
 }
 
-void TorMgr::onServiceFailed(const QByteArray &id, const QByteArray &reason)
+void TorMgr::onServiceFailed(const QUuid& service, const QByteArray &reason)
 {
-    emit serviceFailed(id, reason);
+    emit serviceFailed(service, reason);
 }
 
-void TorMgr::onServiceStarted(const QByteArray &id)
+void TorMgr::onServiceStarted(const QUuid& service)
 {
-    emit serviceStarted(id);
+    emit serviceStarted(service);
 }
 
-void TorMgr::onServiceStopped(const QByteArray &id)
+void TorMgr::onServiceStopped(const QUuid& service)
 {
-    emit serviceStopped(id);
+    emit serviceStopped(service);
 }
 
 void TorMgr::startUseSystemInstance()

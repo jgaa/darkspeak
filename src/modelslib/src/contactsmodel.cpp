@@ -264,6 +264,12 @@ void ContactsModel::onIdentityChanged(int identityId)
         const auto old = identity_;
         identity_ = identityId;
 
+        if (identity_ > 0) {
+            identityUuid_ = Manager::instance().identitiesModel()->getUuidFromId(identity_);
+        } else {
+            identityUuid_ = QUuid{};
+        }
+
         setFilter("identity = " + QString::number(identity_));
         select();
 
@@ -276,12 +282,12 @@ void ContactsModel::connectTransport(int row)
 {
     doIfValid(row, [this, row](const QByteArray& id, ExtraInfo& extra) {
 
-
+        Q_UNUSED(id)
         ConnectData cd;
         cd.address = data(index(row, h_address_), Qt::DisplayRole).toByteArray();
-        cd.serviceId = id;
+        cd.service = identityUuid_;
         cd.contactsPubkey = data(index(row, h_pubkey_), Qt::DisplayRole).toByteArray();
-        cd.identitysCert = getCert(identity_);
+        cd.identitysCert = Manager::instance().identitiesModel()->getCert(identityUuid_);
 
         extra.outbound_connection_uuid = DsEngine::instance().getProtocolMgr(
                     ProtocolManager::Transport::TOR).connectTo(cd);
@@ -293,18 +299,18 @@ void ContactsModel::connectTransport(int row)
 void ContactsModel::disconnectTransport(int row)
 {
     doIfValid(row, [this, row](const QByteArray& id, ExtraInfo& extra) {
-        auto addr = data(index(row, h_address_), Qt::DisplayRole).toByteArray();
+        Q_UNUSED(id)
+        auto uuid = data(index(row, h_uuid_), Qt::DisplayRole).toUuid();
 
         DsEngine::instance().getProtocolMgr(
-                    ProtocolManager::Transport::TOR).disconnectedFrom(id, addr);
+                    ProtocolManager::Transport::TOR).disconnectFrom(identityUuid_, uuid);
 
         extra.outbound_connection_uuid = {};
     });
 }
 
-void ContactsModel::onConnectedTo(const QByteArray &serviceId, const QUuid &uuid)
+void ContactsModel::onConnectedTo(const QUuid &uuid)
 {
-    Q_UNUSED(serviceId)
     setOnlineStatus(uuid, ONLINE);
 
     // TODO: Update last seen
@@ -312,16 +318,14 @@ void ContactsModel::onConnectedTo(const QByteArray &serviceId, const QUuid &uuid
     // TODO: Send queued messages
 }
 
-void ContactsModel::onDisconnectedFrom(const QByteArray &serviceId, const QUuid &uuid)
+void ContactsModel::onDisconnectedFrom(const QUuid &uuid)
 {
-    Q_UNUSED(serviceId)
     setOnlineStatus(uuid, DISCONNECTED);
 }
 
-void ContactsModel::onConnectionFailed(const QByteArray &serviceId, const QUuid &uuid,
+void ContactsModel::onConnectionFailed(const QUuid &uuid,
                                        const QAbstractSocket::SocketError &socketError)
 {
-    Q_UNUSED(serviceId)
     Q_UNUSED(socketError)
     setOnlineStatus(uuid, DISCONNECTED);
 }
@@ -450,11 +454,6 @@ void ContactsModel::doIfValid(int row, std::function<void (const QByteArray& id)
     }
 
     fn(id);
-}
-
-crypto::DsCert::ptr_t ContactsModel::getCert(const int identityId)
-{
-    return Manager::instance().identitiesModel()->getCert(identityId);
 }
 
 

@@ -41,7 +41,8 @@ public:
     Q_INVOKABLE int row2Id(int row);
 
     IdentitiesModel(QSettings& settings);
-
+    QUuid getUuidFromId(const int id) const;
+    crypto::DsCert::ptr_t getCert(const QUuid& uuid) const;
 
 protected:
     QSettings& settings_;
@@ -55,9 +56,9 @@ public slots:
 
 private slots:
     void saveIdentity(const ds::core::Identity& data);
-    void onServiceStarted(const QByteArray& id);
-    void onServiceStopped(const QByteArray& id);
-    void onServiceFailed(const QByteArray& id, const QByteArray& reason);
+    void onServiceStarted(const QUuid& servive);
+    void onServiceStopped(const QUuid& servive);
+    void onServiceFailed(const QUuid& servive, const QByteArray& reason);
     void onTransportHandleReady(const core::TransportHandle& th);
 
     // QAbstractItemModel interface
@@ -67,13 +68,16 @@ public:
     virtual QHash<int, QByteArray> roleNames() const override;
 
     bool identityExists(QString name) const;
-    crypto::DsCert::ptr_t getCert(const int identityId);
 
 private:
-    QByteArray getIdFromRow(const int row) const;
-    int getRowFromId(const QByteArray& id) const;
+    int getIdFromRow(const int row) const;
+    int getRowFromId(const int id) const;
+    //QUuid getUuidFromRow(const int row) const;
+    QUuid getUuidFromRow(const int row) const;
+    int getIdFromUuid(const QUuid& uuid) const;
+    int getRowFromUuid(const QUuid& uuid) const;
     ExtraInfo::ptr_t getExtra(const int row) const;
-    ExtraInfo::ptr_t getExtra(const QByteArray& id, bool createIfMissing = true) const;
+    ExtraInfo::ptr_t getExtra(const QUuid& uuid, bool createIfMissing = true) const;
 
     int h_id_ = {};
     int h_uuid_ = {};
@@ -86,7 +90,7 @@ private:
     int h_avatar_ = {};
     int h_created_ = {};
 
-    mutable std::map<QByteArray, ExtraInfo::ptr_t> extras_;
+    mutable std::map<QUuid, ExtraInfo::ptr_t> extras_;
 };
 
 

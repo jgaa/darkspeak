@@ -4,6 +4,7 @@
 #include "ds/dscert.h"
 #include <QString>
 #include <QtGui/QImage>
+#include <QUuid>
 
 namespace ds {
 namespace core {
@@ -11,7 +12,7 @@ namespace core {
 struct Identity {
     QString name;
     QByteArray hash;
-    QByteArray uuid;
+    QUuid uuid;
     crypto::DsCert::safe_array_t cert;
     QByteArray address;
     QByteArray addressData;
@@ -20,6 +21,7 @@ struct Identity {
 };
 
 struct IdentityReq {
+    QUuid uuid = QUuid::createUuid();
     QString name;
     QString notes;
     QImage avatar;
@@ -27,6 +29,7 @@ struct IdentityReq {
 
 
 struct IdentityError {
+    QUuid uuid;
     QString name;
     QString explanation;
 };

@@ -105,20 +105,22 @@ void IdentitiesModel::deleteIdentity(int row)
 
 void IdentitiesModel::startService(int row)
 {
-    auto id = getIdFromRow(row);
-    if (!id.isEmpty()) {
+    auto uuid = getUuidFromRow(row);
+    if (!uuid.isNull()) {
         auto d = DsEngine::fromJson(data(index(row, h_address_data_), Qt::DisplayRole).toByteArray());
         DsEngine::instance().getProtocolMgr(
-                    ProtocolManager::Transport::TOR).startService(id, d);
+                    ProtocolManager::Transport::TOR).startService(uuid,
+                                                                  getExtra(uuid)->cert,
+                                                                  d);
     }
 }
 
 void IdentitiesModel::stopService(int row)
 {
-    auto id = getIdFromRow(row);
-    if (!id.isEmpty()) {
+    auto uuid = getUuidFromRow(row);
+    if (!uuid.isNull()) {
         DsEngine::instance().getProtocolMgr(
-                    ProtocolManager::Transport::TOR).stopService(id);
+                    ProtocolManager::Transport::TOR).stopService(uuid);
     }
 }
 
@@ -157,32 +159,32 @@ void IdentitiesModel::saveIdentity(const ds::core::Identity &data)
     LFLOG_DEBUG << "Added identity " << data.name << " to the database";
 }
 
-void IdentitiesModel::onServiceStarted(const QByteArray &id)
+void IdentitiesModel::onServiceStarted(const QUuid& service)
 {
-    auto e = getExtra(id);
+    auto e = getExtra(service);
     e->online = true;
 
-    auto row = getRowFromId(id);
+    auto row = getRowFromUuid(service);
     auto ix = index(row, 0);
     emit dataChanged(ix, ix, { Qt::EditRole, ONLINE_ROLE});
 }
 
-void IdentitiesModel::onServiceStopped(const QByteArray &id)
+void IdentitiesModel::onServiceStopped(const QUuid& service)
 {
-    if (auto e = getExtra(id, false)) {
+    if (auto e = getExtra(service, false)) {
         if (e->online) {
             e->online = false;
-            auto row = getRowFromId(id);
+            auto row = getRowFromUuid(service);
             auto ix = index(row, 0);
             emit dataChanged(ix, ix, { Qt::EditRole, ONLINE_ROLE});
         }
     }
 }
 
-void IdentitiesModel::onServiceFailed(const QByteArray &id,
+void IdentitiesModel::onServiceFailed(const QUuid& service,
                                       const QByteArray &reason)
 {
-    Q_UNUSED(id);
+    Q_UNUSED(service);
     Q_UNUSED(reason);
 
     // TODO: Show error notification?
@@ -197,10 +199,10 @@ void IdentitiesModel::onTransportHandleReady(const TransportHandle &th)
         return;
     }
 
-    const auto row = getRowFromId(th.identityName.toUtf8());
+    const auto row = getRowFromUuid(th.uuid);
     if (row < 0) {
-        LFLOG_WARN << "Discarding transport. Cannot map id ("
-                    << th.identityName
+        LFLOG_WARN << "Discarding transport. Cannot map service ("
+                    << th.uuid.toString()
                     << ") to row.";
         return;
     }
@@ -290,10 +292,10 @@ QString IdentitiesModel::getIdentityAsBase58(int row) const
 
 void IdentitiesModel::createNewTransport(int row)
 {
-    LFLOG_NOTICE << "Requesting a new Tor service for "
-                 << data(index(row, h_name_), Qt::DisplayRole).toString();
+    const auto name = data(index(row, h_name_), Qt::DisplayRole).toString();
+    LFLOG_NOTICE << "Requesting a new Tor service for " << name;
 
-    DsEngine::instance().createNewTransport(getIdFromRow(row));
+    DsEngine::instance().createNewTransport(name.toUtf8(), getUuidFromRow(row));
 }
 
 int IdentitiesModel::row2Id(int row)
@@ -375,26 +377,65 @@ bool IdentitiesModel::identityExists(QString name) const
     return query.next();
 }
 
-crypto::DsCert::ptr_t IdentitiesModel::getCert(const int identityId)
+QUuid IdentitiesModel::getUuidFromId(const int id) const
 {
-    return getExtra(QByteArray::number(identityId))->cert;
+    QSqlQuery query{database()};
+
+    query.prepare("SELECT uuid FROM identity WHERE id=:id");
+    query.bindValue(":id", id);
+    query.exec();
+    if (query.next()) {
+        return query.value(0).toUuid();
+    }
+
+    return {};
 }
 
-QByteArray IdentitiesModel::getIdFromRow(const int row) const
+QUuid IdentitiesModel::getUuidFromRow(const int row) const
 {
-    auto id = data(index(row, h_id_), Qt::DisplayRole).toByteArray();
+    return data(index(row, h_uuid_), Qt::DisplayRole).toUuid();
+}
 
-    if (id.isEmpty()) {
+int IdentitiesModel::getIdFromUuid(const QUuid &uuid) const
+{
+    QSqlQuery query{database()};
+
+    query.prepare("SELECT id FROM identity WHERE uuid=:uuid");
+    query.bindValue(":uuid", uuid);
+    query.exec();
+    if (query.next()) {
+        return query.value(0).toInt();
+    }
+
+    return {};
+}
+
+int IdentitiesModel::getRowFromUuid(const QUuid &uuid) const
+{
+    for(int i = 0 ; i < rowCount(); ++i) {
+        if (data(index(i, h_id_), Qt::DisplayRole).toUuid() == uuid) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+int IdentitiesModel::getIdFromRow(const int row) const
+{
+    auto id = data(index(row, h_id_), Qt::DisplayRole).toInt();
+
+    if (id < 1) {
         LFLOG_WARN << "Unable to get Identity id from row " << row;
     }
 
     return id;
 }
 
-int IdentitiesModel::getRowFromId(const QByteArray &id) const
+int IdentitiesModel::getRowFromId(const int id) const
 {
     for(int i = 0 ; i < rowCount(); ++i) {
-        if (data(index(i, h_id_), Qt::DisplayRole).toByteArray() == id) {
+        if (data(index(i, h_id_), Qt::DisplayRole).toInt() == id) {
             return i;
         }
     }
@@ -404,32 +445,44 @@ int IdentitiesModel::getRowFromId(const QByteArray &id) const
 
 IdentitiesModel::ExtraInfo::ptr_t IdentitiesModel::getExtra(const int row) const
 {
-    const auto id = getIdFromRow(row);
-    if (id.isEmpty()) {
+    const auto id = getUuidFromRow(row);
+    if (id.isNull()) {
         return {};
     }
 
     return getExtra(id);
 }
 
-IdentitiesModel::ExtraInfo::ptr_t IdentitiesModel::getExtra(const QByteArray &id,
+IdentitiesModel::ExtraInfo::ptr_t IdentitiesModel::getExtra(const QUuid& uuid,
                                                             bool createIfMissing) const
 {
-    auto it = extras_.find(id);
+    auto it = extras_.find(uuid);
     if (it == extras_.end()) {
         if (!createIfMissing) {
             return {};
         }
         auto extra = make_shared<ExtraInfo>();
 
-        // TODO: Fetch directly from database
-        const auto d = QSqlTableModel::data(index(getRowFromId(id), h_cert_), Qt::DisplayRole).toByteArray();
-        extra->cert = crypto::DsCert::create(d);
-        extras_[id] = extra;
+        extra->cert = getCert(uuid);
+        extras_[uuid] = extra;
         return extra;
     }
 
-    return extras_[id];
+    return it->second;
+}
+
+crypto::DsCert::ptr_t IdentitiesModel::getCert(const QUuid &uuid) const
+{
+    QSqlQuery query{database()};
+
+    query.prepare("SELECT cert FROM identity WHERE uuid=:uuid");
+    query.bindValue(":uuid", uuid);
+    query.exec();
+    if (query.next()) {
+        return crypto::DsCert::create(query.value(0).toByteArray());
+    }
+
+    throw runtime_error("Failed to fetch cert");
 }
 
 }} // namepaces

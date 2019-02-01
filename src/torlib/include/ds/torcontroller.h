@@ -86,9 +86,9 @@ signals:
     void autenticated();
     void authFailed(const QString& reason);
     void serviceCreated(const ServiceProperties& service);
-    void serviceFailed(const QByteArray& id, const QByteArray& reason);
-    void serviceStarted(const QByteArray& id);
-    void serviceStopped(const QByteArray& id);
+    void serviceFailed(const QUuid& service, const QByteArray& reason);
+    void serviceStarted(const QUuid& service);
+    void serviceStopped(const QUuid& service);
 
     // Emitted when we are authenticated and Tor is connected.
     void ready();
@@ -108,7 +108,7 @@ public slots:
      *  - serviceCreated and serviceStarted if sucessful
      *  - serviceFailed if the service was not created or failed to start.
      */
-    void createService(const QByteArray& id);
+    void createService(const QUuid& service);
 
     /*! Start a hidden service
      *
@@ -128,7 +128,7 @@ public slots:
      * Signals:
      *  - serviceStopped
      */
-    void stopService(const QByteArray& id);
+    void stopService(const QUuid& service);
 
 
 private slots:
@@ -156,7 +156,7 @@ private:
     static const QByteArray tor_safe_serverkey_;
     static const QByteArray tor_safe_clientkey_;
     std::mt19937 rnd_eng_;
-    QMap<QByteArray, QByteArray> service_map_;
+    QMap<QUuid, QByteArray> service_map_;
 };
 
 }} // namespaces

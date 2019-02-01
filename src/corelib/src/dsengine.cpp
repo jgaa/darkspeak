@@ -108,20 +108,21 @@ void DsEngine::createIdentity(const IdentityReq& req)
     id.name = req.name;
     id.avatar = req.avatar;
     id.notes = req.notes;
-    id.uuid = QUuid::createUuid().toByteArray();
+    id.uuid = req.uuid;
 
     pending_identities_.insert(req.name, id);
 
     auto name = req.name;
-    whenOnline([this, name]() { tryMakeTransport(name); });
+    auto uuid = id.uuid;
+    whenOnline([this, name, uuid]() { tryMakeTransport(name, uuid); });
 
     // Create a cert for the user. This may take some time on slow devices.
-    Task::schedule([this, name] {
+    Task::schedule([this, name, uuid] {
         try {
             auto cert = DsCert::create();
-            emit certCreated(name, cert);
+            emit certCreated(uuid, cert);
         } catch (const std::exception& ex) {
-            emit identityError({name, ex.what()});
+            emit identityError({uuid, name, ex.what()});
         }
     });
 }
@@ -163,46 +164,46 @@ void DsEngine::createContact(const ContactReq &req)
     emit contactCreated(c);
 }
 
-void DsEngine::createNewTransport(const QByteArray &id)
+void DsEngine::createNewTransport(const QByteArray &name, const QUuid& uuid)
 {
-    tryMakeTransport(id);
+    tryMakeTransport(name, uuid);
 }
 
-void DsEngine::onCertCreated(const QString &name, const DsCert::ptr_t cert)
+void DsEngine::onCertCreated(const QUuid& uuid, const DsCert::ptr_t cert)
 {
-    if (!pending_identities_.contains(name)) {
-        LFLOG_WARN << "Received a cert for a non-existing name: " << name;
+    if (!pending_identities_.contains(uuid)) {
+        LFLOG_WARN << "Received a cert for a non-existing name: " << uuid.toString();
         return;
     }
 
-    LFLOG_DEBUG << "Received cert for idenity " << name;
+    LFLOG_DEBUG << "Received cert for idenity " << uuid.toString();
 
-    auto& id = pending_identities_[name];
+    auto& id = pending_identities_[uuid];
     id.cert = cert->getCert();
     id.hash = cert->getHash().toByteArray();
 
-    addIdentityIfReady(name);
+    addIdentityIfReady(uuid);
 }
 
-void DsEngine::addIdentityIfReady(const QString &name)
+void DsEngine::addIdentityIfReady(const QUuid &uuid)
 {
-    if (!pending_identities_.contains(name)) {
-        const auto msg = QStringLiteral("No pending identity with that name");
-        LFLOG_WARN << msg << ": " << name;
-        emit identityError({name, msg});
+    if (!pending_identities_.contains(uuid)) {
+        const auto msg = QStringLiteral("No pending identity with that id");
+        LFLOG_WARN << msg << ": " << uuid.toString();
+        emit identityError({uuid, "", msg});
         return;
     }
 
     {
-        const auto& pi = pending_identities_[name];
+        const auto& pi = pending_identities_[uuid];
         if (pi.cert.isEmpty() || pi.address.isEmpty()) {
-            LFLOG_DEBUG << "The identity " << name << " is still not ready";
+            LFLOG_DEBUG << "The identity " << uuid.toString() << " is still not ready";
             return;
         }
     }
 
-    auto id = pending_identities_.take(name);
-    LFLOG_DEBUG << "Identity " << id.name << " is ready";
+    auto id = pending_identities_.take(uuid);
+    LFLOG_DEBUG << "Identity " << id.uuid.toString() << " (" << id.name << ") is ready";
     emit identityCreated(id);
 }
 
@@ -228,19 +229,19 @@ void DsEngine::online()
     }
 }
 
-void DsEngine::onServiceFailed(const QByteArray &id, const QByteArray &reason)
+void DsEngine::onServiceFailed(const QUuid& serviceId, const QByteArray &reason)
 {
-    emit serviceFailed(id, reason);
+    emit serviceFailed(serviceId, reason);
 }
 
-void DsEngine::onServiceStarted(const QByteArray &id)
+void DsEngine::onServiceStarted(const QUuid& serviceId)
 {
-    emit serviceStarted(id);
+    emit serviceStarted(serviceId);
 }
 
-void DsEngine::onServiceStopped(const QByteArray &id)
+void DsEngine::onServiceStopped(const QUuid& serviceId)
 {
-    serviceStopped(id);
+    serviceStopped(serviceId);
 }
 
 void DsEngine::sendMessage(const Message& /*msg*/)
@@ -252,24 +253,23 @@ void DsEngine::onTransportHandleReady(const TransportHandle &th)
     // Relay
     emit transportHandleReady(th);
 
-    const auto name = th.identityName;
-    if (!pending_identities_.contains(name)) {
+    if (!pending_identities_.contains(th.uuid)) {
         const auto msg = QStringLiteral("No pending identity with that name");
-        LFLOG_WARN << msg << ": " << name;
-        emit identityError({name, msg});
+        LFLOG_WARN << msg << ": " << th.identityName;
+        emit identityError({th.uuid, th.identityName, msg});
         return;
     }
 
-    auto& pi = pending_identities_[name];
+    auto& pi = pending_identities_[th.uuid];
     if (pi.address.isEmpty()) {
         pi.address = th.handle;
         pi.addressData = toJson(th.data);
     } else {
-        LFLOG_DEBUG << "The identity " << name << " already have a transport";
+        LFLOG_DEBUG << "The identity " << th.identityName << " already have a transport";
         return;
     }
 
-    emit retryIdentityReady(name);
+    emit retryIdentityReady(th.uuid);
 }
 
 void DsEngine::onTransportHandleError(const TransportHandleError &the)
@@ -277,9 +277,10 @@ void DsEngine::onTransportHandleError(const TransportHandleError &the)
     emit transportHandleError(the);
 
     auto name = the.identityName;
+    auto uuid = the.uuid;
     LFLOG_DEBUG << "Transport-handle creaton failed: " << name
              << ". I Will try again.";
-    whenOnline([this, name]() { tryMakeTransport(name); });
+    whenOnline([this, name, uuid]() { tryMakeTransport(name, uuid); });
 }
 
 void DsEngine::close()
@@ -326,22 +327,21 @@ void DsEngine::start()
 
     connect(tor_mgr_.get(),
             &ds::core::ProtocolManager::connectedTo,
-            this, [this](const QByteArray& serviceId, const QUuid& uuid) {
-        emit connectedTo(serviceId, uuid);
+            this, [this](const QUuid& uuid) {
+        emit connectedTo(uuid);
     });
 
     connect(tor_mgr_.get(),
             &ds::core::ProtocolManager::disconnectedFrom,
-            this, [this](const QByteArray& serviceId, const QUuid& uuid) {
-        emit disconnectedFrom(serviceId, uuid);
+            this, [this]( const QUuid& uuid) {
+        emit disconnectedFrom(uuid);
     });
 
     connect(tor_mgr_.get(),
             &ds::core::ProtocolManager::connectionFailed,
-            this, [this](const QByteArray& serviceId,
-            const QUuid& uuid,
+            this, [this](const QUuid& uuid,
             const QAbstractSocket::SocketError& socketError) {
-        emit connectionFailed(serviceId, uuid, socketError);
+        emit connectionFailed(uuid, socketError);
     });
 
     tor_mgr_->start();
@@ -455,9 +455,9 @@ void DsEngine::setState(DsEngine::State state)
     }
 }
 
-void DsEngine::tryMakeTransport(const QString &name)
+void DsEngine::tryMakeTransport(const QString &name, const QUuid& uuid)
 {
-    TransportHandleReq req{name};
+    TransportHandleReq req{name, uuid};
 
     try {
         tor_mgr_->createTransportHandle(req);
@@ -467,13 +467,13 @@ void DsEngine::tryMakeTransport(const QString &name)
                  << ex.what();
 
         if (isOnline()) {
-            QTimer::singleShot(1000, this, [this, name]() {
-                whenOnline([this, name]() { tryMakeTransport(name); });
+            QTimer::singleShot(1000, this, [this, name, uuid]() {
+                whenOnline([this, name, uuid]() { tryMakeTransport(name, uuid); });
             });
 
             // TODO: Fail after n retries
         } else {
-            whenOnline([this, name]() { tryMakeTransport(name); });
+            whenOnline([this, name, uuid]() { tryMakeTransport(name, uuid); });
         }
     }
 }

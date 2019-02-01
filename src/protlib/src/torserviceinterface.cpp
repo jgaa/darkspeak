@@ -9,7 +9,8 @@ namespace prot {
 
 using namespace std;
 
-TorServiceInterface::TorServiceInterface()
+TorServiceInterface::TorServiceInterface(const crypto::DsCert::ptr_t& cert)
+    : cert_{cert}
 {
 }
 
@@ -24,7 +25,7 @@ StartServiceResult TorServiceInterface::startService()
 
     r.stopped = stopService();
 
-    server_ = make_shared<QTcpServer>();
+    server_ = make_shared<TorSocketListener>();
 
     connect(server_.get(), &QTcpServer::newConnection,
             this, &TorServiceInterface::onNewConnection);
@@ -138,6 +139,7 @@ void TorServiceInterface::onSocketFailed(const QUuid &uuid,
 void TorServiceInterface::onNewConnection()
 {
     LFLOG_DEBUG << "Accepting new connection";
+
 }
 
 QNetworkProxy &TorServiceInterface::getTorProxy()

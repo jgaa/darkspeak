@@ -4,11 +4,11 @@
 #include <memory>
 
 #include <QObject>
-#include <QTcpServer>
 #include <QTcpSocket>
 #include <QUuid>
 
 #include "ds/protocolmanager.h"
+#include "ds/torsocketlistener.h"
 #include "ds/connectionsocket.h"
 #include "ds/dscert.h"
 #include "ds/dsclient.h"
@@ -43,7 +43,7 @@ class TorServiceInterface : public QObject
 public:
     using ptr_t = std::shared_ptr<TorServiceInterface>;
 
-    TorServiceInterface();
+    TorServiceInterface(const crypto::DsCert::ptr_t& cert);
     virtual ~TorServiceInterface();
 
     /*! Start a service.
@@ -88,7 +88,8 @@ private slots:
 private:
     static QNetworkProxy& getTorProxy();
 
-    std::shared_ptr<QTcpServer> server_;
+    crypto::DsCert::ptr_t cert_;
+    std::shared_ptr<TorSocketListener> server_;
     std::map<QUuid, DsClient::ptr_t> clients_;
 };
 

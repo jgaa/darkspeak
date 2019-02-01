@@ -46,9 +46,9 @@ signals:
     // to the controller. The manager will create new controllers if connectivity
     // with the Tor service is lost.
     void serviceCreated(const ServiceProperties& service);
-    void serviceFailed(const QByteArray& id, const QByteArray& reason);
-    void serviceStarted(const QByteArray& id);
-    void serviceStopped(const QByteArray& id);
+    void serviceFailed(const QUuid& service, const QByteArray& reason);
+    void serviceStarted(const QUuid& service);
+    void serviceStopped(const QUuid& service);
     void torStateUpdate(TorController::TorState state, int progress, const QString& summary);
     void stateUpdate(TorController::CtlState state);
 
@@ -73,7 +73,7 @@ public slots:
      *  - serviceCreated and serviceStarted if sucessful
      *  - serviceFailed if the service was not created or failed to start.
      */
-    void createService(const QByteArray& id);
+    void createService(const QUuid& service);
 
     /*! Start a hidden service
      *
@@ -93,15 +93,15 @@ public slots:
      * Signals:
      *  - serviceStopped
      */
-    void stopService(const QByteArray& id);
+    void stopService(const QUuid& service);
 
 private slots:
     void onTorStateUpdate(TorController::TorState state, int progress, const QString& summary);
     void onStateUpdate(TorController::CtlState state);
     void onServiceCreated(const ServiceProperties& service);
-    void onServiceFailed(const QByteArray& id, const QByteArray& reason);
-    void onServiceStarted(const QByteArray& id);
-    void onServiceStopped(const QByteArray& id);
+    void onServiceFailed(const QUuid& service, const QByteArray& reason);
+    void onServiceStarted(const QUuid& service);
+    void onServiceStopped(const QUuid& service);
 
 private:
     void startUseSystemInstance();

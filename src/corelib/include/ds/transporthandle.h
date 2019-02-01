@@ -4,12 +4,14 @@
 #include <QString>
 #include <QVariantMap>
 #include <QtGui/QImage>
+#include <QUuid>
 
 namespace ds {
 namespace core {
 
 struct TransportHandle {
     QString identityName;
+    QUuid uuid;
 
     /*! Handle in clear text
      *
@@ -27,10 +29,12 @@ struct TransportHandle {
 
 struct TransportHandleReq {
     QString identityName;
+    QUuid uuid;
 };
 
 struct TransportHandleError {
     QString identityName;
+    QUuid uuid;
     QString explanation;
 };
 

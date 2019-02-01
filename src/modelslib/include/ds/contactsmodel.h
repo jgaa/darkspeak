@@ -88,10 +88,9 @@ signals:
     void onlineStatusChanged();
 
 private slots:
-    void onConnectedTo(const QByteArray& serviceId, const QUuid& uuid);
-    void onDisconnectedFrom(const QByteArray& serviceId, const QUuid& uuid);
-    void onConnectionFailed(const QByteArray& serviceId,
-                            const QUuid& uuid,
+    void onConnectedTo(const QUuid& uuid);
+    void onDisconnectedFrom(const QUuid& uuid);
+    void onConnectionFailed(const QUuid& uuid,
                             const QAbstractSocket::SocketError& socketError);
 
 private:
@@ -112,7 +111,7 @@ private:
                     std::function<void (const QByteArray&)> fn,
                     bool throwIfNot = false);
     int col2Role(int col) const noexcept { return col + Qt::UserRole; }
-    crypto::DsCert::ptr_t getCert(const int identityId);
+
 
     int h_id_ = {};
     int h_identity_ = {};
@@ -137,6 +136,7 @@ private:
     // Keeps infor about contacts for all online identities.
     mutable std::map<QByteArray, ExtraInfo::ptr_t> extras_;
     int identity_ = -1;
+    QUuid identityUuid_;
 };
 
 }} // namespaces

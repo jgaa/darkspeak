@@ -18,20 +18,16 @@ public slots:
     void start() override;
     void stop() override;
     void createTransportHandle(const core::TransportHandleReq &) override;
-    void startService(const QByteArray& id, const QVariantMap& data) override;
-    void stopService(const QByteArray& id) override;
+    void startService(const QUuid& service,
+                      const crypto::DsCert::ptr_t& cert,
+                      const QVariantMap& data) override;
+    void stopService(const QUuid& service) override;
     QUuid connectTo(core::ConnectData cd) override;
-    void disconnectFrom(const QByteArray &serviceId, const QUuid &uuid) override;
+    void disconnectFrom(const QUuid& service,
+                        const QUuid& connection) override;
 
 private slots:
     void onServiceCreated(const ds::tor::ServiceProperties& service);
-    void onServiceFailed(const QByteArray& id, const QByteArray& reason);
-    void onServiceStarted(const QByteArray& id);
-    void onServiceStopped(const QByteArray& id);
-    void torMgrStarted();
-    void torMgrOnline();
-    void torMgrOffline();
-    void torMgrStopped();
 
 public:
     State getState() const override;
@@ -40,13 +36,13 @@ public:
 protected:
     void setState(State state);
     ds::tor::TorConfig getConfig() const;
-    TorServiceInterface& getService(const QByteArray& serviceId);
+    TorServiceInterface& getService(const QUuid& service);
 
     std::unique_ptr<::ds::tor::TorMgr> tor_;
     QSettings& settings_;
     State state_ = State::OFFLINE;
 
-    std::map<QByteArray, TorServiceInterface::ptr_t> services_;
+    std::map<QUuid, TorServiceInterface::ptr_t> services_;
 };
 
 }} // namespaces

@@ -94,7 +94,7 @@ void TestTorController::test_start_service()
     auto service = signal.at(0).value<::ds::tor::ServiceProperties>();
 
     QSignalSpy spy_stopped(&ctl, SIGNAL(serviceStopped(const QByteArray&)));
-    ctl.stopService(service.id);
+    ctl.stopService(service.uuid);
     QCOMPARE(spy_stopped.wait(2000), true);
 
     QSignalSpy spy_started(&ctl, SIGNAL(serviceStarted(const QByteArray&)));

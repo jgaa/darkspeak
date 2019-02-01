@@ -59,22 +59,22 @@ public:
 public slots:
     void createIdentity(const IdentityReq&);
     void createContact(const ContactReq&);
-    void createNewTransport(const QByteArray& id);
+    void createNewTransport(const QByteArray& name, const QUuid& uuid);
     void sendMessage(const Message& message);    
     void close();
     void start();
 
 private slots:
     void onStateChanged(const ProtocolManager::State old, const ProtocolManager::State current);
-    void onCertCreated(const QString& name, const ds::crypto::DsCert::ptr_t cert);
-    void addIdentityIfReady(const QString& name);
+    void onCertCreated(const QUuid& uuid, const ds::crypto::DsCert::ptr_t cert);
+    void addIdentityIfReady(const QUuid& uuid);
     void whenOnline(std::function<void ()> fn);
     void onTransportHandleReady(const TransportHandle& th);
     void onTransportHandleError(const TransportHandleError& th);
     void online();
-    void onServiceFailed(const QByteArray& id, const QByteArray& reason);
-    void onServiceStarted(const QByteArray& id);
-    void onServiceStopped(const QByteArray& id);
+    void onServiceFailed(const QUuid& id, const QByteArray& reason);
+    void onServiceStarted(const QUuid& id);
+    void onServiceStopped(const QUuid& id);
 
 signals:
     void identityCreated(const Identity&);
@@ -85,28 +85,27 @@ signals:
     void closing();
     void stateChanged(const State from, const State to);
     void onlineStateChanged(const ProtocolManager::State old, const ProtocolManager::State current);
-    void certCreated(const QString name, const ds::crypto::DsCert::ptr_t cert);
-    void retryIdentityReady(const QString name); // internal
-    void serviceFailed(const QByteArray& id, const QByteArray& reason);
-    void serviceStarted(const QByteArray& id);
-    void serviceStopped(const QByteArray& id);
+    void certCreated(const QUuid& uuid, const ds::crypto::DsCert::ptr_t cert);
+    void retryIdentityReady(const QUuid& id); // internal
+    void serviceFailed(const QUuid& uuid, const QByteArray& reason);
+    void serviceStarted(const QUuid& uuid);
+    void serviceStopped(const QUuid& uuid);
     void transportHandleReady(const TransportHandle& th);
     void transportHandleError(const TransportHandleError& th);
-    void connectedTo(const QByteArray& serviceId, const QUuid& uuid);
-    void disconnectedFrom(const QByteArray& serviceId, const QUuid& uuid);
-    void connectionFailed(const QByteArray& serviceId,
-                          const QUuid& uuid,
+    void connectedTo(const QUuid& uuid);
+    void disconnectedFrom(const QUuid& uuid);
+    void connectionFailed(const QUuid& uuid,
                           const QAbstractSocket::SocketError& socketError);
 
 protected:
     void initialize();
     void setState(State state);
-    void tryMakeTransport(const QString& name);
+    void tryMakeTransport(const QString& name, const QUuid& uuid);
 
     std::unique_ptr<QSettings> settings_;
     std::unique_ptr<Database> database_;
     static DsEngine *instance_;
-    QMap<QString, Identity> pending_identities_;
+    QMap<QUuid, Identity> pending_identities_;
     ProtocolManager::ptr_t tor_mgr_;
     State state_ = State::INITIALIZING;
     QList<std::function<void ()>> when_online_;

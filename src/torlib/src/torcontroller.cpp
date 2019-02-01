@@ -54,14 +54,14 @@ void TorController::stop()
     ctl_->close();
 }
 
-void TorController::createService(const QByteArray &id)
+void TorController::createService(const QUuid& serviceId)
 {
     std::uniform_int_distribution<quint16> distr(
                 config_.service_from_port,
                 config_.service_to_port);
 
     ServiceProperties sp;
-    sp.id = id;
+    sp.uuid = serviceId;
     sp.service_port = distr(rnd_eng_);
 
     ctl_->sendCommand(QStringLiteral("ADD_ONION NEW:BEST Port=%1").arg(sp.service_port).toLocal8Bit(),
@@ -80,16 +80,16 @@ void TorController::createService(const QByteArray &id)
             service.key_type = list.front();
             service.key = list.back();
 
-            service_map_[service.id] = service.service_id;
+            service_map_[sp.uuid] = service.service_id;
 
             LFLOG_DEBUG << "Created Tor hidden service: " << service.service_id
-                     << " with id " << service.id;
+                     << " with id " << service.uuid.toString();
 
             emit serviceCreated(service);
-            emit serviceStarted(service.id);
+            emit serviceStarted(service.uuid);
         } else {
             auto msg = std::to_string(reply.status) + ' ' + reply.lines.front();
-            emit serviceFailed(sp.id, msg.c_str());
+            emit serviceFailed(sp.uuid, msg.c_str());
         }
     });
 }
@@ -97,7 +97,7 @@ void TorController::createService(const QByteArray &id)
 void TorController::startService(const ServiceProperties &sp)
 {
     LFLOG_DEBUG << "Starting hidden service for id "
-                << sp.id
+                << sp.uuid.toString()
                 << " as " << sp.service_id
                 << ":" << sp.service_port
                 << " forwarding to local port "
@@ -111,43 +111,44 @@ void TorController::startService(const ServiceProperties &sp)
                 .arg(sp.app_port)
                 .toLocal8Bit();
 
-    service_map_[sp.id] = sp.service_id;
-    const auto id = sp.id;
+    service_map_[sp.uuid] = sp.service_id;
+    const auto uuid = sp.uuid;
     const auto service_id = sp.service_id;
 
-    ctl_->sendCommand(cmd, [this, id, service_id](const TorCtlReply& reply){
+    ctl_->sendCommand(cmd, [this, uuid, service_id](const TorCtlReply& reply){
 
         if (reply.status == 250) {
 
             LFLOG_DEBUG << "Started Tor hidden service: " << service_id
-                     << " with id " << id;
+                     << " with id " << uuid.toString();
 
-            emit serviceStarted(id);
+            emit serviceStarted(uuid);
         } else {
             auto msg = std::to_string(reply.status) + ' ' + reply.lines.front();
-            emit serviceFailed(id, msg.c_str());
+            emit serviceFailed(uuid, msg.c_str());
         }
     });
 }
 
-void TorController::stopService(const QByteArray &id)
+void TorController::stopService(const QUuid& service)
 {
-    const auto service_id = service_map_.value(id);
+    const auto service_id = service_map_.value(service);
     if (service_id.isEmpty()) {
-        throw NoSuchServiceError(id.data());
+        auto err = service.toString().toUtf8().toStdString();
+        throw NoSuchServiceError(err.c_str());
     }
 
     ctl_->sendCommand(QStringLiteral("DEL_ONION %1").arg(QLatin1String{service_id}).toLocal8Bit(),
-                      [this, id, service_id](const TorCtlReply& reply){
+                      [this, service, service_id](const TorCtlReply& reply){
         if (reply.status == 250) {
 
             LFLOG_DEBUG << "Stopped Tor hidden service: " << service_id
-                     << " with id " << id;
+                     << " with id " << service.toString();
 
-            emit serviceStopped(id);
+            emit serviceStopped(service);
         } else {
             auto msg = std::to_string(reply.status) + ' ' + reply.lines.front();
-            emit serviceFailed(id, msg.c_str());
+            emit serviceFailed(service, msg.c_str());
         }
     });
 }

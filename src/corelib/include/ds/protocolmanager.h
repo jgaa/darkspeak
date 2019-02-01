@@ -18,7 +18,7 @@ class Message;
 class MessageReport;
 
 struct ConnectData {
-    QByteArray serviceId; // Identity
+    QUuid service; // for Identity
     QByteArray address;  // Onion address
     QByteArray contactsPubkey;
     crypto::DsCert::ptr_t identitysCert;
@@ -28,6 +28,8 @@ struct ConnectData {
  *
  * Currently we only support Tor as a transport layer,
  * but this may change in the future.
+ *
+ * A service is identified from it's certificates hash.
  */
 class ProtocolManager : public QObject
 {
@@ -89,14 +91,13 @@ signals:
     void transportHandleReady(const TransportHandle&);
     void transportHandleError(const TransportHandleError&);
 
-    void serviceFailed(const QByteArray& id, const QByteArray& reason);
-    void serviceStarted(const QByteArray& id);
-    void serviceStopped(const QByteArray& id);
+    void serviceFailed(const QUuid& service, const QByteArray& reason);
+    void serviceStarted(const QUuid& service);
+    void serviceStopped(const QUuid& service);
 
-    void connectedTo(const QByteArray& serviceId, const QUuid& uuid);
-    void disconnectedFrom(const QByteArray& serviceId, const QUuid& uuid);
-    void connectionFailed(const QByteArray& serviceId,
-                          const QUuid& uuid,
+    void connectedTo(const QUuid& connection);
+    void disconnectedFrom(const QUuid& connection);
+    void connectionFailed(const QUuid& connection,
                           const QAbstractSocket::SocketError& socketError);
 
 public slots:
@@ -121,15 +122,13 @@ public slots:
 
     /*! Start a service for an identity
      *
-     * \param id Persistent, unique identifier for the Identity and the service
-     *      This is an opaque argument for the engine, but status changes will
-     *      be identified by this id, so the caller must be able to map it to
-     *      an Identity.
      * \param handle Data reqired to start a communication service.
      *
      * Signals emitted later: serviceStarted or serviceFailed.
      */
-    virtual void startService(const QByteArray& id, const QVariantMap& data) = 0;
+    virtual void startService(const QUuid& service,
+                              const crypto::DsCert::ptr_t& cert,
+                              const QVariantMap& data) = 0;
 
     /*! Stop a service for an identity
      *
@@ -137,7 +136,7 @@ public slots:
      *
      * Signals emitted later: serviceStopped or serviceFailed.
      */
-    virtual void stopService(const QByteArray& id) = 0;
+    virtual void stopService(const QUuid& service) = 0;
 
     /*! Create a connection to a contact */
     virtual QUuid connectTo(ConnectData cd) = 0;
@@ -146,8 +145,8 @@ public slots:
      *
      * When the method returns, the uuid is no longer valid.
      */
-    virtual void disconnectFrom(const QByteArray& serviceId,
-                                const QUuid& uuid) = 0;
+    virtual void disconnectFrom(const QUuid& service,
+                                const QUuid& connection) = 0;
 
 
 public:

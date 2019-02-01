@@ -27,14 +27,16 @@ SOURCES += \
     src/torprotocolmanager.cpp \
     src/torserviceinterface.cpp \
     src/connectionsocket.cpp \
-    src/dsclient.cpp
+    src/dsclient.cpp \
+    src/torsocketlistener.cpp
 
 
 HEADERS += \
     include/ds/torprotocolmanager.h \
     include/ds/torserviceinterface.h \
     include/ds/connectionsocket.h \
-    include/ds/dsclient.h
+    include/ds/dsclient.h \
+    include/ds/torsocketlistener.h
 
 
 INCLUDEPATH += $$PWD/include \
