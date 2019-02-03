@@ -78,16 +78,9 @@ void DsClient::sayHello()
                 {hello.version, hello.key, hello.header, hello.pubkey});
 
     // Encrypt the payload with the receipients public encryption key
-    const auto peer_cert = crypto::DsCert::createFromPubkey(
-                connectionData_.contactsPubkey);
+    const auto peer_cert = crypto::DsCert::createFromPubkey(connectionData_.contactsPubkey);    
     array<uint8_t, hello.buffer.size() + crypto_box_SEALBYTES> ciphertext;
-    if (crypto_box_seal(
-                ciphertext.data(),
-                hello.buffer.data(),
-                hello.buffer.size(),
-                peer_cert->getEncryptionPubKey().cdata()) != 0) {
-        throw runtime_error("Failed to encrypt hello message");
-    }
+    peer_cert->encrypt(ciphertext, hello.buffer);
 
     // Send the message to the server.
     connection_->write(ciphertext);

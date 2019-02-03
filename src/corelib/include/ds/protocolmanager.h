@@ -99,6 +99,7 @@ signals:
     void disconnectedFrom(const QUuid& connection);
     void connectionFailed(const QUuid& connection,
                           const QAbstractSocket::SocketError& socketError);
+    void incomingPeer(const QUuid& service, const QUuid& connectionId, const QByteArray& handle);
 
 public slots:
 
@@ -148,6 +149,11 @@ public slots:
     virtual void disconnectFrom(const QUuid& service,
                                 const QUuid& connection) = 0;
 
+
+    /* Autorize an incoming connection to proceed and receive packets. */
+    virtual void autorizeConnection(const QUuid& service,
+                                    const QUuid& connection,
+                                    const bool allow) = 0;
 
 public:
     static ptr_t create(QSettings& settings, Transport transport);

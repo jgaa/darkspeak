@@ -25,6 +25,9 @@ public slots:
     QUuid connectTo(core::ConnectData cd) override;
     void disconnectFrom(const QUuid& service,
                         const QUuid& connection) override;
+    void autorizeConnection(const QUuid& service,
+                            const QUuid& connection,
+                            const bool allow) override;
 
 private slots:
     void onServiceCreated(const ds::tor::ServiceProperties& service);

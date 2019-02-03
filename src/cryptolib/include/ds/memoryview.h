@@ -31,7 +31,7 @@ public:
         : data_{static_cast<Tptr>(d)}, len_{len} {}
 
     template<typename Tc>
-    MemoryView(const void *d, size_t len)
+    MemoryView(void *d, size_t len)
         : data_{static_cast<Tptr>(d)}, len_{len} {}
 
     bool operator == (const MemoryView& v) const noexcept {

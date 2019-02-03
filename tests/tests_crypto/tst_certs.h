@@ -11,6 +11,8 @@ public:
 
 private slots:
     void test_create_cert();
+    void test_signing();
+    void test_ppk_encryption();
 };
 
 #endif // TST_CERTS_H

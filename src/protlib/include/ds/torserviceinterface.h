@@ -77,6 +77,11 @@ signals:
     void disconnectedFromService(const QUuid& uuid);
     void connectionFailed(const QUuid& uuid,
                           const QAbstractSocket::SocketError& socketError);
+    void incomingPeer(const QUuid& connectionId, const QByteArray& handle);
+
+public slots:
+    void autorizeConnection(const QUuid& connection,
+                            const bool allow);
 
 private slots:
     void onSocketConnected(const QUuid& uuid);
@@ -85,8 +90,10 @@ private slots:
                         const QAbstractSocket::SocketError& socketError);
     void onNewIncomingConnection(const ConnectionSocket::ptr_t& connection);
 
+
 private:
     static QNetworkProxy& getTorProxy();
+    Peer::ptr_t getPeer(const QUuid& uuid) const;
 
     crypto::DsCert::ptr_t cert_;
     std::shared_ptr<TorSocketListener> server_;

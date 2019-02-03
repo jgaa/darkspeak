@@ -60,6 +60,7 @@ private slots:
     void onServiceStopped(const QUuid& servive);
     void onServiceFailed(const QUuid& servive, const QByteArray& reason);
     void onTransportHandleReady(const core::TransportHandle& th);
+    void onIncomingPeer(const QUuid& service, const QUuid& connectionId, const QByteArray& handle);
 
     // QAbstractItemModel interface
 public:
@@ -72,6 +73,7 @@ public:
 private:
     int getIdFromRow(const int row) const;
     int getRowFromId(const int id) const;
+    QString getNameFromUuid(const QUuid& uuid);
     //QUuid getUuidFromRow(const int row) const;
     QUuid getUuidFromRow(const int row) const;
     int getIdFromUuid(const QUuid& uuid) const;

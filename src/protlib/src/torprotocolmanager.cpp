@@ -178,6 +178,7 @@ void TorProtocolManager::startService(const QUuid& serviceId,
 
 
     auto properties = service->startService();
+    sp.app_port = properties.port;
     assert(properties.port);
 
     auto it = services_.find(serviceId);
@@ -186,8 +187,6 @@ void TorProtocolManager::startService(const QUuid& serviceId,
     }
 
     services_[serviceId] = service;
-    sp.app_port = properties.port;
-    tor_->startService(sp);
 
     connect(service.get(), &TorServiceInterface::connectedToService,
             this, [this](const QUuid& uuid) {
@@ -204,6 +203,13 @@ void TorProtocolManager::startService(const QUuid& serviceId,
             const QAbstractSocket::SocketError& socketError) {
         emit connectionFailed(uuid, socketError);
     });
+
+    connect(service.get(), &TorServiceInterface::incomingPeer,
+            this, [this, serviceId] (const QUuid& connectionId, const QByteArray& handle) {
+        emit incomingPeer(serviceId, connectionId, handle);
+    });
+
+    tor_->startService(sp);
 }
 
 void TorProtocolManager::stopService(const QUuid& uuid)
@@ -228,6 +234,14 @@ void TorProtocolManager::disconnectFrom(const QUuid &service, const QUuid &conne
 {
     return getService(service).close(connection);
 }
+
+void TorProtocolManager::autorizeConnection(const QUuid &service,
+                                            const QUuid &connection,
+                                            const bool allow)
+{
+    getService(service).autorizeConnection(connection, allow);
+}
+
 
 void TorProtocolManager::onServiceCreated(const ServiceProperties &service)
 {

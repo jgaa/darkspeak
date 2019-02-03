@@ -6,6 +6,8 @@
 #include <QTcpSocket>
 #include <QUuid>
 
+#include "ds/memoryview.h"
+
 namespace ds {
 namespace prot {
 
@@ -15,6 +17,7 @@ class ConnectionSocket : public QTcpSocket
 
 public:
     using ptr_t = std::shared_ptr<ConnectionSocket>;
+    using data_t = crypto::MemoryView<uint8_t>;
 
     ConnectionSocket();
 
@@ -33,10 +36,13 @@ public:
         }
     }
 
+    void wantBytes(size_t bytesRequested);
+
 signals:
     void connectedToHost(const QUuid& uuid);
     void socketFailed(const QUuid& uuid, const SocketError& socketError);
     void disconnectedFromHost(const QUuid& uuid);
+    void haveBytes(const data_t& data);
 
 private slots:
     void onConnected();
@@ -44,9 +50,13 @@ private slots:
     void onSocketFailed(const SocketError& socketError);
 
 private:
+    void processInput();
+
     QUuid uuid = QUuid::createUuid();
     QByteArray outData;
-
+    QByteArray inData;
+    size_t bytesWanted_ = {};
+    size_t maxInDataSize = 1024 * 265;
 };
 
 }} // namespaces
@@ -54,5 +64,6 @@ private:
 
 Q_DECLARE_SMART_POINTER_METATYPE(std::shared_ptr)
 Q_DECLARE_METATYPE(ds::prot::ConnectionSocket::ptr_t)
+Q_DECLARE_METATYPE(ds::prot::ConnectionSocket::data_t)
 
 #endif // CONNECTIONSOCKET_H

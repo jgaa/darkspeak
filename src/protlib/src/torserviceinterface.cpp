@@ -94,26 +94,22 @@ QUuid TorServiceInterface::connectToService(const QByteArray &host, const uint16
 
 void TorServiceInterface::close(const QUuid &uuid)
 {
-    auto it = peers_.find(uuid);
-    if (it == peers_.end()) {
-        return;
+    if (auto peer = getPeer(uuid)) {
+        LFLOG_DEBUG << "Closing connection for " << uuid.toString();
+        if (peer->getConnection().isOpen()) {
+            peer->getConnection().close();
+        }
+        peers_.erase(uuid);
     }
-
-    LFLOG_DEBUG << "Closing connection for " << uuid.toString();
-    if (it->second->getConnection().isOpen()) {
-        it->second->getConnection().close();
-    }
-    peers_.erase(it);
 }
 
 ConnectionSocket &TorServiceInterface::getSocket(const QUuid &uuid)
 {
-    auto it = peers_.find(uuid);
-    if (it == peers_.end()) {
-        throw runtime_error("No such connection: "s + uuid.toString().toStdString());
+    if (auto peer = getPeer(uuid)) {
+        return peer->getConnection();
     }
 
-    return it->second->getConnection();
+    throw runtime_error("No such connection: "s + uuid.toString().toStdString());
 }
 
 void TorServiceInterface::onSocketConnected(const QUuid &uuid)
@@ -155,7 +151,21 @@ void TorServiceInterface::onNewIncomingConnection(
     cd.identitysCert = cert_;
     auto server = make_shared<DsServer>(connection, move(cd));
 
+    connect(server.get(), &Peer::incomingPeer,
+            this, [this](const QUuid& connectionId, const QByteArray& handle) {
+        emit incomingPeer(connectionId, handle);
+    });
+
     peers_[connection->getUuid()] = server;
+}
+
+void TorServiceInterface::autorizeConnection(const QUuid &connection, const bool allow)
+{
+    if (auto peer = getPeer(connection)) {
+        peer->authorize(allow);
+    } else {
+        LFLOG_WARN << "No peer with id " << connection.toString();
+    }
 }
 
 QNetworkProxy &TorServiceInterface::getTorProxy()
@@ -168,14 +178,23 @@ QNetworkProxy &TorServiceInterface::getTorProxy()
     return proxy;
 }
 
-ConnectionSocket::ptr_t TorServiceInterface::getSocketPtr(const QUuid &uuid)
+Peer::ptr_t TorServiceInterface::getPeer(const QUuid &uuid) const
 {
     auto it = peers_.find(uuid);
-    if (it == peers_.end()) {
-        return {};
+    if (it != peers_.end()) {
+        return it->second;
     }
 
-    return it->second->getConnectionPtr();
+    return {};
+}
+
+ConnectionSocket::ptr_t TorServiceInterface::getSocketPtr(const QUuid &uuid)
+{
+    if (auto peer = getPeer(uuid)) {
+        return peer->getConnectionPtr();
+    }
+
+    return {};
 }
 
 

@@ -64,6 +64,11 @@ IdentitiesModel::IdentitiesModel(QSettings &settings)
             &ds::core::DsEngine::transportHandleReady,
             this, &IdentitiesModel::onTransportHandleReady);
 
+    connect(&DsEngine::instance(),
+            &ds::core::DsEngine::incomingPeer,
+            this, &IdentitiesModel::onIncomingPeer);
+
+
     select();
 }
 
@@ -224,7 +229,22 @@ void IdentitiesModel::onTransportHandleReady(const TransportHandle &th)
     }
 
     LFLOG_DEBUG << "Updated identity " << rec.value(h_name_).toString() << " in the database";
+}
 
+void IdentitiesModel::onIncomingPeer(const QUuid &service, const QUuid &connectionId, const QByteArray &handle)
+{
+    if (auto extra = getExtra(service, false)) {
+        LFLOG_DEBUG << "Connection from peer " << handle
+                     << " to identity " << getNameFromUuid(service);
+
+        // TODO: Check blacklist
+        DsEngine::instance().getProtocolMgr(
+                    ProtocolManager::Transport::TOR).autorizeConnection(
+                    service, connectionId, true);
+    } else {
+        LFLOG_WARN << "Connection from peer " << handle
+                   << " to unknown identity " << service.toString();
+    }
 }
 
 // https://stackoverflow.com/questions/24906202/get-data-from-a-specific-column-in-a-tableview-qml
@@ -439,6 +459,20 @@ int IdentitiesModel::getRowFromId(const int id) const
     }
 
     return -1;
+}
+
+QString IdentitiesModel::getNameFromUuid(const QUuid &uuid)
+{
+    QSqlQuery query{database()};
+
+    query.prepare("SELECT name FROM identity WHERE uuid=:uuid");
+    query.bindValue(":uuid", uuid);
+    query.exec();
+    if (query.next()) {
+        return query.value(0).toString();
+    }
+
+    throw runtime_error("Failed to fetch name");
 }
 
 IdentitiesModel::ExtraInfo::ptr_t IdentitiesModel::getExtra(const int row) const

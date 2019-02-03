@@ -344,6 +344,12 @@ void DsEngine::start()
         emit connectionFailed(uuid, socketError);
     });
 
+    connect(tor_mgr_.get(),
+            &ds::core::ProtocolManager::incomingPeer,
+            this, [this](const QUuid& service, const QUuid& connectionId, const QByteArray& handle) {
+        emit incomingPeer(service, connectionId, handle);
+    });
+
     tor_mgr_->start();
 }
 

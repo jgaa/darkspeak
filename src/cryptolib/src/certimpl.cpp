@@ -18,7 +18,11 @@ CertImpl::CertImpl()
     init();
 
     // Generate a private / public key pair
-    crypto_sign_keypair(signPubKey_.data(), signKey_.data());
+    assert(signPubKey_.size() == crypto_sign_ed25519_PUBLICKEYBYTES);
+    assert(signKey_.size() == crypto_sign_ed25519_SECRETKEYBYTES);
+    if (crypto_sign_ed25519_keypair(signPubKey_.data(), signKey_.data()) != 0) {
+        throw runtime_error("Key-generation failed");
+    }
     deriveCryptoKeys(true);
     CalculateHash();
 }
@@ -84,11 +88,15 @@ void CertImpl::init()
 void CertImpl::deriveCryptoKeys(bool deriveKey)
 {
     if (deriveKey) {
+        assert(encrKey_.size() == crypto_scalarmult_curve25519_BYTES);
+        assert(signKey_.size() == crypto_sign_ed25519_SECRETKEYBYTES);
         if (crypto_sign_ed25519_sk_to_curve25519(encrKey_.data(), signKey_.cdata()) != 0) {
             throw runtime_error("Failed to derive crypto key");
         }
     }
 
+    assert(encrPubKey_.size() == crypto_scalarmult_curve25519_BYTES);
+    assert(signPubKey_.size() == crypto_sign_ed25519_PUBLICKEYBYTES);
     if (crypto_sign_ed25519_pk_to_curve25519(encrPubKey_.data(), signPubKey_.cdata()) != 0) {
         throw runtime_error("Failed to derive crypto pubkey");
     }
@@ -111,7 +119,7 @@ const DsCert::safe_view_t& CertImpl::getSigningPubKey() const
 
 const DsCert::safe_view_t &CertImpl::getEncryptionKey() const
 {
-    return signKey_;
+    return encrKey_;
 }
 
 const DsCert::safe_view_t& CertImpl::getEncryptionPubKey() const

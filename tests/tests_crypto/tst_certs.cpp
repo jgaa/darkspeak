@@ -45,3 +45,74 @@ void TestCerts::test_create_cert()
         QFAIL(msg.c_str());
     }
 }
+
+void TestCerts::test_signing()
+{
+    auto alice = ds::crypto::DsCert::create();
+    auto bob = ds::crypto::DsCert::create();
+    const auto bobpk_bytes = bob->getSigningPubKey().toByteArray();
+    const auto bob_pk = ds::crypto::DsCert::createFromPubkey(bobpk_bytes);
+
+    QCOMPARE(bob->getSigningPubKey(), bob_pk->getSigningPubKey());
+    QCOMPARE(bob->getEncryptionPubKey(), bob_pk->getEncryptionPubKey());
+
+    // Bob signs a message
+    const QByteArray message = "This is a test";
+    std::array<uint8_t, crypto_sign_BYTES> signature = {};
+
+    bob->sign(signature, {message});
+    // Verify with his original "cert" instance.
+    QVERIFY(bob->verify(signature, {message}));
+
+    // Verify with his public key "cert" instance, derived from his public key.
+    QVERIFY(bob_pk->verify(signature, {message}));
+
+    // Alices cert should not be able to verify this signature
+    QVERIFY(!alice->verify(signature, {message}));
+
+    const QByteArray another = "This is another test";
+    bob->sign(signature, {message, another});
+    // Verify with his original "cert" instance.
+    QVERIFY(bob->verify(signature, {message, another}));
+
+    // Verify with his public key "cert" instance, derived from his public key.
+    QVERIFY(bob_pk->verify(signature, {message, another}));
+
+    // Alices cert should not be able to verify this signature
+    QVERIFY(!alice->verify(signature, {message, another}));
+
+    // Not the same message tat was signed
+    QVERIFY(!bob->verify(signature, {message}));
+    QVERIFY(!bob->verify(signature, {another}));
+    QVERIFY(!bob->verify(signature, {another, message}));
+    QVERIFY(!bob->verify(signature, {message, another, message}));
+
+}
+
+void TestCerts::test_ppk_encryption()
+{
+    auto bob = ds::crypto::DsCert::create();
+    const auto bobpk_bytes = bob->getSigningPubKey().toByteArray();
+    const auto bob_pk = ds::crypto::DsCert::createFromPubkey(bobpk_bytes);
+
+    QCOMPARE(bob->getEncryptionPubKey(), bob_pk->getEncryptionPubKey());
+
+    // Derive the crypto pubkey from the actual key and verify that the pubkey in the cert matches.
+    std::array<uint8_t, crypto_box_PUBLICKEYBYTES> pkey = {};
+    crypto_scalarmult_base(pkey.data(), bob->getEncryptionKey().cdata());
+    QVERIFY(pkey.size() == bob->getEncryptionPubKey().size());
+    QVERIFY(memcmp(pkey.data(), bob->getEncryptionPubKey().data(), pkey.size()) == 0);
+
+    const QByteArray message = "This is a test";
+    QByteArray ciphertext, decrypted;
+    ciphertext.resize(message.size() + static_cast<int>(crypto_box_SEALBYTES));
+    decrypted.resize(message.size());
+
+    bob_pk->encrypt(ciphertext, message);
+    QVERIFY(bob->decrypt(decrypted, ciphertext));
+    QCOMPARE(message, decrypted);
+
+    // Other certs must not be able to decrypt
+    auto voldemort = ds::crypto::DsCert::create();
+    QVERIFY(!voldemort->decrypt(decrypted, ciphertext));
+}

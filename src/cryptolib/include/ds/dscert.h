@@ -39,6 +39,34 @@ public:
         return b58check_enc<QByteArray>(getEncryptionPubKey(), {249, 50});
     }
 
+    template <typename Tciphertext, typename Tdata>
+    void encrypt(Tciphertext& ciphertext, const Tdata& data) {
+        assert(static_cast<size_t>(ciphertext.size())
+               == (static_cast<size_t>(data.size()) + crypto_box_SEALBYTES));
+        if (crypto_box_seal(
+                    reinterpret_cast<unsigned char *>(ciphertext.data()),
+                    reinterpret_cast<const unsigned char *>(data.data()),
+                    static_cast<size_t>(data.size()),
+                    getEncryptionPubKey().cdata()) != 0) {
+            throw std::runtime_error("Failed to encrypt data");
+        }
+    }
+
+    template <typename Tciphertext, typename Tdata>
+    bool decrypt(Tdata& data, const Tciphertext& ciphertext) {
+        assert(static_cast<size_t>(data.size())
+               == (static_cast<size_t>(ciphertext.size()) - crypto_box_SEALBYTES));
+        if (crypto_box_seal_open(
+                    reinterpret_cast<unsigned char *>(data.data()),
+                    reinterpret_cast<const unsigned char *>(ciphertext.data()),
+                    static_cast<size_t>(ciphertext.size()),
+                    getEncryptionPubKey().cdata(),
+                    getEncryptionKey().cdata()) != 0) {
+            return false;
+        }
+        return true;
+    }
+
     template <typename Tsign, typename T>
     Tsign sign(std::initializer_list<T> data) const {
         Tsign signature;
@@ -48,7 +76,7 @@ public:
     }
 
     template <typename Tsign, typename T>
-    void sign(Tsign signature, std::initializer_list<T> data) const {
+    void sign(Tsign& signature, std::initializer_list<T> data) const {
         assert(!getSigningKey().empty());
         assert(signature.size() == crypto_sign_BYTES);
 
@@ -60,19 +88,23 @@ public:
                                static_cast<size_t>(d.size()));
 
         }
-        crypto_sign_final_create(&state,
+        unsigned long long siglen = signature.size();
+        auto result = crypto_sign_final_create(&state,
                                  reinterpret_cast<unsigned char *>(signature.data()),
-                                 nullptr, getSigningKey().cdata());
+                                 &siglen, getSigningKey().cdata());
+        if (result != 0) {
+            throw std::runtime_error("Failed to sign data");
+        }
     }
 
     template <typename T, typename Tsign>
-    bool verify(const Tsign &signature, std::initializer_list<T> data) const {
+    bool verify(const Tsign& signature, std::initializer_list<T> data) const {
         assert(!getSigningPubKey().empty());
         crypto_sign_state state = {};
         crypto_sign_init(&state);
         for(const auto& d : data) {
             crypto_sign_update(&state,
-                               reinterpret_cast<const unsigned char *>(d.cdata()),
+                               reinterpret_cast<const unsigned char *>(d.data()),
                                d.size());
         }
         Tsign sign = signature; // libsodium wants non-const signature

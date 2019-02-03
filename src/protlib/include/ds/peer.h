@@ -61,10 +61,19 @@ public:
         return connection_;
     }
 
+public slots:
+    virtual void authorize(bool /*authorize*/) {}
+
+signals:
+    void incomingPeer(const QUuid& connectionId, const QByteArray& handle);
+
 protected:
     ConnectionSocket::ptr_t connection_;
     core::ConnectData connectionData_;
     crypto_secretstream_xchacha20poly1305_state stateOut;
+    crypto_secretstream_xchacha20poly1305_state stateIn;
+    std::array<uint8_t, crypto_secretstream_xchacha20poly1305_HEADERBYTES> headerIn;
+    std::array<uint8_t, crypto_secretstream_xchacha20poly1305_HEADERBYTES> headerOut;
 };
 
 }} // namespaces

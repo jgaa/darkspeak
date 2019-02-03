@@ -96,6 +96,7 @@ signals:
     void disconnectedFrom(const QUuid& uuid);
     void connectionFailed(const QUuid& uuid,
                           const QAbstractSocket::SocketError& socketError);
+    void incomingPeer(const QUuid& service, const QUuid& connectionId, const QByteArray& handle);
 
 protected:
     void initialize();
