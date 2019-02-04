@@ -17,17 +17,20 @@ public:
 
     enum class State {
         CONNECTED,
-        GET_SERVER_HELLO,
+        GET_OLLEH,
+        ENCRYPTED_STREAM
     };
 
     DsClient(ConnectionSocket::ptr_t connection, core::ConnectData connectionData);
 
 private slots:
     void advance();
+    void advance(const data_t& data);
+
 
 private:
     void sayHello();
-    void getHelloReply();
+    void getHelloReply(const data_t& data);
 
     State state_ = State::CONNECTED;
 };

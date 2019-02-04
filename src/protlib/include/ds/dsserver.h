@@ -11,11 +11,10 @@ class DsServer : public Peer
 {
     Q_OBJECT
 public:
-    using data_t = crypto::MemoryView<uint8_t>;
-
     enum class State {
         CONNECTED,
         WAITING_FOR_AUTHORIZATION,
+        ENCRYPTED_STREAM,
         FAILED,
         UNAUTHORIZED
     };

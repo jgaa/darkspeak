@@ -24,6 +24,11 @@ DsClient::DsClient(ConnectionSocket::ptr_t connection,
         advance();
     });
 
+    connect(getConnectionPtr().get(), &ConnectionSocket::haveBytes,
+            this, [this](const auto& data) {
+        advance(data);
+    });
+
 }
 
 void DsClient::advance()
@@ -35,9 +40,19 @@ void DsClient::advance()
                         << ". Starting DS protocol.";
             sayHello();
             break;
-        case State::GET_SERVER_HELLO:
-            getHelloReply();
+        case State::GET_OLLEH:
             break;
+    }
+}
+
+void DsClient::advance(const Peer::data_t &data)
+{
+    switch(state_) {
+        case State::CONNECTED:
+            advance();
+            break;
+        case State::GET_OLLEH:
+            getHelloReply(data);
     }
 }
 
@@ -53,24 +68,16 @@ void DsClient::sayHello()
     }
 
     Hello hello;
-
-    // We don't need a nounce here, as we have a randomly generated key
-
     hello.version.at(0) = '\1'; // Version of the hello structure
 
-    /* Shared secret key required to encrypt/decrypt the stream */
-    crypto_secretstream_xchacha20poly1305_keygen(hello.key.data());
-
-    /* Set up a new stream: initialize the state and create the header */
-    crypto_secretstream_xchacha20poly1305_init_push(
-                &stateOut, hello.header.data(), hello.key.data());
+    prepareEncryption(stateOut, hello.header, hello.key);
 
     // Copy our pubkey
-    assert(hello.pubkey.size()
-           == connectionData_.identitysCert->getSigningPubKey().size());
-    memcpy(hello.pubkey.data(),
-           connectionData_.identitysCert->getSigningPubKey().cdata(),
-           hello.pubkey.size());
+    {
+        const auto& our_pubkey = connectionData_.identitysCert->getSigningPubKey();
+        assert(hello.pubkey.size() == our_pubkey.size());
+        copy(our_pubkey.cbegin(), our_pubkey.cend(), hello.pubkey.begin());
+    }
 
     // Sign the payload, so the server know we have the private key for our announced pubkey.
     connectionData_.identitysCert->sign(
@@ -84,15 +91,48 @@ void DsClient::sayHello()
 
     // Send the message to the server.
     connection_->write(ciphertext);
-    state_ = State::GET_SERVER_HELLO;
+    state_ = State::GET_OLLEH;
+    connection_->wantBytes(Olleh::bytes + crypto_box_SEALBYTES);
     LFLOG_DEBUG << "Said hello to " << connection_->getUuid().toString();
 }
 
-void DsClient::getHelloReply()
+void DsClient::getHelloReply(const Peer::data_t &data)
 {
+    Olleh olleh;
+    assert(olleh.buffer.size() == (data.size() - crypto_box_SEALBYTES));
 
+    if (!connectionData_.identitysCert->decrypt(olleh.buffer, data)) {
+        LFLOG_ERROR << "Failed to decrypt Hello reply payload from " << connection_->getUuid().toString();
+        connection_->close();
+        return;
+    }
+
+    // Check version
+    if (olleh.version.at(0) != 1) {
+        LFLOG_ERROR << "Unsupported Olleh version "
+                    << static_cast<unsigned int>(olleh.version.at(0))
+                    << " from " << connection_->getUuid().toString();
+        connection_->close();
+        return;
+    }
+
+    // Validate the signature
+    auto client_cert = crypto::DsCert::createFromPubkey(connectionData_.contactsPubkey);
+    if (!client_cert->verify(
+                olleh.signature,
+                {olleh.version, olleh.key, olleh.header})) {
+        LFLOG_ERROR << "Signature in Olleh message was forged from "
+            << connection_->getUuid().toString();
+        connection_->close();
+        return;
+    }
+
+    // At this point, any further outbound data must be encrypted
+    prepareDecryption(stateIn, olleh.header, olleh.key);
+    state_ = State::ENCRYPTED_STREAM;
+    connection_->wantBytes(2);
+    LFLOG_DEBUG << "The data-stream to " << connection_->getUuid().toString()
+                << " is fully switched to stream-encryption.";
 }
-
-
 
 }} // namespaces

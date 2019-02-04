@@ -40,8 +40,26 @@ void DsServer::authorize(bool authorize)
     LFLOG_DEBUG << "Connection " << connection_->getUuid().toString()
                 << " is authorized to proceed. Setting up secure streams.";
 
-    // TODO: Send a reply with the header and key for the outbound direction.
-    // Switch to sttream encrypted packet-mode.
+    Olleh olleh;
+    olleh.version.at(0) = '\1';
+    prepareEncryption(stateOut, olleh.header, olleh.key);
+
+    // Sign the payload
+    connectionData_.identitysCert->sign(
+                olleh.signature,
+                {olleh.version, olleh.key, olleh.header});
+
+    const auto peer_cert = crypto::DsCert::createFromPubkey(connectionData_.contactsPubkey);
+    array<uint8_t, olleh.buffer.size() + crypto_box_SEALBYTES> ciphertext;
+    peer_cert->encrypt(ciphertext, olleh.buffer);
+
+    // Send the message to the server.
+    connection_->write(ciphertext);
+    state_ = State::ENCRYPTED_STREAM;
+    connection_->wantBytes(2);
+
+    LFLOG_DEBUG << "The data-stream to " << connection_->getUuid().toString()
+                << " is fully switched to stream-encryption.";
 }
 
 
@@ -49,6 +67,9 @@ void DsServer::advance(const data_t& data)
 {
     try {
         switch(state_) {
+            case State::ENCRYPTED_STREAM:
+                processStream(data);
+                break;
             case State::CONNECTED:
                 getHello(data);
                 break;
@@ -100,10 +121,13 @@ void DsServer::getHello(const data_t& data)
         return;
     }
 
-    // Prepare outbound encryption
-    // Set up a new stream: initialize the state and create the header
-    crypto_secretstream_xchacha20poly1305_init_push(
-                &stateOut, headerOut.data(), hello.key.data());
+    // Remember the peers pubkey
+    connectionData_.contactsPubkey.resize(static_cast<int>(hello.pubkey.size()));
+    copy(hello.pubkey.cbegin(), hello.pubkey.cend(),
+         connectionData_.contactsPubkey.begin());
+
+    // At this point, any further inbound data is assumed to be encrypted
+    prepareDecryption(stateIn, hello.header, hello.key);
 
     // Stall further IO until we get authorization to proceed
     connection_->wantBytes(0);
