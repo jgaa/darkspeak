@@ -17,6 +17,13 @@ struct Contact {
         THEM
     };
 
+    enum State {
+        WAITING_FOR_ACCEPTANCE,
+        ACCEPTED,
+        REJECTED,
+        BLOCKED
+    };
+
     // Reference to the database-id to the Identity that own this contact
     int identity = {};
 
@@ -60,11 +67,11 @@ struct Contact {
     // Updated when we receive data from the contact, rounded to minute.
     QDateTime lastSeen;
 
-    // true if the contact is blocked
-    bool blocked = false;
+    // The current state for this contact
+    State state = State::WAITING_FOR_ACCEPTANCE;
 
-    // True if the contact rejected our addme request
-    bool rejected = false;
+    // Message to send with the addme request
+    QString addmeMessage;
 
     // true if we want to connect automatically when the related Identity is online
     bool autoConnect = true;
@@ -81,6 +88,7 @@ struct ContactReq {
     QImage avatar;
     QByteArray pubkey;
     QByteArray address;
+    QString addmeMessage;
     Contact::InitiatedBy whoInitiated = Contact::ME;
     bool autoConnect = true;
 };

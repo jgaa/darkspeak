@@ -2,6 +2,9 @@
 #include <assert.h>
 #include <array>
 
+#include <QJsonObject>
+#include <QJsonDocument>
+
 #include "ds/torprotocolmanager.h"
 #include "ds/errors.h"
 #include "logfault/logfault.h"
@@ -140,8 +143,28 @@ TorServiceInterface& TorProtocolManager::getService(const QUuid& service)
     return *it->second;
 }
 
+uint64_t TorProtocolManager::sendAddme(const AddmeReq& req)
+{
+    QString addr;
+    auto json = QJsonDocument{
+        QJsonObject{
+            {"type", "AddMe"},
+            {"nick", req.nickName},
+            {"address", getService(req.service).getAddress()},
+            {"message", req.message}
+        }
+    };
+
+    if (auto peer = getService(req.service).getPeer(req.connection)) {
+        return peer->send(json);
+    }
+
+    throw runtime_error("Failed to access peer while sending addme");
+}
+
 void TorProtocolManager::sendMessage(const core::Message &)
 {
+
 }
 
 void TorProtocolManager::start()
@@ -173,10 +196,9 @@ void TorProtocolManager::startService(const QUuid& serviceId,
     sp.key_type = data["key_type"].toByteArray();
     sp.service_id = data["service_id"].toByteArray();
 
+    auto service = make_shared<TorServiceInterface>(cert, data["address"].toByteArray());
+
     // Add listening port
-    auto service = make_shared<TorServiceInterface>(cert);
-
-
     auto properties = service->startService();
     sp.app_port = properties.port;
     assert(properties.port);
@@ -257,6 +279,7 @@ void TorProtocolManager::onServiceCreated(const ServiceProperties &service)
     th.data["service_id"] = service.service_id;
     th.data["key_type"] = service.key_type;
     th.data["port"] = service.service_port;
+    th.data["address"] = QString("onion:") + th.handle;
 
     // Stop the service. We require explicit start request to make it available.
     try {

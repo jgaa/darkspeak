@@ -48,8 +48,8 @@ ContactsModel::ContactsModel(QSettings& settings)
     h_created_ = fieldIndex("created");
     h_initiated_by = fieldIndex("initiated_by");
     h_last_seen_ = fieldIndex("last_seen");
-    h_blocked_ = fieldIndex("blocked");
-    h_rejected_ = fieldIndex("rejected");
+    h_state_ = fieldIndex("state");
+    h_addme_message_ = fieldIndex("addme_message");
     h_autoconnect_ = fieldIndex("autoconnect");
     h_hash_ = fieldIndex("hash");
 
@@ -138,8 +138,9 @@ QHash<int, QByteArray> ContactsModel::roleNames() const
         {col2Role(h_notes_), "notes"},
         {col2Role(h_initiated_by), "initiatedBy"},
         {col2Role(h_last_seen_), "lastSeen"},
-        {col2Role(h_blocked_), "blocked"},
+        {col2Role(h_state_), "state"},
         {col2Role(h_autoconnect_), "autoConnect"},
+        {col2Role(h_addme_message_), "addmeMessage"},
         {col2Role(h_hash_), "hash"},
 
         // Virtual roles
@@ -170,7 +171,7 @@ bool ContactsModel::hashExists(QByteArray hash) const
 
 bool ContactsModel::nameExists(QString name) const
 {
-    QSqlQuery query;
+    QSqlQuery query(database());
     query.prepare("SELECT 1 from contact where name=:name");
     query.bindValue(":name", name);
     if(!query.exec()) {
@@ -205,8 +206,8 @@ void ContactsModel::onContactCreated(const Contact &contact)
         rec.setValue(h_avatar_, DsEngine::imageToBytes(contact.avatar));
     }
     rec.setValue(h_created_, QDateTime::currentDateTime());
-    rec.setValue(h_blocked_, contact.blocked);
-    rec.setValue(h_rejected_, contact.rejected);
+    rec.setValue(h_state_, contact.state);
+    rec.setValue(h_addme_message_, contact.addmeMessage);
     rec.setValue(h_autoconnect_, contact.autoConnect);
 
     if (!insertRecord(-1, rec) || !submitAll()) {
@@ -231,7 +232,7 @@ void ContactsModel::createContact(const QString &nickName,
                                   const QString &name,
                                   const QString &handle, // b58check encoded pubkey
                                   const QString &address,
-                                  const QString & /*message*/, // TODO: Store it somewhere
+                                  const QString &message,
                                   const QString &notes,
                                   bool autoConnect)
 {
@@ -249,6 +250,7 @@ void ContactsModel::createContact(const QString &nickName,
         cr.address = address.toUtf8();
         cr.notes = notes;
         cr.autoConnect = autoConnect;
+        cr.addmeMessage = message;
 
         DsEngine::instance().createContact(cr);
 
@@ -312,9 +314,17 @@ void ContactsModel::disconnectTransport(int row)
 void ContactsModel::onConnectedTo(const QUuid &uuid)
 {
     setOnlineStatus(uuid, ONLINE);
+    updateLastSeen(uuid);
 
-    // TODO: Update last seen
     // TODO: Send addme request?
+    Contact::State state = getState(uuid);
+    if (state == Contact::State::WAITING_FOR_ACCEPTANCE) {
+        // send addme
+
+
+        return;
+    }
+
     // TODO: Send queued messages
 }
 
@@ -454,6 +464,54 @@ void ContactsModel::doIfValid(int row, std::function<void (const QByteArray& id)
     }
 
     fn(id);
+}
+
+void ContactsModel::updateLastSeen(const QUuid &uuid)
+{
+    QDateTime when = QDateTime::fromTime_t((QDateTime::currentDateTime().toTime_t() / 60) * 60);
+    QSqlQuery query(database());
+    query.prepare("UPDATE last_seen=:when from contact where uuid=:uuid");
+    query.bindValue(":uuid", uuid);
+    query.bindValue(":when", when);
+    if(!query.exec()) {
+        throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
+    }
+    int row = getRowFromId(getExtra(uuid)->id);
+    if (row >= 0) {
+        auto ix = index(row, 0);
+        emit dataChanged(ix, ix, {col2Role(h_last_seen_)});
+    }
+}
+
+Contact::State ContactsModel::getState(const QUuid &uuid) const
+{
+    QSqlQuery query(database());
+    query.prepare("SELECT state from contact where uuid=:uuid");
+    query.bindValue(":uuis", uuid);
+    if(!query.exec()) {
+        throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
+    }
+    if (!query.next()) {
+        throw runtime_error("Failed to fetch state from contact");
+    }
+
+    return static_cast<Contact::State>(query.value(0).toInt());
+}
+
+void ContactsModel::setState(const QUuid &uuid, const Contact::State state)
+{
+    QSqlQuery query(database());
+    query.prepare("UPDATE state=:state from contact where uuid=:uuid");
+    query.bindValue(":uuid", uuid);
+    query.bindValue(":state", state);
+    if(!query.exec()) {
+        throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
+    }
+    auto row = getRowFromId(getExtra(uuid)->id);
+    if (row >= 0) {
+        auto ix = index(row, 0);
+        emit dataChanged(ix, ix, {col2Role(h_state_)});
+    }
 }
 
 

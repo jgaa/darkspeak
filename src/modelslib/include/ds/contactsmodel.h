@@ -111,7 +111,9 @@ private:
                     std::function<void (const QByteArray&)> fn,
                     bool throwIfNot = false);
     int col2Role(int col) const noexcept { return col + Qt::UserRole; }
-
+    void updateLastSeen(const QUuid& uuid);
+    ds::core::Contact::State getState(const QUuid& uuid) const;
+    void setState(const QUuid& uuid, const core::Contact::State state);
 
     int h_id_ = {};
     int h_identity_ = {};
@@ -126,8 +128,8 @@ private:
     int h_created_ = {};
     int h_initiated_by = {};
     int h_last_seen_ = {};
-    int h_blocked_ = {};
-    int h_rejected_ = {};
+    int h_state_ = {};
+    int h_addme_message_ = {};
     int h_autoconnect_ = {};
     int h_hash_ = {};
 

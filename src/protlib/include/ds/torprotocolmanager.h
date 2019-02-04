@@ -46,6 +46,10 @@ protected:
     State state_ = State::OFFLINE;
 
     std::map<QUuid, TorServiceInterface::ptr_t> services_;
+
+    // ProtocolManager interface
+public slots:
+    uint64_t sendAddme(const core::AddmeReq& req) override;
 };
 
 }} // namespaces

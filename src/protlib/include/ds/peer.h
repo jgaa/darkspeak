@@ -18,7 +18,6 @@ public:
     using ptr_t = std::shared_ptr<Peer>;
     using mview_t = crypto::MemoryView<uint8_t>;
     using data_t = crypto::MemoryView<uint8_t>;
-    //using hdrbytes_t = std::array<uint8_t, crypto_secretstream_xchacha20poly1305_HEADERBYTES>;
     using stream_state_t = crypto_secretstream_xchacha20poly1305_state;
 
     struct Hello {
@@ -89,6 +88,10 @@ public:
 public slots:
     virtual void authorize(bool /*authorize*/) {}
 
+    // Send a request to a connected peer over the encrypted stream
+    // Returns a unique id for the request (within the scope of this peer)
+    uint64_t send(const QJsonDocument& json);
+
 signals:
     void incomingPeer(const QUuid& connectionId, const QByteArray& handle);
 
@@ -101,8 +104,7 @@ protected:
     core::ConnectData connectionData_;
     stream_state_t stateIn;
     stream_state_t stateOut;
-    //hdrbytes_t headerIn;
-    //hdrbytes_t headerOut;
+    quint64 request_id_ = {}; // Counter for outgoing requests
 };
 
 }} // namespaces

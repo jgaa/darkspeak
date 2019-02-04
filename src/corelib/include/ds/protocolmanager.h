@@ -24,6 +24,13 @@ struct ConnectData {
     crypto::DsCert::ptr_t identitysCert;
 };
 
+struct AddmeReq {
+    QUuid service; // for Identity
+    QUuid connection;
+    QString nickName;
+    QString message;
+};
+
 /*! Generic interface to the IM protocol.
  *
  * Currently we only support Tor as a transport layer,
@@ -154,6 +161,8 @@ public slots:
     virtual void autorizeConnection(const QUuid& service,
                                     const QUuid& connection,
                                     const bool allow) = 0;
+
+    virtual uint64_t sendAddme(const AddmeReq& req) = 0;
 
 public:
     static ptr_t create(QSettings& settings, Transport transport);

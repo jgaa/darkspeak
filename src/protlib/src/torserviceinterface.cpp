@@ -11,8 +11,9 @@ namespace prot {
 
 using namespace std;
 
-TorServiceInterface::TorServiceInterface(const crypto::DsCert::ptr_t& cert)
-    : cert_{cert}
+TorServiceInterface::TorServiceInterface(const crypto::DsCert::ptr_t& cert,
+                                         const QByteArray& address)
+    : cert_{cert}, address_{address}
 {
 }
 

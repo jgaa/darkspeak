@@ -43,7 +43,8 @@ class TorServiceInterface : public QObject
 public:
     using ptr_t = std::shared_ptr<TorServiceInterface>;
 
-    TorServiceInterface(const crypto::DsCert::ptr_t& cert);
+    TorServiceInterface(const crypto::DsCert::ptr_t& cert,
+                        const QByteArray& address);
     virtual ~TorServiceInterface();
 
     /*! Start a service.
@@ -69,6 +70,8 @@ public:
 
     ConnectionSocket& getSocket(const QUuid& uuid);
     ConnectionSocket::ptr_t getSocketPtr(const QUuid& uuid);
+    const QString& getAddress() const noexcept { return address_; }
+    Peer::ptr_t getPeer(const QUuid& uuid) const;
 
 signals:
     void serviceStarted(const StartServiceResult& ssr);
@@ -93,11 +96,11 @@ private slots:
 
 private:
     static QNetworkProxy& getTorProxy();
-    Peer::ptr_t getPeer(const QUuid& uuid) const;
 
     crypto::DsCert::ptr_t cert_;
     std::shared_ptr<TorSocketListener> server_;
     std::map<QUuid, Peer::ptr_t> peers_;
+    const QString address_;
 };
 
 }} //namespaces
