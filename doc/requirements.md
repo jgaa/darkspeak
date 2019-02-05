@@ -125,3 +125,7 @@ Creates a new identify for a user of the application.
 **Search / filter**
 - [ ] Add a serach-bar to find contacts fast, and show only matching contacts.
 
+**Accept an AddMe request**
+- [ ] Accept an addmerequest in the UI and add the contact to the appropriate identity. 
+- [ ] Add a RSA-1024 signature for the onion address announced in the AddMe requests, using Tor's private key for that onion address.
+- [ ] Verify the RSA-1024 signature before showing the addme request in the UI
