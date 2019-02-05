@@ -47,7 +47,7 @@ Dialog {
             }
 
             TextField {
-                id: message
+                id: addmeMessage
                 Layout.fillWidth: true
                 placeholderText: qsTr("Please add me")
             }
@@ -81,10 +81,13 @@ Dialog {
     }
 
     onApply: {
-        contacts.createContact(root.nickName, name.text,
-                               handle.text, onion.text,
-                               address.text, message.text,
-                               notes.text, autoConnect.checked)
+        contacts.createContact(root.nickName,
+                               name.text,
+                               handle.text,
+                               onion.text,
+                               addmeMessage.text,
+                               notes.text,
+                               autoConnect.checked)
         close()
     }
 }

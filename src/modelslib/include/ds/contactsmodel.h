@@ -75,9 +75,12 @@ public slots:
     void onContactCreated(const ds::core::Contact& contact);
     OnlineStatus getOnlineStatus(int row) const;
     void createContact(const QString &nickName,
-                       const QString& name, const QString& handle,
-                       const QString& address, const QString& message,
-                       const QString& notes, bool autoConnect);
+                       const QString& name,
+                       const QString& handle,
+                       const QString& address,
+                       const QString& message,
+                       const QString& notes,
+                       bool autoConnect);
 
     void onIdentityChanged(int identityId);
     void connectTransport(int row);

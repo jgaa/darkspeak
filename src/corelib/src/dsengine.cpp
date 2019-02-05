@@ -143,6 +143,7 @@ void DsEngine::createContact(const ContactReq &req)
     c.pubkey = req.pubkey;
     c.address = req.address;
     c.autoConnect = req.autoConnect;
+    c.addmeMessage = req.addmeMessage;
 
     // Validate
     if (!regex_match(c.address.data(), valid_address)) {
