@@ -56,10 +56,10 @@ void DsServer::authorize(bool authorize)
     // Send the message to the server.
     connection_->write(ciphertext);
     state_ = State::ENCRYPTED_STREAM;
-    connection_->wantBytes(2);
 
     LFLOG_DEBUG << "The data-stream to " << connection_->getUuid().toString()
                 << " is fully switched to stream-encryption.";
+    enableEncryptedStream();
 }
 
 

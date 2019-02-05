@@ -294,7 +294,7 @@ void ContactsModel::connectTransport(int row)
         extra.outbound_connection_uuid = DsEngine::instance().getProtocolMgr(
                     ProtocolManager::Transport::TOR).connectTo(cd);
 
-        setOnlineStatus(extra.outbound_connection_uuid, CONNECTING);
+        setOnlineStatus(id, CONNECTING);
     });
 }
 
@@ -311,17 +311,25 @@ void ContactsModel::disconnectTransport(int row)
     });
 }
 
+// TODO: Need another signal for when the ecryption is established
 void ContactsModel::onConnectedTo(const QUuid &uuid)
 {
-    setOnlineStatus(uuid, ONLINE);
-    updateLastSeen(uuid);
+    auto connection_id = getIdFromConnectionUuid(uuid);
+    if (connection_id.isEmpty()) {
+        LFLOG_WARN << "Got connect notification for unknow connection-id "
+                   << uuid.toString();
 
-    // TODO: Send addme request?
-    Contact::State state = getState(uuid);
+        DsEngine::instance().getProtocolMgr(
+                    ProtocolManager::Transport::TOR).disconnectFrom(identityUuid_, uuid);
+        return;
+    }
+    setOnlineStatus(connection_id, ONLINE);
+    updateLastSeen(connection_id);
+
+    // Send addme request?
+    Contact::State state = getState(connection_id);
     if (state == Contact::State::WAITING_FOR_ACCEPTANCE) {
-        // send addme
-
-
+        sendAddme(connection_id, uuid);
         return;
     }
 
@@ -330,14 +338,21 @@ void ContactsModel::onConnectedTo(const QUuid &uuid)
 
 void ContactsModel::onDisconnectedFrom(const QUuid &uuid)
 {
-    setOnlineStatus(uuid, DISCONNECTED);
+    auto connection_id = getIdFromConnectionUuid(uuid);
+    if (!connection_id.isEmpty()) {
+        setOnlineStatus(connection_id, DISCONNECTED);
+    }
 }
 
 void ContactsModel::onConnectionFailed(const QUuid &uuid,
                                        const QAbstractSocket::SocketError &socketError)
 {
     Q_UNUSED(socketError)
-    setOnlineStatus(uuid, DISCONNECTED);
+
+    auto connection_id = getIdFromConnectionUuid(uuid);
+    if (!connection_id.isEmpty()) {
+        setOnlineStatus(connection_id, DISCONNECTED);
+    }
 }
 
 QByteArray ContactsModel::getIdFromRow(const int row) const
@@ -349,6 +364,17 @@ QByteArray ContactsModel::getIdFromRow(const int row) const
     }
 
     return id;
+}
+
+QByteArray ContactsModel::getIdFromConnectionUuid(const QUuid &uuid) const
+{
+    for(const auto& e : extras_) {
+        if (e.second->outbound_connection_uuid == uuid) {
+            return e.second->id;
+        }
+    }
+
+    return {};
 }
 
 int ContactsModel::getRowFromId(const QByteArray &id) const
@@ -402,10 +428,11 @@ QString ContactsModel::getOnlineIcon(int row) const
     return "qrc:///images/onion-bw.svg";
 }
 
-void ContactsModel::setOnlineStatus(const QUuid &uuid, ContactsModel::OnlineStatus status)
+void ContactsModel::setOnlineStatus(const QByteArray& id,
+                                    ContactsModel::OnlineStatus status)
 {
     try {
-        auto extra = getExtra(uuid);
+        auto extra = getExtra(id);
         if (extra->onlineStatus != status) {
             LFLOG_DEBUG << "Contact with id " << extra->id
                         << " changes state from " << extra->onlineStatus
@@ -466,52 +493,80 @@ void ContactsModel::doIfValid(int row, std::function<void (const QByteArray& id)
     fn(id);
 }
 
-void ContactsModel::updateLastSeen(const QUuid &uuid)
+void ContactsModel::updateLastSeen(const QByteArray& id)
 {
     QDateTime when = QDateTime::fromTime_t((QDateTime::currentDateTime().toTime_t() / 60) * 60);
     QSqlQuery query(database());
-    query.prepare("UPDATE last_seen=:when from contact where uuid=:uuid");
-    query.bindValue(":uuid", uuid);
+    query.prepare("UPDATE contact set last_seen=:when where id=:id");
+    query.bindValue(":id", id.toInt());
     query.bindValue(":when", when);
     if(!query.exec()) {
         throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
     }
-    int row = getRowFromId(getExtra(uuid)->id);
+    int row = getRowFromId(id);
     if (row >= 0) {
         auto ix = index(row, 0);
         emit dataChanged(ix, ix, {col2Role(h_last_seen_)});
     }
 }
 
-Contact::State ContactsModel::getState(const QUuid &uuid) const
+Contact::State ContactsModel::getState(const QByteArray& id) const
 {
     QSqlQuery query(database());
-    query.prepare("SELECT state from contact where uuid=:uuid");
-    query.bindValue(":uuis", uuid);
+    query.prepare("SELECT state from contact where id=:id");
+    query.bindValue(":id", id.toInt());
     if(!query.exec()) {
         throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
     }
     if (!query.next()) {
+        LFLOG_WARN << "Failed to fetch from contact with id=" << id;
         throw runtime_error("Failed to fetch state from contact");
     }
 
     return static_cast<Contact::State>(query.value(0).toInt());
 }
 
-void ContactsModel::setState(const QUuid &uuid, const Contact::State state)
+void ContactsModel::setState(const QByteArray& id, const Contact::State state)
 {
     QSqlQuery query(database());
-    query.prepare("UPDATE state=:state from contact where uuid=:uuid");
-    query.bindValue(":uuid", uuid);
+    query.prepare("UPDATE contact set state=:state where uuid=:id");
+    query.bindValue(":id", id.toInt());
     query.bindValue(":state", state);
     if(!query.exec()) {
         throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
     }
-    auto row = getRowFromId(getExtra(uuid)->id);
+    auto row = getRowFromId(id);
     if (row >= 0) {
         auto ix = index(row, 0);
         emit dataChanged(ix, ix, {col2Role(h_state_)});
     }
+}
+
+void ContactsModel::sendAddme(const QByteArray &id, const QUuid &connection)
+{
+    AddmeReq ar{identityUuid_, connection, "", ""};
+
+    QSqlQuery query(database());
+    query.prepare("SELECT addme_message from contact where id=:id");
+    query.bindValue(":id", id.toInt());
+    if(!query.exec() || !query.next()) {
+        LFLOG_WARN << "Failed to fetch from contact with id=" << id;
+        throw runtime_error("Failed to fetch state from contact");
+    }
+
+    ar.message = query.value(0).toString();
+
+    query.prepare("SELECT name from identity where id=:id");
+    query.bindValue(":id", identity_);
+    if(!query.exec() || !query.next()) {
+        LFLOG_WARN << "Failed to fetch from identity with id=" << identity_;
+        throw runtime_error("Failed to fetch state from contact");
+    }
+
+    ar.nickName = query.value(0).toString();
+
+    DsEngine::instance().getProtocolMgr(
+                ProtocolManager::Transport::TOR).sendAddme(ar);
 }
 
 

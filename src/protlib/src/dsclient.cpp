@@ -130,9 +130,11 @@ void DsClient::getHelloReply(const Peer::data_t &data)
     // At this point, any further outbound data must be encrypted
     prepareDecryption(stateIn, olleh.header, olleh.key);
     state_ = State::ENCRYPTED_STREAM;
-    connection_->wantBytes(2);
     LFLOG_DEBUG << "The data-stream to " << connection_->getUuid().toString()
                 << " is fully switched to stream-encryption.";
+
+    emit outboundPeerReady(connection_->getUuid());
+    enableEncryptedStream();
 }
 
 }} // namespaces

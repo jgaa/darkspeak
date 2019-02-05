@@ -87,7 +87,7 @@ public slots:
                             const bool allow);
 
 private slots:
-    void onSocketConnected(const QUuid& uuid);
+    void onOutboundPeerReady(const QUuid& uuid);
     void onSocketDisconnected(const QUuid& uuid);
     void onSocketFailed(const QUuid& uuid,
                         const QAbstractSocket::SocketError& socketError);

@@ -19,6 +19,12 @@ public:
     using mview_t = crypto::MemoryView<uint8_t>;
     using data_t = crypto::MemoryView<uint8_t>;
     using stream_state_t = crypto_secretstream_xchacha20poly1305_state;
+    static constexpr size_t crypt_bytes = crypto_secretstream_xchacha20poly1305_ABYTES;
+    enum class InState {
+        DISABLED,
+        CHUNK_SIZE,
+        CHUNK_DATA
+    };
 
     struct Hello {
         static constexpr size_t bytes = 1 /* version */
@@ -94,12 +100,21 @@ public slots:
 
 signals:
     void incomingPeer(const QUuid& connectionId, const QByteArray& handle);
+    void outboundPeerReady(const QUuid& connectionId);
+    void receivedData(const QUuid& connectionId, const quint32 channel,
+                      const quint64 id, const QByteArray& data);
 
 protected:
+    void enableEncryptedStream();
+    void wantChunkSize();
+    void wantChunkData(const size_t bytes);
     void processStream(const data_t& data);
     void prepareEncryption(stream_state_t& state, mview_t& header, mview_t& key);
     void prepareDecryption(stream_state_t& state, const mview_t& header, const mview_t& key);
+    void decrypt(mview_t& data, const mview_t& ciphertext);
+    QByteArray safePayload(const mview_t& data);
 
+    InState inState_ = InState::DISABLED;
     ConnectionSocket::ptr_t connection_;
     core::ConnectData connectionData_;
     stream_state_t stateIn;

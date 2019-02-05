@@ -95,12 +95,13 @@ private slots:
 
 private:
     QByteArray getIdFromRow(const int row) const;
+    QByteArray getIdFromConnectionUuid(const QUuid &uuid) const;
     int getRowFromId(const QByteArray& id) const;
     ExtraInfo::ptr_t getExtra(const int row) const;
     ExtraInfo::ptr_t getExtra(const QByteArray& id) const;
     ExtraInfo::ptr_t getExtra(const QUuid& uuid) const;
     QString getOnlineIcon(int row) const;
-    void setOnlineStatus(const QUuid& uuid, OnlineStatus status);
+    void setOnlineStatus(const QByteArray& id, OnlineStatus status);
     void doIfOnline(int row,
                     std::function<void (const QByteArray&, ExtraInfo&)> fn,
                     bool throwIfNot = false);
@@ -111,9 +112,10 @@ private:
                     std::function<void (const QByteArray&)> fn,
                     bool throwIfNot = false);
     int col2Role(int col) const noexcept { return col + Qt::UserRole; }
-    void updateLastSeen(const QUuid& uuid);
-    ds::core::Contact::State getState(const QUuid& uuid) const;
-    void setState(const QUuid& uuid, const core::Contact::State state);
+    void updateLastSeen(const QByteArray& id);
+    ds::core::Contact::State getState(const QByteArray& id) const;
+    void setState(const QByteArray& id, const core::Contact::State state);
+    void sendAddme(const QByteArray& id, const QUuid &connection);
 
     int h_id_ = {};
     int h_identity_ = {};

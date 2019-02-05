@@ -48,15 +48,19 @@ void ConnectionSocket::processInput()
 {
     if (bytesWanted_ && (static_cast<size_t>(inData.size()) >= bytesWanted_)) {
         const data_t data{inData.data(), bytesWanted_};
-        emit haveBytes(data);
 
-        if (static_cast<size_t>(inData.size()) == bytesWanted_) {
-            inData.resize(0);
+        QByteArray my_data;
+        if (bytesWanted_ == static_cast<size_t>(inData.size())) {
+            my_data.swap(inData);
+            assert(inData.isEmpty());
         } else {
+            my_data = inData.left(static_cast<int>(bytesWanted_));
             inData.remove(0, static_cast<int>(bytesWanted_));
         }
 
+        // We may be called recursively, so InData must be updated before we emit
         bytesWanted_ = 0;
+        emit haveBytes(my_data);
     }
 
     // This should never happen, but just in case...

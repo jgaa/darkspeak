@@ -76,14 +76,17 @@ QUuid TorServiceInterface::connectToService(const QByteArray &host, const uint16
                 << host << ":" << port
                 << " with connection-id " << connection->getUuid().toString();
 
-    connect(connection.get(), &ConnectionSocket::connectedToHost,
-            this, &TorServiceInterface::onSocketConnected);
+//    connect(connection.get(), &ConnectionSocket::connectedToHost,
+//            this, &TorServiceInterface::onSocketConnected);
     connect(connection.get(), &ConnectionSocket::disconnectedFromHost,
             this, &TorServiceInterface::onSocketDisconnected);
     connect(connection.get(), &ConnectionSocket::socketFailed,
             this, &TorServiceInterface::onSocketFailed);
 
     auto client = make_shared<DsClient>(connection, move(cd));
+
+    connect(client.get(), &Peer::outboundPeerReady,
+            this, &TorServiceInterface::onOutboundPeerReady);
 
     connection->setProxy(getTorProxy());
     connection->connectToHost(host, port);
@@ -113,7 +116,7 @@ ConnectionSocket &TorServiceInterface::getSocket(const QUuid &uuid)
     throw runtime_error("No such connection: "s + uuid.toString().toStdString());
 }
 
-void TorServiceInterface::onSocketConnected(const QUuid &uuid)
+void TorServiceInterface::onOutboundPeerReady(const QUuid &uuid)
 {
     LFLOG_DEBUG << "Connected with id " << uuid.toString();
     emit connectedToService(uuid);
@@ -141,8 +144,6 @@ void TorServiceInterface::onNewIncomingConnection(
     LFLOG_DEBUG << "Plugging in a new incoming connection: "
                 << connection->getUuid().toString();
 
-    connect(connection.get(), &ConnectionSocket::connectedToHost,
-            this, &TorServiceInterface::onSocketConnected);
     connect(connection.get(), &ConnectionSocket::disconnectedFromHost,
             this, &TorServiceInterface::onSocketDisconnected);
     connect(connection.get(), &ConnectionSocket::socketFailed,
