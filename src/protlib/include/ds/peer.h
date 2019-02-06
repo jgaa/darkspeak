@@ -91,6 +91,10 @@ public:
         return connection_;
     }
 
+    const core::ConnectData& getConnectData() const {
+        return connectionData_;
+    }
+
 public slots:
     virtual void authorize(bool /*authorize*/) {}
 

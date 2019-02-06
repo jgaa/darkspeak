@@ -50,6 +50,10 @@ protected:
     // ProtocolManager interface
 public slots:
     uint64_t sendAddme(const core::AddmeReq& req) override;
+
+    // ProtocolManager interface
+public:
+    QByteArray getPeerHandle(const QUuid &service, const QUuid &connectionId) override;
 };
 
 }} // namespaces

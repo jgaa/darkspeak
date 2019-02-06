@@ -18,6 +18,18 @@
 namespace ds {
 namespace core {
 
+struct PeerAddmeReq
+{
+    QUuid service;
+    QUuid connectionId;
+    quint64 requestId;
+
+    QString nickName;
+    QString message;
+    QByteArray address;
+    QByteArray handle;
+};
+
 /*! The core engine of DarkSpeak.
  *
  * It owns the database, and it acts like a layer
@@ -75,6 +87,8 @@ private slots:
     void onServiceFailed(const QUuid& id, const QByteArray& reason);
     void onServiceStarted(const QUuid& id, const bool newService);
     void onServiceStopped(const QUuid& id);
+    void onReceivedData(const QUuid& service, const QUuid& connectionId, const quint32 channel,
+                        const quint64 id, const QByteArray& data);
 
 signals:
     void identityCreated(const Identity&);
@@ -97,6 +111,9 @@ signals:
     void connectionFailed(const QUuid& uuid,
                           const QAbstractSocket::SocketError& socketError);
     void incomingPeer(const QUuid& service, const QUuid& connectionId, const QByteArray& handle);
+    void receivedData(const QUuid& service, const QUuid& connectionId, const quint32 channel,
+                      const quint64 id, const QByteArray& data);
+    void receivedAddMe(const PeerAddmeReq& req);
 
 protected:
     void initialize();
@@ -113,5 +130,7 @@ protected:
 };
 
 }} // namepsaces
+
+Q_DECLARE_METATYPE(ds::core::PeerAddmeReq)
 
 #endif // DSENGINE_H

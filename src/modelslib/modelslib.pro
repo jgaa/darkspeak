@@ -17,7 +17,8 @@ SOURCES += \
     src/conversationsmodel.cpp \
     src/messagemodel.cpp \
     src/manager.cpp \
-    src/logmodel.cpp
+    src/logmodel.cpp \
+    src/notificationsmodel.cpp
 
 HEADERS += \
     include/ds/identitiesmodel.h \
@@ -27,7 +28,8 @@ HEADERS += \
     include/ds/conversationsmodel.h \
     include/ds/messagemodel.h \
     include/ds/manager.h \
-    include/ds/logmodel.h
+    include/ds/logmodel.h \
+    include/ds/notificationsmodel.h
 
 INCLUDEPATH += \
     $$PWD/include \

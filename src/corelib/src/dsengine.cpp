@@ -16,7 +16,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QJsonDocument>
-#include <QJsonDocument>
+#include <QJsonObject>
 #include <QBuffer>
 
 #include "logfault/logfault.h"
@@ -245,6 +245,38 @@ void DsEngine::onServiceStopped(const QUuid& serviceId)
     serviceStopped(serviceId);
 }
 
+void DsEngine::onReceivedData(const QUuid &service,
+                              const QUuid &connectionId,
+                              const quint32 channel,
+                              const quint64 id,
+                              const QByteArray &data)
+{
+    emit receivedData(service, connectionId, channel, id, data);
+
+    if (channel == 0) {
+        // Control channel. Data is supposed to be Json.
+        QJsonDocument json = QJsonDocument::fromJson(data);
+        if (json.isNull()) {
+            LFLOG_ERROR << "Incoming data on " << connectionId.toString()
+                        << " with id=" << id
+                        << " is supposed to be in Json format, but it is not.";
+            throw runtime_error("Not Json");
+        }
+
+        if (json.object().value("type") == "AddMe") {
+            PeerAddmeReq req{service, connectionId, id,
+                        json.object().value("nick").toString(),
+                        json.object().value("message").toString(),
+                        json.object().value("address").toString().toUtf8(),
+                        tor_mgr_->getPeerHandle(service, connectionId)};
+
+            emit receivedAddMe(req);
+        } else {
+            throw runtime_error("Unrecognized type");
+        }
+    }
+}
+
 void DsEngine::sendMessage(const Message& /*msg*/)
 {
 }
@@ -347,9 +379,13 @@ void DsEngine::start()
 
     connect(tor_mgr_.get(),
             &ds::core::ProtocolManager::incomingPeer,
-            this, [this](const QUuid& service, const QUuid& connectionId, const QByteArray& handle) {
+            this, [this](const QUuid& service, const QUuid& connectionId,
+            const QByteArray& handle) {
         emit incomingPeer(service, connectionId, handle);
     });
+
+    connect(tor_mgr_.get(), &ds::core::ProtocolManager::receivedData,
+            this, &DsEngine::onReceivedData);
 
     tor_mgr_->start();
 }

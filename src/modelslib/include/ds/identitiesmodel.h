@@ -61,6 +61,10 @@ private slots:
     void onServiceFailed(const QUuid& servive, const QByteArray& reason);
     void onTransportHandleReady(const core::TransportHandle& th);
     void onIncomingPeer(const QUuid& service, const QUuid& connectionId, const QByteArray& handle);
+    void onReceivedAddMe(const core::PeerAddmeReq& req);
+
+signals:
+    void addmeRequest(const int identityId, const core::PeerAddmeReq& req);
 
     // QAbstractItemModel interface
 public:

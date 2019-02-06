@@ -81,6 +81,8 @@ signals:
     void connectionFailed(const QUuid& uuid,
                           const QAbstractSocket::SocketError& socketError);
     void incomingPeer(const QUuid& connectionId, const QByteArray& handle);
+    void receivedData(const QUuid& connectionId, const quint32 channel,
+                      const quint64 id, const QByteArray& data);
 
 public slots:
     void autorizeConnection(const QUuid& connection,

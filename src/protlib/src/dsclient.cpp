@@ -41,6 +41,7 @@ void DsClient::advance()
             sayHello();
             break;
         case State::GET_OLLEH:
+        case State::ENCRYPTED_STREAM:
             break;
     }
 }
@@ -48,11 +49,15 @@ void DsClient::advance()
 void DsClient::advance(const Peer::data_t &data)
 {
     switch(state_) {
+    case State::ENCRYPTED_STREAM:
+            processStream(data);
+            break;
         case State::CONNECTED:
             advance();
             break;
         case State::GET_OLLEH:
             getHelloReply(data);
+            break;
     }
 }
 

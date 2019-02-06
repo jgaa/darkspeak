@@ -88,6 +88,12 @@ QUuid TorServiceInterface::connectToService(const QByteArray &host, const uint16
     connect(client.get(), &Peer::outboundPeerReady,
             this, &TorServiceInterface::onOutboundPeerReady);
 
+    connect(client.get(), &Peer::receivedData,
+           this, [this](const QUuid& connectionId, const quint32 channel,
+           const quint64 id, const QByteArray& data) {
+        emit receivedData(connectionId, channel, id, data);
+    });
+
     connection->setProxy(getTorProxy());
     connection->connectToHost(host, port);
 
@@ -156,6 +162,12 @@ void TorServiceInterface::onNewIncomingConnection(
     connect(server.get(), &Peer::incomingPeer,
             this, [this](const QUuid& connectionId, const QByteArray& handle) {
         emit incomingPeer(connectionId, handle);
+    });
+
+    connect(server.get(), &Peer::receivedData,
+           this, [this](const QUuid& connectionId, const quint32 channel,
+           const quint64 id, const QByteArray& data) {
+        emit receivedData(connectionId, channel, id, data);
     });
 
     peers_[connection->getUuid()] = server;

@@ -71,6 +71,8 @@ public:
     virtual State getState() const = 0;
     virtual bool isOnline() const { return getState() == State::ONLINE; }
 
+    virtual QByteArray getPeerHandle(const QUuid& service, const QUuid& connectionId) = 0;
+
 signals:
     /*! We are trying to connect to the transport */
     void connecting();
@@ -107,6 +109,8 @@ signals:
     void connectionFailed(const QUuid& connection,
                           const QAbstractSocket::SocketError& socketError);
     void incomingPeer(const QUuid& service, const QUuid& connectionId, const QByteArray& handle);
+    void receivedData(const QUuid& service, const QUuid& connectionId, const quint32 channel,
+                      const quint64 id, const QByteArray& data);
 
 public slots:
 
@@ -163,6 +167,8 @@ public slots:
                                     const bool allow) = 0;
 
     virtual uint64_t sendAddme(const AddmeReq& req) = 0;
+
+
 
 public:
     static ptr_t create(QSettings& settings, Transport transport);

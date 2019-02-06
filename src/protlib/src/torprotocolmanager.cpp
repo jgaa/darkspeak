@@ -162,6 +162,14 @@ uint64_t TorProtocolManager::sendAddme(const AddmeReq& req)
     throw runtime_error("Failed to access peer while sending addme");
 }
 
+QByteArray TorProtocolManager::getPeerHandle(const QUuid &service,
+                                             const QUuid &connectionId)
+{
+    const auto& cd = getService(service).getPeer(connectionId)->getConnectData();
+    const auto cert = crypto::DsCert::createFromPubkey(cd.contactsPubkey);
+    return cert->getB58PubKey();
+}
+
 void TorProtocolManager::sendMessage(const core::Message &)
 {
 
@@ -229,6 +237,12 @@ void TorProtocolManager::startService(const QUuid& serviceId,
     connect(service.get(), &TorServiceInterface::incomingPeer,
             this, [this, serviceId] (const QUuid& connectionId, const QByteArray& handle) {
         emit incomingPeer(serviceId, connectionId, handle);
+    });
+
+    connect(service.get(), &TorServiceInterface::receivedData,
+            this, [this, serviceId](const QUuid& connectionId, const quint32 channel,
+            const quint64 id, const QByteArray& data) {
+        emit receivedData(serviceId, connectionId, channel, id, data);
     });
 
     tor_->startService(sp);

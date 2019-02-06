@@ -68,6 +68,10 @@ IdentitiesModel::IdentitiesModel(QSettings &settings)
             &ds::core::DsEngine::incomingPeer,
             this, &IdentitiesModel::onIncomingPeer);
 
+    connect(&DsEngine::instance(),
+            &ds::core::DsEngine::receivedAddMe,
+            this, &IdentitiesModel::onReceivedAddMe);
+
 
     select();
 }
@@ -244,6 +248,32 @@ void IdentitiesModel::onIncomingPeer(const QUuid &service, const QUuid &connecti
     } else {
         LFLOG_WARN << "Connection from peer " << handle
                    << " to unknown identity " << service.toString();
+    }
+}
+
+void IdentitiesModel::onReceivedAddMe(const PeerAddmeReq &req)
+{
+    if (auto extra = getExtra(req.service, false)) {
+
+
+        LFLOG_NOTICE << "Received addme request on connection "
+                     << req.connectionId.toString()
+                     << " to identity " << getNameFromUuid(req.service);
+
+        // Check for blacklist
+            // send reject
+
+        // Check if the connection already is added
+            // Send ack
+
+        // Notify the UI that there is a new connection request
+        emit addmeRequest(getIdFromUuid(req.service), req);
+
+    } else {
+        LFLOG_WARN << "AddMe request from connection " << req.connectionId.toString()
+                   << " to unknown identity " << req.service.toString();
+
+        // TODO: Reject
     }
 }
 

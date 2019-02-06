@@ -12,6 +12,7 @@
 #include "ds/logmodel.h"
 #include "ds/identitiesmodel.h"
 #include "ds/contactsmodel.h"
+#include "ds/notificationsmodel.h"
 
 #ifndef PROGRAM_VERSION
     #define PROGRAM_VERSION "develop"
@@ -39,6 +40,7 @@ public:
     Q_INVOKABLE LogModel *logModel();
     Q_INVOKABLE IdentitiesModel *identitiesModel();
     Q_INVOKABLE ContactsModel *contactsModel();
+    Q_INVOKABLE NotificationsModel *notificationsModel();
     Q_INVOKABLE void textToClipboard(QString text);
     Q_INVOKABLE QVariantMap getIdenityFromClipboard() const;
 
@@ -76,6 +78,7 @@ private:
     std::unique_ptr<LogModel> log_;
     std::unique_ptr<IdentitiesModel> identities_;
     std::unique_ptr<ContactsModel> contacts_;
+    std::unique_ptr<NotificationsModel> notifications_;
     int page_ = 3; // Home
 };
 
