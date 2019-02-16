@@ -132,6 +132,9 @@ Manager::Manager()
 
     connect(identities_.get(), &IdentitiesModel::addmeRequest,
             notifications_.get(), &NotificationsModel::addNotification);
+
+    connect(notifications_.get(), &NotificationsModel::contactAccepted,
+            contacts_.get(), &ContactsModel::onContactAccepted);
 }
 
 Manager::AppState Manager::getAppState() const

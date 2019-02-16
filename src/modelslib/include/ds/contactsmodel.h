@@ -11,6 +11,8 @@
 #include <QAbstractSocket>
 
 #include "ds/contact.h"
+#include "ds/protocolmanager.h"
+#include "ds/dsengine.h"
 
 namespace ds {
 namespace models {
@@ -73,6 +75,7 @@ public:
 
 public slots:
     void onContactCreated(const ds::core::Contact& contact);
+    void onContactAccepted(const ds::core::Contact& contact);
     OnlineStatus getOnlineStatus(int row) const;
     void createContact(const QString &nickName,
                        const QString& name,
@@ -84,26 +87,31 @@ public slots:
 
     void onIdentityChanged(int identityId);
     void connectTransport(int row);
+    void connectTransport(const QByteArray& id, ExtraInfo& extra);
     void disconnectTransport(int row);
+    void onReceivedAck(const core::PeerAck& ack);
 
 signals:
     void identityChanged(int from, int to);
     void onlineStatusChanged();
 
 private slots:
-    void onConnectedTo(const QUuid& uuid);
+    void onConnectedTo(const QUuid& uuid, const core::ProtocolManager::Direction direction);
     void onDisconnectedFrom(const QUuid& uuid);
     void onConnectionFailed(const QUuid& uuid,
                             const QAbstractSocket::SocketError& socketError);
 
 private:
     QByteArray getIdFromRow(const int row) const;
+    QByteArray getIdFromUuid(const QUuid &uuid) const;
     QByteArray getIdFromConnectionUuid(const QUuid &uuid) const;
+    QUuid getIdentityUuidFromId(const QByteArray& id) const;
     int getRowFromId(const QByteArray& id) const;
     ExtraInfo::ptr_t getExtra(const int row) const;
     ExtraInfo::ptr_t getExtra(const QByteArray& id) const;
     ExtraInfo::ptr_t getExtra(const QUuid& uuid) const;
     QString getOnlineIcon(int row) const;
+    void disconnectPeer(const QByteArray& id, const QUuid& connection);
     void setOnlineStatus(const QByteArray& id, OnlineStatus status);
     void doIfOnline(int row,
                     std::function<void (const QByteArray&, ExtraInfo&)> fn,
@@ -117,8 +125,10 @@ private:
     int col2Role(int col) const noexcept { return col + Qt::UserRole; }
     void updateLastSeen(const QByteArray& id);
     ds::core::Contact::State getState(const QByteArray& id) const;
+    ds::core::Contact::InitiatedBy getInitiation(const QByteArray& id) const;
     void setState(const QByteArray& id, const core::Contact::State state);
     void sendAddme(const QByteArray& id, const QUuid &connection);
+    void onAddmeAck(const QByteArray& id, const core::PeerAck& ack);
 
     int h_id_ = {};
     int h_identity_ = {};

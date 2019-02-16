@@ -255,19 +255,26 @@ void IdentitiesModel::onReceivedAddMe(const PeerAddmeReq &req)
 {
     if (auto extra = getExtra(req.service, false)) {
 
-
         LFLOG_NOTICE << "Received addme request on connection "
                      << req.connectionId.toString()
                      << " to identity " << getNameFromUuid(req.service);
 
-        // Check for blacklist
+        // TODO: Check for blacklist
             // send reject
 
-        // Check if the connection already is added
-            // Send ack
+        // TODO: Check if the connection already is added
 
         // Notify the UI that there is a new connection request
         emit addmeRequest(getIdFromUuid(req.service), req);
+
+        // Disconnect. We want to verify the address given by the peer
+        // by sending an Ack to an outgoing connection.
+        // In order to do that we will connect to the
+        // service address provided, and establish communication using
+        // the peers handle. If we can't accpmplish that, the contact is
+        // not real.
+        DsEngine::instance().getProtocolMgr(
+                    ProtocolManager::Transport::TOR).disconnectFrom(req.service, req.connectionId);
 
     } else {
         LFLOG_WARN << "AddMe request from connection " << req.connectionId.toString()

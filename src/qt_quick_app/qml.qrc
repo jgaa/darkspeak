@@ -2,7 +2,7 @@
     <qresource prefix="/">
         <file>main.qml</file>
         <file>LogForm.ui.qml</file>
-        <file>HomeForm.ui.qml</file>
+        <file>Home.qml</file>
         <file>qtquickcontrols2.conf</file>
         <file>Contacts.qml</file>
         <file>ConversationsForm.ui.qml</file>
@@ -26,5 +26,6 @@
         <file>images/onion-bw.svg</file>
         <file>images/user.svg</file>
         <file>NewContactDialog.qml</file>
+        <file>images/add-user.svg</file>
     </qresource>
 </RCC>

@@ -33,7 +33,7 @@ ApplicationWindow {
         Contacts {
         }
 
-        HomeForm {
+        Home {
         }
 
         ConversationsForm {

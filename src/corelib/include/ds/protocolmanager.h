@@ -31,6 +31,13 @@ struct AddmeReq {
     QString message;
 };
 
+struct AckMsg {
+    QUuid service; // for Identity
+    QUuid connection;
+    QByteArray what;
+    QByteArray status;
+};
+
 /*! Generic interface to the IM protocol.
  *
  * Currently we only support Tor as a transport layer,
@@ -63,6 +70,11 @@ public:
 
     enum class Transport {
         TOR
+    };
+
+    enum class Direction {
+        OUTBOUND,
+        INCOMING
     };
 
     ProtocolManager();
@@ -104,7 +116,7 @@ signals:
     void serviceStarted(const QUuid& service, const bool newService);
     void serviceStopped(const QUuid& service);
 
-    void connectedTo(const QUuid& connection);
+    void connectedTo(const QUuid& connection, const Direction direction);
     void disconnectedFrom(const QUuid& connection);
     void connectionFailed(const QUuid& connection,
                           const QAbstractSocket::SocketError& socketError);
@@ -168,7 +180,7 @@ public slots:
 
     virtual uint64_t sendAddme(const AddmeReq& req) = 0;
 
-
+    virtual uint64_t sendAck(const AckMsg& ack) = 0;
 
 public:
     static ptr_t create(QSettings& settings, Transport transport);

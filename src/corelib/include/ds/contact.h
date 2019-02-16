@@ -18,8 +18,9 @@ struct Contact {
     };
 
     enum State {
-        WAITING_FOR_ACCEPTANCE,
-        ACCEPTED,
+        PENDING, // Never successfully connected to peers address
+        WAITING_FOR_ACCEPTANCE, // We have sent addme, Waiting for ack
+        ACCEPTED, // We have experienced connectins in both directions, and received and / or sent ack
         REJECTED,
         BLOCKED
     };
@@ -68,7 +69,7 @@ struct Contact {
     QDateTime lastSeen;
 
     // The current state for this contact
-    State state = State::WAITING_FOR_ACCEPTANCE;
+    State state = State::PENDING;
 
     // Message to send with the addme request
     QString addmeMessage;

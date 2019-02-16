@@ -129,40 +129,7 @@ void DsEngine::createIdentity(const IdentityReq& req)
 
 void DsEngine::createContact(const ContactReq &req)
 {
-    static const regex valid_address{R"((^(onion):)?([a-z2-7]{16}|[a-z2-7]{56})\:(\d{1,5})$)"};
-
-    Contact c;
-    c.identity = req.identity;
-    c.uuid = QUuid::createUuid().toByteArray();
-    c.name = req.name;
-    c.nickname = req.nickname;
-    c.notes = req.notes;
-    c.group = req.group;
-    c.avatar = req.avatar;
-    c.whoInitiated = req.whoInitiated;
-    c.pubkey = req.pubkey;
-    c.address = req.address;
-    c.autoConnect = req.autoConnect;
-    c.addmeMessage = req.addmeMessage;
-
-    // Validate
-    if (!regex_match(c.address.data(), valid_address)) {
-        LFLOG_WARN << "New contact " << req.name
-                   << " has an invalid address format : '"
-                   << c.address
-                   << "'";
-        throw ParseError(QStringLiteral(
-            "Invalid address format for contact %1").arg(req.name));
-    }
-
-    // Create a cert from the pubkey so we can hash it.
-    auto cert = ds::crypto::DsCert::createFromPubkey(c.pubkey);
-    c.hash = cert->getHash().toByteArray();
-
-    // Emit
-    LFLOG_DEBUG << "Contact " << c.name << " is ok.";
-    LFLOG_DEBUG << "Hash is: " << c.hash.toBase64();
-    emit contactCreated(c);
+    emit contactCreated(prepareContact((req)));
 }
 
 void DsEngine::createNewTransport(const QByteArray &name, const QUuid& uuid)
@@ -263,7 +230,9 @@ void DsEngine::onReceivedData(const QUuid &service,
             throw runtime_error("Not Json");
         }
 
-        if (json.object().value("type") == "AddMe") {
+        const auto type = json.object().value("type");
+
+        if (type == "AddMe") {
             PeerAddmeReq req{service, connectionId, id,
                         json.object().value("nick").toString(),
                         json.object().value("message").toString(),
@@ -271,6 +240,12 @@ void DsEngine::onReceivedData(const QUuid &service,
                         tor_mgr_->getPeerHandle(service, connectionId)};
 
             emit receivedAddMe(req);
+        } else if (type == "Ack") {
+            PeerAck ack{service, connectionId, id,
+                        json.object().value("what").toString().toUtf8(),
+                        json.object().value("status").toString().toUtf8()};
+
+            emit receivedAck(ack);
         } else {
             throw runtime_error("Unrecognized type");
         }
@@ -360,8 +335,8 @@ void DsEngine::start()
 
     connect(tor_mgr_.get(),
             &ds::core::ProtocolManager::connectedTo,
-            this, [this](const QUuid& uuid) {
-        emit connectedTo(uuid);
+            this, [this](const QUuid& uuid, const ProtocolManager::Direction direction) {
+        emit connectedTo(uuid, direction);
     });
 
     connect(tor_mgr_.get(),
@@ -544,6 +519,45 @@ QByteArray DsEngine::imageToBytes(const QImage &img)
     buffer.open(QIODevice::WriteOnly);
     img.save(&buffer, "PNG");
     return ba;
+}
+
+Contact DsEngine::prepareContact(const ContactReq &req)
+{
+    static const regex valid_address{R"((^(onion):)?([a-z2-7]{16}|[a-z2-7]{56})\:(\d{1,5})$)"};
+
+    Contact c;
+    c.identity = req.identity;
+    c.uuid = QUuid::createUuid().toByteArray();
+    c.name = req.name;
+    c.nickname = req.nickname;
+    c.notes = req.notes;
+    c.group = req.group;
+    c.avatar = req.avatar;
+    c.whoInitiated = req.whoInitiated;
+    c.pubkey = req.pubkey;
+    c.address = req.address;
+    c.autoConnect = req.autoConnect;
+    c.addmeMessage = req.addmeMessage;
+
+    // Validate
+    if (!regex_match(c.address.data(), valid_address)) {
+        LFLOG_WARN << "New contact " << req.name
+                   << " has an invalid address format : '"
+                   << c.address
+                   << "'";
+        throw ParseError(QStringLiteral(
+            "Invalid address format for contact %1").arg(req.name));
+    }
+
+    // Create a cert from the pubkey so we can hash it.
+    auto cert = ds::crypto::DsCert::createFromPubkey(c.pubkey);
+    c.hash = cert->getHash().toByteArray();
+
+    // Emit
+    LFLOG_DEBUG << "Contact " << c.name << " is ok.";
+    LFLOG_DEBUG << "Hash is: " << c.hash.toBase64();
+
+    return c;
 }
 
 

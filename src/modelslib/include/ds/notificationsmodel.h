@@ -40,17 +40,26 @@ class NotificationsModel : public QSqlQueryModel
         H_TYPE,
         H_TIMESTAMP,
         H_MESSAGE,
+        H_DATA,
         H_IDENTITY,
         H_CONTACT,
         H_IDENTITY_NAME,
-        H_CONTACT_NAME
+        H_CONTACT_NAME,
+
+        H_NICKNAME = Qt::UserRole + 100,
+        H_HANDLE,
+        H_ADDRESS
     };
 
     QVariant data(const QModelIndex &index, int role) const override;
     virtual QHash<int, QByteArray> roleNames() const override;
 
+signals:
+    void contactAccepted(const ds::core::Contact& contact);
+
 public slots:
     void addNotification(const int identityId, const core::PeerAddmeReq& req);
+    void acceptContact(const int row, bool accept);
 
 public:
     NotificationsModel() = default;
@@ -59,6 +68,7 @@ public:
 private:
     int col2Role(int col) const noexcept { return col + Qt::UserRole; }
     void refresh();
+    void deleteRow(const int row);
 
 };
 

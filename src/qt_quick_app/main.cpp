@@ -67,12 +67,17 @@ int main(int argc, char *argv[])
                                                            "ContactsModel",
                                                            "Cannot create OnlineStatus in QML");
 
+    qmlRegisterUncreatableType<ds::models::NotificationsModel>("com.jgaa.darkspeak", 1, 0,
+                                                           "ContactsModel",
+                                                           "Cannot create NotificationsModel in QML");
+
     QQmlApplicationEngine engine;
 
     engine.rootContext()->setContextProperty("manager", manager.get());
     engine.rootContext()->setContextProperty("log", manager->logModel());
     engine.rootContext()->setContextProperty("identities", manager->identitiesModel());
     engine.rootContext()->setContextProperty("contacts", manager->contactsModel());
+    engine.rootContext()->setContextProperty("notifications", manager->notificationsModel());
 
     //QQuickStyle::setStyle("Fusion");
 

@@ -18,17 +18,52 @@
 namespace ds {
 namespace core {
 
-struct PeerAddmeReq
+struct PeerReq
 {
+    PeerReq() = default;
+    PeerReq(const PeerReq&) = default;
+    PeerReq(QUuid serviceVal, QUuid connectionIdVal, quint64 requestIdVal)
+        : service{std::move(serviceVal)}, connectionId{std::move(connectionIdVal)}
+        , requestId{requestIdVal} {}
+
     QUuid service;
     QUuid connectionId;
     quint64 requestId;
+};
+
+struct PeerAddmeReq : public PeerReq
+{
+    PeerAddmeReq() = default;
+    PeerAddmeReq(const PeerAddmeReq&) = default;
+    PeerAddmeReq(QUuid serviceVal, QUuid connectionIdVal, quint64 requestIdVal,
+                 QString nickNameVal, QString messageVal, QByteArray addressVal,
+                 QByteArray handleVal)
+        : PeerReq{std::move(serviceVal), std::move(connectionIdVal), requestIdVal}
+        , nickName{std::move(nickNameVal)}
+        , message{std::move(messageVal)}
+        , address{std::move(addressVal)}
+        , handle{std::move(handleVal)} {}
 
     QString nickName;
     QString message;
     QByteArray address;
     QByteArray handle;
 };
+
+struct PeerAck : public PeerReq
+{
+    PeerAck() = default;
+    PeerAck(const PeerAck&) = default;
+
+    PeerAck(QUuid serviceVal, QUuid connectionIdVal, quint64 requestIdVal,
+            QByteArray whatVal, QByteArray statusVal)
+        : PeerReq{std::move(serviceVal), std::move(connectionIdVal), requestIdVal}
+        , what{std::move(whatVal)}, status{std::move(statusVal)} {}
+
+    QByteArray what;
+    QByteArray status;
+};
+
 
 /*! The core engine of DarkSpeak.
  *
@@ -67,6 +102,7 @@ public:
     static QByteArray toJson(const QVariantMap& data);
     static QVariantMap fromJson(const QByteArray& json);
     static QByteArray imageToBytes(const QImage& img);
+    Contact prepareContact(const ContactReq&);
 
 public slots:
     void createIdentity(const IdentityReq&);
@@ -106,7 +142,7 @@ signals:
     void serviceStopped(const QUuid& uuid);
     void transportHandleReady(const TransportHandle& th);
     void transportHandleError(const TransportHandleError& th);
-    void connectedTo(const QUuid& uuid);
+    void connectedTo(const QUuid& uuid, const ProtocolManager::Direction direction);
     void disconnectedFrom(const QUuid& uuid);
     void connectionFailed(const QUuid& uuid,
                           const QAbstractSocket::SocketError& socketError);
@@ -114,6 +150,7 @@ signals:
     void receivedData(const QUuid& service, const QUuid& connectionId, const quint32 channel,
                       const quint64 id, const QByteArray& data);
     void receivedAddMe(const PeerAddmeReq& req);
+    void receivedAck(const PeerAck& req);
 
 protected:
     void initialize();
@@ -131,6 +168,8 @@ protected:
 
 }} // namepsaces
 
+Q_DECLARE_METATYPE(ds::core::PeerReq)
 Q_DECLARE_METATYPE(ds::core::PeerAddmeReq)
+Q_DECLARE_METATYPE(ds::core::PeerAck)
 
 #endif // DSENGINE_H

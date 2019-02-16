@@ -31,12 +31,12 @@ public:
 
     virtual const safe_array_t& getCert() const = 0;
     virtual const safe_view_t& getSigningKey() const = 0;
-    virtual const safe_view_t& getSigningPubKey() const = 0;\
+    virtual const safe_view_t& getSigningPubKey() const = 0;
     virtual const safe_view_t& getEncryptionKey() const = 0;
     virtual const safe_view_t& getEncryptionPubKey() const = 0;
     virtual const safe_array_t& getHash() const = 0;
     virtual const QByteArray getB58PubKey() {
-        return b58check_enc<QByteArray>(getEncryptionPubKey(), {249, 50});
+        return b58check_enc<QByteArray>(getSigningPubKey(), {249, 50});
     }
 
     template <typename Tciphertext, typename Tdata>

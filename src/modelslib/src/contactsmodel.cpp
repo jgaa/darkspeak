@@ -64,6 +64,9 @@ ContactsModel::ContactsModel(QSettings& settings)
 
     connect(&DsEngine::instance(), &DsEngine::connectionFailed,
             this, &ContactsModel::onConnectionFailed);
+
+    connect(&DsEngine::instance(), &DsEngine::receivedAck,
+            this, &ContactsModel::onReceivedAck);
 }
 
 QVariant ContactsModel::data(const QModelIndex &ix, int role) const
@@ -219,6 +222,20 @@ void ContactsModel::onContactCreated(const Contact &contact)
     LFLOG_DEBUG << "Added contact " << contact.name << " to the database";
 }
 
+void ContactsModel::onContactAccepted(const Contact &contact)
+{
+    LFLOG_DEBUG << "Contact << " << contact.name
+                << " was accepted by the user."
+                << " I Will now add the contact to the database.";
+
+    onContactCreated(contact);
+    if (contact.autoConnect && Manager::instance().isOnline()) {
+        const auto id = getIdFromUuid(contact.uuid);
+        auto extra = getExtra(id);
+        connectTransport(id, *extra);
+    }
+}
+
 ContactsModel::OnlineStatus ContactsModel::getOnlineStatus(int row) const
 {
     if (auto e = getExtra(row)) {
@@ -282,20 +299,35 @@ void ContactsModel::onIdentityChanged(int identityId)
 
 void ContactsModel::connectTransport(int row)
 {
-    doIfValid(row, [this, row](const QByteArray& id, ExtraInfo& extra) {
-
-        Q_UNUSED(id)
-        ConnectData cd;
-        cd.address = data(index(row, h_address_), Qt::DisplayRole).toByteArray();
-        cd.service = identityUuid_;
-        cd.contactsPubkey = data(index(row, h_pubkey_), Qt::DisplayRole).toByteArray();
-        cd.identitysCert = Manager::instance().identitiesModel()->getCert(identityUuid_);
-
-        extra.outbound_connection_uuid = DsEngine::instance().getProtocolMgr(
-                    ProtocolManager::Transport::TOR).connectTo(cd);
-
-        setOnlineStatus(id, CONNECTING);
+    doIfValid(row, [this](const QByteArray& id, ExtraInfo& extra) {
+        connectTransport(id, extra);
     });
+}
+
+void ContactsModel::connectTransport(const QByteArray &id, ExtraInfo& extra)
+{
+    ConnectData cd;
+
+    QSqlQuery query(database());
+    query.prepare("SELECT c.address, c.pubkey, i.uuid from contact c left join identity i on c.identity = i.id where c.id=:id");
+    query.bindValue(":id", id.toInt());
+    if(!query.exec()) {
+        throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
+    }
+    if (!query.next()) {
+        LFLOG_WARN << "Failed to fetch from contact with id=" << id;
+        return;
+    }
+
+    cd.address = query.value(0).toByteArray();
+    cd.contactsPubkey = query.value(1).toByteArray();
+    cd.service = query.value(2).toByteArray();
+    cd.identitysCert = Manager::instance().identitiesModel()->getCert(cd.service);
+
+    extra.outbound_connection_uuid = DsEngine::instance().getProtocolMgr(
+                ProtocolManager::Transport::TOR).connectTo(cd);
+
+    setOnlineStatus(id, CONNECTING);
 }
 
 void ContactsModel::disconnectTransport(int row)
@@ -311,8 +343,21 @@ void ContactsModel::disconnectTransport(int row)
     });
 }
 
-// TODO: Need another signal for when the ecryption is established
-void ContactsModel::onConnectedTo(const QUuid &uuid)
+void ContactsModel::onReceivedAck(const PeerAck &ack)
+{
+    auto id = getIdFromConnectionUuid(ack.connectionId);
+    if (id.isEmpty()) {
+        return;
+    }
+
+    if (ack.what == "AddMe") {
+        onAddmeAck(id, ack);
+    }
+}
+
+// TODO: Call this when we have an incoming connection as well
+void ContactsModel::onConnectedTo(const QUuid &uuid,
+                                  const ProtocolManager::Direction direction)
 {
     auto connection_id = getIdFromConnectionUuid(uuid);
     if (connection_id.isEmpty()) {
@@ -326,14 +371,73 @@ void ContactsModel::onConnectedTo(const QUuid &uuid)
     setOnlineStatus(connection_id, ONLINE);
     updateLastSeen(connection_id);
 
-    // Send addme request?
+    // Send addme request or ack?
     Contact::State state = getState(connection_id);
-    if (state == Contact::State::WAITING_FOR_ACCEPTANCE) {
-        sendAddme(connection_id, uuid);
+
+    if (direction == ProtocolManager::Direction::INCOMING) {
+        if (state == Contact::State::PENDING) {
+            // We need to connect outwards before we can proceed
+            LFLOG_DEBUG << "Disconnecting incoming peer on connection "
+                        << uuid.toString()
+                        << " because we need to connect outwards in order to confirm it's address.";
+
+            disconnectPeer(connection_id, uuid);
+            return;
+        }
+
+        if (state == Contact::State::BLOCKED) {
+            // We need to connect outwards before we can proceed
+            LFLOG_DEBUG << "Disconnecting incoming peer on connection "
+                        << uuid.toString()
+                        << " because the contact is blocked.";
+
+            disconnectPeer(connection_id, uuid);
+            return;
+        }
+    }
+
+    if (state == Contact::State::PENDING || state == Contact::State::WAITING_FOR_ACCEPTANCE) {
+        if (getInitiation(connection_id) == Contact::InitiatedBy::ME) {
+            sendAddme(connection_id, uuid);
+            if (state == Contact::State::PENDING) {
+                assert(direction == ProtocolManager::Direction::OUTBOUND);
+                // We have an outbound connection to the peer, so we know that the
+                // address and pubkey are valid. We can therefore upgrade the
+                // status to waiting.
+                // If the send fails, it's not a problem as we will re-try later.
+                setState(connection_id, Contact::State::WAITING_FOR_ACCEPTANCE);
+            }
+            return;
+        } else {
+            if (direction == ProtocolManager::Direction::OUTBOUND) {
+                // We accepted this contact's request
+                AckMsg ack {identityUuid_, uuid, "AddMe", "Added"};
+                DsEngine::instance().getProtocolMgr(
+                            ProtocolManager::Transport::TOR).sendAck(ack);
+
+                // We have an outbound connection to the peer, so we know that the
+                // address and pubkey are valid. We can therefore upgrade the
+                // status to acepted.
+                // If the send fails, it's not a problem as the peer will re-send
+                // it's adddme, and we will reply with added.
+
+                setState(connection_id, Contact::State::ACCEPTED);
+            }
+        }
+    }
+
+    // State may have changed
+    state = getState(connection_id);
+    if (state != Contact::State::ACCEPTED) {
+        LFLOG_DEBUG << "Disconnecting peer on connection "
+                    << uuid.toString()
+                    << " because it is not in accepted state.";
+
+        disconnectPeer(connection_id, uuid);
         return;
     }
 
-    // TODO: Send queued messages
+    // TODO: Start sending queued messages
 }
 
 void ContactsModel::onDisconnectedFrom(const QUuid &uuid)
@@ -366,6 +470,21 @@ QByteArray ContactsModel::getIdFromRow(const int row) const
     return id;
 }
 
+QByteArray ContactsModel::getIdFromUuid(const QUuid &uuid) const
+{
+    QSqlQuery query(database());
+    query.prepare("SELECT id from contact where uuid=:uuid");
+    query.bindValue(":uuid", uuid);
+    if(!query.exec()) {
+        throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
+    }
+    if (!query.next()) {
+        LFLOG_WARN << "Failed to fetch from contact with uuid=" << uuid.toString();
+        throw runtime_error("Failed to fetch state from contact");
+    }
+    return query.value(0).toByteArray();
+}
+
 QByteArray ContactsModel::getIdFromConnectionUuid(const QUuid &uuid) const
 {
     for(const auto& e : extras_) {
@@ -375,6 +494,21 @@ QByteArray ContactsModel::getIdFromConnectionUuid(const QUuid &uuid) const
     }
 
     return {};
+}
+
+QUuid ContactsModel::getIdentityUuidFromId(const QByteArray &id) const
+{
+    QSqlQuery query(database());
+    query.prepare("SELECT i.uuid from contact c left join identity i on c.identity = i.id where c.id=:id");
+    query.bindValue(":id", id.toInt());
+    if(!query.exec()) {
+        throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
+    }
+    if (!query.next()) {
+        LFLOG_WARN << "Failed to fetch from contact with id=" << id;
+        throw runtime_error("Failed to fetch state from contact");
+    }
+    return query.value(0).toUuid();
 }
 
 int ContactsModel::getRowFromId(const QByteArray &id) const
@@ -426,6 +560,13 @@ QString ContactsModel::getOnlineIcon(int row) const
     Q_UNUSED(row);
     //auto status = getExtra(row)->onlineStatus;
     return "qrc:///images/onion-bw.svg";
+}
+
+void ContactsModel::disconnectPeer(const QByteArray &id, const QUuid& connection)
+{
+    const auto identity_uuid = getIdentityUuidFromId(id);
+    DsEngine::instance().getProtocolMgr(
+                ProtocolManager::Transport::TOR).disconnectFrom(identity_uuid, connection);
 }
 
 void ContactsModel::setOnlineStatus(const QByteArray& id,
@@ -526,6 +667,22 @@ Contact::State ContactsModel::getState(const QByteArray& id) const
     return static_cast<Contact::State>(query.value(0).toInt());
 }
 
+Contact::InitiatedBy ContactsModel::getInitiation(const QByteArray &id) const
+{
+    QSqlQuery query(database());
+    query.prepare("SELECT initiated_by from contact where id=:id");
+    query.bindValue(":id", id.toInt());
+    if(!query.exec()) {
+        throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
+    }
+    if (!query.next()) {
+        LFLOG_WARN << "Failed to fetch from contact with id=" << id;
+        throw runtime_error("Failed to fetch state from contact");
+    }
+
+    return static_cast<Contact::InitiatedBy>(query.value(0).toInt());
+}
+
 void ContactsModel::setState(const QByteArray& id, const Contact::State state)
 {
     QSqlQuery query(database());
@@ -567,6 +724,84 @@ void ContactsModel::sendAddme(const QByteArray &id, const QUuid &connection)
 
     DsEngine::instance().getProtocolMgr(
                 ProtocolManager::Transport::TOR).sendAddme(ar);
+}
+
+void ContactsModel::onAddmeAck(const QByteArray& id, const PeerAck &ack)
+{
+    auto state = getState(id);
+
+    if (ack.status == "Added") {
+
+        if (state == Contact::State::PENDING) {
+            LFLOG_DEBUG << "Disconnecting peer on connection "
+                        << ack.connectionId.toString()
+                        << " after receicing AddMe/Accepted Ack."
+                        << " Out of sequence acceptance. I need to connect to this peer.";
+        }
+        else if (state == Contact::State::WAITING_FOR_ACCEPTANCE || state == Contact::State::ACCEPTED) {
+            LFLOG_DEBUG << "A peer accepted our AddMe request on connection "
+                    << ack.connectionId.toString();
+
+            if (state != Contact::State::ACCEPTED) {
+                setState(id, Contact::State::ACCEPTED);
+
+                // TODO: Trigger notification
+                // TODO: Send outgoing messages
+            }
+
+            return;
+
+        } else {
+            LFLOG_DEBUG << "Disconnecting peer on connection "
+                        << ack.connectionId.toString()
+                        << " after receicing AddMe/Accepted Ack."
+                        << " Out of sequence acceptance. Our state is: " << state;
+        }
+
+    } else if (ack.status == "Pending") {
+
+        if (state == Contact::State::WAITING_FOR_ACCEPTANCE) {
+            LFLOG_DEBUG << "Disconnecting peer on connection "
+                        << ack.connectionId.toString()
+                        << " after receicing AddMe/Pending Ack."
+                        << " I am expecting the peer to call back when acceptance is decescided about.";
+
+        } else if (state == Contact::State::PENDING) {
+            LFLOG_DEBUG << "Disconnecting peer on connection "
+                        << ack.connectionId.toString()
+                        << " after receicing AddMe/Pending Ack."
+                        << " I need to connect to this peer to validate it's address.";
+
+        } else if (state == Contact::State::ACCEPTED) {
+            LFLOG_WARN  << "Disconnecting peer on connection "
+                        << ack.connectionId.toString()
+                        << " after receicing AddMe/Pending Ack."
+                        << " The connection is marked as Accepted."
+                        << " I will downgrade the state to waiting.";
+
+            setState(id, Contact::State::WAITING_FOR_ACCEPTANCE);
+        } else {
+            LFLOG_WARN << "Disconnecting peer on connection "
+                        << ack.connectionId.toString()
+                        << " after receicing AddMe/Pending Ack when I have state: " << state;
+        }
+    } else if (ack.status == "Rejected") {
+        LFLOG_DEBUG << "Disconnecting peer on connection "
+                    << ack.connectionId.toString()
+                    << " after receicing AddMe/Pending Ack."
+                    << " The connection is marked as Accepted."
+                    << " I will marke the state as rejected.";
+
+        setState(id, Contact::State::REJECTED);
+
+        // TODO: Create a notification
+    } else {
+        LFLOG_DEBUG << "Disconnecting peer on connection "
+                    << ack.connectionId.toString()
+                    << " after receicing AddMe/Unknown Ack.";
+    }
+
+    disconnectPeer(id, ack.connectionId);
 }
 
 

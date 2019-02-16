@@ -50,6 +50,7 @@ protected:
     // ProtocolManager interface
 public slots:
     uint64_t sendAddme(const core::AddmeReq& req) override;
+    uint64_t sendAck(const core::AckMsg& ack) override;
 
     // ProtocolManager interface
 public:
