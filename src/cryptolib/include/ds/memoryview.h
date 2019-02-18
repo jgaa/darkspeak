@@ -21,11 +21,11 @@ public:
 
     template<typename Tc>
     MemoryView(Tc& v)
-        : data_{reinterpret_cast<Tptr>(v.data())}, len_{v.size()} {}
+        : data_{reinterpret_cast<Tptr>(v.data())}, len_{static_cast<size_t>(v.size())} {}
 
     template<typename Tc>
     MemoryView(const Tc& v)
-        : data_{reinterpret_cast<Tptr>(v.data())}, len_{v.size()} {}
+        : data_{reinterpret_cast<Tptr>(v.data())}, len_{static_cast<size_t>(v.size())} {}
 
     MemoryView(void *d, size_t len)
         : data_{static_cast<Tptr>(d)}, len_{len} {}

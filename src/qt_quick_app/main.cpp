@@ -10,6 +10,8 @@
 #include "ds/manager.h"
 #include "ds/logmodel.h"
 #include "ds/crypto.h"
+#include "ds/identity.h"
+#include "ds/identitiesmodel.h"
 
 #include "logfault/logfault.h"
 
@@ -71,11 +73,21 @@ int main(int argc, char *argv[])
                                                            "ContactsModel",
                                                            "Cannot create NotificationsModel in QML");
 
+    qmlRegisterUncreatableType<ds::core::Identity>("com.jgaa.darkspeak", 1, 0,
+                                                   "Identity",
+                                                   "Cannot create NotificationsModel in QML");
+
+    qmlRegisterUncreatableType<ds::core::IdentityManager>("com.jgaa.darkspeak", 1, 0,
+                                                   "IdentityManager",
+                                                   "Cannot create NotificationsModel in QML");
+
+    qmlRegisterType<ds::core::QmlIdentityReq>("com.jgaa.darkspeak", 1, 0, "QmlIdentityReq");
+
     QQmlApplicationEngine engine;
 
     engine.rootContext()->setContextProperty("manager", manager.get());
     engine.rootContext()->setContextProperty("log", manager->logModel());
-    engine.rootContext()->setContextProperty("identities", manager->identitiesModel());
+    engine.rootContext()->setContextProperty("identities", DsEngine::instance().getIdentityManager());
     engine.rootContext()->setContextProperty("contacts", manager->contactsModel());
     engine.rootContext()->setContextProperty("notifications", manager->notificationsModel());
 

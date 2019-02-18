@@ -87,11 +87,10 @@ void MessageModel::sendMessage(const QString &content,
     msg.content = content.toUtf8();
     msg.encoding = Encoding::UTF8;
 
-    msg.sender = sender.hash;
+    msg.sender = sender.getHash();
     msg.conversation = conversation;
 
-    const auto cert = DsCert::create(sender.cert);
-    msg.sign(*cert);
+    msg.sign(*sender.getCert());
 
     save(msg);
 

@@ -26,7 +26,7 @@ void TestIdentitiesModel::test_create_identity()
     // Create an identity.
     ds::core::IdentityReq req;
     req.name = "testid";
-    engine.createIdentity(req);
+    //engine.createIdentity(req);
 
     QCOMPARE(spy_rows_inserted.wait(3000), true);
     QCOMPARE(idmodel.rowCount() , 1);

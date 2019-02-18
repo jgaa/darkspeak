@@ -45,7 +45,12 @@ ToolBar {
             visible: manager.currentPage === 1
 
             onClicked: {
-                 var popupComponent = Qt.createComponent("qrc:/CreateIdentityDialog.qml")
+                var popupComponent = Qt.createComponent("qrc:/EditIdentityDialog.qml")
+                if (popupComponent.status !== Component.Ready) {
+                    if(popupComponent.status === Component.Error )
+                        console.debug("Error:"+ popupComponent.errorString() );
+                    return; // or maybe throw
+                }
                  var dlg = popupComponent.createObject(mainWindow, {"parent" : mainWindow});
                  dlg.open()
             }

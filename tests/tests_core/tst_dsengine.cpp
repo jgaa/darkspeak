@@ -36,7 +36,7 @@ void TestDsEngine::test_create_identity()
         QSignalSpy spy_created(&engine, SIGNAL(identityCreated(const Identity&)));
         ds::core::IdentityReq req;
         req.name = "testid";
-        engine.createIdentity(req);
+        //engine.createIdentity(req);
         QCOMPARE(spy_created.wait(5000), true);
         engine.close();
     }
@@ -56,7 +56,7 @@ void TestDsEngine::test_create_identity_when_still_offline()
         QSignalSpy spy_created(&engine, SIGNAL(identityCreated(const Identity&)));
         ds::core::IdentityReq req;
         req.name = "testid";
-        engine.createIdentity(req);
+        //engine.createIdentity(req);
         engine.start();
         QCOMPARE(spy_created.wait(5000), true);
         engine.close();

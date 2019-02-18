@@ -6,9 +6,9 @@ import com.jgaa.darkspeak 1.0
 
 Dialog {
     id: root
-    title: "Add Contact"
+    title: qsTr("Add Contact")
     standardButtons: StandardButton.Apply | StandardButton.Cancel
-    property string nickName: "Anonymous Coward"
+    property string nickName: qsTr("Anonymous Coward")
     property string handle: ""
     property string address: ""
 

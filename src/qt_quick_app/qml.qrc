@@ -20,7 +20,7 @@
         <file>images/network_online.svg</file>
         <file>images/Secured_Global_Network_Cartoon.svg</file>
         <file>MainToolBar.qml</file>
-        <file>CreateIdentityDialog.qml</file>
+        <file>EditIdentityDialog.qml</file>
         <file>images/anonymous.svg</file>
         <file>images/onion.svg</file>
         <file>images/onion-bw.svg</file>

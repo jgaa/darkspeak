@@ -8,6 +8,8 @@
 #include "ds/task.h"
 #include "ds/dscert.h"
 #include "ds/crypto.h"
+#include "ds/identity.h"
+#include "ds/base32.h"
 
 #include <QString>
 #include <QDebug>
@@ -18,6 +20,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QBuffer>
+#include <QtEndian>
 
 #include "logfault/logfault.h"
 
@@ -59,6 +62,11 @@ QSqlDatabase& DsEngine::getDb()
     return database_->getDb();
 }
 
+IdentityManager *DsEngine::getIdentityManager()
+{
+    return identityManager_;
+}
+
 ProtocolManager &DsEngine::getProtocolMgr(ProtocolManager::Transport)
 {
     assert(tor_mgr_);
@@ -98,35 +106,6 @@ QByteArray DsEngine::getIdentityHandle(const QByteArray &pubkey, const QByteArra
     return toJson(map);
 }
 
-void DsEngine::createIdentity(const IdentityReq& req)
-{
-    if (pending_identities_.contains(req.name)) {
-        throw ExistsError(QStringLiteral("The name %1 is already in use").arg(req.name));
-    }
-
-    Identity id;
-    id.name = req.name;
-    id.avatar = req.avatar;
-    id.notes = req.notes;
-    id.uuid = req.uuid;
-
-    pending_identities_.insert(req.uuid, id);
-
-    auto name = req.name;
-    auto uuid = id.uuid;
-    whenOnline([this, name, uuid]() { tryMakeTransport(name, uuid); });
-
-    // Create a cert for the user. This may take some time on slow devices.
-    Task::schedule([this, name, uuid] {
-        try {
-            auto cert = DsCert::create();
-            emit certCreated(uuid, cert);
-        } catch (const std::exception& ex) {
-            emit identityError({uuid, name, ex.what()});
-        }
-    });
-}
-
 void DsEngine::createContact(const ContactReq &req)
 {
     emit contactCreated(prepareContact((req)));
@@ -135,44 +114,6 @@ void DsEngine::createContact(const ContactReq &req)
 void DsEngine::createNewTransport(const QByteArray &name, const QUuid& uuid)
 {
     tryMakeTransport(name, uuid);
-}
-
-void DsEngine::onCertCreated(const QUuid& uuid, const DsCert::ptr_t cert)
-{
-    if (!pending_identities_.contains(uuid)) {
-        LFLOG_WARN << "Received a cert for a non-existing name: " << uuid.toString();
-        return;
-    }
-
-    LFLOG_DEBUG << "Received cert for idenity " << uuid.toString();
-
-    auto& id = pending_identities_[uuid];
-    id.cert = cert->getCert();
-    id.hash = cert->getHash().toByteArray();
-
-    addIdentityIfReady(uuid);
-}
-
-void DsEngine::addIdentityIfReady(const QUuid &uuid)
-{
-    if (!pending_identities_.contains(uuid)) {
-        const auto msg = QStringLiteral("No pending identity with that id");
-        LFLOG_WARN << msg << ": " << uuid.toString();
-        emit identityError({uuid, "", msg});
-        return;
-    }
-
-    {
-        const auto& pi = pending_identities_[uuid];
-        if (pi.cert.isEmpty() || pi.address.isEmpty()) {
-            LFLOG_DEBUG << "The identity " << uuid.toString() << " is still not ready";
-            return;
-        }
-    }
-
-    auto id = pending_identities_.take(uuid);
-    LFLOG_DEBUG << "Identity " << id.uuid.toString() << " (" << id.name << ") is ready";
-    emit identityCreated(id);
 }
 
 void DsEngine::whenOnline(std::function<void ()> fn)
@@ -195,6 +136,8 @@ void DsEngine::online()
             LFLOG_WARN << "Failed to execute function when getting online: " << ex.what();
         }
     }
+
+    identityManager_->onOnline();
 }
 
 void DsEngine::onServiceFailed(const QUuid& serviceId, const QByteArray &reason)
@@ -205,11 +148,21 @@ void DsEngine::onServiceFailed(const QUuid& serviceId, const QByteArray &reason)
 void DsEngine::onServiceStarted(const QUuid& serviceId, const bool newService)
 {
     emit serviceStarted(serviceId, newService);
+
+    if (!newService) {
+        if (auto identity = identityManager_->identityFromUuid(serviceId)) {
+            identity->setOnline(true);
+        }
+    }
 }
 
 void DsEngine::onServiceStopped(const QUuid& serviceId)
 {
     serviceStopped(serviceId);
+
+    if (auto identity = identityManager_->identityFromUuid(serviceId)) {
+        identity->setOnline(false);
+    }
 }
 
 void DsEngine::onReceivedData(const QUuid &service,
@@ -252,38 +205,18 @@ void DsEngine::onReceivedData(const QUuid &service,
     }
 }
 
-void DsEngine::sendMessage(const Message& /*msg*/)
-{
-}
-
 void DsEngine::onTransportHandleReady(const TransportHandle &th)
 {
-    // Relay
-    emit transportHandleReady(th);
-
-    if (!pending_identities_.contains(th.uuid)) {
-        const auto msg = QStringLiteral("No pending identity with that name");
-        LFLOG_WARN << msg << ": " << th.identityName;
-        emit identityError({th.uuid, th.identityName, msg});
-        return;
+    if (auto identity = identityManager_->identityFromUuid(th.uuid)) {
+        LFLOG_NOTICE << "Assigning new handle " << th.handle
+                     << " to identity " << identity->getName();
+        identity->setAddress(th.handle);
+        identity->setAddressData(toJson(th.data));
     }
-
-    auto& pi = pending_identities_[th.uuid];
-    if (pi.address.isEmpty()) {
-        pi.address = th.handle;
-        pi.addressData = toJson(th.data);
-    } else {
-        LFLOG_DEBUG << "The identity " << th.identityName << " already have a transport";
-        return;
-    }
-
-    emit retryIdentityReady(th.uuid);
 }
 
 void DsEngine::onTransportHandleError(const TransportHandleError &the)
 {
-    emit transportHandleError(the);
-
     auto name = the.identityName;
     auto uuid = the.uuid;
     LFLOG_DEBUG << "Transport-handle creaton failed: " << name
@@ -311,10 +244,6 @@ void DsEngine::start()
 
     connect(tor_mgr_.get(), &ProtocolManager::transportHandleError,
             this, &DsEngine::onTransportHandleError,
-            Qt::QueuedConnection);
-
-    connect(this, &DsEngine::retryIdentityReady,
-            this, &DsEngine::addIdentityIfReady,
             Qt::QueuedConnection);
 
     connect(this, &DsEngine::ready,
@@ -400,11 +329,15 @@ void DsEngine::initialize()
 
     static bool initialized = false;
     if (!initialized) {
-        qRegisterMetaType<ds::core::Identity>("ds::core::Identity");
-        qRegisterMetaType<ds::core::Identity>("Identity");
+        qRegisterMetaType<ds::core::IdentityData>("ds::core::IdentityData");
+        qRegisterMetaType<ds::core::IdentityData>("IdentityData");
+        qRegisterMetaType<ds::core::IdentityError>("ds::core::IdentityError");
+        qRegisterMetaType<ds::core::IdentityError>("IdentityError");
         qRegisterMetaType<ds::core::Contact>("ds::core::Contact");
         qRegisterMetaType<ds::core::Contact>("Contact");
         qRegisterMetaType<ds::core::TransportHandleError>("TransportHandleError");
+        qRegisterMetaType<ds::core::IdentityReq>("IdentityReq");
+        qRegisterMetaType<ds::core::QmlIdentityReq *>("const QmlIdentityReq *");
     }
 
     auto data_path = QStandardPaths::writableLocation(
@@ -445,7 +378,7 @@ void DsEngine::initialize()
 
     database_ = std::make_unique<Database>(*settings_);
 
-    connect(this, &DsEngine::certCreated, this, &DsEngine::onCertCreated);
+    identityManager_ = new IdentityManager(*this);
 }
 
 void DsEngine::setState(DsEngine::State state)
@@ -523,7 +456,7 @@ QByteArray DsEngine::imageToBytes(const QImage &img)
 
 Contact DsEngine::prepareContact(const ContactReq &req)
 {
-    static const regex valid_address{R"((^(onion):)?([a-z2-7]{16}|[a-z2-7]{56})\:(\d{1,5})$)"};
+    static const regex valid_address{R"((^(onion):)?([a-z2-7]{16}|[a-z2-7]{56})\:(\d{3,5})$)"};
 
     Contact c;
     c.identity = req.identity;
@@ -558,6 +491,57 @@ Contact DsEngine::prepareContact(const ContactReq &req)
     LFLOG_DEBUG << "Hash is: " << c.hash.toBase64();
 
     return c;
+}
+
+QByteArray DsEngine::getIdentityAsBase58(const DsCert::ptr_t &cert, const QByteArray &address)
+{
+    // Format:
+    //  1 byte version (1)
+    //  32 byte pubkey
+    //  10 bytes onion address
+    //  2 bytes port
+
+    // B58 tag: {11, 176}
+
+    QByteArray bytes;
+
+    bytes.append('\1'); // Version
+    bytes += cert->getSigningPubKey().toByteArray();
+
+    // Parse the address
+    std::string onion, port;
+    static const regex legacy_pattern{R"(^(onion:)?([a-z2-7]{16})\:(\d{3,5})$)"};
+
+    std::smatch m;
+    std::string str = address.toStdString();
+    if (std::regex_match(str, m, legacy_pattern)) {
+        onion = m[2].str();
+        port = m[3].str();
+    } else {
+        LFLOG_ERROR << "getIdentityAsBase58: Invalid address: " << address;
+        return {};
+    }
+
+    if (onion.size() == 16) {
+        // Legacy onion address
+        bytes += crypto::onion16decode({onion.c_str()});
+    } else {
+        // TODO: Implement
+        LFLOG_ERROR << "getIdentityAsBase58 NOT IMPLEMENTED for modern Tor addresses!";
+        return "Sorry, Not implemented";
+    }
+
+    // Add the port
+    union {
+        char bytes[2];
+        uint16_t port;
+    } port_u;
+
+    port_u.port = qToBigEndian(static_cast<uint16_t>(atoi(port.c_str())));
+    bytes += port_u.bytes[0];
+    bytes += port_u.bytes[1];
+
+    return crypto::b58check_enc<QByteArray>(bytes, {11, 176});
 }
 
 

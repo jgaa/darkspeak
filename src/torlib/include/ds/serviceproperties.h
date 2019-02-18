@@ -9,7 +9,7 @@
 namespace ds {
 namespace tor {
 
-class TorCtlReply;
+struct TorCtlReply;
 
 struct ServiceProperties {
     QUuid uuid;

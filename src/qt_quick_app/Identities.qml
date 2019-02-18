@@ -20,12 +20,20 @@ Page {
         model: identities
         anchors.fill: parent
         highlight: highlightBar
-        property bool isOnline : model.getOnlineStatus(currentIndex)
+        property Identity currentIdentity: identities.current
+        property bool online: currentIdentity ? currentIdentity.online : false
+
+        onCurrentItemChanged: {
+            identities.setCurrentIdentity(currentIndex)
+            // This is where we synchronize the Contacts with the current selected identity
+            contacts.onIdentityChanged(currentIdentity.id);
+        }
 
         delegate: Item {
             id: itemDelegate
             width: parent.width
             height: 112
+            property Identity cid : identity
 
             Row {
                 id: row1
@@ -40,7 +48,7 @@ Page {
                         anchors.left: parent.left
                         anchors.leftMargin: 4
                         anchors.verticalCenter: parent.verticalCenter
-                        border.color: online ? "lime" : "firebrick"
+                        border.color: cid.online ? "lime" : "firebrick"
                         color: "black"
 
                         Image {
@@ -54,7 +62,7 @@ Page {
 
                             Rectangle {
                                 height: parent.width / 3
-                                color: online ? "lime" : "firebrick"
+                                color: cid.online ? "lime" : "firebrick"
                                 width: height
                                 anchors.right: parent.right
                                 anchors.top: parent.top
@@ -76,7 +84,7 @@ Page {
                     Text {
                         font.pointSize: 14
                         color: "white"
-                        text: name
+                        text: cid.name
                         font.bold: itemDelegate.ListView.isCurrentItem
                     }
 
@@ -92,19 +100,19 @@ Page {
                         Text {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: created
+                            text: cid.created
                         }
 
                         Text {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: handle
+                            text: cid.handle
                         }
 
                         Text {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: onion
+                            text: cid.address
                         }
                     }
                 }
@@ -131,39 +139,44 @@ Page {
             }
         }
 
-        onCurrentItemChanged: {
-            // This is where we synchronize the Contacts with the current identity
-            contacts.onIdentityChanged(identities.row2Id(currentIndex));
-        }
-
         function deleteCurrent() {
-            identities.deleteIdentity(currentIndex);
+            identities.removeIdentity(currentIdentity.uuid);
         }
 
         function toggleOnline() {
-            if (isOnline) {
-                model.stopService(currentIndex);
+            if (currentIdentity.online) {
+                currentIdentity.stopService()
             } else {
-                model.startService(currentIndex);
+                currentIdentity.startService()
             }
         }
 
         function copyHandle() {
-            manager.textToClipboard(identities.get(currentIndex).handle)
+            manager.textToClipboard(currentIdentity.handle)
         }
 
         function copyOnion() {
-            manager.textToClipboard("onion:" + identities.get(currentIndex).onion)
+            manager.textToClipboard("onion:" + currentIdentity.address)
         }
 
         function copyIdentity() {
-            manager.textToClipboard(
-                        identities.get(currentIndex).name + ':' +
-                        identities.getIdentityAsBase58(currentIndex))
+            manager.textToClipboard(currentIdentity.name + ':' + currentIdentity.b58identity)
         }
 
         function createNewTransport() {
-            identities.createNewTransport(currentIndex)
+            //identities.createNewTransport(currentIndex)
+        }
+
+        function editCurrent() {
+            var component = Qt.createComponent("qrc:/EditIdentityDialog.qml")
+//            if (popupComponent.status !== Component.Ready) {
+//                if(popupComponent.status === Component.Error )
+//                    console.debug("Error:"+ popupComponent.errorString() );
+//                return; // or maybe throw
+//            }
+             var dlg = component.createObject(mainWindow, {"parent" : mainWindow,
+                                              "identity" : currentIdentity});
+             dlg.open()
         }
     }
 
@@ -184,11 +197,12 @@ Page {
         onAboutToShow: prepare()
 
         function prepare() {
-            online.text =  list.isOnline ? qsTr("Stop Tor service") : qsTr("Start Tor service")
+            //online.text = list.online ? qsTr("Stop Tor service") : qsTr("Start Tor service")
         }
 
         MenuItem {
             id: online
+            text: list.online ? qsTr("Stop Tor service") : qsTr("Start Tor service")
             icon.source: "qrc:///images/onion-bw.svg"
             onTriggered: list.toggleOnline()
             enabled: manager.online
@@ -213,19 +227,20 @@ Page {
         }
 
         MenuItem {
-            text: qsTr("Change nickname")
-            icon.source: "qrc:///images/user.svg"
+            text: qsTr("Edit")
+            icon.name: "insert-text"
+            onTriggered: list.editCurrent()
         }
 
-        MenuItem {
-            text: qsTr("Select picture")
-            icon.name: "document-open"
-        }
+//        MenuItem {
+//            text: qsTr("Select picture")
+//            icon.name: "document-open"
+//        }
 
-        MenuItem {
-            text: qsTr("Export identity")
-            icon.name: "document-save"
-        }
+//        MenuItem {
+//            text: qsTr("Export identity")
+//            icon.name: "document-save"
+//        }
 
         MenuItem {
             text: qsTr("New Tor service")
@@ -234,15 +249,15 @@ Page {
             enabled: manager.online
         }
 
-        MenuItem {
-            text: qsTr("Export Tor service")
-            icon.name: "document-save"
-        }
+//        MenuItem {
+//            text: qsTr("Export Tor service")
+//            icon.name: "document-save"
+//        }
 
-        MenuItem {
-            text: qsTr("Import Tor service")
-            icon.name: "document-open"
-        }
+//        MenuItem {
+//            text: qsTr("Import Tor service")
+//            icon.name: "document-open"
+//        }
 
         MenuItem {
             text: qsTr("Delete")

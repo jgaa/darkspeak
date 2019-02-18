@@ -30,50 +30,50 @@ namespace models {
 IdentitiesModel::IdentitiesModel(QSettings &settings)
     : settings_{settings}
 {
-    setTable("identity");
-    setSort(fieldIndex("name"), Qt::AscendingOrder);
-    setEditStrategy(QSqlTableModel::OnFieldChange);
+//    setTable("identity");
+//    setSort(fieldIndex("name"), Qt::AscendingOrder);
+//    setEditStrategy(QSqlTableModel::OnFieldChange);
 
-    h_id_ = fieldIndex("id");
-    h_uuid_ = fieldIndex("uuid");
-    h_hash_ = fieldIndex("hash");
-    h_name_ = fieldIndex("name");
-    h_cert_ = fieldIndex("cert");
-    h_address_ = fieldIndex("address");
-    h_address_data_ = fieldIndex("address_data");
-    h_notes_= fieldIndex("notes");
-    h_avatar_ = fieldIndex("avatar");
-    h_created_ = fieldIndex("created");
+//    h_id_ = fieldIndex("id");
+//    h_uuid_ = fieldIndex("uuid");
+//    h_hash_ = fieldIndex("hash");
+//    h_name_ = fieldIndex("name");
+//    h_cert_ = fieldIndex("cert");
+//    h_address_ = fieldIndex("address");
+//    h_address_data_ = fieldIndex("address_data");
+//    h_notes_= fieldIndex("notes");
+//    h_avatar_ = fieldIndex("avatar");
+//    h_created_ = fieldIndex("created");
 
-    connect(&DsEngine::instance(), &DsEngine::identityCreated,
-            this, &IdentitiesModel::saveIdentity);
+//    connect(&DsEngine::instance(), &DsEngine::identityCreated,
+//            this, &IdentitiesModel::saveIdentity);
 
-    connect(&DsEngine::instance(),
-            &ds::core::DsEngine::serviceStarted,
-            this, &IdentitiesModel::onServiceStarted);
+//    connect(&DsEngine::instance(),
+//            &ds::core::DsEngine::serviceStarted,
+//            this, &IdentitiesModel::onServiceStarted);
 
-    connect(&DsEngine::instance(),
-            &ds::core::DsEngine::serviceStopped,
-            this, &IdentitiesModel::onServiceStopped);
+//    connect(&DsEngine::instance(),
+//            &ds::core::DsEngine::serviceStopped,
+//            this, &IdentitiesModel::onServiceStopped);
 
-    connect(&DsEngine::instance(),
-            &ds::core::DsEngine::serviceFailed,
-            this, &IdentitiesModel::onServiceFailed);
+//    connect(&DsEngine::instance(),
+//            &ds::core::DsEngine::serviceFailed,
+//            this, &IdentitiesModel::onServiceFailed);
 
-    connect(&DsEngine::instance(),
-            &ds::core::DsEngine::transportHandleReady,
-            this, &IdentitiesModel::onTransportHandleReady);
+//    connect(&DsEngine::instance(),
+//            &ds::core::DsEngine::transportHandleReady,
+//            this, &IdentitiesModel::onTransportHandleReady);
 
-    connect(&DsEngine::instance(),
-            &ds::core::DsEngine::incomingPeer,
-            this, &IdentitiesModel::onIncomingPeer);
+//    connect(&DsEngine::instance(),
+//            &ds::core::DsEngine::incomingPeer,
+//            this, &IdentitiesModel::onIncomingPeer);
 
-    connect(&DsEngine::instance(),
-            &ds::core::DsEngine::receivedAddMe,
-            this, &IdentitiesModel::onReceivedAddMe);
+//    connect(&DsEngine::instance(),
+//            &ds::core::DsEngine::receivedAddMe,
+//            this, &IdentitiesModel::onReceivedAddMe);
 
 
-    select();
+//    select();
 }
 
 bool IdentitiesModel::getOnlineStatus(int row) const
@@ -89,7 +89,7 @@ void IdentitiesModel::createIdentity(QString name)
 {
     IdentityReq req;
     req.name = name;
-    DsEngine::instance().createIdentity(req);
+    //DsEngine::instance().createIdentity(req);
 }
 
 void IdentitiesModel::deleteIdentity(int row)
@@ -133,39 +133,39 @@ void IdentitiesModel::stopService(int row)
     }
 }
 
-void IdentitiesModel::saveIdentity(const ds::core::Identity &data)
+void IdentitiesModel::saveIdentity(const ds::core::Identity &/*data*/)
 {
-    Strategy strategy(*this, QSqlTableModel::OnManualSubmit);
-    QSqlRecord rec{DsEngine::instance().getDb().record(this->tableName())};
+//    Strategy strategy(*this, QSqlTableModel::OnManualSubmit);
+//    QSqlRecord rec{DsEngine::instance().getDb().record(this->tableName())};
 
-    rec.setValue(h_uuid_, data.uuid);
-    rec.setValue(h_hash_, data.hash);
-    rec.setValue(h_name_, data.name);
-    rec.setValue(h_cert_, data.cert.toByteArray()); // TODO: Se if we can avoid a temporary string
-    rec.setValue(h_address_, data.address);
-    rec.setValue(h_address_data_, data.addressData);
-    if (!data.notes.isEmpty()) {
-        rec.setValue(h_notes_, data.notes);
-    }
-    if (!data.avatar.isNull()) {
-        rec.setValue(h_avatar_, data.avatar);
-    }
-    rec.setValue(h_created_, QDateTime::currentDateTime());
+//    rec.setValue(h_uuid_, data.uuid);
+//    rec.setValue(h_hash_, data.hash);
+//    rec.setValue(h_name_, data.name);
+//    rec.setValue(h_cert_, data.cert.toByteArray()); // TODO: Se if we can avoid a temporary string
+//    rec.setValue(h_address_, data.address);
+//    rec.setValue(h_address_data_, data.addressData);
+//    if (!data.notes.isEmpty()) {
+//        rec.setValue(h_notes_, data.notes);
+//    }
+//    if (!data.avatar.isNull()) {
+//        rec.setValue(h_avatar_, data.avatar);
+//    }
+//    rec.setValue(h_created_, QDateTime::currentDateTime());
 
-    if (!insertRecord(-1, rec)) {
-        qWarning() << "Failed to insert identity: " << data.name
-                   << this->lastError().text();
-        return;
-    }
+//    if (!insertRecord(-1, rec)) {
+//        qWarning() << "Failed to insert identity: " << data.name
+//                   << this->lastError().text();
+//        return;
+//    }
 
-    if (!submitAll()) {
+//    if (!submitAll()) {
 
-        qWarning() << "Failed to flush identity: " << data.name
-                   << this->lastError().text();
-        return;
-    }
+//        qWarning() << "Failed to flush identity: " << data.name
+//                   << this->lastError().text();
+//        return;
+//    }
 
-    LFLOG_DEBUG << "Added identity " << data.name << " to the database";
+//    LFLOG_DEBUG << "Added identity " << data.name << " to the database";
 }
 
 void IdentitiesModel::onServiceStarted(const QUuid& service, const bool newService)

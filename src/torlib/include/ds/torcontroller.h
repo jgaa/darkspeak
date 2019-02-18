@@ -11,7 +11,7 @@
 namespace ds {
 namespace tor {
 
-class TorCtlReply;
+struct TorCtlReply;
 
 class TorController : public QObject
 {

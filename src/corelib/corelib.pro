@@ -26,7 +26,9 @@ SOURCES += \
     src/dsengine.cpp \
     src/database.cpp \
     src/protocolmanager.cpp \
-    src/message.cpp
+    src/message.cpp \
+    src/identitymanager.cpp \
+    src/identy.cpp
 
 HEADERS += \
     include/ds/dsengine.h \
@@ -37,7 +39,8 @@ HEADERS += \
     include/ds/errors.h \
     include/ds/transporthandle.h \
     include/ds/contact.h \
-    include/ds/message.h
+    include/ds/message.h \
+    include/ds/identitymanager.h
 
 INCLUDEPATH += \
     $$PWD/../../dependencies/logfault/include \
