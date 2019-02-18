@@ -28,7 +28,7 @@ SOURCES += \
     src/protocolmanager.cpp \
     src/message.cpp \
     src/identitymanager.cpp \
-    src/identy.cpp
+    src/identity.cpp
 
 HEADERS += \
     include/ds/dsengine.h \

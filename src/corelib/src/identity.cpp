@@ -30,6 +30,14 @@ void Identity::stopService()
     getProtocolManager().stopService(data_.uuid);
 }
 
+void Identity::changeTransport()
+{
+     LFLOG_NOTICE << "Requesting a new Tor service for " << getName();
+     DsEngine::instance().createNewTransport(
+                 data_.name.toUtf8(),
+                 data_.uuid);
+}
+
 ProtocolManager& Identity::getProtocolManager() {
     return DsEngine::instance().getProtocolMgr(
                 ProtocolManager::Transport::TOR);
@@ -178,5 +186,6 @@ void Identity::deleteFromDb() {
         }
     }
 }
+
 
 }} // namespaces

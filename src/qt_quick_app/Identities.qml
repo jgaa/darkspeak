@@ -164,19 +164,14 @@ Page {
         }
 
         function createNewTransport() {
-            //identities.createNewTransport(currentIndex)
+            currentIdentity.changeTransport()
         }
 
         function editCurrent() {
             var component = Qt.createComponent("qrc:/EditIdentityDialog.qml")
-//            if (popupComponent.status !== Component.Ready) {
-//                if(popupComponent.status === Component.Error )
-//                    console.debug("Error:"+ popupComponent.errorString() );
-//                return; // or maybe throw
-//            }
-             var dlg = component.createObject(mainWindow, {"parent" : mainWindow,
+            var dlg = component.createObject(mainWindow, {"parent" : mainWindow,
                                               "identity" : currentIdentity});
-             dlg.open()
+            dlg.open()
         }
     }
 
@@ -232,32 +227,12 @@ Page {
             onTriggered: list.editCurrent()
         }
 
-//        MenuItem {
-//            text: qsTr("Select picture")
-//            icon.name: "document-open"
-//        }
-
-//        MenuItem {
-//            text: qsTr("Export identity")
-//            icon.name: "document-save"
-//        }
-
         MenuItem {
             text: qsTr("New Tor service")
             icon.name: "document-new"
             onTriggered: confirmNewTransport.open()
             enabled: manager.online
         }
-
-//        MenuItem {
-//            text: qsTr("Export Tor service")
-//            icon.name: "document-save"
-//        }
-
-//        MenuItem {
-//            text: qsTr("Import Tor service")
-//            icon.name: "document-open"
-//        }
 
         MenuItem {
             text: qsTr("Delete")

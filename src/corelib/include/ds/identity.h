@@ -116,6 +116,8 @@ public:
     Q_INVOKABLE void startService();
     Q_INVOKABLE void stopService();
 
+    Q_INVOKABLE void changeTransport();
+
     int getId() const noexcept;
     QString getName() const noexcept;
     void setName(const QString& name);
