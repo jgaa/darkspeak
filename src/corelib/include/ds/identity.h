@@ -6,14 +6,14 @@
 #include "ds/dscert.h"
 #include "ds/errors.h"
 #include "ds/protocolmanager.h"
+#include "ds/contact.h"
 
 #include <QString>
 #include <QtGui/QImage>
 #include <QUuid>
 #include <QDateTime>
-#include <QSqlQuery>
-#include <QSqlError>
 #include <QVariant>
+#include <unordered_map>
 
 namespace ds {
 namespace core {
@@ -92,6 +92,14 @@ struct IdentityError {
 
 class Identity : public QObject {
     Q_OBJECT
+
+
+    struct Connected {
+        Contact::ptr_t contact;
+        bool established = false;
+        bool outgoing = false;
+    };
+
 public:
     Identity(QObject& parent,
          const int dbId, // -1 if the identity is new
@@ -99,7 +107,7 @@ public:
          const QDateTime& created,
          IdentityData data);
 
-    Q_PROPERTY(QString id READ getId)
+    Q_PROPERTY(int id READ getId)
     Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
     Q_PROPERTY(QByteArray hash READ getHash)
     Q_PROPERTY(QByteArray address READ getAddress WRITE setAddress NOTIFY addressChanged)
@@ -159,34 +167,14 @@ signals:
 private:
     ProtocolManager& getProtocolManager();
 
-    template <typename T, typename S>
-    void updateIf(const char *name, const T& value, T& target, const S& signal) {
-        if (value != target) {
-            target = value;
-            update(name, target);
-            emit (this->*signal)();
-        }
-    }
-
-    void update(const char *name, const QVariant& value) {
-        QByteArray sql{"UPDATE identity set "};
-        sql += name;
-        sql += " =:value where id=:id";
-
-        QSqlQuery query;
-        query.prepare(sql);
-        query.bindValue(":id", id_);
-        query.bindValue(":value", value);
-        if(!query.exec()) {
-            throw Error(QStringLiteral("SQL query failed: %1").arg(
-                            query.lastError().text()));
-        }
-    }
-
     int id_ = -1; // Database id
     bool online_ = false;
     IdentityData data_;
     QDateTime created_;
+
+    // Active Connections in any direction
+    // Keeps connected Contacts in memory
+    std::unordered_map<QUuid /* connection id */, std::unique_ptr<Connected>> connected_;
 };
 
 }} // identities

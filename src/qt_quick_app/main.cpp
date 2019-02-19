@@ -12,6 +12,7 @@
 #include "ds/crypto.h"
 #include "ds/identity.h"
 #include "ds/identitiesmodel.h"
+#include "ds/contact.h"
 
 #include "logfault/logfault.h"
 
@@ -80,6 +81,16 @@ int main(int argc, char *argv[])
     qmlRegisterUncreatableType<ds::core::IdentityManager>("com.jgaa.darkspeak", 1, 0,
                                                    "IdentityManager",
                                                    "Cannot create NotificationsModel in QML");
+
+    qmlRegisterUncreatableType<ds::core::Contact>("com.jgaa.darkspeak", 1, 0,
+                                                   "Contact",
+                                                   "Cannot create Contact in QML");
+
+    qmlRegisterUncreatableMetaObject(
+                ds::core::staticMetaObject,
+                "com.jgaa.darkspeak", 1, 0,
+                "DsCore",
+                "Error: only enums");
 
     qmlRegisterType<ds::core::QmlIdentityReq>("com.jgaa.darkspeak", 1, 0, "QmlIdentityReq");
 

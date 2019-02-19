@@ -67,6 +67,11 @@ IdentityManager *DsEngine::getIdentityManager()
     return identityManager_;
 }
 
+ContactManager *DsEngine::getContactManager()
+{
+    return contactManager_;
+}
+
 ProtocolManager &DsEngine::getProtocolMgr(ProtocolManager::Transport)
 {
     assert(tor_mgr_);
@@ -379,6 +384,7 @@ void DsEngine::initialize()
     database_ = std::make_unique<Database>(*settings_);
 
     identityManager_ = new IdentityManager(*this);
+    contactManager_ = new ContactManager(*this);
 }
 
 void DsEngine::setState(DsEngine::State state)

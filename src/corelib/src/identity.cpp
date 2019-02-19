@@ -3,6 +3,7 @@
 #include "ds/dsengine.h"
 #include "ds/identity.h"
 #include "ds/errors.h"
+#include "ds/update_helper.h"
 
 #include "logfault/logfault.h"
 
@@ -52,7 +53,7 @@ QString Identity::getName() const noexcept  {
 }
 
 void Identity::setName(const QString &name) {
-    updateIf("name", name, data_.name, &Identity::nameChanged);
+    updateIf("name", name, data_.name, this, &Identity::nameChanged);
 }
 
 QByteArray Identity::getAddress() const noexcept {
@@ -60,7 +61,7 @@ QByteArray Identity::getAddress() const noexcept {
 }
 
 void Identity::setAddress(const QByteArray &address) {
-    updateIf("address", address, data_.address, &Identity::addressChanged);
+    updateIf("address", address, data_.address, this, &Identity::addressChanged);
 }
 
 QByteArray Identity::getAddressData() const noexcept {
@@ -68,7 +69,7 @@ QByteArray Identity::getAddressData() const noexcept {
 }
 
 void Identity::setAddressData(const QByteArray &data) {
-    updateIf("address_data", data, data_.addressData, &Identity::addressDataChanged);
+    updateIf("address_data", data, data_.addressData, this, &Identity::addressDataChanged);
 }
 
 QString Identity::getNotes() const noexcept {
@@ -76,7 +77,7 @@ QString Identity::getNotes() const noexcept {
 }
 
 void Identity::setNotes(const QString &notes) {
-    updateIf("notes", notes, data_.notes, &Identity::notesChanged);
+    updateIf("notes", notes, data_.notes, this, &Identity::notesChanged);
 }
 
 QImage Identity::getAvatar() const noexcept  {
@@ -93,7 +94,7 @@ QString Identity::getAvatarUri() const noexcept
 }
 
 void Identity::setAvatar(const QImage &avatar) {
-    updateIf("notes", avatar, data_.avatar, &Identity::avatarChanged);
+    updateIf("notes", avatar, data_.avatar, this, &Identity::avatarChanged);
 }
 
 bool Identity::isOnline() const noexcept {
@@ -140,7 +141,7 @@ bool Identity::isAutoConnect() const noexcept
 
 void Identity::setAutoConnect(bool value)
 {
-    updateIf("auto_connect", value, data_.autoConnect, &Identity::autoConnectChanged);
+    updateIf("auto_connect", value, data_.autoConnect, this, &Identity::autoConnectChanged);
 }
 
 void Identity::addToDb() {

@@ -15,6 +15,7 @@
 #include "ds/dscert.h"
 #include "ds/protocolmanager.h"
 #include "ds/identitymanager.h"
+#include "ds/contactmanager.h"
 
 namespace ds {
 namespace core {
@@ -95,6 +96,7 @@ public:
     State getState() const;
     QSqlDatabase& getDb();
     IdentityManager *getIdentityManager();
+    ContactManager *getContactManager();
 
     QSettings& settings() noexcept { return *settings_; }
     ProtocolManager& getProtocolMgr(ProtocolManager::Transport transport);
@@ -104,13 +106,13 @@ public:
     static QByteArray toJson(const QVariantMap& data);
     static QVariantMap fromJson(const QByteArray& json);
     static QByteArray imageToBytes(const QImage& img);
-    Contact prepareContact(const ContactReq&);
+    //Contact prepareContact(const ContactReq&);
     static QByteArray getIdentityAsBase58(const crypto::DsCert::ptr_t& cert,
                                           const QByteArray& address);
     void whenOnline(std::function<void ()> fn);
 
 public slots:
-    void createContact(const ContactReq&);
+    //void createContact(const ContactReq&);
     void createNewTransport(const QByteArray& name, const QUuid& uuid);
     void close();
     void start();
@@ -160,6 +162,7 @@ protected:
     State state_ = State::INITIALIZING;
     QList<std::function<void ()>> when_online_;
     IdentityManager *identityManager_ = nullptr;
+    ContactManager *contactManager_ = nullpr;
 };
 
 }} // namepsaces
