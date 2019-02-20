@@ -33,6 +33,10 @@ public:
         registry_[key] = value;
     }
 
+    void remove(const keyT& key) {
+        registry_.erase(key);
+    }
+
     void clean() {
         for(auto it = registry_.begin(); it != registry_.end();) {
             if (it->second.expired()) {

@@ -18,9 +18,9 @@ class Message;
 class MessageReport;
 
 struct ConnectData {
-    QUuid service; // for Identity
+    QUuid service; // For Identity
     QByteArray address;  // Onion address
-    QByteArray contactsPubkey;
+    crypto::DsCert::ptr_t contactsCert;
     crypto::DsCert::ptr_t identitysCert;
 };
 
@@ -116,8 +116,8 @@ signals:
     void serviceStarted(const QUuid& service, const bool newService);
     void serviceStopped(const QUuid& service);
 
-    void connectedTo(const QUuid& connection, const Direction direction);
-    void disconnectedFrom(const QUuid& connection);
+    void connectedTo(const QUuid& identity, const QUuid& connection, const Direction direction);
+    void disconnectedFrom(const QUuid& identity, const QUuid& connection);
     void connectionFailed(const QUuid& connection,
                           const QAbstractSocket::SocketError& socketError);
     void incomingPeer(const QUuid& service, const QUuid& connectionId, const QByteArray& handle);

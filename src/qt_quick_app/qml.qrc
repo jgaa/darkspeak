@@ -25,7 +25,7 @@
         <file>images/onion.svg</file>
         <file>images/onion-bw.svg</file>
         <file>images/user.svg</file>
-        <file>NewContactDialog.qml</file>
+        <file>EditContactDialog.qml</file>
         <file>images/add-user.svg</file>
     </qresource>
 </RCC>

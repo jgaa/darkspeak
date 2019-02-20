@@ -15,23 +15,183 @@
 namespace ds {
 namespace core {
 
-Q_NAMESPACE
-enum InitiatedBy {
-    IB_ME,
-    IB_THEM
+class Identity;
+
+//Q_NAMESPACE
+//enum InitiatedBy {
+//    IB_ME,
+//    IB_THEM
+//};
+
+//Q_ENUM_NS(InitiatedBy)
+
+//enum ContactState {
+//    CS_PENDING, // Never successfully connected to peers address
+//    CS_WAITING_FOR_ACCEPTANCE, // We have sent addme, Waiting for ack
+//    CS_ACCEPTED, // We have experienced connectins in both directions, and received and / or sent ack
+//    CS_REJECTED,
+//    CS_BLOCKED
+//};
+
+//Q_ENUM_NS(ContactState)
+
+struct ContactData;
+
+/*! Representation of a contact.
+ *
+ * The Contact is owned by an Identity instance
+ *
+ */
+struct Contact : public QObject {
+        Q_OBJECT
+
+public:
+    using ptr_t = std::shared_ptr<Contact>;
+    using data_t = std::unique_ptr<ContactData>;
+
+    enum OnlineStatus {
+        DISCONNECTED, // We are not trying to connect so we don't know
+        OFFLINE, // We are unable to connect
+        CONNECTING,
+        ONLINE
+    };
+
+    Q_ENUM(OnlineStatus)
+
+    enum InitiatedBy {
+        ME,
+        THEM
+    };
+
+    Q_ENUM(InitiatedBy)
+
+    struct Connection {
+        Connection(const QUuid uuidVal, const InitiatedBy initiatedByVal, Contact& ownerVal)
+            : uuid{uuidVal}, initiatedBy{initiatedByVal}, owner{ownerVal} {}
+
+        ~Connection();
+
+        const QUuid uuid;
+        const InitiatedBy initiatedBy;
+        OnlineStatus status = DISCONNECTED;
+        Contact& owner;
+    };
+
+    enum ContactState {
+        PENDING, // Never successfully connected to peers adsdress
+        WAITING_FOR_ACCEPTANCE, // We have sent addme, Waiting for ack
+        ACCEPTED, // We have experienced connectins in both directions, and received and / or sent ack
+        REJECTED,
+        BLOCKED
+    };
+
+    Q_ENUM(ContactState)
+
+
+    Contact(QObject& parent,
+            const int dbId, // -1 if the identity is new
+            const bool online,
+            data_t data);
+
+    Q_PROPERTY(int id READ getId)
+    Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
+    Q_PROPERTY(QString nickName READ getNickName WRITE setNickName NOTIFY nickNameChanged)
+    Q_PROPERTY(QString group READ getGroup WRITE setGroup NOTIFY groupChanged)
+    Q_PROPERTY(QByteArray address READ getAddress WRITE setAddress NOTIFY addressChanged)
+    Q_PROPERTY(QString notes READ getNotes WRITE setNotes NOTIFY notesChanged)
+    Q_PROPERTY(QString avatar READ getAvatarUri NOTIFY avatarChanged)
+    Q_PROPERTY(QUuid uuid READ getUuid)
+    Q_PROPERTY(InitiatedBy whoInitiated READ getWhoInitiated)
+    Q_PROPERTY(QDateTime created READ getCreated)
+    Q_PROPERTY(QDateTime lastSeen READ getLastSeen NOTIFY lastSeenChanged)
+    Q_PROPERTY(bool online READ isOnline WRITE setOnline NOTIFY onlineChanged)
+    Q_PROPERTY(OnlineStatus onlineStatus READ getOnlineStatus NOTIFY onlineStatusChanged)
+    Q_PROPERTY(QString onlineIcon READ getOnlineIcon WRITE setOnlineIcon NOTIFY onlineIconChanged)
+    Q_PROPERTY(QByteArray b58identity READ getB58EncodedIdetity)
+    Q_PROPERTY(QByteArray handle READ getHandle)
+    Q_PROPERTY(bool autoConnect READ isAutoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
+    Q_PROPERTY(ContactState state READ getState WRITE setState NOTIFY stateChanged)
+    Q_PROPERTY(QString addMeMessage READ getAddMeMessage WRITE setAddMeMessage NOTIFY addMeMessageChanged)
+    Q_PROPERTY(bool peerVerified READ isPeerVerified WRITE setPeerVerified NOTIFY peerVerifiedChanged)
+    Q_PROPERTY(Identity * identity READ getIdentity)
+
+    Q_INVOKABLE void connectToContact();
+    Q_INVOKABLE void disconnectFromContact();
+
+    static Contact::ptr_t load(QObject& parent, const QUuid &uuid);
+
+    int getId() const noexcept;
+    QString getName() const noexcept;
+    void setName(const QString& name);
+    QString getNickName() const noexcept;
+    void setNickName(const QString& name);
+    QString getGroup() const noexcept;
+    void setGroup(const QString& name);
+    QByteArray getAddress() const noexcept;
+    void setAddress(const QByteArray& address);
+    QString getNotes() const noexcept;
+    void setNotes(const QString& notes);
+    QImage getAvatar() const noexcept;
+    QString getAvatarUri() const noexcept;
+    void setAvatar(const QImage& avatar);
+    bool isOnline() const noexcept;
+    void setOnline(const bool value);
+    QUuid getUuid() const noexcept;
+    QByteArray getHash() const noexcept;
+    QDateTime getCreated() const noexcept;
+    QDateTime getLastSeen() const noexcept;
+    void setLastSeen(const QDateTime& when);
+    crypto::DsCert::ptr_t getCert() const noexcept;
+    QByteArray getB58EncodedIdetity() const noexcept;
+    QByteArray getHandle() const noexcept;
+    bool isAutoConnect() const noexcept;
+    void setAutoConnect(bool value);
+    InitiatedBy getWhoInitiated() const noexcept;
+    ContactState getState() const noexcept;
+    void setState(const ContactState state);
+    QString getAddMeMessage() const noexcept;
+    void setAddMeMessage(const QString& msg);
+    bool isPeerVerified() const noexcept;
+    void setPeerVerified(const bool verified);
+    QString getOnlineIcon() const noexcept;
+    void setOnlineIcon(const QString& path);
+    Identity *getIdentity() const;
+    OnlineStatus getOnlineStatus() const noexcept;
+    void setOnlineStatus(const OnlineStatus status);
+
+    /*! Add the new Identity to the database. */
+    void addToDb();
+
+    /*! Delete from the database */
+    void deleteFromDb();
+
+signals:
+    void nameChanged();
+    void nickNameChanged();
+    void groupChanged();
+    void addressChanged();
+    void notesChanged();
+    void avatarChanged();
+    void onlineChanged();
+    void autoConnectChanged();
+    void stateChanged();
+    void addMeMessageChanged();
+    void lastSeenChanged();
+    void peerVerifiedChanged();
+    void onlineIconChanged();
+    void onlineStatusChanged();
+
+private:
+    static void bind(QSqlQuery& query, ContactData& data);
+
+    int id_ = -1; // Database id
+    bool online_ = false;
+    data_t data_;
+    QString onlineIcon_ = "qrc:///images/onion-bw.svg";
+    OnlineStatus onlineStatus_ = DISCONNECTED;
+
+    std::unique_ptr<Connection> connection_;
 };
-
-Q_ENUM_NS(InitiatedBy)
-
-enum ContactState {
-    CS_PENDING, // Never successfully connected to peers address
-    CS_WAITING_FOR_ACCEPTANCE, // We have sent addme, Waiting for ack
-    CS_ACCEPTED, // We have experienced connectins in both directions, and received and / or sent ack
-    CS_REJECTED,
-    CS_BLOCKED
-};
-
-Q_ENUM_NS(ContactState)
 
 struct ContactData {
 
@@ -73,13 +233,13 @@ struct ContactData {
     QDateTime created;
 
     // Who sent the initial addme request?
-    InitiatedBy whoInitiated = IB_ME;
+    Contact::InitiatedBy whoInitiated = Contact::ME;
 
     // Updated when we receive data from the contact, rounded to minute.
     QDateTime lastSeen;
 
     // The current state for this contact
-    ContactState state = CS_PENDING;
+    Contact::ContactState state = Contact::PENDING;
 
     // Message to send with the addme request
     QString addMeMessage;
@@ -91,129 +251,9 @@ struct ContactData {
     bool peerVerified = false;
 };
 
-/*! Representation of a contact.
- *
- * The Contact is owned by an Identity instance
- *
- */
-struct Contact : public QObject {
-        Q_OBJECT
-public:
-    using ptr_t = std::shared_ptr<Contact>;
-
-    Contact(QObject& parent,
-            const int dbId, // -1 if the identity is new
-            const bool online,
-            ContactData data);
-
-    Q_PROPERTY(int id READ getId)
-    Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
-    Q_PROPERTY(QString nickName READ getNickName WRITE setNickName NOTIFY NickNameChanged)
-    Q_PROPERTY(QString group READ getGroup WRITE setGroup NOTIFY groupChanged)
-    Q_PROPERTY(QByteArray address READ getAddress WRITE setAddress NOTIFY addressChanged)
-    Q_PROPERTY(QString notes READ getNotes WRITE setNotes NOTIFY notesChanged)
-    Q_PROPERTY(QString avatar READ getAvatarUri NOTIFY avatarChanged)
-    Q_PROPERTY(QUuid uuid READ getUuid)
-    Q_PROPERTY(InitiatedBy whoInitiated READ getWhoInitiated)
-    Q_PROPERTY(QDateTime created READ getCreated)
-    Q_PROPERTY(QDateTime lastSeen READ getLastSeen WRITE setLastSeen NOTIFY lastSeenChanged)
-    Q_PROPERTY(bool online READ isOnline WRITE setOnline NOTIFY onlineChanged)
-    Q_PROPERTY(QByteArray b58identity READ getB58EncodedIdetity)
-    Q_PROPERTY(QByteArray handle READ getHandle)
-    Q_PROPERTY(bool autoConnect READ isAutoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
-    Q_PROPERTY(ContactState state READ getState WRITE setState NOTIFY onStateChanged)
-    Q_PROPERTY(QString addMeMessage READ getAddMeMessage WRITE setAddMeMessage NOTIFY addMeMessageChanged)
-    Q_PROPERTY(bool peerVerified READ isPeerVerified WRITE setPeerVerified NOTIFY peerVerifiedChanged)
-
-    static Contact::ptr_t load(QObject& parent, const QUuid &uuid);
-
-    int getId() const noexcept;
-    QString getName() const noexcept;
-    void setName(const QString& name);
-    QString getNickName() const noexcept;
-    void setNickName(const QString& name);
-    QString getGroup() const noexcept;
-    void setGroup(const QString& name);
-    QByteArray getAddress() const noexcept;
-    void setAddress(const QByteArray& address);
-    QString getNotes() const noexcept;
-    void setNotes(const QString& notes);
-    QImage getAvatar() const noexcept;
-    QString getAvatarUri() const noexcept;
-    void setAvatar(const QImage& avatar);
-    bool isOnline() const noexcept;
-    void setOnline(const bool value);
-    QUuid getUuid() const noexcept;
-    QByteArray getHash() const noexcept;
-    QDateTime getCreated() const noexcept;
-    QDateTime getLastSeen() const noexcept;
-    void setLastSeen(const QDateTime& when);
-    crypto::DsCert::ptr_t getCert() const noexcept;
-    QByteArray getB58EncodedIdetity() const noexcept;
-    QByteArray getHandle() const noexcept;
-    bool isAutoConnect() const noexcept;
-    void setAutoConnect(bool value);
-    InitiatedBy getWhoInitiated() const noexcept;
-    ContactState getState() const noexcept;
-    void setState(const ContactState state);
-    QString getAddMeMessage() const noexcept;
-    void setAddMeMessage(const QString& msg);
-    bool isPeerVerified() const noexcept;
-    void setPeerVerified(const bool verified);
-
-    /*! Add the new Identity to the database. */
-    void addToDb();
-
-    /*! Delete from the database */
-    void deleteFromDb();
-
-signals:
-    void nameChanged();
-    void nickNameChanged();
-    void groupChanged();
-    void addressChanged();
-    void notesChanged();
-    void avatarChanged();
-    void onlineChanged();
-    void autoConnectChanged();
-    void stateChanged();
-    void addMeMessageChanged();
-    void lastSeenChanged();
-    void peerVerifiedChanged();
-
-private:
-    static void bind(QSqlQuery& query, ContactData& data);
-
-    int id_ = -1; // Database id
-    bool online_ = false;
-    ContactData data_;
-};
-
-//struct ContactReq {
-//    int identity = {};
-//    QString name;
-//    QString nickname;
-//    QString notes;
-//    QString group;
-//    QByteArray contactHandle;
-//    QImage avatar;
-//    QByteArray pubkey;
-//    QByteArray address;
-//    QString addmeMessage;
-//    InitiatedBy whoInitiated = InitiatedBy::ME;
-//    bool autoConnect = true;
-//};
-
-//struct ContactError {
-//    QString name;
-//    QString hash;
-//    QString explanation;
-//};
 
 }} // namepsaces
 
 Q_DECLARE_METATYPE(ds::core::Contact *)
-//Q_DECLARE_METATYPE(ds::core::ContactReq)
-//Q_DECLARE_METATYPE(ds::core::ContactError)
 
 #endif // CONTACT_H

@@ -4,11 +4,15 @@
 #include "ds/identity.h"
 #include "ds/errors.h"
 #include "ds/update_helper.h"
+#include "ds/dscert.h"
+#include "ds/base58.h"
 
 #include "logfault/logfault.h"
 
 namespace ds {
 namespace core {
+
+using namespace std;
 
 Identity::Identity(QObject& parent,
              const int dbId, // -1 if the identity is new
@@ -18,6 +22,26 @@ Identity::Identity(QObject& parent,
     : QObject{&parent}
     , id_{dbId}, online_{online}, data_{std::move(data)}, created_{created}
 {}
+
+void Identity::addContact(const QVariantMap &args)
+{
+    LFLOG_DEBUG << "Adding contact: " << args.value("name").toString();
+
+    auto data = make_unique<ContactData>();
+
+    data->identity = args.value("identity").toInt();
+    data->name = args.value("name").toString();
+    data->nickName = args.value("nickName").toString();
+    auto handle = args.value("handle").toByteArray();
+    data->cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(
+                                    handle.toStdString(), 32, {249, 50}));
+    data->addMeMessage = args.value("addmeMessage").toString();
+    data->address = args.value("address").toByteArray();
+    data->autoConnect = args.value("autoConnect").toBool();
+    data->notes = args.value("notes").toString();
+
+    DsEngine::instance().getContactManager()->addContact(move(data));
+}
 
 void Identity::startService()
 {

@@ -6,11 +6,19 @@ import com.jgaa.darkspeak 1.0
 
 Dialog {
     id: root
-    title: qsTr("Add Contact")
-    standardButtons: StandardButton.Apply | StandardButton.Cancel
-    property string nickName: qsTr("Anonymous Coward")
-    property string handle: ""
-    property string address: ""
+    property Contact contact : null
+    property Identity identity: null
+    property var clip: null
+    standardButtons: StandardButton.Ok | StandardButton.Cancel
+
+    Component.onCompleted: {
+        if (clip) {
+            name.text = clip.nickName
+            handle.text = clip.handle
+            address.text = clip.address
+        }
+
+    }
 
     ColumnLayout {
         spacing: 4
@@ -25,13 +33,13 @@ Dialog {
 
             Label { font.pointSize: 9; text: qsTr("Name")}
             Label { font.pointSize: 9; text: qsTr("Handle")}
-            Label { font.pointSize: 9; text: qsTr("Onion")}
+            Label { font.pointSize: 9; text: qsTr("address")}
             Label { font.pointSize: 9; text: qsTr("Message")}
 
             TextField {
                 id: name
+                placeholderText: qsTr("Anononymous Coward")
                 Layout.fillWidth: true
-                placeholderText: root.nickName
             }
 
             TextField {
@@ -41,7 +49,7 @@ Dialog {
             }
 
             TextField {
-                id: onion
+                id: address
                 Layout.fillWidth: true
                 text: root.address
             }
@@ -75,19 +83,33 @@ Dialog {
         }
     }
 
-    Connections {
-        target: root
-        onClicked: print("clicked")
+    onAccepted: {
+
+        const args = {
+            "identity" : identity.id,
+            "name" : name.text ? name.text : qsTr("Anononymous Coward"),
+            "nickName" : clip ? clip.nickName : null,
+            "handle" : handle.text,
+            "address" : address.text,
+            "addmeMessage" : addmeMessage.text,
+            "autoConnect" : autoConnect.checked,
+            "notes" : notes.text
+
+        }
+
+        identity.addContact(args)
+//        contacts.createContact(root.nickName,
+//                               name.text,
+//                               handle.text,
+//                               address.text,
+//                               addmeMessage.text,
+//                               notes.text,
+//                               autoConnect.checked)
+        close()
+        //destroy()
     }
 
-    onApply: {
-        contacts.createContact(root.nickName,
-                               name.text,
-                               handle.text,
-                               onion.text,
-                               addmeMessage.text,
-                               notes.text,
-                               autoConnect.checked)
-        close()
+    onRejected: {
+        destroy();
     }
 }

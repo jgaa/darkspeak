@@ -111,10 +111,6 @@ QByteArray DsEngine::getIdentityHandle(const QByteArray &pubkey, const QByteArra
     return toJson(map);
 }
 
-void DsEngine::createContact(const ContactReq &req)
-{
-    emit contactCreated(prepareContact((req)));
-}
 
 void DsEngine::createNewTransport(const QByteArray &name, const QUuid& uuid)
 {
@@ -338,11 +334,11 @@ void DsEngine::initialize()
         qRegisterMetaType<ds::core::IdentityData>("IdentityData");
         qRegisterMetaType<ds::core::IdentityError>("ds::core::IdentityError");
         qRegisterMetaType<ds::core::IdentityError>("IdentityError");
-        qRegisterMetaType<ds::core::Contact>("ds::core::Contact");
-        qRegisterMetaType<ds::core::Contact>("Contact");
         qRegisterMetaType<ds::core::TransportHandleError>("TransportHandleError");
         qRegisterMetaType<ds::core::IdentityReq>("IdentityReq");
         qRegisterMetaType<ds::core::QmlIdentityReq *>("const QmlIdentityReq *");
+        qRegisterMetaType<ds::core::Identity *>("Identity *");
+        qRegisterMetaType<ds::core::Contact *>("Contact *");
     }
 
     auto data_path = QStandardPaths::writableLocation(
@@ -460,44 +456,44 @@ QByteArray DsEngine::imageToBytes(const QImage &img)
     return ba;
 }
 
-Contact DsEngine::prepareContact(const ContactReq &req)
-{
-    static const regex valid_address{R"((^(onion):)?([a-z2-7]{16}|[a-z2-7]{56})\:(\d{3,5})$)"};
+//Contact DsEngine::prepareContact(const ContactReq &req)
+//{
+//    static const regex valid_address{R"((^(onion):)?([a-z2-7]{16}|[a-z2-7]{56})\:(\d{3,5})$)"};
 
-    Contact c;
-    c.identity = req.identity;
-    c.uuid = QUuid::createUuid().toByteArray();
-    c.name = req.name;
-    c.nickname = req.nickname;
-    c.notes = req.notes;
-    c.group = req.group;
-    c.avatar = req.avatar;
-    c.whoInitiated = req.whoInitiated;
-    c.pubkey = req.pubkey;
-    c.address = req.address;
-    c.autoConnect = req.autoConnect;
-    c.addmeMessage = req.addmeMessage;
+//    Contact c;
+//    c.identity = req.identity;
+//    c.uuid = QUuid::createUuid().toByteArray();
+//    c.name = req.name;
+//    c.nickname = req.nickname;
+//    c.notes = req.notes;
+//    c.group = req.group;
+//    c.avatar = req.avatar;
+//    c.whoInitiated = req.whoInitiated;
+//    c.pubkey = req.pubkey;
+//    c.address = req.address;
+//    c.autoConnect = req.autoConnect;
+//    c.addmeMessage = req.addmeMessage;
 
-    // Validate
-    if (!regex_match(c.address.data(), valid_address)) {
-        LFLOG_WARN << "New contact " << req.name
-                   << " has an invalid address format : '"
-                   << c.address
-                   << "'";
-        throw ParseError(QStringLiteral(
-            "Invalid address format for contact %1").arg(req.name));
-    }
+//    // Validate
+//    if (!regex_match(c.address.data(), valid_address)) {
+//        LFLOG_WARN << "New contact " << req.name
+//                   << " has an invalid address format : '"
+//                   << c.address
+//                   << "'";
+//        throw ParseError(QStringLiteral(
+//            "Invalid address format for contact %1").arg(req.name));
+//    }
 
-    // Create a cert from the pubkey so we can hash it.
-    auto cert = ds::crypto::DsCert::createFromPubkey(c.pubkey);
-    c.hash = cert->getHash().toByteArray();
+//    // Create a cert from the pubkey so we can hash it.
+//    auto cert = ds::crypto::DsCert::createFromPubkey(c.pubkey);
+//    c.hash = cert->getHash().toByteArray();
 
-    // Emit
-    LFLOG_DEBUG << "Contact " << c.name << " is ok.";
-    LFLOG_DEBUG << "Hash is: " << c.hash.toBase64();
+//    // Emit
+//    LFLOG_DEBUG << "Contact " << c.name << " is ok.";
+//    LFLOG_DEBUG << "Hash is: " << c.hash.toBase64();
 
-    return c;
-}
+//    return c;
+//}
 
 QByteArray DsEngine::getIdentityAsBase58(const DsCert::ptr_t &cert, const QByteArray &address)
 {

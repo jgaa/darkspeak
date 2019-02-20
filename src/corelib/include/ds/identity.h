@@ -13,7 +13,7 @@
 #include <QUuid>
 #include <QDateTime>
 #include <QVariant>
-#include <unordered_map>
+#include <map>
 
 namespace ds {
 namespace core {
@@ -121,6 +121,7 @@ public:
     Q_PROPERTY(QByteArray handle READ getHandle)
     Q_PROPERTY(bool autoConnect READ isAutoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
 
+    Q_INVOKABLE void addContact(const QVariantMap& args);
     Q_INVOKABLE void startService();
     Q_INVOKABLE void stopService();
 
@@ -155,6 +156,8 @@ public:
     /*! Delete from the database */
     void deleteFromDb();
 
+    ProtocolManager& getProtocolManager();
+
 signals:
     void nameChanged();
     void addressChanged();
@@ -165,8 +168,6 @@ signals:
     void autoConnectChanged();
 
 private:
-    ProtocolManager& getProtocolManager();
-
     int id_ = -1; // Database id
     bool online_ = false;
     IdentityData data_;
@@ -174,7 +175,7 @@ private:
 
     // Active Connections in any direction
     // Keeps connected Contacts in memory
-    std::unordered_map<QUuid /* connection id */, std::unique_ptr<Connected>> connected_;
+    std::map<QUuid /* connection id */, std::unique_ptr<Connected>> connected_;
 };
 
 }} // identities

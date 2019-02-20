@@ -19,18 +19,20 @@
 using namespace std;
 using namespace ds::core;
 
-// TODO: Handle incoming signals (connected, disconnected, failed;
-//      even for connections for other than the selected identity)
-
 namespace ds {
 namespace models {
 
-ContactsModel::ContactsModel()
-    : identityManager_{*DsEngine::instance().getIdentityManager()}
+ContactsModel::ContactsModel(QObject& parent)
+    : QAbstractListModel{&parent}
+    , identityManager_{*DsEngine::instance().getIdentityManager()}
     , contactManager_{*DsEngine::instance().getContactManager()}
 {
 
     // TODO: Connect to add / delete contact signals
+
+    connect(DsEngine::instance().getContactManager(),
+            &ContactManager::contactAdded,
+            this, &ContactsModel::onContactAdded);
 }
 
 void ContactsModel::setIdentity(const QUuid &uuid)
@@ -44,21 +46,48 @@ void ContactsModel::setIdentity(const QUuid &uuid)
         return;
     }
 
-    QSqlQuery query;
-    query.prepare("SELECT uuid FROM contact WHERE identity=:identity ORDER BY LOWER(NAME)");
-    query.bindValue(":identity", identity_->getId());
-
-    if(!query.exec()) {
-        throw Error(QStringLiteral("Failed to add identity: %1").arg(
-                        query.lastError().text()));
-    }
-
-    // Populate
-    while(query.next()) {
-        rows_.emplace_back(query.value(0).toUuid());
-    }
+    queryRows(rows_);
 
     endResetModel();
+}
+
+void ContactsModel::onContactAdded(Contact *contact)
+{
+    if (!identity_) {
+        return;
+    }
+
+    if (contact->getIdentity() != identity_) {
+        return;
+    }
+
+    rows_t r;
+    queryRows(r);
+
+    // Assume that the r == rows_, except for one added item
+    // Just find the insert point an add it
+
+    const auto key = contact->getUuid();
+    int rowid = 0;
+    auto current_it = rows_.begin();
+    for(auto &row : r) {
+        if (row.uuid == key) {
+
+            beginInsertRows({}, rowid, rowid);
+
+            rows_.emplace(current_it, contact->getUuid());
+
+            endInsertRows();
+            break;
+        }
+        ++rowid;
+        ++current_it;
+    }
+}
+
+void ContactsModel::onContactDeleted(const QUuid &contact)
+{
+    // TODO: Remove it from the list, notfy UI of changes
 }
 
 int ContactsModel::rowCount(const QModelIndex &parent) const
@@ -78,7 +107,7 @@ QVariant ContactsModel::data(const QModelIndex &ix, int role) const
         }
 
         assert(identity_ != nullptr);
-        assert(identity_->getUuid() == r.contact->getUuid());
+        assert(identity_ == r.contact->getIdentity());
 
         return QVariant::fromValue<ds::core::Contact *>(r.contact.get());
     }
@@ -93,6 +122,26 @@ QHash<int, QByteArray> ContactsModel::roleNames() const
     };
 
     return names;
+}
+
+void ContactsModel::queryRows(rows_t &rows)
+{
+    if (!identity_) {
+        return;
+    }
+    QSqlQuery query;
+    query.prepare("SELECT uuid FROM contact WHERE identity=:identity ORDER BY LOWER(NAME)");
+    query.bindValue(":identity", identity_->getId());
+
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to add identity: %1").arg(
+                        query.lastError().text()));
+    }
+
+    // Populate
+    while(query.next()) {
+        rows.emplace_back(query.value(0).toUuid());
+    }
 }
 
 

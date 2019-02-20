@@ -49,9 +49,8 @@ void DsServer::authorize(bool authorize)
                 olleh.signature,
                 {olleh.version, olleh.key, olleh.header});
 
-    const auto peer_cert = crypto::DsCert::createFromPubkey(connectionData_.contactsPubkey);
     array<uint8_t, olleh.buffer.size() + crypto_box_SEALBYTES> ciphertext;
-    peer_cert->encrypt(ciphertext, olleh.buffer);
+    connectionData_.contactsCert->encrypt(ciphertext, olleh.buffer);
 
     // Send the message to the server.
     connection_->write(ciphertext);
@@ -121,10 +120,7 @@ void DsServer::getHello(const data_t& data)
         return;
     }
 
-    // Remember the peers pubkey
-    connectionData_.contactsPubkey.resize(static_cast<int>(hello.pubkey.size()));
-    copy(hello.pubkey.cbegin(), hello.pubkey.cend(),
-         connectionData_.contactsPubkey.begin());
+    connectionData_.contactsCert = crypto::DsCert::createFromPubkey(hello.pubkey.toByteArray());
 
     // At this point, any further inbound data is assumed to be encrypted
     prepareDecryption(stateIn, hello.header, hello.key);

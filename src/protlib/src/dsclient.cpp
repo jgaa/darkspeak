@@ -90,9 +90,8 @@ void DsClient::sayHello()
                 {hello.version, hello.key, hello.header, hello.pubkey});
 
     // Encrypt the payload with the receipients public encryption key
-    const auto peer_cert = crypto::DsCert::createFromPubkey(connectionData_.contactsPubkey);    
     array<uint8_t, hello.buffer.size() + crypto_box_SEALBYTES> ciphertext;
-    peer_cert->encrypt(ciphertext, hello.buffer);
+    connectionData_.contactsCert->encrypt(ciphertext, hello.buffer);
 
     // Send the message to the server.
     connection_->write(ciphertext);
@@ -122,8 +121,7 @@ void DsClient::getHelloReply(const Peer::data_t &data)
     }
 
     // Validate the signature
-    auto client_cert = crypto::DsCert::createFromPubkey(connectionData_.contactsPubkey);
-    if (!client_cert->verify(
+    if (!connectionData_.contactsCert->verify(
                 olleh.signature,
                 {olleh.version, olleh.key, olleh.header})) {
         LFLOG_ERROR << "Signature in Olleh message was forged from "

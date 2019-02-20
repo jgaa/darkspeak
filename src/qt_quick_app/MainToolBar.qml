@@ -45,14 +45,14 @@ ToolBar {
             visible: manager.currentPage === 1
 
             onClicked: {
-                var popupComponent = Qt.createComponent("qrc:/EditIdentityDialog.qml")
-                if (popupComponent.status !== Component.Ready) {
-                    if(popupComponent.status === Component.Error )
-                        console.debug("Error:"+ popupComponent.errorString() );
-                    return; // or maybe throw
+                var component = Qt.createComponent("qrc:/EditIdentityDialog.qml")
+                if (component.status !== Component.Ready) {
+                    if(component.status === Component.Error )
+                        console.debug("Error:"+ component.errorString() );
+                    return;
                 }
-                 var dlg = popupComponent.createObject(mainWindow, {"parent" : mainWindow});
-                 dlg.open()
+                var dlg = component.createObject(mainWindow, {"parent" : mainWindow});
+                dlg.open()
             }
         }
 
@@ -64,12 +64,16 @@ ToolBar {
 
             onClicked: {
                 var clip = manager.getIdenityFromClipboard()
-                var popupComponent = Qt.createComponent("qrc:/NewContactDialog.qml")
-                var dlg = popupComponent.createObject(mainWindow, {
-                    "parent" : mainWindow,
-                    "nickName" : clip.nickName ? clip.nickName : qsTr("Anonymous Coward"),
-                    "handle": clip.handle,
-                    "address": clip.address
+                var component = Qt.createComponent("qrc:/EditContactDialog.qml")
+                if (component.status !== Component.Ready) {
+                    if(component.status === Component.Error )
+                        console.debug("Error:"+ component.errorString() );
+                    return;
+                }
+                var dlg = component.createObject(mainWindow, {
+                    "parent"   : mainWindow,
+                    "clip"     : clip,
+                    "identity" : identities.getCurrentIdentity()
                 });
                 dlg.open()
             }

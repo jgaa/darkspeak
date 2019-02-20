@@ -112,7 +112,6 @@ public:
     void whenOnline(std::function<void ()> fn);
 
 public slots:
-    //void createContact(const ContactReq&);
     void createNewTransport(const QByteArray& name, const QUuid& uuid);
     void close();
     void start();
@@ -140,8 +139,8 @@ signals:
     void serviceFailed(const QUuid& uuid, const QByteArray& reason);
     void serviceStarted(const QUuid& uuid, const bool newService);
     void serviceStopped(const QUuid& uuid);
-    void connectedTo(const QUuid& uuid, const ProtocolManager::Direction direction);
-    void disconnectedFrom(const QUuid& uuid);
+    void connectedTo(const QUuid& identity, const QUuid& uuid, const ProtocolManager::Direction direction);
+    void disconnectedFrom(const QUuid& identity, const QUuid& uuid);
     void connectionFailed(const QUuid& uuid,
                           const QAbstractSocket::SocketError& socketError);
     void incomingPeer(const QUuid& service, const QUuid& connectionId, const QByteArray& handle);
@@ -162,7 +161,7 @@ protected:
     State state_ = State::INITIALIZING;
     QList<std::function<void ()>> when_online_;
     IdentityManager *identityManager_ = nullptr;
-    ContactManager *contactManager_ = nullpr;
+    ContactManager *contactManager_ = nullptr;
 };
 
 }} // namepsaces

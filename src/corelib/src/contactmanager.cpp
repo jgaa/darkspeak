@@ -1,9 +1,16 @@
+
+#include <memory>
 #include <algorithm>
 
-#include "include/ds/contactmanager.h"
+#include "ds/contactmanager.h"
+#include "ds/dsengine.h"
+
+#include "logfault/logfault.h"
 
 namespace ds {
 namespace core {
+
+using namespace std;
 
 ContactManager::ContactManager(QObject &parent)
     : QObject (&parent)
@@ -27,13 +34,31 @@ Contact::ptr_t ContactManager::getContact(const QUuid &uuid)
 void ContactManager::deleteContact(const QUuid &uuid)
 {
     if (auto contact = registry_.fetch(uuid)) {
-        lru_cache_.remove(contact);
 
         // Remove from model(s)
         emit contactDeleted(uuid);
 
-        // TODO: Remove from online lists
+        lru_cache_.remove(contact);
+        registry_.remove(uuid);
     }
+}
+
+Contact *ContactManager::addContact(Contact::data_t data)
+{
+    auto ptr = make_shared<Contact>(*this, -1, false, move(data));
+    ptr->addToDb();
+
+    // Add it to the registry and cache
+    registry_.add(ptr->getUuid(), ptr);
+    touch(ptr);
+
+    LFLOG_NOTICE << "Added Contact " << ptr->getName()
+                 << " with handle " << ptr->getHandle()
+                 << " as " << ptr->getUuid().toString();
+
+    emit contactAdded(ptr.get());
+
+    return ptr.get();
 }
 
 void ContactManager::touch(const Contact::ptr_t &contact)

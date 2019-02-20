@@ -55,20 +55,15 @@ int main(int argc, char *argv[])
 
     qmlRegisterUncreatableType<ds::models::Manager>("com.jgaa.darkspeak", 1, 0,
                                                     "Manager",
-                                                    "ContactsModel is a global sigeleton.");
+                                                    "Manager is a global sigeleton.");
 
     qmlRegisterUncreatableType<ds::models::LogModel>("com.jgaa.darkspeak", 1, 0,
                                                      "LogModel",
                                                      "LogModel is a global sigeleton.");
 
-    qmlRegisterUncreatableType<ds::models::IdentitiesModel>("com.jgaa.darkspeak", 1, 0,
-                                                            "IdentitiesModel",
-                                                            "IdentitiesModel is a global sigeleton.");
-
-
     qmlRegisterUncreatableType<ds::models::ContactsModel>("com.jgaa.darkspeak", 1, 0,
                                                            "ContactsModel",
-                                                           "Cannot create OnlineStatus in QML");
+                                                           "Cannot create ContactsModel in QML");
 
     qmlRegisterUncreatableType<ds::models::NotificationsModel>("com.jgaa.darkspeak", 1, 0,
                                                            "ContactsModel",
@@ -86,11 +81,11 @@ int main(int argc, char *argv[])
                                                    "Contact",
                                                    "Cannot create Contact in QML");
 
-    qmlRegisterUncreatableMetaObject(
-                ds::core::staticMetaObject,
-                "com.jgaa.darkspeak", 1, 0,
-                "DsCore",
-                "Error: only enums");
+//    qmlRegisterUncreatableMetaObject(
+//                ds::core::staticMetaObject,
+//                "com.jgaa.darkspeak", 1, 0,
+//                "DsCore",
+//                "Error: only enums");
 
     qmlRegisterType<ds::core::QmlIdentityReq>("com.jgaa.darkspeak", 1, 0, "QmlIdentityReq");
 

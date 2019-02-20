@@ -5,12 +5,17 @@ import QtQuick.Dialogs 1.3
 import com.jgaa.darkspeak 1.0
 
 Page {
-
+    id: root
     header: Label {
         text: qsTr("Contacts")
         font.pixelSize: Qt.application.font.pixelSize * 2
         padding: 10
     }
+
+    property var states: [qsTr("Pending"), qsTr("Waiting"), qsTr("OK"), qsTr("Rejected"), qsTr("BLOCKED")]
+    property var stateColors: ["gray", "yellow", "lime", "red", "red"]
+    property var onlineColors: ["firebrick", "blue", "orange", "lime"]
+
 
     Connections {
         target: contacts
@@ -31,12 +36,12 @@ Page {
         model: contacts
         anchors.fill: parent
         highlight: highlightBar
-        property bool isOnline : model.getOnlineStatus(currentIndex) === ContactsModel.ONLINE
 
         delegate: Item {
             id: itemDelegate
             width: parent.width
             height: 130
+            property Contact cco : contact
 
             Row {
                 id: row1
@@ -51,7 +56,7 @@ Page {
                     anchors.left: parent.left
                     anchors.leftMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
-                    border.color: online === ContactsModel.ONLINE ? "lime" : "firebrick"
+                    border.color: cco.online ? "lime" : "firebrick"
                     color: "black"
 
                     Image {
@@ -61,14 +66,11 @@ Page {
                         width: 96
                         x: 2
                         y: 2
-                        source: avatarImage
+                        source: cco.avatar
 
                         Rectangle {
                             height: parent.width / 3
-                            color: online === ContactsModel.DISCONNECTED ? "firebrick"
-                                 : online === ContactsModel.OFFLINE ? "blue"
-                                 : online === ContactsModel.CONNECTING ? "orange"
-                                 : online === ContactsModel.ONLINE ? "lime" : "red"
+                            color: root.onlineColors[cco.onlineStatus]
                             width: height
                             anchors.right: parent.right
                             anchors.top: parent.top
@@ -78,7 +80,7 @@ Page {
                             Image {
                                 id: torStatus
                                 anchors.fill: parent
-                                source: onlineIcon
+                                source: cco.onlineIcon
                             }
                         }
                     }
@@ -90,7 +92,7 @@ Page {
                     Text {
                         font.pointSize: 14
                         color: "white"
-                        text: name ? name : nickName
+                        text: cco.name ? cco.name : cco.nickName
                         font.bold: itemDelegate.ListView.isCurrentItem
                     }
 
@@ -99,38 +101,61 @@ Page {
                         rows: 5
                         flow: GridLayout.TopToBottom
                         Label { font.pointSize: 9; text: qsTr("Nick")}
-                        Label { font.pointSize: 9; text: qsTr("Connected")}
-                        Label { font.pointSize: 9; text: qsTr("handle")}
-                        Label { font.pointSize: 9; text: qsTr("Onion")}
+                        Label { font.pointSize: 9; text: qsTr("Last seen")}
+                        Label { font.pointSize: 9; text: qsTr("Handle")}
+                        Label { font.pointSize: 9; text: qsTr("Address")}
                         Label { font.pointSize: 9; text: qsTr("Status")}
 
                         Text {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: nickName
+                            text: cco.nickName
                         }
 
                         Text {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: created
+                            text: cco.lastSeen
                         }
 
                         Text {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: handle
+                            text: cco.handle
                         }
 
                         Text {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: onion
+                            text: cco.address
                         }
 
-                        Row {
-                            anchors.fill: parent
+                        RowLayout {
                             spacing: 4
+
+                            Text {
+                                font.pointSize: 8;
+                                color: cco.peerVerified ? "lime" : "yellow"
+                                text: cco.peerVerified ? qsTr("Verified") : qsTr("Unverified")
+                            }
+
+                            Text {
+                                color: root.stateColors[cco.state]
+                                font.pointSize: 8;
+                                text: root.states[cco.state]
+                            }
+
+                            Text {
+                                color: "skyblue"
+                                font.pointSize: 8;
+                                text: cco.whoInitiated === Contact.ME ? qsTr("AddedByMe") : ""
+                            }
+
+                            Text {
+                                color: cco.autoConnect ? "lime" : "orange"
+                                font.pointSize: 8;
+                                text: cco.autoConnect ? qsTr("Auto") : qsTr("Manual")
+                            }
                         }
                     }
                 }
@@ -158,10 +183,10 @@ Page {
         }
 
         function toggleOnline() {
-            if (isOnline) {
-                model.disconnectTransport(currentIndex);
+            if (currentItem.cco.online) {
+                currentItem.cco.connectToContact();
             } else {
-                model.connectTransport(currentIndex);
+                currentItem.cco.disconnectFromContact();
             }
         }
     }
@@ -180,17 +205,12 @@ Page {
     Menu {
         id: contextMenu
 
-        onAboutToShow: prepare()
-
-        function prepare() {
-            online.text =  list.isOnline ? qsTr("Disconnect") : qsTr("Connect")
-        }
-
         MenuItem {
             id: online
             icon.source: "qrc:///images/onion-bw.svg"
             onTriggered: list.toggleOnline()
             enabled: manager.online
+            text: list.currentItem.cco.online ? qsTr("Disconnect") : qsTr("Connect")
         }
     }
 }

@@ -188,8 +188,7 @@ QByteArray TorProtocolManager::getPeerHandle(const QUuid &service,
                                              const QUuid &connectionId)
 {
     const auto& cd = getService(service).getPeer(connectionId)->getConnectData();
-    const auto cert = crypto::DsCert::createFromPubkey(cd.contactsPubkey);
-    return cert->getB58PubKey();
+    return cd.contactsCert->getB58PubKey();
 }
 
 void TorProtocolManager::sendMessage(const core::Message &)
@@ -241,13 +240,13 @@ void TorProtocolManager::startService(const QUuid& serviceId,
     services_[serviceId] = service;
 
     connect(service.get(), &TorServiceInterface::connectedToService,
-            this, [this](const QUuid& uuid) {
-        emit connectedTo(uuid, core::ProtocolManager::Direction::OUTBOUND);
+            this, [this, serviceId](const QUuid& uuid) {
+        emit connectedTo(serviceId, uuid, core::ProtocolManager::Direction::OUTBOUND);
     });
 
     connect(service.get(), &TorServiceInterface::disconnectedFromService,
-            this, [this](const QUuid& uuid) {
-        emit disconnectedFrom(uuid);
+            this, [this, serviceId](const QUuid& uuid) {
+        emit disconnectedFrom(serviceId, uuid);
     });
 
     connect(service.get(), &TorServiceInterface::connectionFailed,

@@ -30,7 +30,6 @@ SOURCES += \
     src/identitymanager.cpp \
     src/identity.cpp \
     src/contact.cpp \
-    src/identitymanager.cpp \
     src/contactmanager.cpp
 
 HEADERS += \
@@ -43,7 +42,6 @@ HEADERS += \
     include/ds/transporthandle.h \
     include/ds/contact.h \
     include/ds/message.h \
-    include/ds/identitymanager.h \
     include/ds/update_helper.h \
     include/ds/identitymanager.h \
     include/ds/contactmanager.h \

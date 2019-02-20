@@ -36,13 +36,15 @@ class ContactsModel : public QAbstractListModel
     };
 
 public:
-    ContactsModel();
+    using rows_t = std::deque<Row>;
+
+    ContactsModel(QObject& parent);
 
     // Set the identity to work with
-    void setIdentity(const QUuid& uuid);
+    Q_INVOKABLE void setIdentity(const QUuid& uuid);
 
 public slots:
-    void onContactAdded(core::Identity *identity, const QUuid& contact);
+    void onContactAdded(core::Contact *contact);
     void onContactDeleted(const QUuid& contact);
 
     // QAbstractItemModel interface
@@ -52,7 +54,9 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
 private:
-    std::deque<Row> rows_;
+    void queryRows(rows_t& rows);
+
+    rows_t rows_;
     core::IdentityManager& identityManager_;
     core::ContactManager& contactManager_;
     core::Identity *identity_ = nullptr; // Active identity
@@ -197,5 +201,8 @@ private:
 //};
 
 }} // namespaces
+
+
+Q_DECLARE_METATYPE(ds::models::ContactsModel *)
 
 #endif // CONTACTSMODEL_H

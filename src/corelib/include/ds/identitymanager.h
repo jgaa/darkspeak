@@ -28,10 +28,12 @@ public:
 
     int getRow(const Identity *) const;
     Identity *addIdentity(const IdentityData& data);
+    
 
     // Returns nullptr on failure
     Q_INVOKABLE Identity *identityFromUuid(const QUuid& uuid) const;
     Q_INVOKABLE Identity *identityFromRow(const int row) const;
+    Q_INVOKABLE Identity *identityFromId(const int id) const;
     Q_INVOKABLE Identity *getCurrentIdentity() const noexcept;
     Q_INVOKABLE void setCurrentIdentity(int row);
     Q_INVOKABLE void createIdentity(const QmlIdentityReq *req);

@@ -22,12 +22,13 @@ public:
 
     Contact::ptr_t getContact(const QUuid& uuid);
     void deleteContact(const QUuid& uuid);
+    Contact *addContact(Contact::data_t data);
 
     // Put the contact at the front of the lru cache
     void touch(const Contact::ptr_t& contact);
 
 signals:
-    void contactAdded(core::Identity *identity, const QUuid& contact);
+    void contactAdded(Contact *contact);
     void contactDeleted(const QUuid& contact);
 
 private:

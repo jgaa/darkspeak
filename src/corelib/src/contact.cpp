@@ -17,10 +17,35 @@ using namespace crypto;
 Contact::Contact(QObject &parent,
                  const int dbId,
                  const bool online,
-                 ContactData data)
+                 data_t data)
     : QObject{&parent}
-    , id_{dbId}, online_{online}, data_{std::move(data)}
+    , id_{dbId}, online_{online}, data_{move(data)}
 {
+}
+
+void Contact::connectToContact()
+{
+    if (auto identity = getIdentity()) {
+        disconnectFromContact();
+
+        ConnectData cd;
+        cd.address = getAddress();
+        cd.contactsCert = getCert();
+        cd.identitysCert = identity->getCert();
+        cd.service = identity->getUuid();
+
+        const auto connection = identity->getProtocolManager().connectTo(cd);
+        LFLOG_DEBUG << "Connecting to " << getName()
+                    << " at " << getAddress()
+                    << " with connection-id: " << connection.toString();
+
+        connection_ = make_unique<Connection>(connection, ME, *this);
+    }
+}
+
+void Contact::disconnectFromContact()
+{
+    connection_.reset();
 }
 
 int Contact::getId() const noexcept {
@@ -28,61 +53,61 @@ int Contact::getId() const noexcept {
 }
 
 QString Contact::getName() const noexcept  {
-    return data_.name;
+    return data_->name;
 }
 
 void Contact::setName(const QString &name) {
-    updateIf("name", name, data_.name, this, &Contact::nameChanged);
+    updateIf("name", name, data_->name, this, &Contact::nameChanged);
 }
 
 QString Contact::getNickName() const noexcept  {
-    return data_.nickName;
+    return data_->nickName;
 }
 
 void Contact::setNickName(const QString &name) {
-    updateIf("name", name, data_.nickName, this, &Contact::nickNameChanged);
+    updateIf("name", name, data_->nickName, this, &Contact::nickNameChanged);
 }
 
 QString Contact::getGroup() const noexcept
 {
-    return data_.group;
+    return data_->group;
 }
 
 void Contact::setGroup(const QString &name) {
-    updateIf("name", name, data_.group, this, &Contact::groupChanged);
+    updateIf("name", name, data_->group, this, &Contact::groupChanged);
 }
 
 QByteArray Contact::getAddress() const noexcept {
-    return data_.address;
+    return data_->address;
 }
 
 void Contact::setAddress(const QByteArray &address) {
-    updateIf("address", address, data_.address, this, &Contact::addressChanged);
+    updateIf("address", address, data_->address, this, &Contact::addressChanged);
 }
 
 QString Contact::getNotes() const noexcept {
-    return data_.notes;
+    return data_->notes;
 }
 
 void Contact::setNotes(const QString &notes) {
-    updateIf("notes", notes, data_.notes, this, &Contact::notesChanged);
+    updateIf("notes", notes, data_->notes, this, &Contact::notesChanged);
 }
 
 QImage Contact::getAvatar() const noexcept  {
-    return data_.avatar;
+    return data_->avatar;
 }
 
 QString Contact::getAvatarUri() const noexcept
 {
-    if (data_.avatar.isNull()) {
+    if (data_->avatar.isNull()) {
         return "qrc:///images/anonymous.svg";
     }
 
-    return QStringLiteral("image://identity/%s").arg(data_.uuid.toString());
+    return QStringLiteral("image://identity/%s").arg(data_->uuid.toString());
 }
 
 void Contact::setAvatar(const QImage &avatar) {
-    updateIf("notes", avatar, data_.avatar, this, &Contact::avatarChanged);
+    updateIf("notes", avatar, data_->avatar, this, &Contact::avatarChanged);
 }
 
 bool Contact::isOnline() const noexcept {
@@ -97,84 +122,117 @@ void Contact::setOnline(const bool value) {
 }
 
 QUuid Contact::getUuid() const noexcept {
-    return data_.uuid;
+    return data_->uuid;
 }
 
 QByteArray Contact::getHash() const noexcept {
-    return data_.hash;
+    return data_->hash;
 }
 
 QDateTime Contact::getCreated() const noexcept {
-    return created_;
+    return data_->created;
 }
 
 QDateTime Contact::getLastSeen() const noexcept
 {
-    return data_.lastSeen;
+    return data_->lastSeen;
 }
 
 void Contact::setLastSeen(const QDateTime &when)
 {
-    updateIf("last_seen", when, data_.lastSeen, this, &Contact::lastSeenChanged);
+    updateIf("last_seen", when, data_->lastSeen, this, &Contact::lastSeenChanged);
 }
 
 crypto::DsCert::ptr_t Contact::getCert() const noexcept {
-    return data_.cert;
+    return data_->cert;
 }
 
 QByteArray Contact::getB58EncodedIdetity() const noexcept
 {
-    return DsEngine::getIdentityAsBase58(data_.cert, data_.address);
+    return DsEngine::getIdentityAsBase58(data_->cert, data_->address);
 }
 
 QByteArray Contact::getHandle() const noexcept
 {
-    return data_.cert->getB58PubKey();
+    return data_->cert->getB58PubKey();
 }
 
 bool Contact::isAutoConnect() const noexcept
 {
-    return data_.autoConnect;
+    return data_->autoConnect;
 }
 
 void Contact::setAutoConnect(bool value)
 {
-    updateIf("auto_connect", value, data_.autoConnect, this, &Contact::autoConnectChanged);
+    updateIf("auto_connect", value, data_->autoConnect, this, &Contact::autoConnectChanged);
 }
 
-InitiatedBy Contact::getWhoInitiated() const noexcept
+Contact::InitiatedBy Contact::getWhoInitiated() const noexcept
 {
-    return data_.whoInitiated;
+    return data_->whoInitiated;
 }
 
-ContactState Contact::getState() const noexcept
+Contact::ContactState Contact::getState() const noexcept
 {
-    return data_.state;
+    return data_->state;
 }
 
 void Contact::setState(const ContactState state)
 {
-    updateIf("state", state, data_.state, this, &Contact::stateChanged);
+    updateIf("state", state, data_->state, this, &Contact::stateChanged);
 }
 
 QString Contact::getAddMeMessage() const noexcept
 {
-    return data_.addMeMessage;
+    return data_->addMeMessage;
 }
 
 void Contact::setAddMeMessage(const QString &msg)
 {
-    updateIf("addme_message", msg, data_.addMeMessage, this, &Contact::addMeMessageChanged);
+    updateIf("addme_message", msg, data_->addMeMessage, this, &Contact::addMeMessageChanged);
 }
 
 bool Contact::isPeerVerified() const noexcept
 {
-    return data_.peerVerified;
+    return data_->peerVerified;
 }
 
 void Contact::setPeerVerified(const bool verified)
 {
-    updateIf("peer_verified", verified, data_.peerVerified, this, &Contact::peerVerifiedChanged);
+    updateIf("peer_verified", verified, data_->peerVerified, this, &Contact::peerVerifiedChanged);
+}
+
+QString Contact::getOnlineIcon() const noexcept
+{
+    return onlineIcon_;
+}
+
+void Contact::setOnlineIcon(const QString &path)
+{
+    if (path != onlineIcon_) {
+        onlineIcon_ = path;
+        emit onlineIconChanged();
+    }
+}
+
+Identity *Contact::getIdentity() const
+{
+    return DsEngine::instance().getIdentityManager()->identityFromId(data_->identity);
+}
+
+Contact::OnlineStatus Contact::getOnlineStatus() const noexcept
+{
+    return onlineStatus_;
+}
+
+void Contact::setOnlineStatus(const Contact::OnlineStatus status)
+{
+    if (onlineStatus_ != status) {
+        onlineStatus_ = status;
+        emit onlineStatusChanged();
+
+        setOnline(onlineStatus_ == ONLINE);
+    }
 }
 
 Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
@@ -194,30 +252,33 @@ Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
                         query.lastError().text()));
     }
 
-    ContactData data {
-        query.value(identity).toInt(),
-        query.value(name).toString(),
-        query.value(uuid).toUuid(),
-        query.value(nickname).toString(),
-        query.value(hash).toByteArray(),
-        query.value(notes).toString(),
-        query.value(contact_group).toString(),
-        DsCert::createFromPubkey(query.value(cert).toByteArray()),
-        query.value(address).toByteArray(),
-        QImage::fromData(query.value(avatar).toByteArray()),
-        query.value(created).toDateTime(),
-        static_cast<InitiatedBy>(query.value(initiated_by).toInt()),
-        query.value(last_seen).toDateTime(),
-        static_cast<ContactState>(query.value(state).toInt()),
-        query.value(addme_message).toString(),
-        query.value(auto_connect).toBool(),
-        query.value(peer_verified).toBool()
-    };
+    if (!query.next()) {
+        throw Error(QStringLiteral("No result for contact: %1").arg(key.toString()));
+    }
+
+    auto data = make_unique<ContactData>();
+    data->identity = query.value(identity).toInt();
+    data->name = query.value(name).toString();
+    data->uuid = query.value(uuid).toUuid();
+    data->nickName = query.value(nickname).toString();
+    data->hash = query.value(hash).toByteArray();
+    data->notes = query.value(notes).toString();
+    data->group = query.value(contact_group).toString();
+    data->cert = DsCert::create(query.value(cert).toByteArray());
+    data->address = query.value(address).toByteArray();
+    data->avatar = QImage::fromData(query.value(avatar).toByteArray());
+    data->created = query.value(created).toDateTime();
+    data->whoInitiated = static_cast<InitiatedBy>(query.value(initiated_by).toInt());
+    data->lastSeen = query.value(last_seen).toDateTime();
+    data->state = static_cast<ContactState>(query.value(state).toInt());
+    data->addMeMessage = query.value(addme_message).toString();
+    data->autoConnect = query.value(auto_connect).toBool();
+    data->peerVerified = query.value(peer_verified).toBool();
 
     return make_shared<Contact>(parent,
                                query.value(id).toInt(),
                                false, //Contacts that are connected are always in memory
-                               data);
+                               move(data));
 }
 
 void Contact::addToDb()
@@ -230,33 +291,45 @@ void Contact::addToDb()
                   ":identity, :uuid, :name, :nickname, :cert, :address, :notes, :contact_group, :avatar, :created, :initiated_by, :last_seen, :state, :addme_message, :auto_connect, :hash, :peer_verified "
                   ")");
 
-    query.bindValue(":identity", data_.identity);
-    query.bindValue(":uuid", data_.uuid);
-    query.bindValue(":name", data_.name);
-    query.bindValue(":nickname", data_.nickName);
-    query.bindValue(":cert", data_.cert->getCert().toByteArray());
-    query.bindValue(":address", data_.address);
-    query.bindValue(":notes", data_.notes);
-    query.bindValue(":contact_group", data_.group);
-    query.bindValue(":avatar", data_.avatar);
-    query.bindValue(":created", data_.created);
-    query.bindValue(":initiated_by", data_.whoInitiated);
-    query.bindValue(":last_seen", data_.lastSeen);
-    query.bindValue(":state", data_.state);
-    query.bindValue(":addme_message", data_.addMeMessage);
-    query.bindValue(":auto_connect", data_.autoConnect);
-    query.bindValue(":hash", data_.hash);
-    query.bindValue(":peer_verified", data_.peerVerified);
+    if (data_->group.isEmpty()) {
+        data_->group = tr("Default");
+    }
+
+    if (!data_->created.isValid()) {
+        data_->created = QDateTime::fromTime_t((QDateTime::currentDateTime().toTime_t() / 60) * 60);
+    }
+
+    if (data_->hash.isEmpty()) {
+        data_->hash = data_->cert->getHash().toByteArray();
+    }
+
+    query.bindValue(":identity", data_->identity);
+    query.bindValue(":uuid", data_->uuid);
+    query.bindValue(":name", data_->name);
+    query.bindValue(":nickname", data_->nickName);
+    query.bindValue(":cert", data_->cert->getCert().toByteArray());
+    query.bindValue(":address", data_->address);
+    query.bindValue(":notes", data_->notes);
+    query.bindValue(":contact_group", data_->group);
+    query.bindValue(":avatar", data_->avatar);
+    query.bindValue(":created", data_->created);
+    query.bindValue(":initiated_by", data_->whoInitiated);
+    query.bindValue(":last_seen", data_->lastSeen);
+    query.bindValue(":state", data_->state);
+    query.bindValue(":addme_message", data_->addMeMessage);
+    query.bindValue(":auto_connect", data_->autoConnect);
+    query.bindValue(":hash", data_->hash);
+    query.bindValue(":peer_verified", data_->peerVerified);
 
     if(!query.exec()) {
-        throw Error(QStringLiteral("Failed to add identity: %1").arg(
+        throw Error(QStringLiteral("Failed to add Contact: %1").arg(
                         query.lastError().text()));
     }
 
     id_ = query.lastInsertId().toInt();
 
-    LFLOG_INFO << "Added contact " << data_.name
-               << " with uuid " << data_.uuid.toString()
+    LFLOG_INFO << "Added contact " << data_->name
+               << " with uuid " << data_->uuid.toString()
                << " to the database with id " << id_;
 }
 
@@ -269,6 +342,19 @@ void Contact::deleteFromDb() {
             throw Error(QStringLiteral("SQL Failed to delete identity: %1").arg(
                             query.lastError().text()));
         }
+    }
+}
+
+Contact::Connection::~Connection()
+{
+    if (auto identity = owner.getIdentity()) {
+        if (status == ONLINE) {
+            LFLOG_DEBUG << "Disconnecting from " << owner.getName()
+                        << " at " << owner.getAddress()
+                        << " connection "  << uuid.toString();
+        }
+        identity->getProtocolManager().disconnectFrom(identity->getUuid(), uuid);
+        owner.setOnlineStatus(DISCONNECTED);
     }
 }
 

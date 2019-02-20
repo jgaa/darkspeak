@@ -97,6 +97,15 @@ Identity *IdentityManager::identityFromRow(const int row) const
     return rows_[static_cast<size_t>(row)];
 }
 
+Identity *IdentityManager::identityFromId(const int id) const
+{
+    auto it = ids_.find(id);
+    if (it == ids_.end()) {
+        return nullptr;
+    }
+    return it->second;
+}
+
 Identity *IdentityManager::getCurrentIdentity() const noexcept
 {
     if (current_ >= 0 && current_ < static_cast<int>(rows_.size())) {

@@ -132,25 +132,25 @@ void NotificationsModel::acceptContact(const int row, bool accept)
     }
 
     if (accept) {
-        ContactReq cr;
-        cr.whoInitiated = Contact::THEM;
-        cr.name = cr.nickname = d.value("nickName").toString();
-        cr.contactHandle = d.value("handle").toByteArray();
-        cr.identity = data(index(row, H_IDENTITY), Qt::DisplayRole).toInt();
+//        ContactReq cr;
+//        cr.whoInitiated = Contact::THEM;
+//        cr.name = cr.nickname = d.value("nickName").toString();
+//        cr.contactHandle = d.value("handle").toByteArray();
+//        cr.identity = data(index(row, H_IDENTITY), Qt::DisplayRole).toInt();
 
-        auto handle =  d.value("handle").toByteArray();
-        auto handle_str = handle.toStdString();
+//        auto handle =  d.value("handle").toByteArray();
+//        auto handle_str = handle.toStdString();
 
-        cr.pubkey = crypto::b58tobin_check<QByteArray>(handle_str, 32, {249, 50});
-        cr.address = d.value("address").toByteArray();
+//        cr.pubkey = crypto::b58tobin_check<QByteArray>(handle_str, 32, {249, 50});
+//        cr.address = d.value("address").toByteArray();
 
-        auto check = crypto::b58check_enc<QByteArray>(cr.pubkey, {249, 50});
-        assert(check == handle);
+//        auto check = crypto::b58check_enc<QByteArray>(cr.pubkey, {249, 50});
+//        assert(check == handle);
 
-        auto contact = DsEngine::instance().prepareContact(cr);
+//        auto contact = DsEngine::instance().prepareContact(cr);
 
-        emit contactAccepted(contact);
-        deleteRow(row);
+//        emit contactAccepted(contact);
+//        deleteRow(row);
     } else {
         // Send reject message and delete the notification
 
