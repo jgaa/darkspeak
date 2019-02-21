@@ -184,9 +184,9 @@ Page {
 
         function toggleOnline() {
             if (currentItem.cco.online) {
-                currentItem.cco.connectToContact();
-            } else {
                 currentItem.cco.disconnectFromContact();
+            } else {
+                currentItem.cco.connectToContact();
             }
         }
     }

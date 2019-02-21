@@ -106,7 +106,6 @@ public:
     static QByteArray toJson(const QVariantMap& data);
     static QVariantMap fromJson(const QByteArray& json);
     static QByteArray imageToBytes(const QImage& img);
-    //Contact prepareContact(const ContactReq&);
     static QByteArray getIdentityAsBase58(const crypto::DsCert::ptr_t& cert,
                                           const QByteArray& address);
     void whenOnline(std::function<void ()> fn);
@@ -124,8 +123,8 @@ private slots:
     void onServiceFailed(const QUuid& id, const QByteArray& reason);
     void onServiceStarted(const QUuid& id, const bool newService);
     void onServiceStopped(const QUuid& id);
-    void onReceivedData(const QUuid& service, const QUuid& connectionId, const quint32 channel,
-                        const quint64 id, const QByteArray& data);
+//    void onReceivedData(const QUuid& service, const QUuid& connectionId, const quint32 channel,
+//                        const quint64 id, const QByteArray& data);
 
 signals:
     void identityCreated(Identity *);
@@ -139,15 +138,15 @@ signals:
     void serviceFailed(const QUuid& uuid, const QByteArray& reason);
     void serviceStarted(const QUuid& uuid, const bool newService);
     void serviceStopped(const QUuid& uuid);
-    void connectedTo(const QUuid& identity, const QUuid& uuid, const ProtocolManager::Direction direction);
-    void disconnectedFrom(const QUuid& identity, const QUuid& uuid);
-    void connectionFailed(const QUuid& uuid,
-                          const QAbstractSocket::SocketError& socketError);
-    void incomingPeer(const QUuid& service, const QUuid& connectionId, const QByteArray& handle);
-    void receivedData(const QUuid& service, const QUuid& connectionId, const quint32 channel,
-                      const quint64 id, const QByteArray& data);
-    void receivedAddMe(const PeerAddmeReq& req);
-    void receivedAck(const PeerAck& req);
+//    void connectedTo(const QUuid& identity, const QUuid& uuid, const ProtocolManager::Direction direction);
+//    void disconnectedFrom(const QUuid& identity, const QUuid& uuid);
+//    void connectionFailed(const QUuid& uuid,
+//                          const QAbstractSocket::SocketError& socketError);
+    void incomingPeer(PeerConnection *peer);
+//    void receivedData(const QUuid& service, const QUuid& connectionId, const quint32 channel,
+//                      const quint64 id, const QByteArray& data);
+//    void receivedAddMe(const PeerAddmeReq& req);
+//    void receivedAck(const PeerAck& req);
 
 protected:
     void initialize();

@@ -166,45 +166,45 @@ void DsEngine::onServiceStopped(const QUuid& serviceId)
     }
 }
 
-void DsEngine::onReceivedData(const QUuid &service,
-                              const QUuid &connectionId,
-                              const quint32 channel,
-                              const quint64 id,
-                              const QByteArray &data)
-{
-    emit receivedData(service, connectionId, channel, id, data);
+//void DsEngine::onReceivedData(const QUuid &service,
+//                              const QUuid &connectionId,
+//                              const quint32 channel,
+//                              const quint64 id,
+//                              const QByteArray &data)
+//{
+//    emit receivedData(service, connectionId, channel, id, data);
 
-    if (channel == 0) {
-        // Control channel. Data is supposed to be Json.
-        QJsonDocument json = QJsonDocument::fromJson(data);
-        if (json.isNull()) {
-            LFLOG_ERROR << "Incoming data on " << connectionId.toString()
-                        << " with id=" << id
-                        << " is supposed to be in Json format, but it is not.";
-            throw runtime_error("Not Json");
-        }
+//    if (channel == 0) {
+//        // Control channel. Data is supposed to be Json.
+//        QJsonDocument json = QJsonDocument::fromJson(data);
+//        if (json.isNull()) {
+//            LFLOG_ERROR << "Incoming data on " << connectionId.toString()
+//                        << " with id=" << id
+//                        << " is supposed to be in Json format, but it is not.";
+//            throw runtime_error("Not Json");
+//        }
 
-        const auto type = json.object().value("type");
+//        const auto type = json.object().value("type");
 
-        if (type == "AddMe") {
-            PeerAddmeReq req{service, connectionId, id,
-                        json.object().value("nick").toString(),
-                        json.object().value("message").toString(),
-                        json.object().value("address").toString().toUtf8(),
-                        tor_mgr_->getPeerHandle(service, connectionId)};
+//        if (type == "AddMe") {
+//            PeerAddmeReq req{service, connectionId, id,
+//                        json.object().value("nick").toString(),
+//                        json.object().value("message").toString(),
+//                        json.object().value("address").toString().toUtf8(),
+//                        tor_mgr_->getPeerHandle(service, connectionId)};
 
-            emit receivedAddMe(req);
-        } else if (type == "Ack") {
-            PeerAck ack{service, connectionId, id,
-                        json.object().value("what").toString().toUtf8(),
-                        json.object().value("status").toString().toUtf8()};
+//            emit receivedAddMe(req);
+//        } else if (type == "Ack") {
+//            PeerAck ack{service, connectionId, id,
+//                        json.object().value("what").toString().toUtf8(),
+//                        json.object().value("status").toString().toUtf8()};
 
-            emit receivedAck(ack);
-        } else {
-            throw runtime_error("Unrecognized type");
-        }
-    }
-}
+//            emit receivedAck(ack);
+//        } else {
+//            throw runtime_error("Unrecognized type");
+//        }
+//    }
+//}
 
 void DsEngine::onTransportHandleReady(const TransportHandle &th)
 {
@@ -263,34 +263,35 @@ void DsEngine::start()
             &ds::core::ProtocolManager::serviceFailed,
             this, &DsEngine::onServiceFailed);
 
-    connect(tor_mgr_.get(),
-            &ds::core::ProtocolManager::connectedTo,
-            this, [this](const QUuid& uuid, const ProtocolManager::Direction direction) {
-        emit connectedTo(uuid, direction);
-    });
+//    connect(tor_mgr_.get(),
+//            &ds::core::ProtocolManager::connectedTo,
+//            this, [this](const QUuid& uuid, const ProtocolManager::Direction direction) {
+//        emit connectedTo(uuid, direction);
+//    });
 
-    connect(tor_mgr_.get(),
-            &ds::core::ProtocolManager::disconnectedFrom,
-            this, [this]( const QUuid& uuid) {
-        emit disconnectedFrom(uuid);
-    });
+//    connect(tor_mgr_.get(),
+//            &ds::core::ProtocolManager::disconnectedFrom,
+//            this, [this]( const QUuid& uuid) {
+//        emit disconnectedFrom(uuid);
+//    });
 
-    connect(tor_mgr_.get(),
-            &ds::core::ProtocolManager::connectionFailed,
-            this, [this](const QUuid& uuid,
-            const QAbstractSocket::SocketError& socketError) {
-        emit connectionFailed(uuid, socketError);
-    });
+//    connect(tor_mgr_.get(),
+//            &ds::core::ProtocolManager::connectionFailed,
+//            this, [this](const QUuid& uuid,
+//            const QAbstractSocket::SocketError& socketError) {
+//        emit connectionFailed(uuid, socketError);
+//    });
 
     connect(tor_mgr_.get(),
             &ds::core::ProtocolManager::incomingPeer,
-            this, [this](const QUuid& service, const QUuid& connectionId,
-            const QByteArray& handle) {
-        emit incomingPeer(service, connectionId, handle);
+            this, [this](PeerConnection *peer) {
+        emit incomingPeer(peer);
+
+        identityManager_->onIncomingPeer(peer);
     });
 
-    connect(tor_mgr_.get(), &ds::core::ProtocolManager::receivedData,
-            this, &DsEngine::onReceivedData);
+//    connect(tor_mgr_.get(), &ds::core::ProtocolManager::receivedData,
+//            this, &DsEngine::onReceivedData);
 
     tor_mgr_->start();
 }
@@ -339,6 +340,7 @@ void DsEngine::initialize()
         qRegisterMetaType<ds::core::QmlIdentityReq *>("const QmlIdentityReq *");
         qRegisterMetaType<ds::core::Identity *>("Identity *");
         qRegisterMetaType<ds::core::Contact *>("Contact *");
+        qRegisterMetaType<ds::core::PeerConnection::ptr_t>("ds::core::PeerConnection::ptr_t");
     }
 
     auto data_path = QStandardPaths::writableLocation(

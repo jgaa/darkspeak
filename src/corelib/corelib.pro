@@ -45,7 +45,8 @@ HEADERS += \
     include/ds/update_helper.h \
     include/ds/identitymanager.h \
     include/ds/contactmanager.h \
-    include/ds/registry.h
+    include/ds/registry.h \
+    include/ds/peerconnection.h
 
 INCLUDEPATH += \
     $$PWD/../../dependencies/logfault/include \

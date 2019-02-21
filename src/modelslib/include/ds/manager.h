@@ -38,7 +38,6 @@ public:
     Q_PROPERTY(QUrl onlineStatusIcon READ getOnlineStatusIcon NOTIFY onlineStatusIconChanged)
 
     Q_INVOKABLE LogModel *logModel();
-    Q_INVOKABLE IdentitiesModel *identitiesModel();
     Q_INVOKABLE ContactsModel *contactsModel();
     Q_INVOKABLE NotificationsModel *notificationsModel();
     Q_INVOKABLE void textToClipboard(QString text);
@@ -76,7 +75,6 @@ private:
     OnlineState online_state_ = ds::core::ProtocolManager::State::OFFLINE;
     std::unique_ptr<ds::core::DsEngine> engine_;
     std::unique_ptr<LogModel> log_;
-    std::unique_ptr<IdentitiesModel> identities_;
     std::unique_ptr<ContactsModel> contacts_;
     std::unique_ptr<NotificationsModel> notifications_;
     int page_ = 3; // Home

@@ -158,6 +158,8 @@ public:
 
     ProtocolManager& getProtocolManager();
 
+    void onIncomingPeer(PeerConnection *peer);
+
 signals:
     void nameChanged();
     void addressChanged();

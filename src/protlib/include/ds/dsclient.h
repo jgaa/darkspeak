@@ -33,6 +33,12 @@ private:
     void getHelloReply(const data_t& data);
 
     State state_ = State::CONNECTED;
+
+    // PeerConnection interface
+public:
+    Direction getDirection() const noexcept override {
+        return OUTGOING;
+    }
 };
 
 }} // namespaces

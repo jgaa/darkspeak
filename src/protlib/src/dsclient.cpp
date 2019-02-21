@@ -136,8 +136,9 @@ void DsClient::getHelloReply(const Peer::data_t &data)
     LFLOG_DEBUG << "The data-stream to " << connection_->getUuid().toString()
                 << " is fully switched to stream-encryption.";
 
-    emit outboundPeerReady(connection_->getUuid());
     enableEncryptedStream();
+
+    emit connectedToPeer(this);
 }
 
 }} // namespaces

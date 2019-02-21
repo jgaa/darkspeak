@@ -38,6 +38,7 @@ public:
     Q_INVOKABLE void setCurrentIdentity(int row);
     Q_INVOKABLE void createIdentity(const QmlIdentityReq *req);
 
+
     // QAbstractItemModel interface
 public:
     int rowCount(const QModelIndex &parent) const override;
@@ -50,6 +51,7 @@ signals:
 
 public slots:
     void removeIdentity(const QUuid& uuid);
+    void onIncomingPeer(PeerConnection *peer);
 
 private:
     void addIndex(Identity *identity, bool notify);

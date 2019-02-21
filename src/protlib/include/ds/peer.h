@@ -6,12 +6,13 @@
 
 #include "ds/protocolmanager.h"
 #include "ds/connectionsocket.h"
+#include "ds/peerconnection.h"
 
 namespace ds {
 namespace prot {
 
 
-class Peer : public QObject
+class Peer : public core::PeerConnection
 {
     Q_OBJECT
 public:
@@ -103,10 +104,7 @@ public slots:
     uint64_t send(const QJsonDocument& json);
 
 signals:
-    void incomingPeer(const QUuid& connectionId, const QByteArray& handle);
-    void outboundPeerReady(const QUuid& connectionId);
-    void receivedData(const QUuid& connectionId, const quint32 channel,
-                      const quint64 id, const QByteArray& data);
+    void incomingPeer(PeerConnection *peer);
 
 protected:
     void enableEncryptedStream();
@@ -124,8 +122,17 @@ protected:
     stream_state_t stateIn;
     stream_state_t stateOut;
     quint64 request_id_ = {}; // Counter for outgoing requests
+
+    // PeerConnection interface
+public:
+    const QUuid uuid_;
+    QUuid getConnectionId() const override;
+    crypto::DsCert::ptr_t getPeerCert() const noexcept override;
+    void close() override;
+    QUuid getIdentityId() const noexcept override;
 };
 
 }} // namespaces
+
 
 #endif // PEER_H

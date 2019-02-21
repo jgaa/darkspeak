@@ -34,12 +34,13 @@ void Contact::connectToContact()
         cd.identitysCert = identity->getCert();
         cd.service = identity->getUuid();
 
-        const auto connection = identity->getProtocolManager().connectTo(cd);
+        const auto peer = identity->getProtocolManager().connectTo(cd);
         LFLOG_DEBUG << "Connecting to " << getName()
                     << " at " << getAddress()
-                    << " with connection-id: " << connection.toString();
+                    << " with connection-id: " << peer->getConnectionId().toString();
 
-        connection_ = make_unique<Connection>(connection, ME, *this);
+        connection_ = make_unique<Connection>(peer, *this);
+        setOnlineStatus(CONNECTING);
     }
 }
 
@@ -351,11 +352,11 @@ Contact::Connection::~Connection()
         if (status == ONLINE) {
             LFLOG_DEBUG << "Disconnecting from " << owner.getName()
                         << " at " << owner.getAddress()
-                        << " connection "  << uuid.toString();
+                        << " connection "  << peer->getConnectionId().toString();
         }
-        identity->getProtocolManager().disconnectFrom(identity->getUuid(), uuid);
         owner.setOnlineStatus(DISCONNECTED);
     }
+    peer->close();
 }
 
 }}

@@ -25,10 +25,6 @@ LogModel *Manager::logModel()
     return log_.get();
 }
 
-IdentitiesModel *Manager::identitiesModel()
-{
-    return identities_.get();
-}
 
 ContactsModel *Manager::contactsModel()
 {
@@ -124,14 +120,10 @@ Manager::Manager()
     });
 
     log_ = make_unique<LogModel>(engine_->settings());
-    identities_ = make_unique<IdentitiesModel>(engine_->settings());
     contacts_ = make_unique<ContactsModel>(*this);
     notifications_ = make_unique<NotificationsModel>(engine_->settings());
 
     instance_ = this;
-
-    connect(identities_.get(), &IdentitiesModel::addmeRequest,
-            notifications_.get(), &NotificationsModel::addNotification);
 
 //    connect(notifications_.get(), &NotificationsModel::contactAccepted,
 //            contacts_.get(), &ContactsModel::onContactAccepted);

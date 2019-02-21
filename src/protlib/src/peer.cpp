@@ -16,9 +16,31 @@ namespace prot {
 using namespace  std;
 
 Peer::Peer(ConnectionSocket::ptr_t connection,
-                   core::ConnectData connectionData)
+           core::ConnectData connectionData)
     : connection_{move(connection)}, connectionData_{move(connectionData)}
+    , uuid_{connection_->getUuid()}
 {
+    connect(connection.get(), &ConnectionSocket::connected,
+            this, [this]() {
+
+        LFLOG_DEBUG << "Peer " << getConnectionId().toString()
+                    << " is connected";
+
+        emit connectedToPeer(this);
+    });
+
+    connect(connection.get(), &ConnectionSocket::disconnected,
+            this, [this]() {
+
+        LFLOG_DEBUG << "Peer " << getConnectionId().toString()
+                    << " is disconnected";
+
+
+        // Prevent destruction before the signal finish.
+        auto preserve = shared_from_this();
+
+        emit disconnectedFromPeer(this);
+    });
 }
 
 uint64_t Peer::send(const QJsonDocument &json)
@@ -199,8 +221,7 @@ void Peer::processStream(const Peer::data_t &ciphertext)
                     << ", id=" << chunk_id
                     << ", payload=" << (channel_id ? binary : safePayload(payload));
 
-        emit receivedData(connection_->getUuid(),
-                          channel_id,
+        emit receivedData(channel_id,
                           chunk_id,
                           payload.toByteArray());
 
@@ -267,6 +288,30 @@ QByteArray Peer::safePayload(const Peer::mview_t &data)
     }
 
     return "*** NOT Json ***";
+}
+
+QUuid Peer::getConnectionId() const
+{
+    return uuid_;
+}
+
+crypto::DsCert::ptr_t Peer::getPeerCert() const noexcept
+{
+    return connectionData_.contactsCert;
+}
+
+void Peer::close()
+{
+    if (connection_->isOpen()) {
+        connection_->close();
+    }
+
+    emit disconnectedFromPeer(this);
+}
+
+QUuid Peer::getIdentityId() const noexcept
+{
+    return connectionData_.service;
 }
 
 }} // namespace

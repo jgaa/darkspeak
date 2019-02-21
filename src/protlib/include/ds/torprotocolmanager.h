@@ -14,7 +14,6 @@ public:
     TorProtocolManager(QSettings& settings);
 
 public slots:
-    void sendMessage(const core::Message &) override;
     void start() override;
     void stop() override;
     void createTransportHandle(const core::TransportHandleReq &) override;
@@ -22,12 +21,7 @@ public slots:
                       const crypto::DsCert::ptr_t& cert,
                       const QVariantMap& data) override;
     void stopService(const QUuid& service) override;
-    QUuid connectTo(core::ConnectData cd) override;
-    void disconnectFrom(const QUuid& service,
-                        const QUuid& connection) override;
-    void autorizeConnection(const QUuid& service,
-                            const QUuid& connection,
-                            const bool allow) override;
+    core::PeerConnection::ptr_t connectTo(core::ConnectData cd) override;
 
 private slots:
     void onServiceCreated(const ds::tor::ServiceProperties& service);

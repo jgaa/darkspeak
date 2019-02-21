@@ -68,6 +68,18 @@ ProtocolManager& Identity::getProtocolManager() {
                 ProtocolManager::Transport::TOR);
 }
 
+void Identity::onIncomingPeer(PeerConnection *peer)
+{
+    // TODO: Lookup the contact, if any
+        // TODO: Reject blocked contacts
+        // TODO: Handle incoming connection while we have an outgoing connection (hash?)
+
+    // At this point we leave the ownership and responsibility for the
+    // connection at the protocol layer
+    LFLOG_NOTICE << "incoming connection from unknow handle: " << peer->getPeerCert()->getB58PubKey();
+    peer->authorize(true);
+}
+
 int Identity::getId() const noexcept {
     return id_;
 }

@@ -44,7 +44,8 @@ public:
     using ptr_t = std::shared_ptr<TorServiceInterface>;
 
     TorServiceInterface(const crypto::DsCert::ptr_t& cert,
-                        const QByteArray& address);
+                        const QByteArray& address,
+                        const QUuid identityId);
     virtual ~TorServiceInterface();
 
     /*! Start a service.
@@ -56,8 +57,9 @@ public:
     StopServiceResult stopService();
 
     /*! Connect to a Tor hidden service */
-    QUuid connectToService(const QByteArray& host, const std::uint16_t port,
-                           core::ConnectData cd);
+    core::PeerConnection::ptr_t connectToService(
+            const QByteArray& host, const std::uint16_t port,
+            core::ConnectData cd);
 
     /*! Close / destroy the socket to a hidden service.
      *
@@ -76,23 +78,23 @@ public:
 signals:
     void serviceStarted(const StartServiceResult& ssr);
     void serviceStopped(const StopServiceResult& ssr);
-    void connectedToService(const QUuid& uuid);
-    void disconnectedFromService(const QUuid& uuid);
-    void connectionFailed(const QUuid& uuid,
-                          const QAbstractSocket::SocketError& socketError);
-    void incomingPeer(const QUuid& connectionId, const QByteArray& handle);
-    void receivedData(const QUuid& connectionId, const quint32 channel,
-                      const quint64 id, const QByteArray& data);
+//    void connectedToService(const QUuid& uuid);
+//    void disconnectedFromService(const QUuid& uuid);
+//    void connectionFailed(const QUuid& uuid,
+//                          const QAbstractSocket::SocketError& socketError);
+    void incomingPeer(core::PeerConnection *peer);
+//    void receivedData(const QUuid& connectionId, const quint32 channel,
+//                      const quint64 id, const QByteArray& data);
 
 public slots:
     void autorizeConnection(const QUuid& connection,
                             const bool allow);
 
 private slots:
-    void onOutboundPeerReady(const QUuid& uuid);
-    void onSocketDisconnected(const QUuid& uuid);
-    void onSocketFailed(const QUuid& uuid,
-                        const QAbstractSocket::SocketError& socketError);
+//    void onOutboundPeerReady(const QUuid& uuid);
+//    void onSocketDisconnected(const QUuid& uuid);
+//    void onSocketFailed(const QUuid& uuid,
+//                        const QAbstractSocket::SocketError& socketError);
     void onNewIncomingConnection(const ConnectionSocket::ptr_t& connection);
 
 
@@ -103,6 +105,7 @@ private:
     std::shared_ptr<TorSocketListener> server_;
     std::map<QUuid, Peer::ptr_t> peers_;
     const QString address_;
+    const QUuid identityId_;
 };
 
 }} //namespaces

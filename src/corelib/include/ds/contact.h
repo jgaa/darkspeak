@@ -11,6 +11,7 @@
 #include <QtGui/QImage>
 
 #include "ds/dscert.h"
+#include "ds/peerconnection.h"
 
 namespace ds {
 namespace core {
@@ -66,13 +67,12 @@ public:
     Q_ENUM(InitiatedBy)
 
     struct Connection {
-        Connection(const QUuid uuidVal, const InitiatedBy initiatedByVal, Contact& ownerVal)
-            : uuid{uuidVal}, initiatedBy{initiatedByVal}, owner{ownerVal} {}
+        Connection(const PeerConnection::ptr_t& peerVal, Contact& ownerVal)
+            : peer{peerVal}, owner{ownerVal} {}
 
         ~Connection();
 
-        const QUuid uuid;
-        const InitiatedBy initiatedBy;
+        const PeerConnection::ptr_t peer;
         OnlineStatus status = DISCONNECTED;
         Contact& owner;
     };

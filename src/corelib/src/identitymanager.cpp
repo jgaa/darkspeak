@@ -238,6 +238,16 @@ void IdentityManager::removeIdentity(const QUuid &uuid)
     }
 }
 
+void IdentityManager::onIncomingPeer(PeerConnection *peer)
+{
+    LFLOG_DEBUG << "Connection from peer " << peer->getPeerCert()->getB58PubKey()
+                << " to identity " << peer->getIdentityId().toString();
+
+    if (auto target = identityFromUuid(peer->getIdentityId())) {
+        target->onIncomingPeer(peer);
+    }
+}
+
 void IdentityManager::addIndex(Identity *identity, const bool notify)
 {
     assert(identity != nullptr);

@@ -191,11 +191,6 @@ QByteArray TorProtocolManager::getPeerHandle(const QUuid &service,
     return cd.contactsCert->getB58PubKey();
 }
 
-void TorProtocolManager::sendMessage(const core::Message &)
-{
-
-}
-
 void TorProtocolManager::start()
 {
     tor_->updateConfig(getConfig());
@@ -225,7 +220,7 @@ void TorProtocolManager::startService(const QUuid& serviceId,
     sp.key_type = data["key_type"].toByteArray();
     sp.service_id = data["service_id"].toByteArray();
 
-    auto service = make_shared<TorServiceInterface>(cert, data["address"].toByteArray());
+    auto service = make_shared<TorServiceInterface>(cert, data["address"].toByteArray(), serviceId);
 
     // Add listening port
     auto properties = service->startService();
@@ -239,32 +234,32 @@ void TorProtocolManager::startService(const QUuid& serviceId,
 
     services_[serviceId] = service;
 
-    connect(service.get(), &TorServiceInterface::connectedToService,
-            this, [this, serviceId](const QUuid& uuid) {
-        emit connectedTo(serviceId, uuid, core::ProtocolManager::Direction::OUTBOUND);
-    });
+//    connect(service.get(), &TorServiceInterface::connectedToService,
+//            this, [this, serviceId](const QUuid& uuid) {
+//        emit connectedTo(serviceId, uuid, core::ProtocolManager::Direction::OUTBOUND);
+//    });
 
-    connect(service.get(), &TorServiceInterface::disconnectedFromService,
-            this, [this, serviceId](const QUuid& uuid) {
-        emit disconnectedFrom(serviceId, uuid);
-    });
+//    connect(service.get(), &TorServiceInterface::disconnectedFromService,
+//            this, [this, serviceId](const QUuid& uuid) {
+//        emit disconnectedFrom(serviceId, uuid);
+//    });
 
-    connect(service.get(), &TorServiceInterface::connectionFailed,
-            this, [this](const QUuid& uuid,
-            const QAbstractSocket::SocketError& socketError) {
-        emit connectionFailed(uuid, socketError);
-    });
+//    connect(service.get(), &TorServiceInterface::connectionFailed,
+//            this, [this](const QUuid& uuid,
+//            const QAbstractSocket::SocketError& socketError) {
+//        emit connectionFailed(uuid, socketError);
+//    });
 
     connect(service.get(), &TorServiceInterface::incomingPeer,
-            this, [this, serviceId] (const QUuid& connectionId, const QByteArray& handle) {
-        emit incomingPeer(serviceId, connectionId, handle);
+            this, [this] (PeerConnection *peer) {
+        emit incomingPeer(peer);
     });
 
-    connect(service.get(), &TorServiceInterface::receivedData,
-            this, [this, serviceId](const QUuid& connectionId, const quint32 channel,
-            const quint64 id, const QByteArray& data) {
-        emit receivedData(serviceId, connectionId, channel, id, data);
-    });
+//    connect(service.get(), &TorServiceInterface::receivedData,
+//            this, [this, serviceId](const QUuid& connectionId, const quint32 channel,
+//            const quint64 id, const QByteArray& data) {
+//        emit receivedData(serviceId, connectionId, channel, id, data);
+//    });
 
     tor_->startService(sp);
 }
@@ -274,7 +269,7 @@ void TorProtocolManager::stopService(const QUuid& uuid)
     tor_->stopService(uuid);
 }
 
-QUuid TorProtocolManager::connectTo(core::ConnectData cd)
+core::PeerConnection::ptr_t TorProtocolManager::connectTo(core::ConnectData cd)
 {
     // address may be "onion:hostname:port" or "hostname:port"
     auto parts = cd.address.split(':');
@@ -287,17 +282,17 @@ QUuid TorProtocolManager::connectTo(core::ConnectData cd)
     return getService(cd.service).connectToService(host, port, move(cd));
 }
 
-void TorProtocolManager::disconnectFrom(const QUuid &service, const QUuid &connection)
-{
-    return getService(service).close(connection);
-}
+//void TorProtocolManager::disconnectFrom(const QUuid &service, const QUuid &connection)
+//{
+//    return getService(service).close(connection);
+//}
 
-void TorProtocolManager::autorizeConnection(const QUuid &service,
-                                            const QUuid &connection,
-                                            const bool allow)
-{
-    getService(service).autorizeConnection(connection, allow);
-}
+//void TorProtocolManager::autorizeConnection(const QUuid &service,
+//                                            const QUuid &connection,
+//                                            const bool allow)
+//{
+//    getService(service).autorizeConnection(connection, allow);
+//}
 
 
 void TorProtocolManager::onServiceCreated(const ServiceProperties &service)

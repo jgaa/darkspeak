@@ -9,6 +9,7 @@
 #include <QAbstractSocket>
 
 #include "ds/transporthandle.h"
+#include "ds/peerconnection.h"
 #include "ds/dscert.h"
 
 namespace ds {
@@ -116,13 +117,7 @@ signals:
     void serviceStarted(const QUuid& service, const bool newService);
     void serviceStopped(const QUuid& service);
 
-    void connectedTo(const QUuid& identity, const QUuid& connection, const Direction direction);
-    void disconnectedFrom(const QUuid& identity, const QUuid& connection);
-    void connectionFailed(const QUuid& connection,
-                          const QAbstractSocket::SocketError& socketError);
-    void incomingPeer(const QUuid& service, const QUuid& connectionId, const QByteArray& handle);
-    void receivedData(const QUuid& service, const QUuid& connectionId, const quint32 channel,
-                      const quint64 id, const QByteArray& data);
+    void incomingPeer(PeerConnection *peer);
 
 public slots:
 
@@ -134,12 +129,6 @@ public slots:
      * This stops all hidden servics and disconnecrts from the Tor service.
      */
     virtual void stop() = 0;
-
-    /*! Send a message.
-     *
-     * Throws if the protocol is not on-line
-     */
-    virtual void sendMessage(const Message&) = 0;
 
     /*! Create a hidden service for an identity */
     virtual void createTransportHandle(const TransportHandleReq&) = 0;
@@ -163,20 +152,20 @@ public slots:
     virtual void stopService(const QUuid& service) = 0;
 
     /*! Create a connection to a contact */
-    virtual QUuid connectTo(ConnectData cd) = 0;
+    virtual PeerConnection::ptr_t connectTo(ConnectData cd) = 0;
 
-    /*! Close or cancel a connection to a contact
-     *
-     * When the method returns, the uuid is no longer valid.
-     */
-    virtual void disconnectFrom(const QUuid& service,
-                                const QUuid& connection) = 0;
+//    /*! Close or cancel a connection to a contact
+//     *
+//     * When the method returns, the uuid is no longer valid.
+//     */
+//    virtual void disconnectFrom(const QUuid& service,
+//                                const QUuid& connection) = 0;
 
 
-    /* Autorize an incoming connection to proceed and receive packets. */
-    virtual void autorizeConnection(const QUuid& service,
-                                    const QUuid& connection,
-                                    const bool allow) = 0;
+//    /* Autorize an incoming connection to proceed and receive packets. */
+//    virtual void autorizeConnection(const QUuid& service,
+//                                    const QUuid& connection,
+//                                    const bool allow) = 0;
 
     virtual uint64_t sendAddme(const AddmeReq& req) = 0;
 
