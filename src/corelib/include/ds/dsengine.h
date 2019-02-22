@@ -20,51 +20,51 @@
 namespace ds {
 namespace core {
 
-struct PeerReq
-{
-    PeerReq() = default;
-    PeerReq(const PeerReq&) = default;
-    PeerReq(QUuid serviceVal, QUuid connectionIdVal, quint64 requestIdVal)
-        : service{std::move(serviceVal)}, connectionId{std::move(connectionIdVal)}
-        , requestId{requestIdVal} {}
+//struct PeerReq
+//{
+//    PeerReq() = default;
+//    PeerReq(const PeerReq&) = default;
+//    PeerReq(QUuid serviceVal, QUuid connectionIdVal, quint64 requestIdVal)
+//        : service{std::move(serviceVal)}, connectionId{std::move(connectionIdVal)}
+//        , requestId{requestIdVal} {}
 
-    QUuid service;
-    QUuid connectionId;
-    quint64 requestId;
-};
+//    QUuid service;
+//    QUuid connectionId;
+//    quint64 requestId;
+//};
 
-struct PeerAddmeReq : public PeerReq
-{
-    PeerAddmeReq() = default;
-    PeerAddmeReq(const PeerAddmeReq&) = default;
-    PeerAddmeReq(QUuid serviceVal, QUuid connectionIdVal, quint64 requestIdVal,
-                 QString nickNameVal, QString messageVal, QByteArray addressVal,
-                 QByteArray handleVal)
-        : PeerReq{std::move(serviceVal), std::move(connectionIdVal), requestIdVal}
-        , nickName{std::move(nickNameVal)}
-        , message{std::move(messageVal)}
-        , address{std::move(addressVal)}
-        , handle{std::move(handleVal)} {}
+//struct PeerAddmeReq : public PeerReq
+//{
+//    PeerAddmeReq() = default;
+//    PeerAddmeReq(const PeerAddmeReq&) = default;
+//    PeerAddmeReq(QUuid serviceVal, QUuid connectionIdVal, quint64 requestIdVal,
+//                 QString nickNameVal, QString messageVal, QByteArray addressVal,
+//                 QByteArray handleVal)
+//        : PeerReq{std::move(serviceVal), std::move(connectionIdVal), requestIdVal}
+//        , nickName{std::move(nickNameVal)}
+//        , message{std::move(messageVal)}
+//        , address{std::move(addressVal)}
+//        , handle{std::move(handleVal)} {}
 
-    QString nickName;
-    QString message;
-    QByteArray address;
-    QByteArray handle;
-};
+//    QString nickName;
+//    QString message;
+//    QByteArray address;
+//    QByteArray handle;
+//};
 
-struct PeerAck : public PeerReq
-{
-    PeerAck() = default;
-    PeerAck(const PeerAck&) = default;
+//struct PeerAck : public PeerReq
+//{
+//    PeerAck() = default;
+//    PeerAck(const PeerAck&) = default;
 
-    PeerAck(QUuid serviceVal, QUuid connectionIdVal, quint64 requestIdVal,
-            QByteArray whatVal, QByteArray statusVal)
-        : PeerReq{std::move(serviceVal), std::move(connectionIdVal), requestIdVal}
-        , what{std::move(whatVal)}, status{std::move(statusVal)} {}
+//    PeerAck(QUuid serviceVal, QUuid connectionIdVal, quint64 requestIdVal,
+//            QByteArray whatVal, QByteArray statusVal)
+//        : PeerReq{std::move(serviceVal), std::move(connectionIdVal), requestIdVal}
+//        , what{std::move(whatVal)}, status{std::move(statusVal)} {}
 
-    QByteArray what;
-    QByteArray status;
-};
+//    QByteArray what;
+//    QByteArray status;
+//};
 
 
 /*! The core engine of DarkSpeak.
@@ -165,8 +165,6 @@ protected:
 
 }} // namepsaces
 
-Q_DECLARE_METATYPE(ds::core::PeerReq)
-Q_DECLARE_METATYPE(ds::core::PeerAddmeReq)
-Q_DECLARE_METATYPE(ds::core::PeerAck)
+
 
 #endif // DSENGINE_H

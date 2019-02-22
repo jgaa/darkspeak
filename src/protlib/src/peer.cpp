@@ -5,6 +5,7 @@
 #include <sodium.h>
 
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QtEndian>
 
 #include "ds/peer.h"
@@ -13,14 +14,15 @@
 namespace ds {
 namespace prot {
 
-using namespace  std;
+using namespace std;
+using namespace core;
 
 Peer::Peer(ConnectionSocket::ptr_t connection,
            core::ConnectData connectionData)
     : connection_{move(connection)}, connectionData_{move(connectionData)}
     , uuid_{connection_->getUuid()}
 {
-    connect(connection.get(), &ConnectionSocket::connected,
+    connect(connection_.get(), &ConnectionSocket::connected,
             this, [this]() {
 
         LFLOG_DEBUG << "Peer " << getConnectionId().toString()
@@ -29,7 +31,7 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
         emit connectedToPeer(this);
     });
 
-    connect(connection.get(), &ConnectionSocket::disconnected,
+    connect(connection_.get(), &ConnectionSocket::disconnected,
             this, [this]() {
 
         LFLOG_DEBUG << "Peer " << getConnectionId().toString()
@@ -41,10 +43,22 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
 
         emit disconnectedFromPeer(this);
     });
+
+    connect(this, &PeerConnection::receivedData,
+            this, &Peer::onReceivedData,
+            Qt::QueuedConnection);
+
+    connect(this, &Peer::closeLater,
+            this, &Peer::onCloseLater,
+            Qt::QueuedConnection);
 }
 
 uint64_t Peer::send(const QJsonDocument &json)
 {
+    if (!connection_->isOpen()) {
+        throw runtime_error("Connection is closed");
+    }
+
     auto jsonData = json.toJson(QJsonDocument::Compact);
 
     // Data format:
@@ -126,6 +140,50 @@ uint64_t Peer::send(const QJsonDocument &json)
     connection_->write(ciphertext);
 
     return request_id_;
+}
+
+void Peer::onReceivedData(const quint32 channel, const quint64 id, const QByteArray &data)
+{
+    if (channel == 0) {
+        // Control channel. Data is supposed to be Json.
+        QJsonDocument json = QJsonDocument::fromJson(data);
+        if (json.isNull()) {
+            LFLOG_ERROR << "Incoming data on " << getConnectionId().toString()
+                        << " with id=" << id
+                        << " is supposed to be in Json format, but it is not.";
+            throw runtime_error("Not Json");
+        }
+
+        const auto type = json.object().value("type");
+
+        if (type == "AddMe") {
+            PeerAddmeReq req{shared_from_this(), getConnectionId(), id,
+                        json.object().value("nick").toString(),
+                        json.object().value("message").toString(),
+                        json.object().value("address").toString().toUtf8(),
+                        getPeerCert()->getB58PubKey()};
+
+            emit addmeRequest(req);
+        } else if (type == "Ack") {
+            PeerAck ack{shared_from_this(), getConnectionId(), id,
+                        json.object().value("what").toString().toUtf8(),
+                        json.object().value("status").toString().toUtf8()};
+
+            emit receivedAck(ack);
+        } else {
+            LFLOG_WARN << "Unrecognized request from peer at connection "
+                       << getConnectionId().toString();
+        }
+    }
+}
+
+void Peer::onCloseLater()
+{
+    if (connection_->isOpen()) {
+        connection_->close();
+    }
+
+    emit disconnectedFromPeer(this);
 }
 
 void Peer::enableEncryptedStream()
@@ -302,11 +360,7 @@ crypto::DsCert::ptr_t Peer::getPeerCert() const noexcept
 
 void Peer::close()
 {
-    if (connection_->isOpen()) {
-        connection_->close();
-    }
-
-    emit disconnectedFromPeer(this);
+   emit closeLater();
 }
 
 QUuid Peer::getIdentityId() const noexcept

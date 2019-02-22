@@ -74,10 +74,64 @@ void Identity::onIncomingPeer(PeerConnection *peer)
         // TODO: Reject blocked contacts
         // TODO: Handle incoming connection while we have an outgoing connection (hash?)
 
+    connect(peer, &PeerConnection::addmeRequest,
+            this, &Identity::onAddmeRequest);
+
     // At this point we leave the ownership and responsibility for the
     // connection at the protocol layer
     LFLOG_NOTICE << "incoming connection from unknow handle: " << peer->getPeerCert()->getB58PubKey();
+
     peer->authorize(true);
+}
+
+void Identity::onAddmeRequest(const PeerAddmeReq &req)
+{
+    if (auto contact = contactFromHandle(req.handle)) {
+        contact->onAddmeRequest(req);
+        return;
+    }
+
+    // We need to trigger a signal that can be caught by the Notification system
+    // in a higher API layer than the current library.
+    // Whoever needs this signal will connect to a related signal in the
+    // IdentityManager.
+    DsEngine::instance().getIdentityManager()->relayNewContactRequest(this, req);
+
+    // No further input is required until we have deciced if we want to add the contact,
+    // and we have verified it's handle.
+    req.peer->close();
+}
+
+Contact::ptr_t Identity::contactFromHandle(const QByteArray &handle)
+{
+    auto cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(
+                                                     handle.toStdString(), 32, {249, 50}));
+
+    QSqlQuery query;
+    query.prepare("SELECT uuid FROM contact WHERE identity=:id AND hash=:hash");
+    query.bindValue(":id", getId());
+    query.bindValue(":hash", cert->getHash().toByteArray());
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to fetch identity from hash: %1").arg(
+                        query.lastError().text()));
+    }
+
+    if (query.next()) {
+        return contactFromUuid(query.value(0).toUuid());
+    }
+
+    return {};
+}
+
+Contact::ptr_t Identity::contactFromUuid(const QUuid &uuid)
+{
+    if (auto contact = DsEngine::instance().getContactManager()->getContact(uuid)) {
+        if (contact->getIdentityId() == getId()) {
+            return contact;
+        }
+    }
+
+    return {};
 }
 
 int Identity::getId() const noexcept {

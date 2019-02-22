@@ -9,7 +9,9 @@ namespace core {
 
 template <typename T>
 void update(T *self, const char *name, const QVariant& value) {
-    QByteArray sql{"UPDATE identity set "};
+    QByteArray sql{"UPDATE "};
+    sql += self->getTableName();
+    sql += " SET ";
     sql += name;
     sql += " =:value where id=:id";
 

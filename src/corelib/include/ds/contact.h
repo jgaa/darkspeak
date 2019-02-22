@@ -158,12 +158,17 @@ public:
     Identity *getIdentity() const;
     OnlineStatus getOnlineStatus() const noexcept;
     void setOnlineStatus(const OnlineStatus status);
+    int getIdentityId() const noexcept;
 
     /*! Add the new Identity to the database. */
     void addToDb();
 
     /*! Delete from the database */
     void deleteFromDb();
+
+    const char *getTableName() const noexcept { return "contact"; }
+
+    void onAddmeRequest(const PeerAddmeReq& req);
 
 signals:
     void nameChanged();
@@ -180,6 +185,12 @@ signals:
     void peerVerifiedChanged();
     void onlineIconChanged();
     void onlineStatusChanged();
+    void sendAddMeLater();
+
+private slots:
+    void onConnectedToPeer(PeerConnection *peer);
+    void onDisconnectedFromPeer(PeerConnection *peer);
+    void onSendAddMeLater();
 
 private:
     static void bind(QSqlQuery& query, ContactData& data);

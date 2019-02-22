@@ -38,6 +38,7 @@ public:
     Q_INVOKABLE void setCurrentIdentity(int row);
     Q_INVOKABLE void createIdentity(const QmlIdentityReq *req);
 
+    void relayNewContactRequest(Identity *identity, const core::PeerAddmeReq &req);
 
     // QAbstractItemModel interface
 public:
@@ -48,6 +49,7 @@ public:
 
 signals:
     void currentIdentityChanged();
+    void newContactRequest(Identity *identity, const core::PeerAddmeReq &req);
 
 public slots:
     void removeIdentity(const QUuid& uuid);

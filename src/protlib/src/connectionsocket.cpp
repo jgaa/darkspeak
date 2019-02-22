@@ -13,9 +13,9 @@ ConnectionSocket::ConnectionSocket()
     connect(this, &ConnectionSocket::disconnected,
             this, &ConnectionSocket::onDisconnected);
 
-    // error() is ambigous
-    connect(this, SIGNAL(error(SocketError)),
-            this, SLOT(onSocketFailed(SocketError)));
+//    // error() is ambigous
+//    connect(this, SIGNAL(error(SocketError)),
+//            this, SLOT(onSocketFailed(SocketError)));
 
     connect(this, &ConnectionSocket::readyRead, this, [this]() {
         inData += readAll();

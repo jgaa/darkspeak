@@ -141,6 +141,15 @@ void IdentityManager::createIdentity(const QmlIdentityReq *req)
     DsEngine::instance().whenOnline([this, name, uuid]() { tryMakeTransport(name, uuid); });
 }
 
+void IdentityManager::relayNewContactRequest(Identity *identity, const PeerAddmeReq &req)
+{
+    try {
+        emit newContactRequest(identity, req);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Caught exception: " << ex.what();
+    }
+}
+
 void IdentityManager::tryMakeTransport(const QString &name, const QUuid& uuid)
 {
     TransportHandleReq req{name, uuid};

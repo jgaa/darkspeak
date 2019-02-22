@@ -105,6 +105,11 @@ public slots:
 
 signals:
     void incomingPeer(PeerConnection *peer);
+    void closeLater();
+
+private slots:
+    void onReceivedData(const quint32 channel, const quint64 id, const QByteArray& data);
+    void onCloseLater();
 
 protected:
     void enableEncryptedStream();

@@ -1,4 +1,5 @@
 #include "include/ds/notificationsmodel.h"
+#include "ds/crypto.h"
 
 #include <QDateTime>
 
@@ -11,6 +12,10 @@ using namespace core;
 NotificationsModel::NotificationsModel(QSettings &settings)
 {
     Q_UNUSED(settings)
+
+    connect(core::DsEngine::instance().getIdentityManager(), &IdentityManager::newContactRequest,
+            this, &NotificationsModel::addNotification);
+
     refresh();
 }
 
@@ -29,6 +34,15 @@ void NotificationsModel::deleteRow(const int row)
         query.exec();
         refresh();
     }
+}
+
+bool NotificationsModel::isHashPresent(const QByteArray &hash) const
+{
+    QSqlQuery query;
+    query.prepare("SELECT count(0) FROM notification WHERE hash=:hash");
+    query.bindValue(":hash", hash);
+    query.exec();
+    return query.next() && (query.value(0).toInt() > 0);
 }
 
 
@@ -94,10 +108,15 @@ QHash<int, QByteArray> NotificationsModel::roleNames() const
     return names;
 }
 
-void NotificationsModel::addNotification(const int identityId, const core::PeerAddmeReq &req)
-{
-    // TODO: Avoid duplicates. Only add the request if we have no active addme requests from
-    //       the same contact.
+void NotificationsModel::addNotification(Identity *identity, const core::PeerAddmeReq &req)
+{  
+    QByteArray hash, identityId = QByteArray::number(identity->getId());
+    crypto::createHash(hash, {req.handle, req.address, identityId});
+
+    if (isHashPresent(hash)) {
+        LFLOG_DEBUG << "Ignoring duplicate AddMe notification.";
+        return;
+    }
 
     QDateTime when = QDateTime::fromTime_t((QDateTime::currentDateTime().toTime_t() / 60) * 60);
 
@@ -109,16 +128,17 @@ void NotificationsModel::addNotification(const int identityId, const core::PeerA
     data.insert("nickName", req.nickName);
 
     query.prepare("INSERT INTO notification "
-                  "(status, priority, identity, type, timestamp, message, data) "
+                  "(status, priority, identity, type, timestamp, message, data, hash) "
                   "VALUES "
-                  "(:status, :priority, :identity, :type, :timestamp, :message, :data)");
+                  "(:status, :priority, :identity, :type, :timestamp, :message, :data, :hash)");
     query.bindValue(":status", ACTIVE);
     query.bindValue(":priority", NORMAL);
-    query.bindValue(":identity", identityId);
+    query.bindValue(":identity", identity->getId());
     query.bindValue(":type", N_ADDME);
     query.bindValue(":timestamp", when);
     query.bindValue(":message", req.message);
     query.bindValue(":data", core::DsEngine::toJson(data));
+    query.bindValue(":hash", hash);
 
     query.exec();
     refresh();
@@ -132,28 +152,27 @@ void NotificationsModel::acceptContact(const int row, bool accept)
     }
 
     if (accept) {
-//        ContactReq cr;
-//        cr.whoInitiated = Contact::THEM;
-//        cr.name = cr.nickname = d.value("nickName").toString();
-//        cr.contactHandle = d.value("handle").toByteArray();
-//        cr.identity = data(index(row, H_IDENTITY), Qt::DisplayRole).toInt();
+        auto cr = make_unique<ContactData>();
 
-//        auto handle =  d.value("handle").toByteArray();
-//        auto handle_str = handle.toStdString();
+        cr->identity = data(index(row, H_IDENTITY), Qt::DisplayRole).toInt();
 
-//        cr.pubkey = crypto::b58tobin_check<QByteArray>(handle_str, 32, {249, 50});
-//        cr.address = d.value("address").toByteArray();
 
-//        auto check = crypto::b58check_enc<QByteArray>(cr.pubkey, {249, 50});
-//        assert(check == handle);
+        cr->whoInitiated = Contact::THEM;
+        cr->name = d.value("nickName").toString();
 
-//        auto contact = DsEngine::instance().prepareContact(cr);
+        cr->identity = data(index(row, H_IDENTITY), Qt::DisplayRole).toInt();
 
-//        emit contactAccepted(contact);
-//        deleteRow(row);
+        auto handle =  d.value("handle").toByteArray();
+        auto handle_str = handle.toStdString();
+
+        cr->cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(handle_str, 32, {249, 50}));
+        cr->address = d.value("address").toByteArray();
+
+        DsEngine::instance().getContactManager()->addContact(move(cr));
+
+        deleteRow(row);
     } else {
-        // Send reject message and delete the notification
-
+        // TODO: Send reject message and delete the notification
     }
 }
 

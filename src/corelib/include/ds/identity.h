@@ -160,6 +160,11 @@ public:
 
     void onIncomingPeer(PeerConnection *peer);
 
+    const char *getTableName() const noexcept { return "identity"; }
+
+public slots:
+    void onAddmeRequest(const PeerAddmeReq& req);
+
 signals:
     void nameChanged();
     void addressChanged();
@@ -170,6 +175,9 @@ signals:
     void autoConnectChanged();
 
 private:
+    Contact::ptr_t contactFromHandle(const QByteArray& hande);
+    Contact::ptr_t contactFromUuid(const QUuid& uuid);
+
     int id_ = -1; // Database id
     bool online_ = false;
     IdentityData data_;

@@ -11,6 +11,55 @@
 namespace ds{
 namespace core {
 
+class PeerConnection;
+
+struct PeerReq
+{
+    PeerReq() = default;
+    PeerReq(const PeerReq&) = default;
+    PeerReq(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal, quint64 requestIdVal)
+        : peer{peerVal}, connectionId{std::move(connectionIdVal)}
+        , requestId{requestIdVal} {}
+
+    std::shared_ptr<PeerConnection> peer = nullptr;
+    QUuid connectionId;
+    quint64 requestId;
+};
+
+struct PeerAddmeReq : public PeerReq
+{
+    PeerAddmeReq() = default;
+    PeerAddmeReq(const PeerAddmeReq&) = default;
+    PeerAddmeReq(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal, quint64 requestIdVal,
+                 QString nickNameVal, QString messageVal, QByteArray addressVal,
+                 QByteArray handleVal)
+        : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
+        , nickName{std::move(nickNameVal)}
+        , message{std::move(messageVal)}
+        , address{std::move(addressVal)}
+        , handle{std::move(handleVal)} {}
+
+    QString nickName;
+    QString message;
+    QByteArray address;
+    QByteArray handle;
+};
+
+struct PeerAck : public PeerReq
+{
+    PeerAck() = default;
+    PeerAck(const PeerAck&) = default;
+
+    PeerAck(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal, quint64 requestIdVal,
+            QByteArray whatVal, QByteArray statusVal)
+        : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
+        , what{std::move(whatVal)}, status{std::move(statusVal)} {}
+
+    QByteArray what;
+    QByteArray status;
+};
+
+
 /*! Representation of a incoming or outgoing connection to a contact.
  *
  *  Owned by the protocol module. Lifetime is purely managed as std::shared_ptr.
@@ -40,10 +89,17 @@ signals:
     void connectedToPeer(PeerConnection *peer);
     void disconnectedFromPeer(PeerConnection *peer);
     void receivedData(const quint32 channel, const quint64 id, const QByteArray& data);
+    void addmeRequest(const PeerAddmeReq& req);
+    void receivedAck(const PeerAck& ack);
 };
 
 }}
 
 Q_DECLARE_METATYPE(ds::core::PeerConnection *)
+//Q_DECLARE_SMART_POINTER_METATYPE(std::shared_ptr)
+//Q_DECLARE_METATYPE(ds::core::PeerConnection::ptr_t)
+Q_DECLARE_METATYPE(ds::core::PeerReq)
+Q_DECLARE_METATYPE(ds::core::PeerAddmeReq)
+Q_DECLARE_METATYPE(ds::core::PeerAck)
 
 #endif // PEERCONNECTION_H

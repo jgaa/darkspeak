@@ -21,6 +21,9 @@ Contact::Contact(QObject &parent,
     : QObject{&parent}
     , id_{dbId}, online_{online}, data_{move(data)}
 {
+    connect(this, &Contact::sendAddMeLater,
+            this, &Contact::onSendAddMeLater,
+            Qt::QueuedConnection);
 }
 
 void Contact::connectToContact()
@@ -41,6 +44,12 @@ void Contact::connectToContact()
 
         connection_ = make_unique<Connection>(peer, *this);
         setOnlineStatus(CONNECTING);
+
+        connect(peer.get(), &PeerConnection::connectedToPeer,
+                this, &Contact::onConnectedToPeer);
+
+        connect(peer.get(), &PeerConnection::disconnectedFromPeer,
+                this, &Contact::onDisconnectedFromPeer);
     }
 }
 
@@ -236,6 +245,11 @@ void Contact::setOnlineStatus(const Contact::OnlineStatus status)
     }
 }
 
+int Contact::getIdentityId() const noexcept
+{
+    return data_->identity;
+}
+
 Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
 {
     QSqlQuery query;
@@ -344,6 +358,97 @@ void Contact::deleteFromDb() {
                             query.lastError().text()));
         }
     }
+}
+
+void Contact::onConnectedToPeer(PeerConnection *peer)
+{
+    if (!isPeerVerified()) {
+        if (peer->getDirection() == PeerConnection::OUTGOING) {
+            LFLOG_DEBUG << "Peer " << getName() << " is verified at handle " << getHandle();
+            setPeerVerified(true); // We connected
+        } else {
+            LFLOG_DEBUG << "Peer " << getName() << " is not not verified. Disconnecting.";
+            peer->close();
+            return;
+        }
+    }
+
+    switch (getState()) {
+    case PENDING:
+        [[fallthrough]];
+    case WAITING_FOR_ACCEPTANCE:
+        emit sendAddMeLater();
+        break;
+    case ACCEPTED:
+        // TODO: Send pending messages
+        break;
+    case REJECTED:
+        // Allow the connection, but only accept addme or addme/ack events.
+        LFLOG_DEBUG << "Peer " << getName() << " rejected us but is now connecting. Will he send an addme?";
+        break;
+    case BLOCKED:
+         LFLOG_DEBUG << "Peer " << getName() << " is BLOCKED. Disconnecting";
+         peer->close();
+        break;
+    }
+
+    if (!connection_ || (connection_->peer.get() != peer)) {
+        LFLOG_DEBUG << "Switching connection for Contact << " << getName()
+                    << " to " << peer->getConnectionId().toString();
+
+        connection_ = make_unique<Connection>(peer->shared_from_this(), *this);
+    }
+
+    setOnlineStatus(ONLINE);
+}
+
+void Contact::onDisconnectedFromPeer(PeerConnection *peer)
+{
+    LFLOG_DEBUG << "Connection " << peer->getConnectionId().toString()
+                << " to Contact " << getName()
+                << " is disconnected.";
+
+    connection_.reset();
+    setOnlineStatus(DISCONNECTED);
+}
+
+void Contact::onSendAddMeLater()
+{
+    if (getOnlineStatus() != ONLINE) {
+        return;
+    }
+
+    if (auto identity = getIdentity()) {
+        AddmeReq ar{identity->getUuid(),
+                   connection_->peer->getConnectionId(),
+                   identity->getName(),
+                   getAddMeMessage()};
+
+        LFLOG_NOTICE << "Sending Addme from Identity " << identity->getName()
+                     << " to Contact "
+                     << getName()
+                     << " over connection " << ar.connection.toString();
+
+        try {
+            getIdentity()->getProtocolManager().sendAddme(ar);
+        } catch(const std::exception& ex) {
+            LFLOG_WARN << "Failed to send addme from " << identity->getName()
+                        << " to "
+                        << getName()
+                        << " over connection " << ar.connection.toString()
+                        << ":" << ex.what();
+            return;
+        }
+
+        if (getState() == PENDING) {
+            setState(WAITING_FOR_ACCEPTANCE);
+        }
+    }
+}
+
+void Contact::onAddmeRequest(const PeerAddmeReq &req)
+{
+    // TODO: Implment
 }
 
 Contact::Connection::~Connection()

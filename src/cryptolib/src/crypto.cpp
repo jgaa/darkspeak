@@ -1,6 +1,5 @@
 #include <assert.h>
 #include <mutex>
-#include <sodium.h>
 
 #include <QMetaType>
 #include <QUuid>

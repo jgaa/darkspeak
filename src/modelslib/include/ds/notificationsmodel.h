@@ -5,10 +5,12 @@
 #include <QSqlQueryModel>
 
 #include "ds/dsengine.h"
+#include "ds/identity.h"
 #include "logfault/logfault.h"
 
 namespace ds {
 namespace models {
+
 
 class NotificationsModel : public QSqlQueryModel
 {
@@ -58,7 +60,7 @@ signals:
     void contactAccepted(const ds::core::Contact& contact);
 
 public slots:
-    void addNotification(const int identityId, const core::PeerAddmeReq& req);
+    void addNotification(core::Identity *identity, const core::PeerAddmeReq& req);
     void acceptContact(const int row, bool accept);
 
 public:
@@ -69,6 +71,7 @@ private:
     int col2Role(int col) const noexcept { return col + Qt::UserRole; }
     void refresh();
     void deleteRow(const int row);
+    bool isHashPresent(const QByteArray& hash) const ;
 
 };
 
