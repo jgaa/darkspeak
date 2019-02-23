@@ -138,7 +138,7 @@ void DsClient::getHelloReply(const Peer::data_t &data)
 
     enableEncryptedStream();
 
-    emit connectedToPeer(this);
+    emit connectedToPeer(shared_from_this());
 }
 
 }} // namespaces

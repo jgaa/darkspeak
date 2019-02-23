@@ -1,6 +1,8 @@
 #ifndef CONTACT_H
 #define CONTACT_H
 
+#include <memory>
+
 #include <QDateTime>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -186,11 +188,18 @@ signals:
     void onlineIconChanged();
     void onlineStatusChanged();
     void sendAddMeLater();
+    void sendAddmeAckLater();
+    void processOnlineLater();
+
+public slots:
+    void onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer);
 
 private slots:
-    void onConnectedToPeer(PeerConnection *peer);
-    void onDisconnectedFromPeer(PeerConnection *peer);
+    void onDisconnectedFromPeer(const std::shared_ptr<PeerConnection>& peer);
     void onSendAddMeLater();
+    void onSendAddmeAckLater();
+    void onProcessOnlineLater();
+    void onReceivedAck(const PeerAck& ack);
 
 private:
     static void bind(QSqlQuery& query, ContactData& data);

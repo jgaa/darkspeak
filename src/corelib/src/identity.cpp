@@ -68,13 +68,20 @@ ProtocolManager& Identity::getProtocolManager() {
                 ProtocolManager::Transport::TOR);
 }
 
-void Identity::onIncomingPeer(PeerConnection *peer)
+void Identity::onIncomingPeer(const std::shared_ptr<PeerConnection>& peer)
 {
-    // TODO: Lookup the contact, if any
-        // TODO: Reject blocked contacts
-        // TODO: Handle incoming connection while we have an outgoing connection (hash?)
+    if (auto contact = contactFromHash(peer->getPeerCert()->getHash().toByteArray())) {
 
-    connect(peer, &PeerConnection::addmeRequest,
+        LFLOG_DEBUG << "Passing incoming connection "
+                    << peer->getConnectionId().toString()
+                    << " to Contact " << contact->getName()
+                    << " on Identity " << getName();
+
+        contact->onConnectedToPeer(peer);
+        return;
+    }
+
+    connect(peer.get(), &PeerConnection::addmeRequest,
             this, &Identity::onAddmeRequest);
 
     // At this point we leave the ownership and responsibility for the
@@ -107,10 +114,15 @@ Contact::ptr_t Identity::contactFromHandle(const QByteArray &handle)
     auto cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(
                                                      handle.toStdString(), 32, {249, 50}));
 
+    return contactFromHash(cert->getHash().toByteArray());
+}
+
+Contact::ptr_t Identity::contactFromHash(const QByteArray &hash)
+{
     QSqlQuery query;
     query.prepare("SELECT uuid FROM contact WHERE identity=:id AND hash=:hash");
     query.bindValue(":id", getId());
-    query.bindValue(":hash", cert->getHash().toByteArray());
+    query.bindValue(":hash", hash);
     if(!query.exec()) {
         throw Error(QStringLiteral("Failed to fetch identity from hash: %1").arg(
                         query.lastError().text()));

@@ -263,35 +263,13 @@ void DsEngine::start()
             &ds::core::ProtocolManager::serviceFailed,
             this, &DsEngine::onServiceFailed);
 
-//    connect(tor_mgr_.get(),
-//            &ds::core::ProtocolManager::connectedTo,
-//            this, [this](const QUuid& uuid, const ProtocolManager::Direction direction) {
-//        emit connectedTo(uuid, direction);
-//    });
-
-//    connect(tor_mgr_.get(),
-//            &ds::core::ProtocolManager::disconnectedFrom,
-//            this, [this]( const QUuid& uuid) {
-//        emit disconnectedFrom(uuid);
-//    });
-
-//    connect(tor_mgr_.get(),
-//            &ds::core::ProtocolManager::connectionFailed,
-//            this, [this](const QUuid& uuid,
-//            const QAbstractSocket::SocketError& socketError) {
-//        emit connectionFailed(uuid, socketError);
-//    });
-
     connect(tor_mgr_.get(),
             &ds::core::ProtocolManager::incomingPeer,
-            this, [this](PeerConnection *peer) {
+            this, [this](const std::shared_ptr<PeerConnection>& peer) {
         emit incomingPeer(peer);
 
         identityManager_->onIncomingPeer(peer);
     });
-
-//    connect(tor_mgr_.get(), &ds::core::ProtocolManager::receivedData,
-//            this, &DsEngine::onReceivedData);
 
     tor_mgr_->start();
 }

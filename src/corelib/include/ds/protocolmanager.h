@@ -117,7 +117,7 @@ signals:
     void serviceStarted(const QUuid& service, const bool newService);
     void serviceStopped(const QUuid& service);
 
-    void incomingPeer(PeerConnection *peer);
+    void incomingPeer(const std::shared_ptr<PeerConnection>& peer);
 
 public slots:
 

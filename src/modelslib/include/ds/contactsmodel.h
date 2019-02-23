@@ -44,7 +44,7 @@ public:
     Q_INVOKABLE void setIdentity(const QUuid& uuid);
 
 public slots:
-    void onContactAdded(core::Contact *contact);
+    void onContactAdded(const core::Contact::ptr_t& contact);
     void onContactDeleted(const QUuid& contact);
 
     // QAbstractItemModel interface

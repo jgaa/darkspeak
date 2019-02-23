@@ -51,7 +51,8 @@ void ContactsModel::setIdentity(const QUuid &uuid)
     endResetModel();
 }
 
-void ContactsModel::onContactAdded(Contact *contact)
+
+void ContactsModel::onContactAdded(const Contact::ptr_t &contact)
 {
     if (!identity_) {
         return;

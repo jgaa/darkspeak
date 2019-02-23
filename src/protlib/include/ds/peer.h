@@ -104,11 +104,11 @@ public slots:
     uint64_t send(const QJsonDocument& json);
 
 signals:
-    void incomingPeer(PeerConnection *peer);
+    void incomingPeer(const std::shared_ptr<PeerConnection>& peer);
     void closeLater();
 
 private slots:
-    void onReceivedData(const quint32 channel, const quint64 id, const QByteArray& data);
+    void onReceivedData(const quint32 channel, const quint64 id, QByteArray data);
     void onCloseLater();
 
 protected:
@@ -135,6 +135,7 @@ public:
     crypto::DsCert::ptr_t getPeerCert() const noexcept override;
     void close() override;
     QUuid getIdentityId() const noexcept override;
+    uint64_t sendAck(const QString& what, const QString& status) override;
 };
 
 }} // namespaces

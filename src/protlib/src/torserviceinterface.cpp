@@ -78,26 +78,10 @@ TorServiceInterface::connectToService(const QByteArray &host, const uint16_t por
                 << host << ":" << port
                 << " with connection-id " << connection->getUuid().toString();
 
-//    connect(connection.get(), &ConnectionSocket::connectedToHost,
-//            this, &TorServiceInterface::onSocketConnected);
-//    connect(connection.get(), &ConnectionSocket::disconnectedFromHost,
-//            this, &TorServiceInterface::onSocketDisconnected);
-//    connect(connection.get(), &ConnectionSocket::socketFailed,
-//            this, &TorServiceInterface::onSocketFailed);
-
     auto client = make_shared<DsClient>(connection, move(cd));
 
-//    connect(client.get(), &Peer::outboundPeerReady,
-//            this, &TorServiceInterface::onOutboundPeerReady);
-
-//    connect(client.get(), &Peer::receivedData,
-//           this, [this](const QUuid& connectionId, const quint32 channel,
-//           const quint64 id, const QByteArray& data) {
-//        emit receivedData(connectionId, channel, id, data);
-//    });
-
     connect(client.get(), &core::PeerConnection::disconnectedFromPeer,
-            this, [this](core::PeerConnection *peer) {
+            this, [this](const std::shared_ptr<core::PeerConnection>& peer) {
         peers_.erase(peer->getConnectionId());
     });
 
@@ -125,28 +109,11 @@ ConnectionSocket &TorServiceInterface::getSocket(const QUuid &uuid)
     throw runtime_error("No such connection: "s + uuid.toString().toStdString());
 }
 
-//void TorServiceInterface::onSocketFailed(const QUuid &uuid,
-//                                         const QAbstractSocket::SocketError &socketError)
-//{
-//    LFLOG_DEBUG << "Connection with id " << uuid.toString()
-//                << " failed with error: "
-//                << socketError;
-
-//    // TODO: Notify Contact/Connection
-//    peers_.erase(uuid);
-//    //emit connectionFailed(uuid, socketError);
-//}
-
 void TorServiceInterface::onNewIncomingConnection(
         const ConnectionSocket::ptr_t &connection)
 {
     LFLOG_DEBUG << "Plugging in a new incoming connection: "
                 << connection->getUuid().toString();
-
-//    connect(connection.get(), &ConnectionSocket::disconnectedFromHost,
-//            this, &TorServiceInterface::onSocketDisconnected);
-//    connect(connection.get(), &ConnectionSocket::socketFailed,
-//            this, &TorServiceInterface::onSocketFailed);
 
     core::ConnectData cd;
     cd.identitysCert = cert_;
@@ -154,15 +121,9 @@ void TorServiceInterface::onNewIncomingConnection(
     auto server = make_shared<DsServer>(connection, move(cd));
 
     connect(server.get(), &Peer::incomingPeer,
-            this, [this](core::PeerConnection *peer) {
+            this, [this](const std::shared_ptr<core::PeerConnection>& peer) {
         emit incomingPeer(peer);
     });
-
-//    connect(server.get(), &Peer::receivedData,
-//           this, [this](const QUuid& connectionId, const quint32 channel,
-//           const quint64 id, const QByteArray& data) {
-//        emit receivedData(connectionId, channel, id, data);
-//    });
 
     peers_[connection->getUuid()] = server;
 }

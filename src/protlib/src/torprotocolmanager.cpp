@@ -164,21 +164,9 @@ uint64_t TorProtocolManager::sendAddme(const AddmeReq& req)
 
 uint64_t TorProtocolManager::sendAck(const AckMsg &ack)
 {
-    QString addr;
-    auto json = QJsonDocument{
-        QJsonObject{
-            {"type", "Ack"},
-            {"what", QString{ack.what}},
-            {"status", QString{ack.status}}
-        }
-    };
-
-    LFLOG_DEBUG << "Sending Ack: " << ack.what
-                << " with status: " << ack.status
-                << " to " << ack.connection.toString();
 
     if (auto peer = getService(ack.service).getPeer(ack.connection)) {
-        return peer->send(json);
+        return peer->sendAck(ack.what, ack.status);
     }
 
     throw runtime_error("Failed to access peer while sending addme");
@@ -251,7 +239,7 @@ void TorProtocolManager::startService(const QUuid& serviceId,
 //    });
 
     connect(service.get(), &TorServiceInterface::incomingPeer,
-            this, [this] (PeerConnection *peer) {
+            this, [this] (const std::shared_ptr<PeerConnection>& peer) {
         emit incomingPeer(peer);
     });
 

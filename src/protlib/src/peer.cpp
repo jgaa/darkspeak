@@ -28,7 +28,7 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
         LFLOG_DEBUG << "Peer " << getConnectionId().toString()
                     << " is connected";
 
-        emit connectedToPeer(this);
+        emit connectedToPeer(shared_from_this());
     });
 
     connect(connection_.get(), &ConnectionSocket::disconnected,
@@ -41,12 +41,11 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
         // Prevent destruction before the signal finish.
         auto preserve = shared_from_this();
 
-        emit disconnectedFromPeer(this);
+        emit disconnectedFromPeer(shared_from_this());
     });
 
     connect(this, &PeerConnection::receivedData,
-            this, &Peer::onReceivedData,
-            Qt::QueuedConnection);
+            this, &Peer::onReceivedData);// Qt::QueuedConnection);
 
     connect(this, &Peer::closeLater,
             this, &Peer::onCloseLater,
@@ -142,7 +141,7 @@ uint64_t Peer::send(const QJsonDocument &json)
     return request_id_;
 }
 
-void Peer::onReceivedData(const quint32 channel, const quint64 id, const QByteArray &data)
+void Peer::onReceivedData(const quint32 channel, const quint64 id, QByteArray data)
 {
     if (channel == 0) {
         // Control channel. Data is supposed to be Json.
@@ -163,12 +162,14 @@ void Peer::onReceivedData(const quint32 channel, const quint64 id, const QByteAr
                         json.object().value("address").toString().toUtf8(),
                         getPeerCert()->getB58PubKey()};
 
+            LFLOG_DEBUG << "Emitting addmeRequest";
             emit addmeRequest(req);
         } else if (type == "Ack") {
             PeerAck ack{shared_from_this(), getConnectionId(), id,
                         json.object().value("what").toString().toUtf8(),
                         json.object().value("status").toString().toUtf8()};
 
+            LFLOG_DEBUG << "Emitting Ack";
             emit receivedAck(ack);
         } else {
             LFLOG_WARN << "Unrecognized request from peer at connection "
@@ -183,7 +184,7 @@ void Peer::onCloseLater()
         connection_->close();
     }
 
-    emit disconnectedFromPeer(this);
+    emit disconnectedFromPeer(shared_from_this());
 }
 
 void Peer::enableEncryptedStream()
@@ -279,9 +280,10 @@ void Peer::processStream(const Peer::data_t &ciphertext)
                     << ", id=" << chunk_id
                     << ", payload=" << (channel_id ? binary : safePayload(payload));
 
-        emit receivedData(channel_id,
-                          chunk_id,
-                          payload.toByteArray());
+//        emit receivedData(channel_id,
+//                          chunk_id,
+//                          payload.toByteArray());
+        onReceivedData(channel_id, chunk_id, payload.toByteArray());
 
         wantChunkSize();
     } else {
@@ -366,6 +368,24 @@ void Peer::close()
 QUuid Peer::getIdentityId() const noexcept
 {
     return connectionData_.service;
+}
+
+uint64_t Peer::sendAck(const QString &what, const QString &status)
+{
+    QString addr;
+    auto json = QJsonDocument{
+        QJsonObject{
+            {"type", "Ack"},
+            {"what", what},
+            {"status", status}
+        }
+    };
+
+    LFLOG_DEBUG << "Sending Ack: " << what
+                << " with status: " << status
+                << " over connection " << getConnectionId().toString();
+
+    return send(json);
 }
 
 }} // namespace

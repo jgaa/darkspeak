@@ -134,7 +134,7 @@ void DsServer::getHello(const data_t& data)
                 << " on " << connection_->getUuid().toString();
 
     // Send a signal to authorize the connection (it may be blacklisted)
-    emit incomingPeer(this);
+    emit incomingPeer(shared_from_this());
 }
 
 }} // namespaces

@@ -15,7 +15,8 @@ using namespace std;
 ContactManager::ContactManager(QObject &parent)
     : QObject (&parent)
 {
-
+    connect(this, &ContactManager::contactAdded,
+            this, &ContactManager::onContactAddedLater);
 }
 
 Contact::ptr_t ContactManager::getContact(const QUuid &uuid)
@@ -56,7 +57,7 @@ Contact *ContactManager::addContact(Contact::data_t data)
                  << " with handle " << ptr->getHandle()
                  << " as " << ptr->getUuid().toString();
 
-    emit contactAdded(ptr.get());
+    emit contactAdded(ptr);
 
     return ptr.get();
 }
@@ -75,6 +76,13 @@ void ContactManager::touch(const Contact::ptr_t &contact)
         if (lru_cache_.size() >= lru_size_) {
             lru_cache_.pop_back();
         }
+    }
+}
+
+void ContactManager::onContactAddedLater(const Contact::ptr_t& contact)
+{
+    if (contact->isAutoConnect() && contact->getIdentity()->isOnline()) {
+        contact->connectToContact();
     }
 }
 

@@ -28,11 +28,13 @@ public:
     void touch(const Contact::ptr_t& contact);
 
 signals:
-    void contactAdded(Contact *contact);
+    void contactAdded(const Contact::ptr_t& contact);
     void contactDeleted(const QUuid& contact);
 
-private:
+private slots:
+    void onContactAddedLater(const Contact::ptr_t& contact);
 
+private:
     Registry<QUuid, Contact> registry_;
     std::list<Contact::ptr_t> lru_cache_;
 

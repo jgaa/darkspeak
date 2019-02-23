@@ -53,7 +53,7 @@ signals:
 
 public slots:
     void removeIdentity(const QUuid& uuid);
-    void onIncomingPeer(PeerConnection *peer);
+    void onIncomingPeer(const std::shared_ptr<PeerConnection>& peer);
 
 private:
     void addIndex(Identity *identity, bool notify);

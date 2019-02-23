@@ -78,23 +78,12 @@ public:
 signals:
     void serviceStarted(const StartServiceResult& ssr);
     void serviceStopped(const StopServiceResult& ssr);
-//    void connectedToService(const QUuid& uuid);
-//    void disconnectedFromService(const QUuid& uuid);
-//    void connectionFailed(const QUuid& uuid,
-//                          const QAbstractSocket::SocketError& socketError);
-    void incomingPeer(core::PeerConnection *peer);
-//    void receivedData(const QUuid& connectionId, const quint32 channel,
-//                      const quint64 id, const QByteArray& data);
+    void incomingPeer(const std::shared_ptr<core::PeerConnection>& peer);
 
 public slots:
     void autorizeConnection(const QUuid& connection,
                             const bool allow);
-
 private slots:
-//    void onOutboundPeerReady(const QUuid& uuid);
-//    void onSocketDisconnected(const QUuid& uuid);
-//    void onSocketFailed(const QUuid& uuid,
-//                        const QAbstractSocket::SocketError& socketError);
     void onNewIncomingConnection(const ConnectionSocket::ptr_t& connection);
 
 

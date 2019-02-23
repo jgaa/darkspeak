@@ -31,16 +31,25 @@ void ConnectionSocket::wantBytes(size_t bytesRequested)
 
 void ConnectionSocket::onConnected()
 {
+    LFLOG_DEBUG << "Socket on connection " << uuid.toString()
+                << " is connected.";
     emit connectedToHost(uuid);
 }
 
 void ConnectionSocket::onDisconnected()
 {
+    LFLOG_DEBUG << "Socket on connection " << uuid.toString()
+                << " was disconnected.";
+
     emit disconnectedFromHost(uuid);
 }
 
 void ConnectionSocket::onSocketFailed(const SocketError& socketError)
 {
+    LFLOG_DEBUG << "Socket on connection " << uuid.toString()
+                << " was failed with error: "
+                << socketError;
+
     emit socketFailed(uuid, socketError);
 }
 

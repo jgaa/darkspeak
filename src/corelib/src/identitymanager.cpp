@@ -247,7 +247,7 @@ void IdentityManager::removeIdentity(const QUuid &uuid)
     }
 }
 
-void IdentityManager::onIncomingPeer(PeerConnection *peer)
+void IdentityManager::onIncomingPeer(const std::shared_ptr<PeerConnection>& peer)
 {
     LFLOG_DEBUG << "Connection from peer " << peer->getPeerCert()->getB58PubKey()
                 << " to identity " << peer->getIdentityId().toString();

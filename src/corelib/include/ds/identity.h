@@ -158,7 +158,7 @@ public:
 
     ProtocolManager& getProtocolManager();
 
-    void onIncomingPeer(PeerConnection *peer);
+    void onIncomingPeer(const std::shared_ptr<PeerConnection>& peer);
 
     const char *getTableName() const noexcept { return "identity"; }
 
@@ -175,7 +175,8 @@ signals:
     void autoConnectChanged();
 
 private:
-    Contact::ptr_t contactFromHandle(const QByteArray& hande);
+    Contact::ptr_t contactFromHandle(const QByteArray& handle);
+    Contact::ptr_t contactFromHash(const QByteArray& hash);
     Contact::ptr_t contactFromUuid(const QUuid& uuid);
 
     int id_ = -1; // Database id

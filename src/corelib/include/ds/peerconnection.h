@@ -84,10 +84,11 @@ public:
     virtual crypto::DsCert::ptr_t getPeerCert() const noexcept = 0;
     virtual QUuid getIdentityId() const noexcept = 0;
     virtual void close() = 0;
+    virtual uint64_t sendAck(const QString& what, const QString& status) = 0;
 
 signals:
-    void connectedToPeer(PeerConnection *peer);
-    void disconnectedFromPeer(PeerConnection *peer);
+    void connectedToPeer(const std::shared_ptr<PeerConnection>& peer);
+    void disconnectedFromPeer(const std::shared_ptr<PeerConnection>& peer);
     void receivedData(const quint32 channel, const quint64 id, const QByteArray& data);
     void addmeRequest(const PeerAddmeReq& req);
     void receivedAck(const PeerAck& ack);

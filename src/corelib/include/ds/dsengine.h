@@ -142,7 +142,7 @@ signals:
 //    void disconnectedFrom(const QUuid& identity, const QUuid& uuid);
 //    void connectionFailed(const QUuid& uuid,
 //                          const QAbstractSocket::SocketError& socketError);
-    void incomingPeer(PeerConnection *peer);
+    void incomingPeer(const std::shared_ptr<PeerConnection>& peer);
 //    void receivedData(const QUuid& service, const QUuid& connectionId, const quint32 channel,
 //                      const quint64 id, const QByteArray& data);
 //    void receivedAddMe(const PeerAddmeReq& req);
