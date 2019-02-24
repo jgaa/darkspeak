@@ -1,0 +1,258 @@
+#include "ds/conversation.h"
+#include "ds/errors.h"
+#include "ds/update_helper.h"
+#include "ds/errors.h"
+#include "ds/dsengine.h"
+#include "ds/crypto.h"
+#include "ds/identity.h"
+
+#include "logfault/logfault.h"
+
+namespace ds {
+namespace core {
+
+using namespace std;
+using namespace crypto;
+
+Conversation::Conversation(Identity &parent)
+    : QObject{&parent}, parent_{parent}
+{
+
+}
+
+void Conversation::incrementUnread()
+{
+    setUnread(getUnread() + 1);
+}
+
+int Conversation::getId() const noexcept {
+    return id_;
+}
+
+QString Conversation::getName() const noexcept  {
+    return name_;
+}
+
+void Conversation::setName(const QString &name) {
+    updateIf("name", name, name_, this, &Conversation::nameChanged);
+}
+
+QUuid Conversation::getUuid() const noexcept
+{
+    return uuid_;
+}
+
+Conversation::participants_t Conversation::getParticipants() const
+{
+    participants_t rval;
+    rval.reserve(participants_.size());
+
+    for(const auto& uuid  : participants_) {
+        rval.emplace_back(DsEngine::instance().getContactManager()->getContact(uuid));
+    }
+
+    return rval;
+}
+
+QString Conversation::getTopic() const noexcept  {
+    return name_;
+}
+
+void Conversation::setTopic(const QString &topic) {
+    updateIf("topic", topic, topic_, this, &Conversation::nameChanged);
+}
+
+Conversation::Type Conversation::getType() const noexcept
+{
+    return type_;
+}
+
+QByteArray Conversation::getHash() const noexcept
+{
+    return hash_;
+}
+
+QDateTime Conversation::getCreated() const noexcept {
+    return created_;
+}
+
+QDateTime Conversation::getLastActivity() const noexcept
+{
+    return lastActivity_;
+}
+
+void Conversation::setLastActivity(const QDateTime &when)
+{
+    updateIf("updated", when, lastActivity_, this, &Conversation::lastActivityChanged);
+}
+
+int Conversation::getUnread() const noexcept
+{
+    return unread_;
+}
+
+void Conversation::setUnread(const int value)
+{
+    updateIf("unread", value, unread_, this, &Conversation::unredChanged);
+}
+
+void Conversation::addToDb()
+{
+    QSqlQuery query;
+
+    query.prepare("INSERT INTO conversation ("
+                  "identity, type, name, uuid, hash, participants, topic, created, updated, unread"
+                  ") VALUES ("
+                  ":identity, :type, :name, :uuid, :hash, :participants, :topic, :created, :updated, :unread"
+                  ")");
+
+
+    if (!created_.isValid()) {
+        created_ = QDateTime::fromTime_t((QDateTime::currentDateTime().toTime_t() / 60) * 60);
+    }
+
+    if (!lastActivity_.isValid()) {
+        lastActivity_ = created_;
+    }
+
+    if (hash_.isEmpty()) {
+        if (getType() == PRIVATE_P2P) {
+            hash_ = getParticipant()->getHash();
+        } else {
+            assert(false); // TODO: Implement
+        }
+    }
+
+    if (uuid_.isNull()) {
+        uuid_ = QUuid::createUuid();
+    }
+
+    if (name_.isEmpty()) {
+        if (getType() == PRIVATE_P2P) {
+            name_ = getParticipant()->getName();
+        } else {
+            name_ = "Group Conversation";
+        }
+    }
+
+    // TODO: We better put multiple participants in a separate table
+    QString participants;
+    for(const auto& uuid : participants_) {
+        if (!participants.isEmpty()) {
+            participants += ',';
+        }
+        participants += uuid.toString();
+    }
+
+    query.bindValue(":identity", identity_);
+    query.bindValue(":uuid", uuid_);
+    query.bindValue(":name", name_);
+    query.bindValue(":topic", topic_);
+    query.bindValue(":created", created_);
+    query.bindValue(":updated", lastActivity_);
+    query.bindValue(":type", type_);
+    query.bindValue(":participants", participants);
+    query.bindValue(":unread", unread_);
+    query.bindValue(":hash", hash_);
+
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to add Contact: %1").arg(
+                        query.lastError().text()));
+    }
+
+    id_ = query.lastInsertId().toInt();
+
+    LFLOG_INFO << "Added conversation \"" << getName()
+               << "\" with uuid " << uuid_.toString()
+               << " to the database with id " << id_;
+
+}
+
+void Conversation::deleteFromDb()
+{
+    if (id_ > 0) {
+        QSqlQuery query;
+        query.prepare("DELETE FROM conversation WHERE id=:id");
+        query.bindValue(":id", id_);
+        if(!query.exec()) {
+            throw Error(QStringLiteral("SQL Failed to delete conversation: %1").arg(
+                            query.lastError().text()));
+        }
+    }
+}
+
+Conversation::ptr_t Conversation::load(Identity& parent, const QUuid &uuid)
+{
+    return load(parent, [uuid, &parent](QSqlQuery& query) {
+        query.prepare(getSelectStatement(parent, "uuid=:uuid"));
+        query.bindValue(":uuid", uuid);
+    });
+}
+
+Conversation::ptr_t Conversation::load(Identity &parent, const QByteArray &hash)
+{
+    return load(parent, [hash, &parent](QSqlQuery& query) {
+        query.prepare(getSelectStatement(parent, "hash=:hash"));
+        query.bindValue(":hash", hash);
+    });
+}
+
+Contact::ptr_t Conversation::getParticipant()
+{
+    if (getType() == PRIVATE_P2P) {
+        auto participants = getParticipants();
+        if (participants.size() == 1) {
+            if (auto contact = participants.front()) {
+                return contact;
+            }
+        }
+    }
+
+    throw runtime_error("Not PRIVATE_P2P or participent not found");
+}
+
+QString Conversation::getSelectStatement(const Identity &identity, const QString &where)
+{
+     return QStringLiteral("SELECT id, identity, type, name, uuid, hash, participants, topic, created, updated, unread FROM conversation WHERE identity=%1 AND %2")
+             .arg(identity.getId())
+             .arg(where);
+}
+
+Conversation::ptr_t Conversation::load(Identity &parent, const std::function<void (QSqlQuery &)> &prepare)
+{
+    QSqlQuery query;
+
+    enum Fields {
+        id, identity, type, name, uuid, hash, participants, topic, created, updated, unread
+    };
+
+    prepare(query);
+
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to fetch conversation: %1").arg(
+                        query.lastError().text()));
+    }
+
+    if (!query.next()) {
+        throw Error(QStringLiteral("Conversation not found!"));
+    }
+
+    auto ptr = make_shared<Conversation>(parent);
+    ptr->id_ = query.value(id).toInt();
+    ptr->identity_ = query.value(identity).toInt();
+    ptr->name_ = query.value(name).toString();
+    ptr->uuid_ = query.value(uuid).toUuid();
+    ptr->participants_.insert(query.value(participants).toUuid());
+    ptr->topic_ = query.value(topic).toString();
+    ptr->type_ = static_cast<Type>(query.value(type).toInt());
+    ptr->hash_ = query.value(hash).toByteArray();
+    ptr->created_ = query.value(created).toDateTime();
+    ptr->lastActivity_ = query.value(updated).toDateTime();
+    ptr->unread_ = query.value(unread).toInt();
+
+    return ptr;
+}
+
+
+}} // namespaces
+

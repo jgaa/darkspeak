@@ -30,7 +30,8 @@ SOURCES += \
     src/identitymanager.cpp \
     src/identity.cpp \
     src/contact.cpp \
-    src/contactmanager.cpp
+    src/contactmanager.cpp \
+    src/conversation.cpp
 
 HEADERS += \
     include/ds/dsengine.h \
@@ -46,7 +47,8 @@ HEADERS += \
     include/ds/identitymanager.h \
     include/ds/contactmanager.h \
     include/ds/registry.h \
-    include/ds/peerconnection.h
+    include/ds/peerconnection.h \
+    include/ds/conversation.h
 
 INCLUDEPATH += \
     $$PWD/../../dependencies/logfault/include \

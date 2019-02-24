@@ -16,6 +16,7 @@
 #include "ds/protocolmanager.h"
 #include "ds/identitymanager.h"
 #include "ds/contactmanager.h"
+#include "ds/conversation.h"
 
 namespace ds {
 namespace core {
