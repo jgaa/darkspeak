@@ -28,7 +28,7 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
         LFLOG_DEBUG << "Peer " << getConnectionId().toString()
                     << " is connected";
 
-        emit connectedToPeer(shared_from_this());
+        //emit connectedToPeer(shared_from_this());
     });
 
     connect(connection_.get(), &ConnectionSocket::disconnected,
@@ -36,10 +36,6 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
 
         LFLOG_DEBUG << "Peer " << getConnectionId().toString()
                     << " is disconnected";
-
-
-        // Prevent destruction before the signal finish.
-        auto preserve = shared_from_this();
 
         emit disconnectedFromPeer(shared_from_this());
     });
@@ -50,6 +46,11 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
     connect(this, &Peer::closeLater,
             this, &Peer::onCloseLater,
             Qt::QueuedConnection);
+}
+
+Peer::~Peer()
+{
+
 }
 
 uint64_t Peer::send(const QJsonDocument &json)
@@ -386,6 +387,11 @@ uint64_t Peer::sendAck(const QString &what, const QString &status)
                 << " over connection " << getConnectionId().toString();
 
     return send(json);
+}
+
+bool Peer::isConnected() const noexcept
+{
+    return connection_ && connection_->isOpen();
 }
 
 }} // namespace

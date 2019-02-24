@@ -77,7 +77,7 @@ void Identity::onIncomingPeer(const std::shared_ptr<PeerConnection>& peer)
                     << " to Contact " << contact->getName()
                     << " on Identity " << getName();
 
-        contact->onConnectedToPeer(peer);
+        contact->onIncomingPeer(peer);
         return;
     }
 

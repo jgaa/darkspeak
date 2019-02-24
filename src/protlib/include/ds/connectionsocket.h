@@ -20,6 +20,7 @@ public:
     using data_t = crypto::MemoryView<uint8_t>;
 
     ConnectionSocket();
+    ~ConnectionSocket();
 
     const QUuid& getUuid() const noexcept {
         return uuid;

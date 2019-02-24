@@ -76,7 +76,7 @@ public:
 
     Peer(ConnectionSocket::ptr_t connection,
          core::ConnectData connectionData);
-    virtual ~Peer() = default;
+    ~Peer() override;
 
     ConnectionSocket& getConnection() {
         if (!connection_) {
@@ -136,6 +136,7 @@ public:
     void close() override;
     QUuid getIdentityId() const noexcept override;
     uint64_t sendAck(const QString& what, const QString& status) override;
+    bool isConnected() const noexcept override;
 };
 
 }} // namespaces

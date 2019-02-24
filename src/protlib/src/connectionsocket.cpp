@@ -13,14 +13,21 @@ ConnectionSocket::ConnectionSocket()
     connect(this, &ConnectionSocket::disconnected,
             this, &ConnectionSocket::onDisconnected);
 
-//    // error() is ambigous
-//    connect(this, SIGNAL(error(SocketError)),
-//            this, SLOT(onSocketFailed(SocketError)));
+    // error() is ambigous
+    connect(this, SIGNAL(error(SocketError)),
+            this, SLOT(onSocketFailed(SocketError)));
 
     connect(this, &ConnectionSocket::readyRead, this, [this]() {
         inData += readAll();
         processInput();
     });
+
+    LFLOG_DEBUG << "Socket is constructed: " << uuid.toString();
+}
+
+ConnectionSocket::~ConnectionSocket()
+{
+    LFLOG_DEBUG << "Socket is destructed: " << uuid.toString();
 }
 
 void ConnectionSocket::wantBytes(size_t bytesRequested)

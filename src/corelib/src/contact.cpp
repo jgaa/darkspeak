@@ -161,6 +161,12 @@ void Contact::setLastSeen(const QDateTime &when)
     updateIf("last_seen", when, data_->lastSeen, this, &Contact::lastSeenChanged);
 }
 
+void Contact::touchLastSeen()
+{
+    const auto when = QDateTime::fromTime_t((QDateTime::currentDateTime().toTime_t() / 60) * 60);
+    setLastSeen(when);
+}
+
 crypto::DsCert::ptr_t Contact::getCert() const noexcept {
     return data_->cert;
 }
@@ -429,23 +435,42 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
             }
         }
 
-        LFLOG_DEBUG << "Switching connection for Contact << " << getName()
+        LFLOG_DEBUG << "Switching connection for Contact " << getName()
                     << " at Identity " << getIdentity()->getName()
                     << " to " << peer->getConnectionId().toString();
 
-        connection_ = make_unique<Connection>(peer->shared_from_this(), *this);
-
-        if (connection_->peer->getDirection() == PeerConnection::INCOMING) {
-            // For outgoing connections, we already have a connect()
-            connect(peer.get(), &PeerConnection::disconnectedFromPeer,
-                    this, &Contact::onDisconnectedFromPeer);
-        }
-
-        connect(peer.get(), &PeerConnection::receivedAck,
-                this, &Contact::onReceivedAck);
+        connection_ = make_unique<Connection>(peer, *this);
     }
 
+    if (connection_->peer->getDirection() == PeerConnection::INCOMING) {
+        // For outgoing connections, we already have a connect()
+        connect(peer.get(), &PeerConnection::disconnectedFromPeer,
+                this, &Contact::onDisconnectedFromPeer);
+    }
+
+    connect(connection_->peer.get(), &PeerConnection::receivedAck,
+            this, &Contact::onReceivedAck);
+
+    connect(connection_->peer.get(), &PeerConnection::addmeRequest,
+            this, &Contact::onAddmeRequest);
+
     setOnlineStatus(ONLINE);
+
+    touchLastSeen();
+}
+
+void Contact::onIncomingPeer(const std::shared_ptr<PeerConnection> &peer)
+{
+    if (getState() == BLOCKED) {
+        LFLOG_DEBUG << "Peer " << getName() << " is BLOCKED. Disconnecting";
+        peer->authorize(false);
+        return;
+    }
+
+    connect(peer.get(), &PeerConnection::connectedToPeer,
+            this, &Contact::onConnectedToPeer);
+
+    peer->authorize(true);
 }
 
 void Contact::onDisconnectedFromPeer(const std::shared_ptr<PeerConnection>& peer)
@@ -539,6 +564,8 @@ void Contact::onProcessOnlineLater()
 
 void Contact::onReceivedAck(const PeerAck &ack)
 {
+    touchLastSeen();
+
     if (!isPeerVerified()) {
         LFLOG_DEBUG << "Received Ack from unverified peer on connection "
                     << ack.connectionId.toString();
@@ -554,7 +581,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
     }
 
     if (ack.what == "AddMe") {
-        if (ack.status == "Accepted") {
+        if (ack.status == "Added") {
             setState(ACCEPTED);
             emit processOnlineLater();
         } else if (ack.status == "Pending") {
@@ -563,6 +590,12 @@ void Contact::onReceivedAck(const PeerAck &ack)
         } else if (ack.status == "Rejected") {
             setState(REJECTED);
             ack.peer->close();
+        } else {
+            LFLOG_WARN << "Received unsupported ack.status from Contact "
+                       << getName()
+                       << " at Identity "
+                       << getIdentity()->getName()
+                       << ". Ignoring the message.";
         }
     }
 }
@@ -570,6 +603,8 @@ void Contact::onReceivedAck(const PeerAck &ack)
 void Contact::onAddmeRequest(const PeerAddmeReq &req)
 {
     Q_UNUSED(req)
+
+    touchLastSeen();
 
     if (!isPeerVerified()) {
         if (connection_ && isOnline()) {
@@ -597,7 +632,7 @@ void Contact::onAddmeRequest(const PeerAddmeReq &req)
 Contact::Connection::~Connection()
 {
     if (auto identity = owner.getIdentity()) {
-        if (status == ONLINE) {
+        if (peer->isConnected()) {
             LFLOG_DEBUG << "Disconnecting from " << owner.getName()
                         << " at " << owner.getAddress()
                         << " connection "  << peer->getConnectionId().toString();

@@ -83,7 +83,7 @@ TorServiceInterface::connectToService(const QByteArray &host, const uint16_t por
     connect(client.get(), &core::PeerConnection::disconnectedFromPeer,
             this, [this](const std::shared_ptr<core::PeerConnection>& peer) {
         peers_.erase(peer->getConnectionId());
-    });
+    }, Qt::QueuedConnection);
 
     connection->setProxy(getTorProxy());
     connection->connectToHost(host, port);

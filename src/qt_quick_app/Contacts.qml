@@ -7,7 +7,7 @@ import com.jgaa.darkspeak 1.0
 Page {
     id: root
     header: Label {
-        text: qsTr("Contacts")
+        text: qsTr("Contacts for ") + identities.current.name
         font.pixelSize: Qt.application.font.pixelSize * 2
         padding: 10
     }

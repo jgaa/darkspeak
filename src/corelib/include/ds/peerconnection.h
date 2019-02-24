@@ -85,6 +85,7 @@ public:
     virtual QUuid getIdentityId() const noexcept = 0;
     virtual void close() = 0;
     virtual uint64_t sendAck(const QString& what, const QString& status) = 0;
+    virtual bool isConnected() const noexcept = 0;
 
 signals:
     void connectedToPeer(const std::shared_ptr<PeerConnection>& peer);

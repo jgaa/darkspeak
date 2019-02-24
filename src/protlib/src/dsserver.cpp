@@ -33,7 +33,7 @@ void DsServer::authorize(bool authorize)
         LFLOG_DEBUG << "Connection " << connection_->getUuid().toString()
                     << " was not authorized to proceed. Closing.";
         state_ = State::UNAUTHORIZED;
-        connection_->close();
+        close();
         return;
     }
 
@@ -59,6 +59,7 @@ void DsServer::authorize(bool authorize)
     LFLOG_DEBUG << "The data-stream to " << connection_->getUuid().toString()
                 << " is fully switched to stream-encryption.";
     enableEncryptedStream();
+    emit connectedToPeer(shared_from_this());
 }
 
 

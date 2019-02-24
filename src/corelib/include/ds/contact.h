@@ -75,7 +75,6 @@ public:
         ~Connection();
 
         const PeerConnection::ptr_t peer;
-        OnlineStatus status = DISCONNECTED;
         Contact& owner;
     };
 
@@ -143,6 +142,7 @@ public:
     QDateTime getCreated() const noexcept;
     QDateTime getLastSeen() const noexcept;
     void setLastSeen(const QDateTime& when);
+    void touchLastSeen();
     crypto::DsCert::ptr_t getCert() const noexcept;
     QByteArray getB58EncodedIdetity() const noexcept;
     QByteArray getHandle() const noexcept;
@@ -193,6 +193,7 @@ signals:
 
 public slots:
     void onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer);
+    void onIncomingPeer(const std::shared_ptr<PeerConnection>& peer);
 
 private slots:
     void onDisconnectedFromPeer(const std::shared_ptr<PeerConnection>& peer);
