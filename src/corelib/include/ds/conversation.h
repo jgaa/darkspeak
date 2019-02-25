@@ -24,7 +24,9 @@ public:
     };
     Q_ENUM(Type)
 
-    Conversation(Identity& parent);
+    Conversation(QObject& parent);
+    Conversation(QObject& parent, const QString &name,
+                 const QString &topic, Contact *participant);
 
     Q_PROPERTY(int id READ getId)
     Q_PROPERTY(Type type READ getType)
@@ -61,8 +63,8 @@ public:
     /*! Delete from the database */
     void deleteFromDb();
 
-    static Conversation::ptr_t load(Identity& parent, const QUuid& uuid);
-    static Conversation::ptr_t load(Identity& parent, const QByteArray& hash);
+    static Conversation::ptr_t load(QObject& parent, const QUuid& uuid);
+    static Conversation::ptr_t load(QObject& parent, int identity, const QByteArray& hash);
 
     const char *getTableName() const noexcept { return "conversation"; }
 
@@ -79,9 +81,9 @@ signals:
 public slots:
 
 private:
-    static QString getSelectStatement(const Identity& identity, const QString& where);
+    static QString getSelectStatement(const QString& where);
 
-    static Conversation::ptr_t load(Identity& parent, const std::function<void(QSqlQuery&)>& prepare);
+    static Conversation::ptr_t load(QObject& parent, const std::function<void(QSqlQuery&)>& prepare);
 
     int id_ = {};
     int identity_ = {};
@@ -94,7 +96,6 @@ private:
     QDateTime created_;
     QDateTime lastActivity_;
     int unread_ = {};
-    Identity& parent_;
 };
 
 }}

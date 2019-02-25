@@ -19,6 +19,12 @@ struct ExistsError : public Error
     explicit ExistsError(const QString& what) : Error(what) {}
 };
 
+struct NotFoundError : public Error
+{
+    explicit NotFoundError(const char *what) : Error(what) {}
+    explicit NotFoundError(const QString& what) : Error(what) {}
+};
+
 struct ParseError : public Error
 {
     explicit ParseError(const char *what) : Error(what) {}

@@ -14,10 +14,17 @@ namespace core {
 using namespace std;
 using namespace crypto;
 
-Conversation::Conversation(Identity &parent)
-    : QObject{&parent}, parent_{parent}
+Conversation::Conversation(QObject &parent)
+    : QObject{&parent}
 {
 
+}
+
+Conversation::Conversation(QObject &parent, const QString &name, const QString &topic, Contact *participant)
+    : QObject{&parent}, identity_{participant->getIdentity()->getId()}
+    , name_{name}, topic_{topic}, hash_{participant->getCert()->getHash().toByteArray()}
+{
+    participants_.insert(participant->getUuid());
 }
 
 void Conversation::incrementUnread()
@@ -181,19 +188,20 @@ void Conversation::deleteFromDb()
     }
 }
 
-Conversation::ptr_t Conversation::load(Identity& parent, const QUuid &uuid)
+Conversation::ptr_t Conversation::load(QObject& parent, const QUuid &uuid)
 {
-    return load(parent, [uuid, &parent](QSqlQuery& query) {
-        query.prepare(getSelectStatement(parent, "uuid=:uuid"));
+    return load(parent, [uuid](QSqlQuery& query) {
+        query.prepare(getSelectStatement("uuid=:uuid"));
         query.bindValue(":uuid", uuid);
     });
 }
 
-Conversation::ptr_t Conversation::load(Identity &parent, const QByteArray &hash)
+Conversation::ptr_t Conversation::load(QObject &parent, int identity, const QByteArray &hash)
 {
-    return load(parent, [hash, &parent](QSqlQuery& query) {
-        query.prepare(getSelectStatement(parent, "hash=:hash"));
+    return load(parent, [hash, identity](QSqlQuery& query) {
+        query.prepare(getSelectStatement("hash=:hash AND identity=:identity"));
         query.bindValue(":hash", hash);
+        query.bindValue(":identity", identity);
     });
 }
 
@@ -211,14 +219,13 @@ Contact::ptr_t Conversation::getParticipant()
     throw runtime_error("Not PRIVATE_P2P or participent not found");
 }
 
-QString Conversation::getSelectStatement(const Identity &identity, const QString &where)
+QString Conversation::getSelectStatement(const QString &where)
 {
-     return QStringLiteral("SELECT id, identity, type, name, uuid, hash, participants, topic, created, updated, unread FROM conversation WHERE identity=%1 AND %2")
-             .arg(identity.getId())
+     return QStringLiteral("SELECT id, identity, type, name, uuid, hash, participants, topic, created, updated, unread FROM conversation WHERE %1")
              .arg(where);
 }
 
-Conversation::ptr_t Conversation::load(Identity &parent, const std::function<void (QSqlQuery &)> &prepare)
+Conversation::ptr_t Conversation::load(QObject &parent, const std::function<void (QSqlQuery &)> &prepare)
 {
     QSqlQuery query;
 
@@ -234,7 +241,7 @@ Conversation::ptr_t Conversation::load(Identity &parent, const std::function<voi
     }
 
     if (!query.next()) {
-        throw Error(QStringLiteral("Conversation not found!"));
+        throw NotFoundError(QStringLiteral("Conversation not found!"));
     }
 
     auto ptr = make_shared<Conversation>(parent);

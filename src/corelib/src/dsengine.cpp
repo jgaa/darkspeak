@@ -72,6 +72,11 @@ ContactManager *DsEngine::getContactManager()
     return contactManager_;
 }
 
+ConversationManager *DsEngine::getConversationManager()
+{
+    return conversationManager_;
+}
+
 ProtocolManager &DsEngine::getProtocolMgr(ProtocolManager::Transport)
 {
     assert(tor_mgr_);
@@ -322,6 +327,7 @@ void DsEngine::initialize()
 
     identityManager_ = new IdentityManager(*this);
     contactManager_ = new ContactManager(*this);
+    conversationManager_ = new ConversationManager(*this);
 }
 
 void DsEngine::setState(DsEngine::State state)
