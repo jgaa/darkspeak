@@ -22,7 +22,7 @@ Conversation::Conversation(QObject &parent)
 
 Conversation::Conversation(QObject &parent, const QString &name, const QString &topic, Contact *participant)
     : QObject{&parent}, identity_{participant->getIdentity()->getId()}
-    , name_{name}, topic_{topic}, hash_{participant->getCert()->getHash().toByteArray()}
+    , name_{name}, topic_{topic}, hash_{calculateHash(*participant)}
 {
     participants_.insert(participant->getUuid());
 }
@@ -51,14 +51,21 @@ QUuid Conversation::getUuid() const noexcept
 
 Conversation::participants_t Conversation::getParticipants() const
 {
-    participants_t rval;
-    rval.reserve(participants_.size());
+    // Lazy load
+    if (real_perticipants_.empty()) {
+        real_perticipants_.reserve(participants_.size());
 
-    for(const auto& uuid  : participants_) {
-        rval.emplace_back(DsEngine::instance().getContactManager()->getContact(uuid));
+        for(const auto& uuid  : participants_) {
+            real_perticipants_.emplace_back(DsEngine::instance().getContactManager()->getContact(uuid));
+        }
     }
 
-    return rval;
+    return real_perticipants_;
+}
+
+Contact *Conversation::getFirstParticipant() const
+{
+    return getParticipant().get();
 }
 
 QString Conversation::getTopic() const noexcept  {
@@ -93,6 +100,11 @@ void Conversation::setLastActivity(const QDateTime &when)
     updateIf("updated", when, lastActivity_, this, &Conversation::lastActivityChanged);
 }
 
+void Conversation::touchLastActivity()
+{
+    setLastActivity(DsEngine::getSafeNow());
+}
+
 int Conversation::getUnread() const noexcept
 {
     return unread_;
@@ -101,6 +113,11 @@ int Conversation::getUnread() const noexcept
 void Conversation::setUnread(const int value)
 {
     updateIf("unread", value, unread_, this, &Conversation::unredChanged);
+}
+
+int Conversation::getIdentityId() const noexcept
+{
+    return identity_;
 }
 
 void Conversation::addToDb()
@@ -163,7 +180,7 @@ void Conversation::addToDb()
     query.bindValue(":hash", hash_);
 
     if(!query.exec()) {
-        throw Error(QStringLiteral("Failed to add Contact: %1").arg(
+        throw Error(QStringLiteral("Failed to load Conversation: %1").arg(
                         query.lastError().text()));
     }
 
@@ -205,7 +222,7 @@ Conversation::ptr_t Conversation::load(QObject &parent, int identity, const QByt
     });
 }
 
-Contact::ptr_t Conversation::getParticipant()
+Contact::ptr_t Conversation::getParticipant() const
 {
     if (getType() == PRIVATE_P2P) {
         auto participants = getParticipants();
@@ -216,7 +233,22 @@ Contact::ptr_t Conversation::getParticipant()
         }
     }
 
-    throw runtime_error("Not PRIVATE_P2P or participent not found");
+    throw runtime_error("Not PRIVATE_P2P or participant not found");
+}
+
+QByteArray Conversation::calculateHash(const Contact &contact)
+{
+    const auto h1 = contact.getCert()->getHash().toByteArray();
+    const auto h2 = contact.getIdentity()->getCert()->getHash().toByteArray();
+
+    QByteArray hash;
+    if (h1 > h2) {
+        crypto::createHash(hash, {h1, h2});
+    } else {
+        crypto::createHash(hash, {h2, h1});
+    }
+
+    return hash;
 }
 
 QString Conversation::getSelectStatement(const QString &where)

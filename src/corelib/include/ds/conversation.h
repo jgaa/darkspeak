@@ -12,7 +12,7 @@ namespace core {
 
 class Identity;
 
-class Conversation : public QObject
+class Conversation : public QObject, public std::enable_shared_from_this<Conversation>
 {
     Q_OBJECT
 public:
@@ -33,6 +33,7 @@ public:
     Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
     Q_PROPERTY(QUuid uuid READ getUuid)
     Q_PROPERTY(participants_t participants READ getParticipants NOTIFY participantsChanged)
+    Q_PROPERTY(Contact *participant READ getFirstParticipant NOTIFY participantsChanged) // p2p
     Q_PROPERTY(QString topic READ getTopic WRITE setTopic NOTIFY topicChanged)
     Q_PROPERTY(QDateTime created READ getCreated)
     Q_PROPERTY(QDateTime lastActiviry READ getLastActivity NOTIFY lastActivityChanged)
@@ -45,6 +46,7 @@ public:
     void setName(const QString& name);
     QUuid getUuid() const noexcept;
     participants_t getParticipants() const;
+    Contact *getFirstParticipant() const;
     QString getTopic() const noexcept;
     void setTopic(const QString& topic);
     Type getType() const noexcept;
@@ -55,6 +57,7 @@ public:
     void touchLastActivity();
     int getUnread() const noexcept;
     void setUnread(const int value);
+    int getIdentityId() const noexcept;
 
 
     /*! Add the new Conversation to the database. */
@@ -69,7 +72,9 @@ public:
     const char *getTableName() const noexcept { return "conversation"; }
 
     // Only valid for PRIVATE_P2P conversations
-    Contact::ptr_t getParticipant();
+    Contact::ptr_t getParticipant() const;
+
+    static QByteArray calculateHash(const Contact& contact);
 
 signals:
     void nameChanged();
@@ -90,6 +95,7 @@ private:
     QString name_;
     QUuid uuid_;
     std::set<QUuid> participants_;
+    mutable participants_t real_perticipants_;
     QString topic_;
     Type type_ = PRIVATE_P2P;
     QByteArray hash_;

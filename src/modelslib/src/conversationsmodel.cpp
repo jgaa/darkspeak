@@ -18,35 +18,180 @@ using namespace ds::core;
 namespace ds {
 namespace models {
 
-
-ConversationsModel::ConversationsModel(QSettings& settings)
-    : settings_{settings}
+ConversationsModel::ConversationsModel(QObject &parent)
+    : QAbstractListModel{&parent}
+    , identityManager_{*DsEngine::instance().getIdentityManager()}
+    , conversationManager_{*DsEngine::instance().getConversationManager()}
+    , contactManager_{*DsEngine::instance().getContactManager()}
 {
-    setTable("conversation");
-    setSort(fieldIndex("name"), Qt::AscendingOrder);
-    setEditStrategy(QSqlTableModel::OnFieldChange);
+    connect(&conversationManager_,
+            &ConversationManager::conversationAdded,
+            this, &ConversationsModel::onConversationAdded);
 
-    h_id_ = fieldIndex("id");
-    h_identity_ = fieldIndex("identity");
-    h_type_ = fieldIndex("type");
-    h_name_ = fieldIndex("name");
-    h_uuid_ = fieldIndex("uuid");
-    h_key_ = fieldIndex("key");
-    h_participants_ = fieldIndex("participants");
-    h_topic_ = fieldIndex("topic");
+    connect(&conversationManager_,
+            &ConversationManager::conversationDeleted,
+            this, &ConversationsModel::onConversationDeleted);
+
+    connect(&conversationManager_,
+            &ConversationManager::conversationTouched,
+            this, &ConversationsModel::onConversationTouched);
+
 }
 
-bool ConversationsModel::keyExists(QByteArray key) const
+void ConversationsModel::setIdentity(const QUuid &uuid)
 {
-    LFLOG_DEBUG << "Checking if key exists: " << key.toBase64();
+    beginResetModel();
+
+    rows_.clear();
+    identity_ = identityManager_.identityFromUuid(uuid);
+
+    if (identity_ != nullptr) {
+        queryRows(rows_);
+    }
+
+    currentRow_ = -1;
+
+    endResetModel();
+}
+
+void ConversationsModel::setCurrent(Conversation *conversation)
+{
+    int row = 0;
+    for(auto& r : rows_) {
+        // Lazy loading
+        if (!r.conversation) {
+            r.conversation = conversationManager_.getConversation(r.uuid);
+        }
+
+        if (r.conversation.get() == conversation) {
+            setCurrentRow(row);
+            return;
+        }
+
+        ++row;
+    }
+}
+
+
+int ConversationsModel::getCurrentRow() const noexcept
+{
+    return currentRow_;
+}
+
+void ConversationsModel::setCurrentRow(int row)
+{
+    if (row != currentRow_) {
+        currentRow_ = row;
+        LFLOG_DEBUG << "Emitting: currentRowChanged";
+        emit currentRowChanged();
+    }
+}
+
+void ConversationsModel::onConversationAdded(const Conversation::ptr_t &conversation)
+{
+    if (!identity_) {
+        return;
+    }
+
+    if (conversation->getIdentityId() != identity_->getId()) {
+        return;
+    }
+
+    rows_t r;
+    queryRows(r);
+
+    // Always add at top
+    beginInsertRows({}, 0, 0);
+    rows_.emplace(rows_.begin(), conversation->getUuid());
+    endInsertRows();
+}
+
+// Move to top of list
+void ConversationsModel::onConversationTouched(const Conversation::ptr_t &conversation)
+{
+    const auto uuid = conversation->getUuid();
+    int rowid = 0;
+    for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
+        if (it->uuid == uuid) {
+            if (rowid) {
+                beginMoveRows({}, rowid, rowid, {}, 0);
+                rows_.push_front(move(*it));
+                rows_.erase(it);
+                endMoveRows();
+            }
+            return;
+        }
+    }
+}
+
+void ConversationsModel::onConversationDeleted(const QUuid &uuid)
+{
+    int rowid = 0;
+    for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
+        if (it->uuid == uuid) {
+            beginRemoveRows({}, rowid, rowid);
+            rows_.erase(it);
+            endRemoveRows();
+            return;
+        }
+    }
+}
+
+
+int ConversationsModel::rowCount(const QModelIndex &parent) const
+{
+    Q_UNUSED(parent);
+    return static_cast<int>(rows_.size());
+}
+
+QVariant ConversationsModel::data(const QModelIndex &ix, int role) const
+{
+    if (ix.isValid() && ix.column() == 0 && role == Qt::DisplayRole) {
+        auto &r = rows_.at(static_cast<size_t>(ix.row()));
+
+        // Lazy loading
+        if (!r.conversation) {
+            r.conversation = conversationManager_.getConversation(r.uuid);
+        }
+
+        assert(identity_ != nullptr);
+        assert(identity_->getId() == r.conversation->getIdentityId());
+
+        return QVariant::fromValue<ds::core::Conversation *>(r.conversation.get());
+    }
+
+    return {};
+}
+
+QHash<int, QByteArray> ConversationsModel::roleNames() const
+{
+    static const QHash<int, QByteArray> names = {
+        {Qt::DisplayRole, "conversation"},
+    };
+
+    return names;
+}
+
+void ConversationsModel::queryRows(ConversationsModel::rows_t &rows)
+{
+    if (!identity_) {
+        return;
+    }
 
     QSqlQuery query;
-    query.prepare("SELECT 1 from conversation where key=:key");
-    query.bindValue(":key", key);
+    query.prepare("SELECT uuid FROM conversation WHERE identity=:identity ORDER BY updated DESC");
+    query.bindValue(":identity", identity_->getId());
+
     if(!query.exec()) {
-        throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
+        throw Error(QStringLiteral("Failed to add Conversation: %1").arg(
+                        query.lastError().text()));
     }
-    return query.next();
+
+    // Populate
+    while(query.next()) {
+        rows.emplace_back(query.value(0).toUuid());
+    }
 }
+
 
 }} // namespaces

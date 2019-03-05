@@ -1,42 +1,73 @@
 #ifndef CONVERSATIONSMODEL_H
 #define CONVERSATIONSMODEL_H
 
+#include <deque>
+
 #include <QSettings>
-#include <QSqlTableModel>
+#include <QAbstractListModel>
 #include <QImage>
 #include <QMetaType>
 
-#include "ds/contact.h"
+#include "ds/conversationmanager.h"
+#include "ds/contactmanager.h"
+#include "ds/identitymanager.h"
+#include "ds/conversation.h"
 
 namespace ds {
 namespace models {
 
-class ConversationsModel : public QSqlTableModel
+class ConversationsModel : public QAbstractListModel
 {
-public:
-    enum class Type {
-        PRIVATE_P2P,
+    Q_OBJECT
+
+    struct Row {
+        Row(QUuid&& uuidVal) : uuid{std::move(uuidVal)} {}
+        Row(Row&&) = default;
+        Row(const Row&) = default;
+        Row& operator = (const Row&) = default;
+
+        mutable core::Conversation::ptr_t conversation;
+        QUuid uuid;
     };
 
-    ConversationsModel(QSettings& settings);
+    using rows_t = std::deque<Row>;
+public:
 
-    bool keyExists(QByteArray key) const;
+    ConversationsModel(QObject& parent);
+
+    Q_PROPERTY(int currentRow READ getCurrentRow WRITE setCurrentRow NOTIFY currentRowChanged)
+
+    // Set the identity to work with
+    Q_INVOKABLE void setIdentity(const QUuid& uuid);
+    Q_INVOKABLE void setCurrent(ds::core::Conversation *conversation);
+
+    int getCurrentRow() const noexcept;
+    void setCurrentRow(int row);
+
+signals:
+    void currentRowChanged();
 
 public slots:
-    void onConversationCreated(/*const ds::core::Contact& contact*/);
+    void onConversationAdded(const core::Conversation::ptr_t& conversation);
+    void onConversationTouched(const core::Conversation::ptr_t& conversation);
+    void onConversationDeleted(const QUuid& uuid);
+
+    // QAbstractItemModel interface
+public:
+    int rowCount(const QModelIndex &parent) const override;
+    QVariant data(const QModelIndex &index, int role) const override;
+    QHash<int, QByteArray> roleNames() const override;
+
 
 private:
-    int h_id_ = {};
-    int h_identity_ = {};
-    int h_type_ = {};
-    int h_uuid_ = {};
-    int h_key_ = {};
-    int h_participants_ = {};
-    int h_topic_ = {};
-    int h_name_= {};
+    void queryRows(rows_t& rows);
 
-    QSettings& settings_;
-
+    rows_t rows_;
+    core::IdentityManager& identityManager_;
+    core::ConversationManager& conversationManager_;
+    core::ContactManager& contactManager_;
+    core::Identity *identity_ = {}; // Active identity
+    int currentRow_ = -1;
 };
 
 }} // namespaces

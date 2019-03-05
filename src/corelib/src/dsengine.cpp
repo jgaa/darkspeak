@@ -77,6 +77,11 @@ ConversationManager *DsEngine::getConversationManager()
     return conversationManager_;
 }
 
+MessageManager *DsEngine::getMessageManager()
+{
+    return messageManager_;
+}
+
 ProtocolManager &DsEngine::getProtocolMgr(ProtocolManager::Transport)
 {
     assert(tor_mgr_);
@@ -129,6 +134,14 @@ void DsEngine::whenOnline(std::function<void ()> fn)
     } else {
         when_online_.append(move(fn));
     }
+}
+
+QDateTime DsEngine::getSafeNow() noexcept
+{
+    auto secs = QDateTime::currentDateTime().currentSecsSinceEpoch();
+    secs /= 60;
+    secs *= 60;
+    return QDateTime::fromSecsSinceEpoch(secs);
 }
 
 void DsEngine::online()
@@ -284,7 +297,10 @@ void DsEngine::initialize()
         qRegisterMetaType<ds::core::Identity *>("Identity *");
         qRegisterMetaType<ds::core::Contact *>("Contact *");
         qRegisterMetaType<ds::core::Conversation *>("Conversation *");
+        qRegisterMetaType<ds::core::Conversation::ptr_t>("ds::core::Conversation::ptr_t");
         qRegisterMetaType<ds::core::PeerConnection::ptr_t>("ds::core::PeerConnection::ptr_t");
+        qRegisterMetaType<ds::core::Conversation *>("Message *");
+        qRegisterMetaType<ds::core::Conversation *>("MessageData");
     }
 
     auto data_path = QStandardPaths::writableLocation(
@@ -328,6 +344,7 @@ void DsEngine::initialize()
     identityManager_ = new IdentityManager(*this);
     contactManager_ = new ContactManager(*this);
     conversationManager_ = new ConversationManager(*this);
+    messageManager_ = new MessageManager(*this);
 }
 
 void DsEngine::setState(DsEngine::State state)

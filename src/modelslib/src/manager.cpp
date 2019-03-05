@@ -36,6 +36,11 @@ NotificationsModel *Manager::notificationsModel()
     return notifications_.get();
 }
 
+ConversationsModel *Manager::conversationsModel()
+{
+    return conversationsModel_.get();
+}
+
 void Manager::textToClipboard(QString text)
 {
     auto cb = QGuiApplication::clipboard();
@@ -122,11 +127,9 @@ Manager::Manager()
     log_ = make_unique<LogModel>(engine_->settings());
     contacts_ = make_unique<ContactsModel>(*this);
     notifications_ = make_unique<NotificationsModel>(engine_->settings());
+    conversationsModel_ = make_unique<ConversationsModel>(*this);
 
     instance_ = this;
-
-//    connect(notifications_.get(), &NotificationsModel::contactAccepted,
-//            contacts_.get(), &ContactsModel::onContactAccepted);
 }
 
 Manager::AppState Manager::getAppState() const

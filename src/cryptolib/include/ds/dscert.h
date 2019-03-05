@@ -109,7 +109,7 @@ public:
         }
         Tsign sign = signature; // libsodium wants non-const signature
         const auto result = crypto_sign_final_verify(&state,
-                                                     sign.data(),
+                                                     reinterpret_cast<unsigned char *>(sign.data()),
                                                      getSigningPubKey().cdata());
         return result == 0;
     }

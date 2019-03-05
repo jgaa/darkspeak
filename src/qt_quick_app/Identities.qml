@@ -25,9 +25,10 @@ Page {
 
         onCurrentItemChanged: {
             identities.setCurrentIdentity(currentIndex)
-            // This is where we synchronize the Contacts with the current selected identity
-            contacts.setIdentity(currentIdentity.uuid);
 
+            // This is where we synchronize the Contacts and conversations with the current selected identity
+            contacts.setIdentity(currentIdentity.uuid)
+            conversations.setIdentity(currentIdentity.uuid)
         }
 
         delegate: Item {

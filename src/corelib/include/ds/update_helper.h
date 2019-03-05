@@ -26,12 +26,15 @@ void update(T *self, const char *name, const QVariant& value) {
 }
 
 template <typename T, typename Obj, typename S>
-void updateIf(const char *name, const T& value, T& target, Obj *self, const S& signal) {
+bool updateIf(const char *name, const T& value, T& target, Obj *self, const S& signal) {
     if (value != target) {
         target = value;
         update(self, name, target);
         emit (self->*signal)();
+        return true;
     }
+
+    return false;
 }
 
 }}

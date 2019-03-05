@@ -35,8 +35,8 @@ class ContactsModel : public QAbstractListModel
         QUuid uuid;
     };
 
-public:
     using rows_t = std::deque<Row>;
+public:
 
     ContactsModel(QObject& parent);
 

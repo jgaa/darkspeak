@@ -1,83 +1,63 @@
 #ifndef MESSAGEMODEL_H
 #define MESSAGEMODEL_H
 
+#include <deque>
+
 #include <QSettings>
-#include <QSqlTableModel>
+#include <QAbstractListModel>
 
 #include "ds/identity.h"
 #include "ds/message.h"
+#include "ds/conversation.h"
 
 namespace ds {
 namespace models {
 
-class MessageModel : public QSqlTableModel
+class MessageModel : public QAbstractListModel
 {
     Q_OBJECT
+
+    struct Row {
+        Row(int idVal) : id{idVal} {}
+        Row(int idVal, std::shared_ptr<core::MessageContent> data) : id{idVal}, data_{std::move(data)} {}
+        Row(Row&&) = default;
+        Row(const Row&) = default;
+        Row& operator = (const Row&) = default;
+
+        int id;
+        mutable std::shared_ptr<core::MessageContent> data_;
+    };
+
+    enum Cols {
+        H_ID = Qt::UserRole, H_CONTENT, H_COMPOSED, H_DIRECTION, H_RECEIVED
+    };
 public:
 
-    // Message, with some extra fields to reference database id's
-    class ModelMessage : public ds::core::Message {
-    public:
-        int conversation_id = {};
-        int contact_id = {};
-    };
+    using rows_t = std::deque<Row>;
 
-    enum Headers {
-        H_ID,
-        H_DIRECTION,
-        H_COMPOSED_TIME,
-        H_SENT_TIME,
-        H_RECEIVED_TIME,
-        H_CONTENT,
-        H_SENDER,
-        H_ENCODING
-    };
+    MessageModel(QObject& parent);
 
-    MessageModel(QSettings& settings);
+    Q_INVOKABLE void setConversation(core::Conversation *conversation);
 
-signals:
-    void outgoingMessage(const core::Message& msg);
+    // QAbstractItemModel interface
+public:
+    QVariant data(const QModelIndex &index, int role) const override;
+    int rowCount(const QModelIndex &parent) const override;
+    QHash<int, QByteArray> roleNames() const override;
 
-public slots:
 
-    /*! Save a message
-     *
-     */
-    void save(const ds::core::Message& message);
-
-    /*! Send a message
-     *
-     * This method is used by the UI to send a message. The message
-     * is delivered to the dsengine where it is processed and
-     * returned for storage trough a messageCreated signal.
-     */
-    void sendMessage(const QString& content,
-                     const core::Identity& from,
-                     const QByteArray& conversation);
-
-    /*! Notification that an outbound message is delivered. */
-    void onMessageSent(const int id);
-
-    void setConversation(int conversationId, const QByteArray& conversation);
+private slots:
+    void onMessageAdded(const core::Message::ptr_t& message);
+    void onMessageDeleted(const core::Message::ptr_t& message);
+    void onMessageReceivedDateChanged(const core::Message::ptr_t& message);
 
 private:
-    QSettings& settings_;
-    QString conversation_;
-    int conversation_id_ = {};
+    void queryRows(rows_t& rows);
+    std::shared_ptr<core::MessageContent> loadData(const int id) const;
+    std::shared_ptr<core::MessageContent> loadData(const core::Message& message) const;
 
-
-    int h_id_ = {};
-    int h_direction_ = {};
-    int h_conversation_id_ = {};
-    int h_conversation_ = {};
-    int h_message_id_ = {};
-    int h_composed_time_ = {};
-    int h_sent_time_ = {};
-    int h_received_time_ = {};
-    int h_content_ = {};
-    int h_signature_ = {};
-    int h_sender_ = {};
-    int h_encoding_ = {};
+    rows_t rows_;
+    core::Conversation::ptr_t conversation_;
 };
 
 }} // namespaces

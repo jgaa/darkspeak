@@ -32,7 +32,8 @@ SOURCES += \
     src/contact.cpp \
     src/contactmanager.cpp \
     src/conversation.cpp \
-    src/conversationmanager.cpp
+    src/conversationmanager.cpp \
+    src/messagemanager.cpp
 
 HEADERS += \
     include/ds/dsengine.h \
@@ -51,7 +52,8 @@ HEADERS += \
     include/ds/peerconnection.h \
     include/ds/conversation.h \
     include/ds/conversationmanager.h \
-    include/ds/lru_cache.h
+    include/ds/lru_cache.h \
+    include/ds/messagemanager.h
 
 INCLUDEPATH += \
     $$PWD/../../dependencies/logfault/include \

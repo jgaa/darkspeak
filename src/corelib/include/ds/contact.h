@@ -19,25 +19,7 @@ namespace ds {
 namespace core {
 
 class Identity;
-
-//Q_NAMESPACE
-//enum InitiatedBy {
-//    IB_ME,
-//    IB_THEM
-//};
-
-//Q_ENUM_NS(InitiatedBy)
-
-//enum ContactState {
-//    CS_PENDING, // Never successfully connected to peers address
-//    CS_WAITING_FOR_ACCEPTANCE, // We have sent addme, Waiting for ack
-//    CS_ACCEPTED, // We have experienced connectins in both directions, and received and / or sent ack
-//    CS_REJECTED,
-//    CS_BLOCKED
-//};
-
-//Q_ENUM_NS(ContactState)
-
+class Conversation;
 struct ContactData;
 
 /*! Representation of a contact.
@@ -118,6 +100,7 @@ public:
 
     Q_INVOKABLE void connectToContact();
     Q_INVOKABLE void disconnectFromContact();
+    Q_INVOKABLE Conversation *getDefaultConversation();
 
     static Contact::ptr_t load(QObject& parent, const QUuid &uuid);
 
@@ -276,5 +259,6 @@ struct ContactData {
 }} // namepsaces
 
 Q_DECLARE_METATYPE(ds::core::Contact *)
+
 
 #endif // CONTACT_H

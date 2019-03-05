@@ -20,100 +20,194 @@ using namespace ds::crypto;
 namespace ds {
 namespace models {
 
-MessageModel::MessageModel(QSettings &settings)
-    : settings_{settings}
+MessageModel::MessageModel(QObject &parent)
+    : QAbstractListModel(&parent)
 {
-    setTable("message");
-    setSort(fieldIndex("id"), Qt::AscendingOrder);
-    //setEditStrategy(QSqlTableModel::OnFieldChange);
-
-    // Show nothing until we get a conversation to work with
-    setFilter("conversation_id = -1");
-
-    h_id_ = fieldIndex("id");
-    h_direction_ = fieldIndex("direction");
-    h_conversation_id_ = fieldIndex("conversation_id");
-    h_conversation_ = fieldIndex("conversation");
-    h_message_id_ = fieldIndex("message_id");
-    h_composed_time_ = fieldIndex("composed_time");
-    h_sent_time_ = fieldIndex("sent_time");
-    h_received_time_= fieldIndex("received_time");
-    h_content_ = fieldIndex("content");
-    h_signature_ = fieldIndex("signature");
-    h_sender_ = fieldIndex("sender");
-    h_encoding_ = fieldIndex("encoding");
-
-    select();
+    auto mgr = DsEngine::instance().getMessageManager();
+    connect(mgr, &MessageManager::messageAdded,
+            this, &MessageModel::onMessageAdded);
+    connect(mgr, &MessageManager::messageDeleted,
+            this, &MessageModel::onMessageDeleted);
+    connect(mgr, &MessageManager::messageReceivedDateChanged,
+            this, &MessageModel::onMessageReceivedDateChanged);
 }
 
-void MessageModel::save(const ds::core::Message& message)
+void MessageModel::setConversation(Conversation *conversation)
 {
-    QString sql = "INSERT INTO message (direction, conversation_id, conversation, message_id, "
-            "composed_time, sent_time, received_time, content, signature, sender, encoding) "
-                  "VALUES (:direction, :conversation_id, :conversation, :message_id, "
-            ":composed_time, :sent_time, :received_time, :content, :signature, :sender, :encoding)";
-
-    QSqlQuery query;
-    query.prepare(sql);
-
-    query.bindValue(":direction", static_cast<int>(message.direction));
-    query.bindValue(":conversation_id", conversation_id_);
-    query.bindValue(":conversation", message.conversation);
-    query.bindValue(":message_id", message.message_id);
-    query.bindValue(":composed_time", message.composed_time.toTime_t());
-    query.bindValue(":sent_time", message.sent_time.toTime_t());
-    query.bindValue(":received_time", message.received_time.toTime_t());
-    query.bindValue(":content", message.content);
-    query.bindValue(":signature", message.signature);
-    query.bindValue(":sender", message.sender);
-    query.bindValue(":encoding", static_cast<int>(message.encoding));
-
-    if (!query.exec()) {
-        qWarning() << "Failed to add message. error:  " << query.lastError()
-                   << ". Query: " << query.lastQuery();
+    if (conversation != conversation_.get()) {
+        return;
     }
 
-    select();
+    conversation_ = conversation ? conversation->shared_from_this() : nullptr;
+
+    beginResetModel();
+
+    rows_.clear();
+    queryRows(rows_);
+
+    endResetModel();
 }
 
-void MessageModel::sendMessage(const QString &content,
-                               const core::Identity& sender,
-                               const QByteArray &conversation)
+int MessageModel::rowCount(const QModelIndex &parent) const
 {
-    ModelMessage msg;
-    msg.init();
-
-    // TODO: Support usascii as an alternative
-    msg.content = content.toUtf8();
-    msg.encoding = Encoding::UTF8;
-
-    msg.sender = sender.getHash();
-    msg.conversation = conversation;
-
-    msg.sign(*sender.getCert());
-
-    save(msg);
-
-    // TODO: Connect dsengine
-    emit outgoingMessage(msg);
+    Q_UNUSED(parent)
+    return static_cast<int>(rows_.size());
 }
 
-void MessageModel::onMessageSent(const int id)
+QVariant MessageModel::data(const QModelIndex &ix, int role) const
 {
-    // TODO: Optimize. Only reload if we are viewing this conversation
+    if (!ix.isValid()) {
+        return {};
+    }
 
-    Q_UNUSED(id);
+    auto &r = rows_.at(static_cast<size_t>(ix.row()));
+    // Lazy loading
+    if (!r.data_) {
+        r.data_ = loadData(r.id);
+    }
 
-    select();
+    switch(role) {
+    case H_ID:
+        return r.id;
+    case H_CONTENT:
+        return r.data_->content;
+    case H_COMPOSED:
+        return r.data_->composedTime;
+    case H_DIRECTION:
+        return r.data_->direction;
+    case H_RECEIVED:
+        return r.data_->sentReceivedTime;
+    }
+
+    return QAbstractListModel::data(ix, role);
 }
 
-void MessageModel::setConversation(int conversationId, const QByteArray &conversation)
+QHash<int, QByteArray> MessageModel::roleNames() const
 {
-    conversation_ = conversation;
-    conversation_id_ = conversationId;
+    static const QHash<int, QByteArray> names = {
+        {H_ID, "messageId"},
+        {H_CONTENT, "content"},
+        {H_COMPOSED, "composedTime"},
+        {H_DIRECTION, "direction"},
+        {H_RECEIVED, "receivedTime"}
+    };
 
-    QString filter = QString("conversation_id =") + QString::number(conversation_id_);
-    setFilter(filter);
+    return names;
 }
+
+void MessageModel::onMessageAdded(const Message::ptr_t &message)
+{
+    if (!conversation_ || (conversation_->getId() != message->getConversationId())) {
+        return; // Irrelevant
+    }
+
+    // Always add at the end
+    const int rowid = static_cast<int>(rows_.size());
+    beginInsertRows({}, rowid, rowid);
+    rows_.push_back({message->getId(), loadData(*message)});
+    endInsertRows();
+}
+
+void MessageModel::onMessageDeleted(const Message::ptr_t &message)
+{
+    if (!conversation_ || (conversation_->getId() != message->getConversationId())) {
+        return; // Irrelevant
+    }
+
+    const int messageId = message->getId();
+    int rowid = 0;
+    for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
+        if (it->id == messageId) {
+            beginRemoveRows({}, rowid, rowid);
+            rows_.erase(it);
+            endRemoveRows();
+            return;
+        }
+    }
+}
+
+void MessageModel::onMessageReceivedDateChanged(const Message::ptr_t &message)
+{
+    if (!conversation_ || (conversation_->getId() != message->getConversationId())) {
+        return; // Irrelevant
+    }
+
+    const int messageId = message->getId();
+    int rowid = 0;
+    for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
+        if (it->id == messageId) {
+            emit dataChanged({}, index(rowid), {H_RECEIVED});
+            return;
+        }
+    }
+}
+
+void MessageModel::queryRows(MessageModel::rows_t &rows)
+{
+    if (!conversation_) {
+        return;
+    }
+
+    QSqlQuery query;
+    query.prepare("SELECT id FROM message WHERE conversation_id=:cid ORDER BY id");
+    query.bindValue(":cid", conversation_->getId());
+
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to add Conversation: %1").arg(
+                        query.lastError().text()));
+    }
+
+    // Populate
+    while(query.next()) {
+        rows.emplace_back(query.value(0).toInt());
+    }
+}
+
+std::shared_ptr<MessageContent> MessageModel::loadData(const int id) const
+{
+    // TODO: Try to get it from the message cache
+
+    // Read from database
+    QSqlQuery query;
+
+    enum Fields {
+        direction, composed_time, received_time, content
+    };
+
+    query.prepare("SELECT direction, composed_time, received_time, content FROM message where id=:id ");
+    query.bindValue(":id", id);
+
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to fetch Message: %1").arg(
+                        query.lastError().text()));
+    }
+
+    if (!query.next()) {
+        throw NotFoundError(QStringLiteral("Message not found!"));
+    }
+
+    auto ptr = make_shared<MessageContent>();
+
+    ptr->direction = static_cast<Message::Direction>(query.value(direction).toInt());
+    ptr->composedTime = query.value(composed_time).toDateTime();
+    ptr->sentReceivedTime = query.value(received_time).toDateTime();
+    ptr->content = query.value(content).toString();
+
+    return ptr;
+}
+
+std::shared_ptr<MessageContent> MessageModel::loadData(const Message &message) const
+{
+    auto ptr = make_shared<MessageContent>();
+
+    ptr->direction = message.getDirection();
+    ptr->composedTime = message.getComposedTime();
+    ptr->sentReceivedTime = message.getSentReceivedTime();
+    ptr->content = message.getContent();
+
+    return ptr;
+}
+
+
 
 }} // namespaces

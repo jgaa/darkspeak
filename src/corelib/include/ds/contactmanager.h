@@ -9,6 +9,7 @@
 #include "ds/contact.h"
 #include "ds/identity.h"
 #include "ds/registry.h"
+#include "ds/lru_cache.h"
 
 
 namespace ds {
@@ -30,15 +31,14 @@ public:
 signals:
     void contactAdded(const Contact::ptr_t& contact);
     void contactDeleted(const QUuid& contact);
+    void contactTouched(const Contact::ptr_t& contact);
 
 private slots:
     void onContactAddedLater(const Contact::ptr_t& contact);
 
 private:
     Registry<QUuid, Contact> registry_;
-    std::list<Contact::ptr_t> lru_cache_;
-
-    size_t lru_size_ = 32;
+    LruCache<Contact::ptr_t> lru_cache_{3};
 };
 
 }}

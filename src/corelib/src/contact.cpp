@@ -5,6 +5,7 @@
 #include "ds/errors.h"
 #include "ds/update_helper.h"
 #include "ds/errors.h"
+#include "ds/conversation.h"
 
 #include "logfault/logfault.h"
 
@@ -64,6 +65,12 @@ void Contact::connectToContact()
 void Contact::disconnectFromContact()
 {
     connection_.reset();
+}
+
+Conversation *Contact::getDefaultConversation()
+{
+    // The conversation is cached by the LRU, so it's safe to return the pointer
+    return DsEngine::instance().getConversationManager()->getConversation(this).get();
 }
 
 int Contact::getId() const noexcept {
@@ -623,7 +630,7 @@ void Contact::onAddmeRequest(const PeerAddmeReq &req)
     }
 
     if (connection_ && isOnline()) {
-        connection_->peer->sendAck("AddMe", "Accepted");
+        connection_->peer->sendAck("AddMe", "Added");
         setState(ACCEPTED);
         emit processOnlineLater();
     }

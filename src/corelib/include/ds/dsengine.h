@@ -18,6 +18,7 @@
 #include "ds/contactmanager.h"
 #include "ds/conversation.h"
 #include "ds/conversationmanager.h"
+#include "ds/messagemanager.h"
 
 namespace ds {
 namespace core {
@@ -53,6 +54,7 @@ public:
     IdentityManager *getIdentityManager();
     ContactManager *getContactManager();
     ConversationManager *getConversationManager();
+    MessageManager *getMessageManager();
 
     QSettings& settings() noexcept { return *settings_; }
     ProtocolManager& getProtocolMgr(ProtocolManager::Transport transport);
@@ -65,6 +67,8 @@ public:
     static QByteArray getIdentityAsBase58(const crypto::DsCert::ptr_t& cert,
                                           const QByteArray& address);
     void whenOnline(std::function<void ()> fn);
+
+    static QDateTime getSafeNow() noexcept;
 
 public slots:
     void createNewTransport(const QByteArray& name, const QUuid& uuid);
@@ -79,13 +83,8 @@ private slots:
     void onServiceFailed(const QUuid& id, const QByteArray& reason);
     void onServiceStarted(const QUuid& id, const bool newService);
     void onServiceStopped(const QUuid& id);
-//    void onReceivedData(const QUuid& service, const QUuid& connectionId, const quint32 channel,
-//                        const quint64 id, const QByteArray& data);
 
 signals:
-    void identityCreated(Identity *);
-    void identityError(const IdentityError&);
-    void contactCreated(const Contact& contact);
     void ready();
     void notReady(); // If the transport goes offline
     void closing();
@@ -94,15 +93,7 @@ signals:
     void serviceFailed(const QUuid& uuid, const QByteArray& reason);
     void serviceStarted(const QUuid& uuid, const bool newService);
     void serviceStopped(const QUuid& uuid);
-//    void connectedTo(const QUuid& identity, const QUuid& uuid, const ProtocolManager::Direction direction);
-//    void disconnectedFrom(const QUuid& identity, const QUuid& uuid);
-//    void connectionFailed(const QUuid& uuid,
-//                          const QAbstractSocket::SocketError& socketError);
     void incomingPeer(const std::shared_ptr<PeerConnection>& peer);
-//    void receivedData(const QUuid& service, const QUuid& connectionId, const quint32 channel,
-//                      const quint64 id, const QByteArray& data);
-//    void receivedAddMe(const PeerAddmeReq& req);
-//    void receivedAck(const PeerAck& req);
 
 protected:
     void initialize();
@@ -118,6 +109,7 @@ protected:
     IdentityManager *identityManager_ = nullptr;
     ContactManager *contactManager_ = nullptr;
     ConversationManager *conversationManager_ = nullptr;
+    MessageManager *messageManager_ = nullptr;
 };
 
 }} // namepsaces

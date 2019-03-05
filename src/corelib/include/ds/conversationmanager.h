@@ -34,11 +34,12 @@ public:
      Conversation::ptr_t addConversation(const QString& name, const QString& topic, Contact *participant);
 
     // Put the Conversation at the front of the lru cache
-    void touch(const Conversation::ptr_t& Conversation);
+    void touch(const Conversation::ptr_t& conversation);
 
 signals:
-    void ConversationAdded(const Conversation::ptr_t& conversation);
-    void ConversationDeleted(const QUuid& Conversation);
+    void conversationAdded(const Conversation::ptr_t& conversation);
+    void conversationDeleted(const QUuid& conversation);
+    void conversationTouched(const Conversation::ptr_t& conversation);
 
 private:
     Registry<QUuid, Conversation> registry_;

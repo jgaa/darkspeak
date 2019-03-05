@@ -189,6 +189,12 @@ Page {
                 currentItem.cco.connectToContact();
             }
         }
+
+        function sendMessage() {
+            var cv = currentItem.cco.getDefaultConversation();
+            conversations.setCurrent(cv);
+            manager.currentPage = Manager.CHAT
+        }
     }
 
     Component {
@@ -206,11 +212,17 @@ Page {
         id: contextMenu
 
         MenuItem {
-            id: online
             icon.source: "qrc:///images/onion-bw.svg"
             onTriggered: list.toggleOnline()
             enabled: manager.online
             text: list.currentItem.cco.online ? qsTr("Disconnect") : qsTr("Connect")
+        }
+
+        MenuItem {
+            icon.name: "mail-send"
+            enabled: list.currentItem
+            onTriggered: list.sendMessage()
+            text: qsTr("Send Message")
         }
     }
 }

@@ -42,11 +42,9 @@ void ContactsModel::setIdentity(const QUuid &uuid)
     rows_.clear();
     identity_ = identityManager_.identityFromUuid(uuid);
 
-    if (identity_ == nullptr) {
-        return;
+    if (identity_ != nullptr) {
+        queryRows(rows_);
     }
-
-    queryRows(rows_);
 
     endResetModel();
 }
@@ -86,9 +84,16 @@ void ContactsModel::onContactAdded(const Contact::ptr_t &contact)
     }
 }
 
-void ContactsModel::onContactDeleted(const QUuid &contact)
+void ContactsModel::onContactDeleted(const QUuid &uuid)
 {
-    // TODO: Remove it from the list, notfy UI of changes
+    int rowid = 0;
+    for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
+        if (it->uuid == uuid) {
+            beginRemoveRows({}, rowid, rowid);
+            rows_.erase(it);
+            endRemoveRows();
+        }
+    }
 }
 
 int ContactsModel::rowCount(const QModelIndex &parent) const

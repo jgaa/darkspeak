@@ -52,7 +52,7 @@ void ConversationManager::deleteConversation(const QUuid &uuid)
         auto conversation = getConversation(uuid);
 
         // Remove from model(s)
-        emit ConversationDeleted(uuid);
+        emit conversationDeleted(uuid);
 
         lru_cache_.remove(conversation);
         registry_.remove(uuid);
@@ -61,6 +61,8 @@ void ConversationManager::deleteConversation(const QUuid &uuid)
     } catch (const NotFoundError&) {
         // It's OK
     }
+
+    emit conversationDeleted(uuid);
 }
 
 Conversation::ptr_t ConversationManager::addConversation(const QString &name, const QString &topic, Contact *participant)
@@ -70,13 +72,14 @@ Conversation::ptr_t ConversationManager::addConversation(const QString &name, co
 
     registry_.add(conversation->getUuid(), conversation);
     touch(conversation);
-    emit ConversationAdded(conversation);
+    emit conversationAdded(conversation);
     return conversation;
 }
 
 void ConversationManager::touch(const Conversation::ptr_t &conversation)
 {
     lru_cache_.touch(conversation);
+    conversationTouched(conversation);
 }
 
 
