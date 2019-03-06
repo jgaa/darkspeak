@@ -40,6 +40,7 @@ public:
     Q_PROPERTY(int unread READ getUnread WRITE setUnread NOTIFY unredChanged)
 
     Q_INVOKABLE void incrementUnread();
+    Q_INVOKABLE void sendMessage(const QString& text);
 
     int getId() const noexcept;
     QString getName() const noexcept;
@@ -58,6 +59,7 @@ public:
     int getUnread() const noexcept;
     void setUnread(const int value);
     int getIdentityId() const noexcept;
+    Identity *getIdentity() const;
 
 
     /*! Add the new Conversation to the database. */

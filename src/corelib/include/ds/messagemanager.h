@@ -22,7 +22,7 @@ public:
 
     Message::ptr_t getMessage(int dbId);
     Message::ptr_t getMessage(const QByteArray& messageId);
-    Message::ptr_t addMessage(Conversation& conversation, MessageData data);
+    Message::ptr_t sendMessage(Conversation& conversation, MessageData data);
     void touch(const Message::ptr_t& message);
 
     void onMessageReceivedDateChanged(const Message::ptr_t& message);

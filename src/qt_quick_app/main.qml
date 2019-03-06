@@ -39,8 +39,7 @@ ApplicationWindow {
         Conversations {
         }
 
-        ChatForm {
-
+        Chat {
         }
     }
 

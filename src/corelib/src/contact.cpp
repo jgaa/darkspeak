@@ -271,6 +271,14 @@ int Contact::getIdentityId() const noexcept
     return data_->identity;
 }
 
+void Contact::queueMessage(const Message::ptr_t &message)
+{
+    if (message->getDirection() == Message::OUTGOING) {
+        messageQueue_.push_back(message);
+        procesMessageQueue();
+    }
+}
+
 Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
 {
     QSqlQuery query;
@@ -604,6 +612,24 @@ void Contact::onReceivedAck(const PeerAck &ack)
                        << getIdentity()->getName()
                        << ". Ignoring the message.";
         }
+    }
+}
+
+void Contact::procesMessageQueue()
+{
+    if (isOnline() && !messageQueue_.empty()) {
+        // Send one message. Wait for the socket's buffer to be clear before proceeding with the next
+
+        // TODO: Check ready status on socket
+        try {
+            connection_->peer->sendMessage(*messageQueue_.front());
+        } catch(const std::exception& ex) {
+            LFLOG_WARN << "Caught exception while sending message: " << ex.what();
+            return;
+        }
+
+        unconfirmedMessageQueue_.push_back(move(messageQueue_.front()));
+        messageQueue_.erase(messageQueue_.begin());
     }
 }
 

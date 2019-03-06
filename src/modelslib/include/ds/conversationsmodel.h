@@ -36,6 +36,7 @@ public:
     ConversationsModel(QObject& parent);
 
     Q_PROPERTY(int currentRow READ getCurrentRow WRITE setCurrentRow NOTIFY currentRowChanged)
+    Q_PROPERTY(ds::core::Conversation * current READ getCurrentConversation WRITE setCurrent NOTIFY currentRowChanged)
 
     // Set the identity to work with
     Q_INVOKABLE void setIdentity(const QUuid& uuid);
@@ -43,6 +44,7 @@ public:
 
     int getCurrentRow() const noexcept;
     void setCurrentRow(int row);
+    core::Conversation *getCurrentConversation() const;
 
 signals:
     void currentRowChanged();
@@ -68,6 +70,7 @@ private:
     core::ContactManager& contactManager_;
     core::Identity *identity_ = {}; // Active identity
     int currentRow_ = -1;
+    core::Conversation::ptr_t current_;
 };
 
 }} // namespaces

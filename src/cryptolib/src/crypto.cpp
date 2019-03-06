@@ -64,4 +64,12 @@ QByteArray Crypto::generateId()
     return crypto::Crypto::getSha256(uuid);
 }
 
+QByteArray Crypto::getRandomBytes(const size_t bytes)
+{
+    QByteArray buffer;
+    buffer.resize(static_cast<int>(bytes));
+    randombytes_buf(static_cast<void * const>(buffer.data()), bytes);
+    return buffer;
+}
+
 }} // namespaces

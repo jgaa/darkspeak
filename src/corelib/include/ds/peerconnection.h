@@ -8,10 +8,12 @@
 
 #include "ds/dscert.h"
 
+
 namespace ds{
 namespace core {
 
 class PeerConnection;
+class Message;
 
 struct PeerReq
 {
@@ -86,6 +88,7 @@ public:
     virtual void close() = 0;
     virtual uint64_t sendAck(const QString& what, const QString& status) = 0;
     virtual bool isConnected() const noexcept = 0;
+    virtual uint64_t sendMessage(const Message& message) = 0;
 
 signals:
     void connectedToPeer(const std::shared_ptr<PeerConnection>& peer);

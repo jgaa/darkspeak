@@ -1,4 +1,5 @@
-#include "include/ds/messagemanager.h"
+#include "ds/messagemanager.h"
+#include "ds/dsengine.h"
 
 #include "logfault/logfault.h"
 
@@ -10,7 +11,6 @@ using namespace std;
 MessageManager::MessageManager(QObject &parent)
 : QObject{&parent}
 {
-
 }
 
 Message::ptr_t MessageManager::getMessage(int dbId)
@@ -23,6 +23,27 @@ Message::ptr_t MessageManager::getMessage(int dbId)
     }
 
     touch(message);
+    return message;
+}
+
+Message::ptr_t MessageManager::sendMessage(Conversation &conversation, MessageData data)
+{
+    auto message = make_shared<Message>(*this, data, Message::OUTGOING, conversation.getId());
+
+    assert(conversation.getIdentity());
+
+    auto cert = conversation.getIdentity()->getCert();
+    message->sign(*cert);
+    message->addToDb();
+    registry_.add(message->getId(), message);
+    touch(message);
+
+    emit messageAdded(message);
+
+    if (auto contact = conversation.getFirstParticipant()) {
+        contact->queueMessage(message);
+    }
+
     return message;
 }
 

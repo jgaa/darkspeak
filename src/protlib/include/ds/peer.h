@@ -137,6 +137,7 @@ public:
     QUuid getIdentityId() const noexcept override;
     uint64_t sendAck(const QString& what, const QString& status) override;
     bool isConnected() const noexcept override;
+    uint64_t sendMessage(const core::Message &message) override;
 };
 
 }} // namespaces

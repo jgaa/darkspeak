@@ -2,6 +2,7 @@
 #define CONTACT_H
 
 #include <memory>
+#include <deque>
 
 #include <QDateTime>
 #include <QSqlError>
@@ -14,6 +15,7 @@
 
 #include "ds/dscert.h"
 #include "ds/peerconnection.h"
+#include "ds/message.h"
 
 namespace ds {
 namespace core {
@@ -145,6 +147,8 @@ public:
     void setOnlineStatus(const OnlineStatus status);
     int getIdentityId() const noexcept;
 
+    void queueMessage(const Message::ptr_t& message);
+
     /*! Add the new Identity to the database. */
     void addToDb();
 
@@ -184,6 +188,7 @@ private slots:
     void onSendAddmeAckLater();
     void onProcessOnlineLater();
     void onReceivedAck(const PeerAck& ack);
+    void procesMessageQueue();
 
 private:
     static void bind(QSqlQuery& query, ContactData& data);
@@ -195,6 +200,8 @@ private:
     OnlineStatus onlineStatus_ = DISCONNECTED;
 
     std::unique_ptr<Connection> connection_;
+    std::deque<Message::ptr_t> messageQueue_;
+    std::deque<Message::ptr_t> unconfirmedMessageQueue_; // Waiting for ack
 };
 
 struct ContactData {

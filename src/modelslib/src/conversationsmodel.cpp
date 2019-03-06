@@ -40,6 +40,7 @@ ConversationsModel::ConversationsModel(QObject &parent)
 
 void ConversationsModel::setIdentity(const QUuid &uuid)
 {
+    setCurrentRow(-1);
     beginResetModel();
 
     rows_.clear();
@@ -49,9 +50,8 @@ void ConversationsModel::setIdentity(const QUuid &uuid)
         queryRows(rows_);
     }
 
-    currentRow_ = -1;
-
     endResetModel();
+    emit currentRowChanged();
 }
 
 void ConversationsModel::setCurrent(Conversation *conversation)
@@ -82,9 +82,27 @@ void ConversationsModel::setCurrentRow(int row)
 {
     if (row != currentRow_) {
         currentRow_ = row;
+
+        if (row >= 0) {
+            auto& r = rows_.at(static_cast<size_t>(currentRow_));
+
+            if (!r.conversation) {
+                r.conversation = conversationManager_.getConversation(r.uuid);
+            }
+
+            current_ = r.conversation;
+        } else {
+            current_.reset();
+        }
+
         LFLOG_DEBUG << "Emitting: currentRowChanged";
         emit currentRowChanged();
     }
+}
+
+Conversation *ConversationsModel::getCurrentConversation() const
+{
+    return current_.get();
 }
 
 void ConversationsModel::onConversationAdded(const Conversation::ptr_t &conversation)

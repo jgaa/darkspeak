@@ -9,6 +9,7 @@
 #include <QtEndian>
 
 #include "ds/peer.h"
+#include "ds/message.h"
 #include "logfault/logfault.h"
 
 namespace ds {
@@ -373,7 +374,6 @@ QUuid Peer::getIdentityId() const noexcept
 
 uint64_t Peer::sendAck(const QString &what, const QString &status)
 {
-    QString addr;
     auto json = QJsonDocument{
         QJsonObject{
             {"type", "Ack"},
@@ -393,6 +393,28 @@ bool Peer::isConnected() const noexcept
 {
     return connection_ && connection_->isOpen();
 }
+
+uint64_t Peer::sendMessage(const core::Message &message)
+{
+    auto json = QJsonDocument{
+        QJsonObject{
+            {"type", "Message"},
+            {"message-id", QString{message.getData().messageId.toBase64()}},
+            {"date", static_cast<qint64>(message.getData().composedTime.toTime_t())},
+            {"content", message.getData().content},
+            {"encoding", static_cast<int>(message.getData().encoding)},
+            {"conversation", QString{message.getData().conversation.toBase64()}},
+            {"from", QString{message.getData().sender.toBase64()}},
+            {"signature", QString{message.getData().signature.toBase64()}}
+        }
+    };
+
+    LFLOG_DEBUG << "Sending Message: " << message.getId()
+                << " over connection " << getConnectionId().toString();
+
+    return send(json);
+}
+
 
 }} // namespace
 

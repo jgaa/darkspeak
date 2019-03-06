@@ -22,6 +22,13 @@ Message::Message(QObject &parent)
 
 }
 
+Message::Message(QObject &parent, MessageData data, Message::Direction direction, const int conversationid)
+    : QObject{&parent}, conversationId_{conversationid}, direction_{direction}
+    , data_{std::make_unique<MessageData>(std::move(data))}
+{
+
+}
+
 int Message::getId() const noexcept
 {
     return id_;
@@ -64,6 +71,11 @@ QString Message::getContent() const noexcept
     return data_->content;
 }
 
+const MessageData &Message::getData() const noexcept
+{
+    return *data_;
+}
+
 void Message::init()
 {
     data_->messageId = crypto::Crypto::generateId();
@@ -103,14 +115,13 @@ void Message::addToDb()
     QSqlQuery query;
 
     query.prepare("INSERT INTO message ("
-                  "id, direction, conversation_id, conversation, message_id, composed_time, received_time, content, signature, sender, encoding"
+                  "direction, conversation_id, conversation, message_id, composed_time, received_time, content, signature, sender, encoding"
                   ") VALUES ("
-                  ":id, :direction, :conversation_id, :conversation, :message_id, :composed_time, :received_time, :content, :signature, :sender, :encoding"
+                  ":direction, :conversation_id, :conversation, :message_id, :composed_time, :received_time, :content, :signature, :sender, :encoding"
                   ")");
     assert(data_);
     assert(data_->composedTime.isValid());
 
-    query.bindValue(":id", id_);
     query.bindValue(":direction", static_cast<int>(direction_));
     query.bindValue(":conversation_id", conversationId_);
     query.bindValue(":conversation", data_->conversation);
@@ -124,7 +135,7 @@ void Message::addToDb()
 
 
     if(!query.exec()) {
-        throw Error(QStringLiteral("Failed to add Contact: %1").arg(
+        throw Error(QStringLiteral("Failed to add Message: %1").arg(
                         query.lastError().text()));
     }
 

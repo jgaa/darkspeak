@@ -32,6 +32,29 @@ void Conversation::incrementUnread()
     setUnread(getUnread() + 1);
 }
 
+void Conversation::sendMessage(const QString &text)
+{
+    LFLOG_DEBUG << "Sending message with content: " << text;
+
+    const auto random = crypto::Crypto::getRandomBytes(8);
+    const auto identity = getIdentity();
+    assert(identity);
+
+    MessageData data;
+    data.conversation = hash_;
+    data.composedTime = DsEngine::getSafeNow();
+    data.content = text;
+    data.encoding = Message::Encoding::UTF8;
+    data.sender = identity->getHash();
+    crypto::createHash(data.messageId, {
+                           random,
+                           data.content.toUtf8(),
+                           data.conversation,
+                           data.composedTime.toString().toUtf8()});
+
+    DsEngine::instance().getMessageManager()->sendMessage(*this, data);
+}
+
 int Conversation::getId() const noexcept {
     return id_;
 }
@@ -118,6 +141,11 @@ void Conversation::setUnread(const int value)
 int Conversation::getIdentityId() const noexcept
 {
     return identity_;
+}
+
+Identity *Conversation::getIdentity() const
+{
+    return DsEngine::instance().getIdentityManager()->identityFromId(getIdentityId());
 }
 
 void Conversation::addToDb()

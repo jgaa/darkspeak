@@ -16,7 +16,6 @@ Page {
     property var stateColors: ["gray", "yellow", "lime", "red", "red"]
     property var onlineColors: ["firebrick", "blue", "orange", "lime"]
 
-
     Connections {
         target: contacts
         onModelReset: {

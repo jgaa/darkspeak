@@ -36,6 +36,7 @@ public:
     using ptr_t = std::shared_ptr<Message>;
 
     Message(QObject& parent);
+    Message(QObject& parent, MessageData data, Direction direction, const int conversationid);
 
     Q_PROPERTY(int id READ getId)
     Q_PROPERTY(Direction direction READ getDirection)
@@ -51,7 +52,8 @@ public:
     void setSentReceivedTime(const QDateTime when);
     void touchSentReceivedTime();
     QString getContent() const noexcept;
-    Direction getType() const noexcept;
+    //Direction getType() const noexcept;
+    const MessageData& getData() const noexcept;
 
     void init();
     void sign(const crypto::DsCert& cert);
