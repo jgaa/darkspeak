@@ -59,12 +59,12 @@ void Conversation::incomingMessage(Contact *contact, const MessageData &data)
 {
     // Add to the database
     if (!DsEngine::instance().getMessageManager()->receivedMessage(*this, data)) {
-        contact->sendAck("Message", "Rejected", data.messageId);
+        contact->sendAck("Message", "Rejected", data.messageId.toBase64());
         return;
     }
 
     // Send ack
-    contact->sendAck("Message", "Received", data.messageId);
+    contact->sendAck("Message", "Received", data.messageId.toBase64());
 }
 
 int Conversation::getId() const noexcept {
@@ -160,7 +160,7 @@ Identity *Conversation::getIdentity() const
     return DsEngine::instance().getIdentityManager()->identityFromId(getIdentityId());
 }
 
-bool Conversation::haveParticipant(const Contact &contact)
+bool Conversation::haveParticipant(const Contact &contact) const
 {
     return getFirstParticipant()->getUuid() == contact.getUuid();
 }

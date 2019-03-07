@@ -29,7 +29,7 @@ class MessagesModel : public QAbstractListModel
     };
 
     enum Cols {
-        H_ID = Qt::UserRole, H_CONTENT, H_COMPOSED, H_DIRECTION, H_RECEIVED
+        H_ID = Qt::UserRole, H_CONTENT, H_COMPOSED, H_DIRECTION, H_RECEIVED, H_STATE
     };
 public:
 
@@ -50,11 +50,13 @@ private slots:
     void onMessageAdded(const core::Message::ptr_t& message);
     void onMessageDeleted(const core::Message::ptr_t& message);
     void onMessageReceivedDateChanged(const core::Message::ptr_t& message);
+    void onMessageStateChanged(const core::Message::ptr_t& message);
 
 private:
     void queryRows(rows_t& rows);
     std::shared_ptr<core::MessageContent> loadData(const int id) const;
     std::shared_ptr<core::MessageContent> loadData(const core::Message& message) const;
+    void onMessageChanged(const core::Message::ptr_t& message, const int role);
 
     rows_t rows_;
     core::Conversation::ptr_t conversation_;

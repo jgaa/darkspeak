@@ -9,6 +9,8 @@ Page {
     property int input_height: 96
     property int msg_border: 16
     visible: conversations.current
+    property var states: [qsTr("Composed"), qsTr("Queued"), qsTr("Sent"), qsTr("Received"), qsTr("Rejected")]
+    property var scolors: ["silver", "orange", "yellow", "lightgreen", "red"]
 
     header: Label {
         text: conversations.current ? (qsTr("Chat with ") + conversations.current.name) : qsTr("No conversation selected")
@@ -16,24 +18,14 @@ Page {
         padding: 10
     }
 
-    function getStatus(direction, received) {
-        if (direction === Message.OUTGOING) {
-            if (received.isValid) {
-                return qsTr("Sent")
-            } else {
-                return qsTr("Queued");
-            }
-        } else {
-            return qsTr("Received")
-        }
+    function getStateName(state) {
+        return states[state]
     }
 
-    function pickColor(direction, received) {
+    function pickColor(direction, state) {
         if (direction === Message.INCOMING)
             return "lightblue"
-        if (received.isValid)
-            return "lightgreen"
-        return "yellow"
+        return scolors[state]
     }
 
     // Background
@@ -69,7 +61,7 @@ Page {
                 x: direction === Message.OUTGOING ? 0 : msg_border
                 width: parent.width - msg_border
                 height: textarea.contentHeight + (margin * 2) + date.height
-                color: pickColor(direction, receivedTime)
+                color: pickColor(direction, messageState)
                 radius: 4
 
                 TextEdit {
@@ -79,7 +71,7 @@ Page {
                     font.pointSize: 8
                     color: direction === Message.INCOMING
                         ? "darkblue" : "darkgreen"
-                    text: getStatus(direction, receivedTime)
+                    text: root.states[messageState]
                 }
 
                 TextEdit {

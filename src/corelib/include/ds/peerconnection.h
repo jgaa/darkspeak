@@ -53,12 +53,14 @@ struct PeerAck : public PeerReq
     PeerAck(const PeerAck&) = default;
 
     PeerAck(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal, quint64 requestIdVal,
-            QByteArray whatVal, QByteArray statusVal)
+            QByteArray whatVal, QByteArray statusVal, QString dataVal = {})
         : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
-        , what{std::move(whatVal)}, status{std::move(statusVal)} {}
+        , what{std::move(whatVal)}, status{std::move(statusVal)}
+        , data{std::move(dataVal)} {}
 
     QByteArray what;
     QByteArray status;
+    QString data;
 };
 
 struct PeerMessage : public PeerReq
@@ -121,6 +123,7 @@ signals:
     void addmeRequest(const PeerAddmeReq& req);
     void receivedAck(const PeerAck& ack);
     void receivedMessage(const PeerMessage& msg);
+    void outputBufferEmptied();
 };
 
 }}

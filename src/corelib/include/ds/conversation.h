@@ -61,7 +61,7 @@ public:
     void setUnread(const int value);
     int getIdentityId() const noexcept;
     Identity *getIdentity() const;
-    bool haveParticipant(const Contact& contact);
+    bool haveParticipant(const Contact& contact) const;
 
 
     /*! Add the new Conversation to the database. */

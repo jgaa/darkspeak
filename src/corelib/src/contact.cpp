@@ -15,6 +15,15 @@ namespace core {
 using namespace std;
 using namespace crypto;
 
+namespace  {
+bool comparesEqual(const QByteArray& left, const QByteArray& right) {
+    if (left.size() != right.size()) {
+        return false;
+    }
+    return memcmp(left.constData(), right.constData(), static_cast<size_t>(left.size())) == 0;
+}
+}
+
 Contact::Contact(QObject &parent,
                  const int dbId,
                  const bool online,
@@ -277,6 +286,7 @@ void Contact::queueMessage(const Message::ptr_t &message)
 
     if (message->getDirection() == Message::OUTGOING) {
         messageQueue_.push_back(message);
+        message->setState(Message::MS_QUEUED);
         procesMessageQueue();
     }
 }
@@ -474,6 +484,9 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
     connect(connection_->peer.get(), &PeerConnection::receivedMessage,
             this, &Contact::onReceivedMessage);
 
+    connect(connection_->peer.get(), &PeerConnection::outputBufferEmptied,
+            this, &Contact::onOutputBufferEmptied);
+
     setOnlineStatus(ONLINE);
 
     touchLastSeen();
@@ -595,7 +608,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
     }
 
     if (getState() == BLOCKED) {
-        LFLOG_DEBUG << "Received Ack from blockwed peer on connection "
+        LFLOG_DEBUG << "Received Ack from blocked peer on connection "
                     << ack.connectionId.toString();
         ack.peer->close();
         return;
@@ -618,6 +631,48 @@ void Contact::onReceivedAck(const PeerAck &ack)
                        << getIdentity()->getName()
                        << ". Ignoring the message.";
         }
+    } else if (ack.what == "Message") {
+        // The message must exist.
+        // The message must belong in an existing conversation
+        // The conversation must relate to this contact
+        // The message-state must not be MS_REJECTED
+
+        auto messageId = QByteArray::fromBase64(ack.data.toUtf8());
+        if (messageId.isEmpty()) {
+            LFLOG_DEBUG << "Received ack with empty or invalid message-id: " << ack.data.toUtf8().toHex();
+            return;
+        }
+
+        auto message = DsEngine::instance().getMessageManager()->getMessage(messageId);
+        if (!message) {
+            LFLOG_DEBUG << "Received ack for non-existing message " << ack.data.toUtf8().toHex();
+            return;
+        }
+
+        if (auto conversation = message->getConversation()) {
+            if (!conversation->haveParticipant(*this)) {
+                LFLOG_WARN << "Received ack for message #" << message->getId()
+                           << " that belonds to another contacts conversation: "
+                           << ack.data.toUtf8().toHex();
+                return;
+            }
+        } else {
+            LFLOG_WARN << "Received ack for message #" << message->getId()
+                       << " with non-existing conversation conversation: "
+                       << ack.data.toUtf8().toHex();
+            return;
+        }
+
+        if (message->getState() == Message::MS_REJECTED) {
+             LFLOG_DEBUG << "Received ack for already rejected message " << ack.data.toUtf8().toHex();
+             return;
+        }
+
+        if (ack.status == "Received") {
+            message->setState(Message::MS_RECEIVED);
+        } else if (ack.status == "Rejected" || ack.status == "Rejected-Encoding") {
+            message->setState(Message::MS_REJECTED);
+        }
     }
 }
 
@@ -629,6 +684,7 @@ void Contact::procesMessageQueue()
         // TODO: Check ready status on socket
         try {
             connection_->peer->sendMessage(*messageQueue_.front());
+            messageQueue_.front()->setState(Message::MS_SENT);
         } catch(const std::exception& ex) {
             LFLOG_WARN << "Caught exception while sending message: " << ex.what();
             return;
@@ -646,7 +702,7 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
                    << msg.peer->getConnectionId().toString()
                    << ". Not in ACEPTED state.";
 
-        msg.peer->sendAck("Message", "Rejected");
+        msg.peer->sendAck("Message", "Rejected", msg.data.messageId.toBase64());
         msg.peer->close();
         return;
     }
@@ -656,12 +712,12 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
     if (!conversation) {
         // Try the default conversation and see if it match the peers conversation hash
         auto defaultHash = Conversation::calculateHash(*this);
-        if (defaultHash != msg.data.conversation) {
+        if (!comparesEqual(defaultHash, msg.data.conversation)) {
             LFLOG_WARN << "Rejecting message on connection "
                        << msg.peer->getConnectionId().toString()
                        << ". Unknown conversation: " << msg.data.conversation.toHex();
 
-            msg.peer->sendAck("Message", "Rejected");
+            msg.peer->sendAck("Message", "Rejected", msg.data.messageId.toBase64());
             return;
         }
 
@@ -677,7 +733,7 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
                    << " on Identyty " << getIdentity()->getName()
                    << " is not part of converation " << msg.data.conversation.toHex();
 
-        msg.peer->sendAck("Message", "Rejected");
+        msg.peer->sendAck("Message", "Rejected", msg.data.messageId.toBase64());
         msg.peer->close();
         return;
     }
@@ -688,6 +744,13 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
                 << " for local delivery to conversation " << conversation->getName();
 
     conversation->incomingMessage(this, msg.data);
+}
+
+void Contact::onOutputBufferEmptied()
+{
+    if (isOnline()) {
+        procesMessageQueue();
+    }
 }
 
 void Contact::loadMessageQueue()

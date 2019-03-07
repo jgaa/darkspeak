@@ -29,7 +29,11 @@ template <typename T, typename Obj, typename S>
 bool updateIf(const char *name, const T& value, T& target, Obj *self, const S& signal) {
     if (value != target) {
         target = value;
-        update(self, name, target);
+
+        // Update only if the object is added to the database
+        if (self->getId() > 0) {
+            update(self, name, target);
+        }
         emit (self->*signal)();
         return true;
     }

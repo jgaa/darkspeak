@@ -31,10 +31,7 @@ public:
         const char *p = reinterpret_cast<const char *>(data.data());
         const qint64 bytes = data.size();
         outData.append(p, bytes);
-        auto written = QTcpSocket::write(outData);
-        if (written > 0) {
-            outData.remove(0, static_cast<int>(written));
-        }
+        sendMore();
     }
 
     void wantBytes(size_t bytesRequested);
@@ -44,6 +41,7 @@ signals:
     void socketFailed(const QUuid& uuid, const SocketError& socketError);
     void disconnectedFromHost(const QUuid& uuid);
     void haveBytes(const data_t& data);
+    void outputBufferEmptied();
 
 private slots:
     void onConnected();
@@ -52,6 +50,7 @@ private slots:
 
 private:
     void processInput();
+    void sendMore();
 
     QUuid uuid = QUuid::createUuid();
     QByteArray outData;

@@ -192,6 +192,7 @@ private slots:
     void onReceivedAck(const PeerAck& ack);
     void procesMessageQueue();
     void onReceivedMessage(const PeerMessage& msg);
+    void onOutputBufferEmptied();
 
 private:
     static void bind(QSqlQuery& query, ContactData& data);

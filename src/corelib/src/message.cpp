@@ -56,7 +56,7 @@ QDateTime Message::getSentReceivedTime() const noexcept
 
 void Message::setSentReceivedTime(const QDateTime when)
 {
-    if (updateIf("received_time", when, sentReceivedTime_, this, &Message::onReceivedChanged)) {
+    if (updateIf("received_time", when, sentReceivedTime_, this, &Message::receivedChanged)) {
         DsEngine::instance().getMessageManager()->onMessageReceivedDateChanged(shared_from_this());
     }
 }
@@ -74,6 +74,35 @@ QString Message::getContent() const noexcept
 const MessageData &Message::getData() const noexcept
 {
     return *data_;
+}
+
+Message::State Message::getState() const noexcept
+{
+    return state_;
+}
+
+void Message::setState(Message::State state)
+{
+    if (updateIf("state", state, state_, this, &Message::stateChanged)) {
+        DsEngine::instance().getMessageManager()->onMessageStateChanged(shared_from_this());
+    }
+}
+
+Conversation *Message::getConversation() const
+{
+    QSqlQuery query;
+    query.prepare("SELECT uuid FROM conversation WHERE conversation_id=:id");
+    query.bindValue(":id", getConversationId());
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to fetch conversation from hash: %1").arg(
+                        query.lastError().text()));
+    }
+
+    if (query.next()) {
+        return DsEngine::instance().getConversationManager()->getConversation(query.value(0).toUuid()).get();
+    }
+
+    return {};
 }
 
 void Message::init()
@@ -115,14 +144,15 @@ void Message::addToDb()
     QSqlQuery query;
 
     query.prepare("INSERT INTO message ("
-                  "direction, conversation_id, conversation, message_id, composed_time, received_time, content, signature, sender, encoding"
+                  "direction, state, conversation_id, conversation, message_id, composed_time, received_time, content, signature, sender, encoding"
                   ") VALUES ("
-                  ":direction, :conversation_id, :conversation, :message_id, :composed_time, :received_time, :content, :signature, :sender, :encoding"
+                  ":direction, :state, :conversation_id, :conversation, :message_id, :composed_time, :received_time, :content, :signature, :sender, :encoding"
                   ")");
     assert(data_);
     assert(data_->composedTime.isValid());
 
     query.bindValue(":direction", static_cast<int>(direction_));
+    query.bindValue(":state", static_cast<int>(state_));
     query.bindValue(":conversation_id", conversationId_);
     query.bindValue(":conversation", data_->conversation);
     query.bindValue(":message_id", data_->messageId);
@@ -163,10 +193,10 @@ Message::ptr_t Message::load(QObject &parent, int dbId)
     QSqlQuery query;
 
     enum Fields {
-        direction, conversation_id, conversation, message_id, composed_time, received_time, content, signature, sender, encoding
+        direction, state,  conversation_id, conversation, message_id, composed_time, received_time, content, signature, sender, encoding
     };
 
-    query.prepare("SELECT direction, conversation_id, conversation, message_id, composed_time, received_time, content, signature, sender, encoding FROM message where id=:id ");
+    query.prepare("SELECT direction, state, conversation_id, conversation, message_id, composed_time, received_time, content, signature, sender, encoding FROM message where id=:id ");
     query.bindValue(":id", dbId);
 
     if(!query.exec()) {
@@ -183,7 +213,9 @@ Message::ptr_t Message::load(QObject &parent, int dbId)
 
     ptr->id_ = dbId;
     ptr->direction_ = static_cast<Direction>(query.value(direction).toInt());
+    ptr->state_ = static_cast<State>(query.value(state).toInt());
     ptr->conversationId_ = query.value(conversation_id).toInt();
+    ptr->data_->conversation = query.value(conversation).toByteArray();
     ptr->data_->messageId = query.value(message_id).toByteArray();
     ptr->data_->composedTime = query.value(composed_time).toDateTime();
     ptr->sentReceivedTime_ = query.value(received_time).toDateTime();

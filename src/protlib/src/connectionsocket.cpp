@@ -22,6 +22,18 @@ ConnectionSocket::ConnectionSocket()
         processInput();
     });
 
+    connect(this, &ConnectionSocket::bytesWritten,
+            this, [this](qint64 bytes) {
+
+        Q_UNUSED(bytes)
+
+        if (outData.isEmpty()) {
+            emit outputBufferEmptied();
+        } else {
+            sendMore();
+        }
+    });
+
     LFLOG_DEBUG << "Socket is constructed: " << uuid.toString();
 }
 
@@ -85,6 +97,22 @@ void ConnectionSocket::processInput()
                    << inData.size()
                    << ") in incoming buffer on " << getUuid().toString();
         close();
+    }
+}
+
+void ConnectionSocket::sendMore()
+{
+    if (outData.isEmpty()) {
+        return;
+    }
+
+    auto written = QTcpSocket::write(outData);
+    if (written > 0) {
+        if (written == outData.size()) {
+            outData.clear();
+        } else {
+            outData.remove(0, static_cast<int>(written));
+        }
     }
 }
 

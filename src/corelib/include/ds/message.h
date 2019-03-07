@@ -13,6 +13,7 @@ namespace ds {
 namespace core {
 
 struct MessageData;
+class Conversation;
 
 class Message : public QObject, public std::enable_shared_from_this<Message>
 {
@@ -33,6 +34,16 @@ public:
 
     Q_ENUM(Direction)
 
+    enum State {
+        MS_COMPOSED,
+        MS_QUEUED,
+        MS_SENT, // Waiting for acknowledgment
+        MS_RECEIVED,
+        MS_REJECTED
+    };
+
+    Q_ENUM(State);
+
     using ptr_t = std::shared_ptr<Message>;
 
     Message(QObject& parent);
@@ -41,8 +52,9 @@ public:
     Q_PROPERTY(int id READ getId)
     Q_PROPERTY(Direction direction READ getDirection)
     Q_PROPERTY(QDateTime composed READ getComposedTime)
-    Q_PROPERTY(QDateTime received READ getSentReceivedTime NOTIFY onReceivedChanged)
+    Q_PROPERTY(QDateTime received READ getSentReceivedTime NOTIFY receivedChanged)
     Q_PROPERTY(QString content READ getContent)
+    Q_PROPERTY(State state READ getState NOTIFY stateChanged)
 
     int getId() const noexcept;
     int getConversationId() const noexcept;
@@ -54,6 +66,9 @@ public:
     QString getContent() const noexcept;
     //Direction getType() const noexcept;
     const MessageData& getData() const noexcept;
+    State getState() const noexcept;
+    void setState(State state);
+    Conversation *getConversation() const;
 
     void init();
     void sign(const crypto::DsCert& cert);
@@ -70,12 +85,14 @@ public:
     static ptr_t load(QObject& parent, int dbId);
 
 signals:
-    void onReceivedChanged();
+    void receivedChanged();
+    void stateChanged();
 
 private:
     int id_ = -1;
     int conversationId_ = -1;
     Direction direction_ = Direction::OUTGOING;
+    State state_ = State::MS_COMPOSED;
     QDateTime sentReceivedTime_; // Depending on type
     std::unique_ptr<MessageData> data_;
 };
@@ -95,6 +112,7 @@ struct MessageData {
 };
 
 struct MessageContent {
+    Message::State state;
     QString content;
     QDateTime composedTime;
     Message::Direction direction = Message::OUTGOING;

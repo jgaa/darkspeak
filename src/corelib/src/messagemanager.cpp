@@ -69,8 +69,9 @@ Message::ptr_t MessageManager::receivedMessage(Conversation &conversation, Messa
     auto message = make_shared<Message>(*this, data, Message::INCOMING, conversation.getId());
 
     assert(conversation.getIdentity());
+    assert(conversation.getFirstParticipant());
 
-    auto cert = conversation.getIdentity()->getCert();
+    auto cert = conversation.getFirstParticipant()->getCert();
     if (!message->validate(*cert)) {
         LFLOG_WARN << "Incoming message from " << conversation.getFirstParticipant()->getName()
                    << " to " << conversation.getIdentity()->getName()
@@ -102,6 +103,13 @@ void MessageManager::onMessageReceivedDateChanged(const Message::ptr_t &message)
 {
     touch(message);
     emit messageReceivedDateChanged(message);
+}
+
+void MessageManager::onMessageStateChanged(const Message::ptr_t &message)
+{
+    touch(message);
+    LFLOG_DEBUG << "Message state changed to " << message->getState();
+    emit messageStateChanged(message);
 }
 
 

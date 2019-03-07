@@ -59,6 +59,11 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
         emit disconnectedFromPeer(shared_from_this());
     });
 
+    connect(connection_.get(), &ConnectionSocket::outputBufferEmptied,
+            this, [this]() {
+       emit outputBufferEmptied();
+    }, Qt::QueuedConnection);
+
     connect(this, &PeerConnection::receivedData,
             this, &Peer::onReceivedData);// Qt::QueuedConnection);
 
@@ -187,19 +192,20 @@ void Peer::onReceivedData(const quint32 channel, const quint64 id, QByteArray da
         } else if (type == "Ack") {
             PeerAck ack{shared_from_this(), getConnectionId(), id,
                         json.object().value("what").toString().toUtf8(),
-                        json.object().value("status").toString().toUtf8()};
+                        json.object().value("status").toString().toUtf8(),
+                        json.object().value("data").toString()};
 
             LFLOG_DEBUG << "Emitting Ack";
             emit receivedAck(ack);
         } else if (type == "Message") {
             PeerMessage msg{shared_from_this(), getConnectionId(), id,
-                        json.object().value("conversation").toString().toUtf8(),
-                        json.object().value("message-id").toString().toUtf8(),
+                        QByteArray::fromBase64(json.object().value("conversation").toString().toUtf8()),
+                        QByteArray::fromBase64(json.object().value("message-id").toString().toUtf8()),
                         QDateTime::fromTime_t(json.object().value("date").toString().toUInt()),
                         json.object().value("content").toString(),
-                        json.object().value("from").toString().toUtf8(),
+                        QByteArray::fromBase64(json.object().value("from").toString().toUtf8()),
                         toEncoding(json.object().value("encoding").toString()),
-                        json.object().value("signature").toString().toUtf8()};
+                        QByteArray::fromBase64(json.object().value("signature").toString().toUtf8())};
 
             LFLOG_DEBUG << "Emitting PeerMessage";
             emit receivedMessage(msg);

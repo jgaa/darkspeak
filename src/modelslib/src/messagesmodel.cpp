@@ -12,6 +12,7 @@
 #include <QSqlRecord>
 #include <QUuid>
 
+#include "logfault/logfault.h"
 
 using namespace std;
 using namespace ds::core;
@@ -30,6 +31,8 @@ MessagesModel::MessagesModel(QObject &parent)
             this, &MessagesModel::onMessageDeleted);
     connect(mgr, &MessageManager::messageReceivedDateChanged,
             this, &MessagesModel::onMessageReceivedDateChanged);
+    connect(mgr, &MessageManager::messageStateChanged,
+            this, &MessagesModel::onMessageStateChanged);
 }
 
 void MessagesModel::setConversation(Conversation *conversation)
@@ -77,6 +80,8 @@ QVariant MessagesModel::data(const QModelIndex &ix, int role) const
         return r.data_->direction;
     case H_RECEIVED:
         return r.data_->sentReceivedTime;
+    case H_STATE:
+        return r.data_->state;
     }
 
     return {};
@@ -89,7 +94,8 @@ QHash<int, QByteArray> MessagesModel::roleNames() const
         {H_CONTENT, "content"},
         {H_COMPOSED, "composedTime"},
         {H_DIRECTION, "direction"},
-        {H_RECEIVED, "receivedTime"}
+        {H_RECEIVED, "receivedTime"},
+        {H_STATE, "messageState"}
     };
 
     return names;
@@ -128,18 +134,12 @@ void MessagesModel::onMessageDeleted(const Message::ptr_t &message)
 
 void MessagesModel::onMessageReceivedDateChanged(const Message::ptr_t &message)
 {
-    if (!conversation_ || (conversation_->getId() != message->getConversationId())) {
-        return; // Irrelevant
-    }
+    onMessageChanged(message, H_RECEIVED);
+}
 
-    const int messageId = message->getId();
-    int rowid = 0;
-    for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
-        if (it->id == messageId) {
-            emit dataChanged({}, index(rowid), {H_RECEIVED});
-            return;
-        }
-    }
+void MessagesModel::onMessageStateChanged(const Message::ptr_t &message)
+{
+    onMessageChanged(message, H_STATE);
 }
 
 void MessagesModel::queryRows(MessagesModel::rows_t &rows)
@@ -171,10 +171,10 @@ std::shared_ptr<MessageContent> MessagesModel::loadData(const int id) const
     QSqlQuery query;
 
     enum Fields {
-        direction, composed_time, received_time, content
+        state, direction, composed_time, received_time, content
     };
 
-    query.prepare("SELECT direction, composed_time, received_time, content FROM message where id=:id ");
+    query.prepare("SELECT state, direction, composed_time, received_time, content FROM message where id=:id ");
     query.bindValue(":id", id);
 
     if(!query.exec()) {
@@ -188,6 +188,7 @@ std::shared_ptr<MessageContent> MessagesModel::loadData(const int id) const
 
     auto ptr = make_shared<MessageContent>();
 
+    ptr->state = static_cast<Message::State>(query.value(state).toInt());
     ptr->direction = static_cast<Message::Direction>(query.value(direction).toInt());
     ptr->composedTime = query.value(composed_time).toDateTime();
     ptr->sentReceivedTime = query.value(received_time).toDateTime();
@@ -200,12 +201,33 @@ std::shared_ptr<MessageContent> MessagesModel::loadData(const Message &message) 
 {
     auto ptr = make_shared<MessageContent>();
 
+    ptr->state = message.getState();
     ptr->direction = message.getDirection();
     ptr->composedTime = message.getComposedTime();
     ptr->sentReceivedTime = message.getSentReceivedTime();
     ptr->content = message.getContent();
 
     return ptr;
+}
+
+void MessagesModel::onMessageChanged(const Message::ptr_t &message, const int role)
+{
+    if (!conversation_ || (conversation_->getId() != message->getConversationId())) {
+        return; // Irrelevant
+    }
+
+    const int messageId = message->getId();
+    int rowid = 0;
+    for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
+        if (it->id == messageId) {
+            LFLOG_DEBUG << "Emitting dataChanged for message " << message->getId()
+                        << " for role " << role
+                        << " on row " << rowid;
+
+            emit dataChanged({}, index(rowid), {role});
+            return;
+        }
+    }
 }
 
 

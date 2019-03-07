@@ -27,11 +27,14 @@ public:
     void touch(const Message::ptr_t& message);
 
     void onMessageReceivedDateChanged(const Message::ptr_t& message);
+    void onMessageStateChanged(const Message::ptr_t& message);
+
 
 signals:
     void messageAdded(const Message::ptr_t& message);
     void messageDeleted(const Message::ptr_t& message);
     void messageReceivedDateChanged(const Message::ptr_t& message);
+    void messageStateChanged(const Message::ptr_t& message);
 
 private:
     Registry<int, Message> registry_;
