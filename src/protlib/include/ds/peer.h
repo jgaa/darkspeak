@@ -24,7 +24,8 @@ public:
     enum class InState {
         DISABLED,
         CHUNK_SIZE,
-        CHUNK_DATA
+        CHUNK_DATA,
+        CLOSING
     };
 
     struct Hello {
@@ -135,7 +136,7 @@ public:
     crypto::DsCert::ptr_t getPeerCert() const noexcept override;
     void close() override;
     QUuid getIdentityId() const noexcept override;
-    uint64_t sendAck(const QString& what, const QString& status) override;
+    uint64_t sendAck(const QString& what, const QString& status, const QString& data) override;
     bool isConnected() const noexcept override;
     uint64_t sendMessage(const core::Message &message) override;
 };

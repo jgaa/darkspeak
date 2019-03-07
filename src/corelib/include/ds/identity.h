@@ -7,6 +7,7 @@
 #include "ds/errors.h"
 #include "ds/protocolmanager.h"
 #include "ds/contact.h"
+#include "ds/conversation.h"
 
 #include <QString>
 #include <QtGui/QImage>
@@ -159,6 +160,7 @@ public:
     ProtocolManager& getProtocolManager();
 
     void onIncomingPeer(const std::shared_ptr<PeerConnection>& peer);
+    Conversation::ptr_t convesationFromHash(const QByteArray& hash);
 
     const char *getTableName() const noexcept { return "identity"; }
 

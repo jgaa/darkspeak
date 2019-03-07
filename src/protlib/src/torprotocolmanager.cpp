@@ -166,7 +166,7 @@ uint64_t TorProtocolManager::sendAck(const AckMsg &ack)
 {
 
     if (auto peer = getService(ack.service).getPeer(ack.connection)) {
-        return peer->sendAck(ack.what, ack.status);
+        return peer->sendAck(ack.what, ack.status, ack.data);
     }
 
     throw runtime_error("Failed to access peer while sending addme");

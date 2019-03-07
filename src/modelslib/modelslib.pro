@@ -15,10 +15,10 @@ SOURCES += \
     src/identitiesmodel.cpp \
     src/contactsmodel.cpp \
     src/conversationsmodel.cpp \
-    src/messagemodel.cpp \
     src/manager.cpp \
     src/logmodel.cpp \
-    src/notificationsmodel.cpp
+    src/notificationsmodel.cpp \
+    src/messagesmodel.cpp
 
 HEADERS += \
     include/ds/identitiesmodel.h \
@@ -26,10 +26,10 @@ HEADERS += \
     include/ds/strategy.h \
     include/ds/model_util.h \
     include/ds/conversationsmodel.h \
-    include/ds/messagemodel.h \
     include/ds/manager.h \
     include/ds/logmodel.h \
-    include/ds/notificationsmodel.h
+    include/ds/notificationsmodel.h \
+    include/ds/messagesmodel.h
 
 INCLUDEPATH += \
     $$PWD/include \

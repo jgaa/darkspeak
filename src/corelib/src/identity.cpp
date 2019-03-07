@@ -146,6 +146,24 @@ Contact::ptr_t Identity::contactFromUuid(const QUuid &uuid)
     return {};
 }
 
+Conversation::ptr_t Identity::convesationFromHash(const QByteArray &hash)
+{
+    QSqlQuery query;
+    query.prepare("SELECT uuid FROM conversation WHERE identity=:id AND hash=:hash");
+    query.bindValue(":id", getId());
+    query.bindValue(":hash", hash);
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to fetch conversation from hash: %1").arg(
+                        query.lastError().text()));
+    }
+
+    if (query.next()) {
+        return DsEngine::instance().getConversationManager()->getConversation(query.value(0).toUuid());
+    }
+
+    return {};
+}
+
 int Identity::getId() const noexcept {
     return id_;
 }

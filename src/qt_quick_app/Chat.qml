@@ -1,10 +1,11 @@
 import QtQuick 2.12
 import QtQuick.Controls 2.5
+import com.jgaa.darkspeak 1.0
 
 Page {
     id: root
-    width: 600
-    height: 400
+    //width: 600
+    //height: 400
     property int input_height: 96
     property int msg_border: 16
     visible: conversations.current
@@ -17,7 +18,7 @@ Page {
 
     function getStatus(direction, received) {
         if (direction === Message.OUTGOING) {
-            if (received) {
+            if (received.isValid) {
                 return qsTr("Sent")
             } else {
                 return qsTr("Queued");
@@ -30,120 +31,141 @@ Page {
     function pickColor(direction, received) {
         if (direction === Message.INCOMING)
             return "lightblue"
-        if (received)
+        if (received.isValid)
             return "lightgreen"
-        return "pink"
+        return "yellow"
     }
 
-    Column {
-        id: area
-        spacing: 6
-        anchors.fill: parent
+    // Background
+    Rectangle {
+        width: parent.width
+        height: parent.height
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "#ffffff" }
+            GradientStop { position: 1.0; color: "#d7d7d7" }
+        }
+    }
+
 
     ListView {
         id: list
-        interactive: true
-        model: messages
-        //anchors.fill: parent
+        width: root.width
+        anchors.bottom: input.top
+        anchors.bottomMargin: 4
+        anchors.top: parent.top
+        anchors.topMargin: 4
+        highlightRangeMode: ListView.NoHighlightRange
+        //height: parent.height - input_height
+        spacing: 4
         clip: true
 
-        delegate: Rectangle {
-            id: textbox
-            property int margin: 4
-            x: direction === Message.OUTGOING ? 0 : msg_border
-            width: parent.width - msg_border
-            height: textarea.contentHeight + (margin * 2) + date.height
-            color: pickColor(direction, received)
-            radius: 4
+        model: messages
 
-            TextEdit {
-                anchors.left: textbox.left
-                anchors.top: textbox.top
-                anchors.margins: 2
-                font.pointSize: 8
-                color: direction === Message.INCOMING
-                    ? "darkblue" : "darkgreen"
-                text: getStatus(direction, received)
-            }
+        delegate:
+            Component {
+                Rectangle {
+                id: textbox
+                property int margin: 4
+                x: direction === Message.OUTGOING ? 0 : msg_border
+                width: parent.width - msg_border
+                height: textarea.contentHeight + (margin * 2) + date.height
+                color: pickColor(direction, receivedTime)
+                radius: 4
 
-            TextEdit {
-                id: date
-                anchors.right: textbox.right
-                anchors.top: textbox.top
-                anchors.margins: 2
-                font.pointSize: 8
-                color: direction === Message.INCOMING
-                    ? "darkblue" : "darkgreen"
-                text: composedTime
-            }
+                TextEdit {
+                    anchors.left: textbox.left
+                    anchors.top: textbox.top
+                    anchors.margins: 2
+                    font.pointSize: 8
+                    color: direction === Message.INCOMING
+                        ? "darkblue" : "darkgreen"
+                    text: getStatus(direction, receivedTime)
+                }
 
-            TextEdit {
-                id: textarea
-                anchors.top: date.bottom
-                anchors.left: textbox.left
-                anchors.right: textbox.right
-                anchors.leftMargin: 2
-                anchors.rightMargin: 2
-                y: margin
-                readOnly: true
-                selectByMouse: true
-                wrapMode: Text.WrapAtWordBoundaryOrAnywhere
-                width: parent.width - (margin * 2)
-                height: parent.height - (margin * 2)
-                text: content
-                clip: true
-            }
+                TextEdit {
+                    id: date
+                    anchors.right: textbox.right
+                    anchors.top: textbox.top
+                    anchors.margins: 2
+                    font.pointSize: 8
+                    color: direction === Message.INCOMING
+                        ? "darkblue" : "darkgreen"
+                    text: composedTime
+                }
+
+                TextEdit {
+                    id: textarea
+                    anchors.top: date.bottom
+                    anchors.left: textbox.left
+                    anchors.right: textbox.right
+                    anchors.leftMargin: 2
+                    anchors.rightMargin: 2
+                    y: margin
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                    width: parent.width - (margin * 2)
+                    //height: parent.height - (margin * 2)
+                    text: content
+                    clip: true
+                }
+            } // Rectangle
         } // Delegate
 
     } // ListView
 
     Rectangle {
-            id: input
-            width: parent.width
-            height: input_height
-            radius: 4
-            clip: false
-            anchors.bottom: send.top
-            //anchors.bottomMargin: 2
-            anchors.margins: 4
-            color: "white"
-            border.color: "steelblue"
-            border.width: 1
+        id: input
+        width: parent.width
+        height: input_height
+        radius: 4
+        clip: false
+        anchors.bottom: parent.bottom
+        //anchors.bottomMargin: 2
+        anchors.margins: 4
+        color: "white"
+        border.color: "steelblue"
+        border.width: 1
 
-            TextArea {
-                id: textinput
-                anchors.fill: parent
-                text: ""
-                clip: true
-                focus: true
-                color: "black"
-                Keys.onPressed: {
-                    if(event.modifiers && Qt.ControlModifier) {
-                        if((event.key === Qt.Key_Enter)
-                            || (event.key === Qt.Key_Return)) {
-                            event.accepted = true
-                            textinput.send()
-                        }
+        TextArea {
+            id: textinput
+            anchors.fill: parent
+            text: ""
+            clip: true
+            focus: true
+            color: "black"
+            Keys.onPressed: {
+                if(event.modifiers && Qt.ControlModifier) {
+                    if((event.key === Qt.Key_Enter)
+                        || (event.key === Qt.Key_Return)) {
+                        event.accepted = true
+                        textinput.send()
                     }
                 }
+            }
 
-                function send() {
-                    conversations.current.sendMessage(text)
-                    textinput.text = ""
-                }
+            function send() {
+                conversations.current.sendMessage(text)
+                textinput.text = ""
             }
         }
-
-        Button {
-            id: send
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.margins: 2
-            icon.source: "qrc:/images/Sent-32.png"
-            onClicked: {
-                textinput.send()
-            }
-        }
-
     }
+
+    Button {
+        text: qsTr("Send")
+        autoExclusive: false
+        antialiasing: true
+        smooth: true
+        z: 4
+        clip: false
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        icon.source: "qrc:/images/Sent-32.png"
+
+        onClicked: {
+            textinput.send()
+        }
+    }
+
+
 }

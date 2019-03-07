@@ -44,7 +44,7 @@ public:
 
     int getCurrentRow() const noexcept;
     void setCurrentRow(int row);
-    core::Conversation *getCurrentConversation() const;
+    ds::core::Conversation *getCurrentConversation() const;
 
 signals:
     void currentRowChanged();

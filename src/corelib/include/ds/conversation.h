@@ -41,6 +41,7 @@ public:
 
     Q_INVOKABLE void incrementUnread();
     Q_INVOKABLE void sendMessage(const QString& text);
+    void incomingMessage(Contact *contact, const MessageData& data);
 
     int getId() const noexcept;
     QString getName() const noexcept;
@@ -60,6 +61,7 @@ public:
     void setUnread(const int value);
     int getIdentityId() const noexcept;
     Identity *getIdentity() const;
+    bool haveParticipant(const Contact& contact);
 
 
     /*! Add the new Conversation to the database. */

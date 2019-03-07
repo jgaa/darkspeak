@@ -15,6 +15,7 @@
 #include "ds/contact.h"
 #include "ds/conversation.h"
 #include "ds/conversationsmodel.h"
+#include "ds/messagesmodel.h"
 #include "ds/message.h"
 
 #include "logfault/logfault.h"
@@ -92,6 +93,14 @@ int main(int argc, char *argv[])
                                                    "ConversationsModel",
                                                    "Cannot create Conversation in QML");
 
+    qmlRegisterUncreatableType<ds::core::Message>("com.jgaa.darkspeak", 1, 0,
+                                                   "Message",
+                                                   "Cannot create Message in QML");
+
+    qmlRegisterUncreatableType<ds::models::MessagesModel>("com.jgaa.darkspeak", 1, 0,
+                                                   "MessagesModel",
+                                                   "Cannot create Messages in QML");
+
 //    qmlRegisterUncreatableMetaObject(
 //                ds::core::staticMetaObject,
 //                "com.jgaa.darkspeak", 1, 0,
@@ -108,6 +117,7 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("contacts", manager->contactsModel());
     engine.rootContext()->setContextProperty("notifications", manager->notificationsModel());
     engine.rootContext()->setContextProperty("conversations", manager->conversationsModel());
+    engine.rootContext()->setContextProperty("messages", manager->messagesModel());
 
     //QQuickStyle::setStyle("Fusion");
 

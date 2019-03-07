@@ -13,7 +13,7 @@
 namespace ds {
 namespace models {
 
-class MessageModel : public QAbstractListModel
+class MessagesModel : public QAbstractListModel
 {
     Q_OBJECT
 
@@ -35,7 +35,7 @@ public:
 
     using rows_t = std::deque<Row>;
 
-    MessageModel(QObject& parent);
+    MessagesModel(QObject& parent);
 
     Q_INVOKABLE void setConversation(core::Conversation *conversation);
 

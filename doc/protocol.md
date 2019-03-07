@@ -202,7 +202,7 @@ The reason for the rejection is not provided. It could be that the user was not 
 
 ```
 {
-    "what" : "Message",
+    "type" : "Message",
     "message-id" : "sjdaghfjasghdf87",
     "date" : 2347263476,
     "content" : "bla bla",
@@ -228,11 +228,13 @@ Reply:
 {
     "type" : "Ack",
     "what" : "Message",
-    "message-id" : "sjdaghfjasghdf87",
     "status" : "Received" | "Rejected" | "Rejected-Encoding",
-    "signature" : "..."
+    "data" : "..."
 }
 ```
+
+- data: message-id of the relevant message
+
 
 **IncomingFile**: Request to send a file to the recipient.
 

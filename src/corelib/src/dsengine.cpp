@@ -297,6 +297,7 @@ void DsEngine::initialize()
         qRegisterMetaType<ds::core::Identity *>("Identity *");
         qRegisterMetaType<ds::core::Contact *>("Contact *");
         qRegisterMetaType<ds::core::Conversation *>("Conversation *");
+        qRegisterMetaType<ds::core::Conversation *>("core::Conversation *");
         qRegisterMetaType<ds::core::Conversation::ptr_t>("ds::core::Conversation::ptr_t");
         qRegisterMetaType<ds::core::PeerConnection::ptr_t>("ds::core::PeerConnection::ptr_t");
         qRegisterMetaType<ds::core::Conversation *>("Message *");

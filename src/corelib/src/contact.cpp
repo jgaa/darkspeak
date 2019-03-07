@@ -273,6 +273,8 @@ int Contact::getIdentityId() const noexcept
 
 void Contact::queueMessage(const Message::ptr_t &message)
 {
+    loadMessageQueue();
+
     if (message->getDirection() == Message::OUTGOING) {
         messageQueue_.push_back(message);
         procesMessageQueue();
@@ -469,6 +471,9 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
     connect(connection_->peer.get(), &PeerConnection::addmeRequest,
             this, &Contact::onAddmeRequest);
 
+    connect(connection_->peer.get(), &PeerConnection::receivedMessage,
+            this, &Contact::onReceivedMessage);
+
     setOnlineStatus(ONLINE);
 
     touchLastSeen();
@@ -574,7 +579,8 @@ void Contact::onProcessOnlineLater()
 
     assert(connection_);
 
-    // Send messages etc...
+    loadMessageQueue();
+    procesMessageQueue();
 }
 
 void Contact::onReceivedAck(const PeerAck &ack)
@@ -633,6 +639,88 @@ void Contact::procesMessageQueue()
     }
 }
 
+void Contact::onReceivedMessage(const PeerMessage &msg)
+{
+    if (getState() != ACCEPTED) {
+        LFLOG_WARN << "Rejecting message on connection "
+                   << msg.peer->getConnectionId().toString()
+                   << ". Not in ACEPTED state.";
+
+        msg.peer->sendAck("Message", "Rejected");
+        msg.peer->close();
+        return;
+    }
+
+    auto conversation = getIdentity()->convesationFromHash(msg.data.conversation).get();
+
+    if (!conversation) {
+        // Try the default conversation and see if it match the peers conversation hash
+        auto defaultHash = Conversation::calculateHash(*this);
+        if (defaultHash != msg.data.conversation) {
+            LFLOG_WARN << "Rejecting message on connection "
+                       << msg.peer->getConnectionId().toString()
+                       << ". Unknown conversation: " << msg.data.conversation.toHex();
+
+            msg.peer->sendAck("Message", "Rejected");
+            return;
+        }
+
+        conversation = getDefaultConversation();
+    }
+
+    assert(conversation);
+
+    if (!conversation->haveParticipant(*this)) {
+        LFLOG_WARN << "Rejecting message on connection "
+                   << msg.peer->getConnectionId().toString()
+                   << ". Contact " << getName()
+                   << " on Identyty " << getIdentity()->getName()
+                   << " is not part of converation " << msg.data.conversation.toHex();
+
+        msg.peer->sendAck("Message", "Rejected");
+        msg.peer->close();
+        return;
+    }
+
+    LFLOG_DEBUG << "Accepting incoming message with id: " << msg.data.messageId.toHex()
+                << " over connection " << msg.peer->getConnectionId().toString()
+                << " to " << getName()
+                << " for local delivery to conversation " << conversation->getName();
+
+    conversation->incomingMessage(this, msg.data);
+}
+
+void Contact::loadMessageQueue()
+{
+    if (loadedMessageQueue_) {
+        return;
+    }
+
+    QSqlQuery query;
+    query.prepare("SELECT m.id FROM message AS m LEFT JOIN conversation AS c ON m.conversation_id = c.id WHERE c.participants = :contact AND m.received_time IS NULL ORDER BY m.id");
+    query.bindValue(":contact", getUuid().toString());
+
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to query message-queue: %1").arg(
+                        query.lastError().text()));
+    }
+
+    auto messageMgr = DsEngine::instance().getMessageManager();
+
+    while(query.next()) {
+        messageQueue_.push_back(messageMgr->getMessage(query.value(0).toInt()));
+    }
+
+    if (!messageQueue_.empty()) {
+        LFLOG_DEBUG << "Loaded " << messageQueue_.size()
+                    << " queued messages for contact "
+                    << getName()
+                    << " on identity " << getIdentity()->getName();
+    }
+
+    loadedMessageQueue_ = true;
+}
+
 void Contact::onAddmeRequest(const PeerAddmeReq &req)
 {
     Q_UNUSED(req)
@@ -662,9 +750,16 @@ void Contact::onAddmeRequest(const PeerAddmeReq &req)
     }
 }
 
+void Contact::sendAck(const QString &what, const QString &status, const QString &data)
+{
+    if (isOnline()) {
+        connection_->peer->sendAck(what, status, data);
+    }
+}
+
 Contact::Connection::~Connection()
 {
-    if (auto identity = owner.getIdentity()) {
+    if (owner.getIdentity()) {
         if (peer->isConnected()) {
             LFLOG_DEBUG << "Disconnecting from " << owner.getName()
                         << " at " << owner.getAddress()

@@ -41,6 +41,11 @@ ConversationsModel *Manager::conversationsModel()
     return conversationsModel_.get();
 }
 
+MessagesModel *Manager::messagesModel()
+{
+    return messagesModel_.get();
+}
+
 void Manager::textToClipboard(QString text)
 {
     auto cb = QGuiApplication::clipboard();
@@ -128,6 +133,7 @@ Manager::Manager()
     contacts_ = make_unique<ContactsModel>(*this);
     notifications_ = make_unique<NotificationsModel>(engine_->settings());
     conversationsModel_ = make_unique<ConversationsModel>(*this);
+    messagesModel_ = make_unique<MessagesModel>(*this);
 
     instance_ = this;
 }

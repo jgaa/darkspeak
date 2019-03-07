@@ -10,6 +10,7 @@
 
 #include "ds/peer.h"
 #include "ds/message.h"
+#include "ds/errors.h"
 #include "logfault/logfault.h"
 
 namespace ds {
@@ -17,6 +18,23 @@ namespace prot {
 
 using namespace std;
 using namespace core;
+
+namespace  {
+const std::vector<QString> encoding_names = {"us-ascii", "utf-8"};
+const std::map<QString, Message::Encoding>  encoding_lookup = {
+    {"us-ascii", Message::US_ACSII},
+    {"utf-8", Message::UTF8}
+};
+
+Message::Encoding toEncoding(const QString& name) {
+    const auto it = encoding_lookup.find(name);
+    if (it == encoding_lookup.end()) {
+        throw NotFoundError(name);
+    }
+    return it->second;
+}
+
+} // anonymous namespace
 
 Peer::Peer(ConnectionSocket::ptr_t connection,
            core::ConnectData connectionData)
@@ -173,6 +191,18 @@ void Peer::onReceivedData(const quint32 channel, const quint64 id, QByteArray da
 
             LFLOG_DEBUG << "Emitting Ack";
             emit receivedAck(ack);
+        } else if (type == "Message") {
+            PeerMessage msg{shared_from_this(), getConnectionId(), id,
+                        json.object().value("conversation").toString().toUtf8(),
+                        json.object().value("message-id").toString().toUtf8(),
+                        QDateTime::fromTime_t(json.object().value("date").toString().toUInt()),
+                        json.object().value("content").toString(),
+                        json.object().value("from").toString().toUtf8(),
+                        toEncoding(json.object().value("encoding").toString()),
+                        json.object().value("signature").toString().toUtf8()};
+
+            LFLOG_DEBUG << "Emitting PeerMessage";
+            emit receivedMessage(msg);
         } else {
             LFLOG_WARN << "Unrecognized request from peer at connection "
                        << getConnectionId().toString();
@@ -191,12 +221,20 @@ void Peer::onCloseLater()
 
 void Peer::enableEncryptedStream()
 {
+    if (inState_ == InState::CLOSING) {
+        return;
+    }
+
     assert(inState_ == InState::DISABLED);
     wantChunkSize();
 }
 
 void Peer::wantChunkSize()
 {
+    if (inState_ == InState::CLOSING) {
+        return;
+    }
+
     LFLOG_TRACE << "Want chunk-len bytes (2) on " << connection_->getUuid().toString();
     inState_ = InState::CHUNK_SIZE;
     connection_->wantBytes(2 + crypt_bytes);
@@ -204,6 +242,10 @@ void Peer::wantChunkSize()
 
 void Peer::wantChunkData(const size_t bytes)
 {
+    if (inState_ == InState::CLOSING) {
+        return;
+    }
+
     LFLOG_TRACE << "Want " << bytes << " data-bytes on " << connection_->getUuid().toString();
     inState_ = InState::CHUNK_DATA;
     connection_->wantBytes(bytes + crypt_bytes);
@@ -212,6 +254,10 @@ void Peer::wantChunkData(const size_t bytes)
 // Incoming, stream-encrypted data
 void Peer::processStream(const Peer::data_t &ciphertext)
 {
+    if (inState_ == InState::CLOSING) {
+        return;
+    }
+
     if (inState_ == InState::CHUNK_SIZE) {
         union {
             array<uint8_t, 2> bytes;
@@ -282,10 +328,16 @@ void Peer::processStream(const Peer::data_t &ciphertext)
                     << ", id=" << chunk_id
                     << ", payload=" << (channel_id ? binary : safePayload(payload));
 
-//        emit receivedData(channel_id,
-//                          chunk_id,
-//                          payload.toByteArray());
-        onReceivedData(channel_id, chunk_id, payload.toByteArray());
+        try {
+            onReceivedData(channel_id, chunk_id, payload.toByteArray());
+        } catch (const std::exception& ex) {
+            LFLOG_ERROR << "Caught exception while processing incoming message on connection "
+                        << getConnectionId().toString()
+                        << " :"
+                        << ex.what();
+            close();
+            return;
+        }
 
         wantChunkSize();
     } else {
@@ -364,6 +416,7 @@ crypto::DsCert::ptr_t Peer::getPeerCert() const noexcept
 
 void Peer::close()
 {
+   inState_ = InState::CLOSING;
    emit closeLater();
 }
 
@@ -372,13 +425,14 @@ QUuid Peer::getIdentityId() const noexcept
     return connectionData_.service;
 }
 
-uint64_t Peer::sendAck(const QString &what, const QString &status)
+uint64_t Peer::sendAck(const QString &what, const QString &status, const QString& data)
 {
     auto json = QJsonDocument{
         QJsonObject{
             {"type", "Ack"},
             {"what", what},
-            {"status", status}
+            {"status", status},
+            {"data", data}
         }
     };
 
@@ -402,7 +456,7 @@ uint64_t Peer::sendMessage(const core::Message &message)
             {"message-id", QString{message.getData().messageId.toBase64()}},
             {"date", static_cast<qint64>(message.getData().composedTime.toTime_t())},
             {"content", message.getData().content},
-            {"encoding", static_cast<int>(message.getData().encoding)},
+            {"encoding", encoding_names.at(static_cast<size_t>(message.getData().encoding))},
             {"conversation", QString{message.getData().conversation.toBase64()}},
             {"from", QString{message.getData().sender.toBase64()}},
             {"signature", QString{message.getData().signature.toBase64()}}

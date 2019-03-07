@@ -7,7 +7,7 @@
 #include <QObject>
 
 #include "ds/dscert.h"
-
+#include "message.h"
 
 namespace ds{
 namespace core {
@@ -61,6 +61,30 @@ struct PeerAck : public PeerReq
     QByteArray status;
 };
 
+struct PeerMessage : public PeerReq
+{
+    PeerMessage(std::shared_ptr<PeerConnection> peer, QUuid connectionId, quint64 requestId,
+                QByteArray conversation,
+                QByteArray messageId,
+                QDateTime composedTime,
+                QString content,
+                QByteArray sender,
+                Message::Encoding encoding,
+                QByteArray signature)
+    : PeerReq{peer, std::move(connectionId), requestId}
+    {
+        data.conversation = std::move(conversation);
+        data.messageId = std::move(messageId);
+        data.composedTime = composedTime;
+        data.content = std::move(content);
+        data.sender = std::move(sender);
+        data.encoding = encoding;
+        data.signature = std::move(signature);
+    }
+
+    MessageData data;
+};
+
 
 /*! Representation of a incoming or outgoing connection to a contact.
  *
@@ -86,7 +110,7 @@ public:
     virtual crypto::DsCert::ptr_t getPeerCert() const noexcept = 0;
     virtual QUuid getIdentityId() const noexcept = 0;
     virtual void close() = 0;
-    virtual uint64_t sendAck(const QString& what, const QString& status) = 0;
+    virtual uint64_t sendAck(const QString& what, const QString& status, const QString& data = {}) = 0;
     virtual bool isConnected() const noexcept = 0;
     virtual uint64_t sendMessage(const Message& message) = 0;
 
@@ -96,6 +120,7 @@ signals:
     void receivedData(const quint32 channel, const quint64 id, const QByteArray& data);
     void addmeRequest(const PeerAddmeReq& req);
     void receivedAck(const PeerAck& ack);
+    void receivedMessage(const PeerMessage& msg);
 };
 
 }}

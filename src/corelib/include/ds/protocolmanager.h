@@ -37,6 +37,7 @@ struct AckMsg {
     QUuid connection;
     QByteArray what;
     QByteArray status;
+    QString data;
 };
 
 /*! Generic interface to the IM protocol.
@@ -103,7 +104,7 @@ signals:
     void shutdown();
 
     /*! Incoming message */
-    void incomingMessage(const Message&);
+    void incomingMessage(const PeerMessage&);
 
     /*! Incomming message delivery report */
     void messageReport(const MessageReport&);

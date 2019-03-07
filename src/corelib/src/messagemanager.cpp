@@ -26,6 +26,23 @@ Message::ptr_t MessageManager::getMessage(int dbId)
     return message;
 }
 
+Message::ptr_t MessageManager::getMessage(const QByteArray &messageId)
+{
+    QSqlQuery query;
+    query.prepare("SELECT id FROM message WHERE message_id=:mid");
+    query.bindValue(":mid", messageId);
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to fetch Message from hash: %1").arg(
+                        query.lastError().text()));
+    }
+
+    if (query.next()) {
+        return getMessage(query.value(0).toInt());
+    }
+
+    return {};
+}
+
 Message::ptr_t MessageManager::sendMessage(Conversation &conversation, MessageData data)
 {
     auto message = make_shared<Message>(*this, data, Message::OUTGOING, conversation.getId());
@@ -44,6 +61,35 @@ Message::ptr_t MessageManager::sendMessage(Conversation &conversation, MessageDa
         contact->queueMessage(message);
     }
 
+    return message;
+}
+
+Message::ptr_t MessageManager::receivedMessage(Conversation &conversation, MessageData data)
+{
+    auto message = make_shared<Message>(*this, data, Message::INCOMING, conversation.getId());
+
+    assert(conversation.getIdentity());
+
+    auto cert = conversation.getIdentity()->getCert();
+    if (!message->validate(*cert)) {
+        LFLOG_WARN << "Incoming message from " << conversation.getFirstParticipant()->getName()
+                   << " to " << conversation.getIdentity()->getName()
+                   << " failed validation. Rejecting.";
+        return {};
+    }
+
+    // See if we already have received this message
+    if (auto existing = getMessage(data.messageId)) {
+        return existing;
+    }
+
+    message->addToDb();
+    registry_.add(message->getId(), message);
+    touch(message);
+
+    message->touchSentReceivedTime();
+
+    emit messageAdded(message);
     return message;
 }
 

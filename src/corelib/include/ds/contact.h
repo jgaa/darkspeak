@@ -158,6 +158,8 @@ public:
     const char *getTableName() const noexcept { return "contact"; }
 
     void onAddmeRequest(const PeerAddmeReq& req);
+    //void onReceivedMessage(const PeerMessage& msg, Conversation *conversation = {});
+    void sendAck(const QString& what, const QString& status, const QString& data = {});
 
 signals:
     void nameChanged();
@@ -189,12 +191,15 @@ private slots:
     void onProcessOnlineLater();
     void onReceivedAck(const PeerAck& ack);
     void procesMessageQueue();
+    void onReceivedMessage(const PeerMessage& msg);
 
 private:
     static void bind(QSqlQuery& query, ContactData& data);
+    void loadMessageQueue();
 
     int id_ = -1; // Database id
     bool online_ = false;
+    bool loadedMessageQueue_ = false;
     data_t data_;
     QString onlineIcon_ = "qrc:///images/onion-bw.svg";
     OnlineStatus onlineStatus_ = DISCONNECTED;

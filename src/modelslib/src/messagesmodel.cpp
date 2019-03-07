@@ -1,5 +1,5 @@
 
-#include "ds/messagemodel.h"
+#include "ds/messagesmodel.h"
 #include "ds/dsengine.h"
 #include "ds/dscert.h"
 
@@ -20,21 +20,21 @@ using namespace ds::crypto;
 namespace ds {
 namespace models {
 
-MessageModel::MessageModel(QObject &parent)
+MessagesModel::MessagesModel(QObject &parent)
     : QAbstractListModel(&parent)
 {
     auto mgr = DsEngine::instance().getMessageManager();
     connect(mgr, &MessageManager::messageAdded,
-            this, &MessageModel::onMessageAdded);
+            this, &MessagesModel::onMessageAdded);
     connect(mgr, &MessageManager::messageDeleted,
-            this, &MessageModel::onMessageDeleted);
+            this, &MessagesModel::onMessageDeleted);
     connect(mgr, &MessageManager::messageReceivedDateChanged,
-            this, &MessageModel::onMessageReceivedDateChanged);
+            this, &MessagesModel::onMessageReceivedDateChanged);
 }
 
-void MessageModel::setConversation(Conversation *conversation)
+void MessagesModel::setConversation(Conversation *conversation)
 {
-    if (conversation != conversation_.get()) {
+    if (conversation == conversation_.get()) {
         return;
     }
 
@@ -48,13 +48,13 @@ void MessageModel::setConversation(Conversation *conversation)
     endResetModel();
 }
 
-int MessageModel::rowCount(const QModelIndex &parent) const
+int MessagesModel::rowCount(const QModelIndex &parent) const
 {
     Q_UNUSED(parent)
     return static_cast<int>(rows_.size());
 }
 
-QVariant MessageModel::data(const QModelIndex &ix, int role) const
+QVariant MessagesModel::data(const QModelIndex &ix, int role) const
 {
     if (!ix.isValid()) {
         return {};
@@ -79,10 +79,10 @@ QVariant MessageModel::data(const QModelIndex &ix, int role) const
         return r.data_->sentReceivedTime;
     }
 
-    return QAbstractListModel::data(ix, role);
+    return {};
 }
 
-QHash<int, QByteArray> MessageModel::roleNames() const
+QHash<int, QByteArray> MessagesModel::roleNames() const
 {
     static const QHash<int, QByteArray> names = {
         {H_ID, "messageId"},
@@ -95,7 +95,7 @@ QHash<int, QByteArray> MessageModel::roleNames() const
     return names;
 }
 
-void MessageModel::onMessageAdded(const Message::ptr_t &message)
+void MessagesModel::onMessageAdded(const Message::ptr_t &message)
 {
     if (!conversation_ || (conversation_->getId() != message->getConversationId())) {
         return; // Irrelevant
@@ -108,7 +108,7 @@ void MessageModel::onMessageAdded(const Message::ptr_t &message)
     endInsertRows();
 }
 
-void MessageModel::onMessageDeleted(const Message::ptr_t &message)
+void MessagesModel::onMessageDeleted(const Message::ptr_t &message)
 {
     if (!conversation_ || (conversation_->getId() != message->getConversationId())) {
         return; // Irrelevant
@@ -126,7 +126,7 @@ void MessageModel::onMessageDeleted(const Message::ptr_t &message)
     }
 }
 
-void MessageModel::onMessageReceivedDateChanged(const Message::ptr_t &message)
+void MessagesModel::onMessageReceivedDateChanged(const Message::ptr_t &message)
 {
     if (!conversation_ || (conversation_->getId() != message->getConversationId())) {
         return; // Irrelevant
@@ -142,7 +142,7 @@ void MessageModel::onMessageReceivedDateChanged(const Message::ptr_t &message)
     }
 }
 
-void MessageModel::queryRows(MessageModel::rows_t &rows)
+void MessagesModel::queryRows(MessagesModel::rows_t &rows)
 {
     if (!conversation_) {
         return;
@@ -163,7 +163,7 @@ void MessageModel::queryRows(MessageModel::rows_t &rows)
     }
 }
 
-std::shared_ptr<MessageContent> MessageModel::loadData(const int id) const
+std::shared_ptr<MessageContent> MessagesModel::loadData(const int id) const
 {
     // TODO: Try to get it from the message cache
 
@@ -196,7 +196,7 @@ std::shared_ptr<MessageContent> MessageModel::loadData(const int id) const
     return ptr;
 }
 
-std::shared_ptr<MessageContent> MessageModel::loadData(const Message &message) const
+std::shared_ptr<MessageContent> MessagesModel::loadData(const Message &message) const
 {
     auto ptr = make_shared<MessageContent>();
 

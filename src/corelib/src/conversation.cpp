@@ -55,6 +55,18 @@ void Conversation::sendMessage(const QString &text)
     DsEngine::instance().getMessageManager()->sendMessage(*this, data);
 }
 
+void Conversation::incomingMessage(Contact *contact, const MessageData &data)
+{
+    // Add to the database
+    if (!DsEngine::instance().getMessageManager()->receivedMessage(*this, data)) {
+        contact->sendAck("Message", "Rejected", data.messageId);
+        return;
+    }
+
+    // Send ack
+    contact->sendAck("Message", "Received", data.messageId);
+}
+
 int Conversation::getId() const noexcept {
     return id_;
 }
@@ -146,6 +158,11 @@ int Conversation::getIdentityId() const noexcept
 Identity *Conversation::getIdentity() const
 {
     return DsEngine::instance().getIdentityManager()->identityFromId(getIdentityId());
+}
+
+bool Conversation::haveParticipant(const Contact &contact)
+{
+    return getFirstParticipant()->getUuid() == contact.getUuid();
 }
 
 void Conversation::addToDb()

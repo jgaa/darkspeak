@@ -29,6 +29,7 @@ Page {
 
         onCurrentRowChanged: {
             list.currentIndex = conversations.currentRow
+            messages.setConversation(conversations.current)
         }
     }
 
