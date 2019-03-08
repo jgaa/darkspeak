@@ -22,7 +22,7 @@ public:
     DsServer(ConnectionSocket::ptr_t connection, core::ConnectData connectionData);
 
 public slots:
-    virtual void authorize(bool authorize);
+    virtual void authorize(bool authorize) override;
 
 private slots:
     void advance(const data_t& data);

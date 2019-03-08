@@ -98,7 +98,7 @@ public:
     }
 
 public slots:
-    virtual void authorize(bool /*authorize*/) {}
+    virtual void authorize(bool /*authorize*/) override {}
 
     // Send a request to a connected peer over the encrypted stream
     // Returns a unique id for the request (within the scope of this peer)

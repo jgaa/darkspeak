@@ -1,4 +1,6 @@
 
+#include <memory>
+
 #include "ds/contact.h"
 #include "ds/dsengine.h"
 #include "ds/identity.h"

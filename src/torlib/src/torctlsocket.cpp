@@ -156,7 +156,7 @@ void TorCtlSocket::setError(QString errorMsg)
 
 TorCtlReply::map_t TorCtlReply::parse() const
 {
-    static const std::regex line_breakup(R"(^(([\w][\w-\/]+)(=(\w+)) )?(\w+)( (.*))?$)");
+    static const std::regex line_breakup(R"(^(([\w][\w\-\/]+)(=(\w+)) )?(\w+)( (.*))?$)");
     map_t rval;
 
     for(const auto& line: lines) {

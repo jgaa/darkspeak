@@ -4,9 +4,6 @@
 #ifndef CertImpl_H
 #define CertImpl_H
 
-#include <openssl/evp.h>
-#include <openssl/rsa.h>
-
 #include "ds/dscert.h"
 
 namespace ds {

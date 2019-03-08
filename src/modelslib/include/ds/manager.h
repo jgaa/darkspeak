@@ -10,7 +10,6 @@
 #include "ds/dsengine.h"
 #include "ds/identity.h"
 #include "ds/logmodel.h"
-#include "ds/identitiesmodel.h"
 #include "ds/contactsmodel.h"
 #include "ds/notificationsmodel.h"
 #include "ds/conversationsmodel.h"

@@ -15,6 +15,16 @@ SOURCES += main.cpp
 
 RESOURCES += qml.qrc
 
+macx {
+    INCLUDEPATH += /usr/local/Cellar/libsodium/1.0.17/include
+    QMAKE_LIBDIR += /usr/local/Cellar/libsodium/1.0.17/lib
+}
+
+unix {
+    CONFIG += c++14
+}
+
+
 # Additional import path used to resolve QML modules in Qt Creator's code model
 QML_IMPORT_PATH =
 

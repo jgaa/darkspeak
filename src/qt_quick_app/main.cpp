@@ -11,7 +11,6 @@
 #include "ds/logmodel.h"
 #include "ds/crypto.h"
 #include "ds/identity.h"
-#include "ds/identitiesmodel.h"
 #include "ds/contact.h"
 #include "ds/conversation.h"
 #include "ds/conversationsmodel.h"
@@ -100,12 +99,6 @@ int main(int argc, char *argv[])
     qmlRegisterUncreatableType<ds::models::MessagesModel>("com.jgaa.darkspeak", 1, 0,
                                                    "MessagesModel",
                                                    "Cannot create Messages in QML");
-
-//    qmlRegisterUncreatableMetaObject(
-//                ds::core::staticMetaObject,
-//                "com.jgaa.darkspeak", 1, 0,
-//                "DsCore",
-//                "Error: only enums");
 
     qmlRegisterType<ds::core::QmlIdentityReq>("com.jgaa.darkspeak", 1, 0, "QmlIdentityReq");
 

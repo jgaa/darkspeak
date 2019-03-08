@@ -11,6 +11,13 @@ TEMPLATE = lib
 CONFIG += staticlib c++17
 DEFINES += LOGFAULT_ENABLE_LOCATION=1
 
+macx {
+    INCLUDEPATH += /usr/local/Cellar/libsodium/1.0.17/include
+}
+
+unix {
+    CONFIG += c++14
+}
 
 # The following define makes your compiler emit warnings if you use
 # any feature of Qt which has been marked as deprecated (the exact warnings
@@ -42,4 +49,3 @@ HEADERS += \
     include/ds/memoryview.h
 
 INCLUDEPATH += $$PWD/include
-
