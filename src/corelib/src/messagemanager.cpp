@@ -26,11 +26,31 @@ Message::ptr_t MessageManager::getMessage(int dbId)
     return message;
 }
 
-Message::ptr_t MessageManager::getMessage(const QByteArray &messageId)
+Message::ptr_t MessageManager::getMessage(const QByteArray &messageId,
+                                          const int conversationId)
 {
     QSqlQuery query;
-    query.prepare("SELECT id FROM message WHERE message_id=:mid");
+    query.prepare("SELECT id FROM message WHERE conversation_id=:cid and message_id=:mid");
+    query.bindValue(":cid", conversationId);
     query.bindValue(":mid", messageId);
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to fetch Message from hash: %1").arg(
+                        query.lastError().text()));
+    }
+
+    if (query.next()) {
+        return getMessage(query.value(0).toInt());
+    }
+
+    return {};
+}
+
+Message::ptr_t MessageManager::getMessage(const QByteArray &messageId, const Message::Direction direction)
+{
+    QSqlQuery query;
+    query.prepare("SELECT id FROM message WHERE message_id=:mid and direction=:direction");
+    query.bindValue(":mid", messageId);
+    query.bindValue(":direction", static_cast<int>(direction));
     if(!query.exec()) {
         throw Error(QStringLiteral("Failed to fetch Message from hash: %1").arg(
                         query.lastError().text()));
@@ -80,15 +100,13 @@ Message::ptr_t MessageManager::receivedMessage(Conversation &conversation, Messa
     }
 
     // See if we already have received this message
-    if (auto existing = getMessage(data.messageId)) {
+    if (auto existing = getMessage(data.messageId, conversation.getId())) {
         return existing;
     }
 
     message->addToDb();
     registry_.add(message->getId(), message);
     touch(message);
-
-    message->touchSentReceivedTime();
 
     emit messageAdded(message);
     return message;

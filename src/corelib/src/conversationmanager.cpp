@@ -46,6 +46,21 @@ Conversation::ptr_t ConversationManager::getConversation(Contact *participant)
     return addConversation({}, {}, participant);
 }
 
+Conversation::ptr_t ConversationManager::getConversation(const QByteArray &hash, Contact *participant)
+{
+    QSqlQuery query;
+    query.prepare("SELECT uuid FROM conversation WHERE HASH=:hash AND participants=:uuid AND identity=:identity");
+    query.bindValue(":hash", hash);
+    query.bindValue(":uuid", participant->getUuid());
+    query.bindValue(":identity", participant->getIdentityId());
+    query.exec();
+    if (query.next()) {
+        return getConversation(query.value(0).toUuid());
+    }
+
+    return {};
+}
+
 void ConversationManager::deleteConversation(const QUuid &uuid)
 {
     try {

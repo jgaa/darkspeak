@@ -224,7 +224,8 @@ void MessagesModel::onMessageChanged(const Message::ptr_t &message, const int ro
                         << " for role " << role
                         << " on row " << rowid;
 
-            emit dataChanged({}, index(rowid), {role});
+            const auto where = index(rowid);
+            emit dataChanged(where, where, {role});
             return;
         }
     }

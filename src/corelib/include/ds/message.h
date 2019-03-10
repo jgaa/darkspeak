@@ -42,7 +42,7 @@ public:
         MS_REJECTED
     };
 
-    Q_ENUM(State);
+    Q_ENUM(State)
 
     using ptr_t = std::shared_ptr<Message>;
 

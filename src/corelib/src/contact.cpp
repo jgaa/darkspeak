@@ -641,13 +641,13 @@ void Contact::onReceivedAck(const PeerAck &ack)
 
         auto messageId = QByteArray::fromBase64(ack.data.toUtf8());
         if (messageId.isEmpty()) {
-            LFLOG_DEBUG << "Received ack with empty or invalid message-id: " << ack.data.toUtf8().toHex();
+            LFLOG_WARN << "Received ack with empty or invalid message-id: " << ack.data.toUtf8().toHex();
             return;
         }
 
-        auto message = DsEngine::instance().getMessageManager()->getMessage(messageId);
+        auto message = DsEngine::instance().getMessageManager()->getMessage(messageId, Message::OUTGOING);
         if (!message) {
-            LFLOG_DEBUG << "Received ack for non-existing message " << ack.data.toUtf8().toHex();
+            LFLOG_WARN << "Received ack for non-existing message " << messageId.toHex();
             return;
         }
 
@@ -669,6 +669,8 @@ void Contact::onReceivedAck(const PeerAck &ack)
              LFLOG_DEBUG << "Received ack for already rejected message " << ack.data.toUtf8().toHex();
              return;
         }
+
+        message->touchSentReceivedTime();
 
         if (ack.status == "Received") {
             message->setState(Message::MS_RECEIVED);
@@ -709,7 +711,8 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
         return;
     }
 
-    auto conversation = getIdentity()->convesationFromHash(msg.data.conversation).get();
+    //auto conversation = getIdentity()->convesationFromHash(msg.data.conversation).get();
+    auto conversation = DsEngine::instance().getConversationManager()->getConversation(msg.data.conversation, this).get();
 
     if (!conversation) {
         // Try the default conversation and see if it match the peers conversation hash
@@ -722,6 +725,9 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
             msg.peer->sendAck("Message", "Rejected", msg.data.messageId.toBase64());
             return;
         }
+
+        LFLOG_DEBUG << "Will create a new default conversation now for contact " << getName()
+                    << " at identity " << getIdentity()->getName();
 
         conversation = getDefaultConversation();
     }

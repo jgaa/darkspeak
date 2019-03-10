@@ -27,6 +27,9 @@ public:
     // Get or create a new p2p conversation with this contact
     Conversation::ptr_t getConversation(Contact *participant);
 
+    // Get ane
+    Conversation::ptr_t getConversation(const QByteArray& hash, Contact *participant);
+
     // Delete a conversations and all its messages
     void deleteConversation(const QUuid& uuid);
 

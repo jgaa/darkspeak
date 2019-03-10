@@ -71,7 +71,8 @@ Page {
                     font.pointSize: 8
                     color: direction === Message.INCOMING
                         ? "darkblue" : "darkgreen"
-                    text: root.states[messageState]
+                    text: root.states[messageState] + ' ' + index
+                    //text: messageState
                 }
 
                 TextEdit {

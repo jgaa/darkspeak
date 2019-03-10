@@ -26,7 +26,10 @@ Message::Message(QObject &parent, MessageData data, Message::Direction direction
     : QObject{&parent}, conversationId_{conversationid}, direction_{direction}
     , data_{std::make_unique<MessageData>(std::move(data))}
 {
-
+    if (direction_ == INCOMING) {
+        state_ = State::MS_RECEIVED;
+        sentReceivedTime_ = DsEngine::getSafeNow();
+    }
 }
 
 int Message::getId() const noexcept
@@ -121,7 +124,7 @@ void Message::sign(const DsCert &cert)
     data_->signature = cert.sign<QByteArray>({
         data_->conversation,
         data_->messageId,
-        QString::number(data_->composedTime.currentSecsSinceEpoch()).toUtf8(),
+        data_->composedTime.toString(Qt::ISODate).toUtf8(),
         data_->content.toUtf8(),
         data_->sender,
         QString::number(static_cast<int>(data_->encoding)).toUtf8()});
@@ -132,7 +135,7 @@ bool Message::validate(const DsCert &cert) const
     return  cert.verify(data_->signature,
         {data_->conversation,
             data_->messageId,
-            QString::number(data_->composedTime.currentSecsSinceEpoch()).toUtf8(),
+            data_->composedTime.toString(Qt::ISODate).toUtf8(),
             data_->content.toUtf8(),
             data_->sender,
             QString::number(static_cast<int>(data_->encoding)).toUtf8()

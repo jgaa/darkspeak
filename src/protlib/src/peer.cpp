@@ -201,7 +201,7 @@ void Peer::onReceivedData(const quint32 channel, const quint64 id, QByteArray da
             PeerMessage msg{shared_from_this(), getConnectionId(), id,
                         QByteArray::fromBase64(json.object().value("conversation").toString().toUtf8()),
                         QByteArray::fromBase64(json.object().value("message-id").toString().toUtf8()),
-                        QDateTime::fromTime_t(json.object().value("date").toString().toUInt()),
+                        QDateTime::fromString(json.object().value("date").toString(), Qt::ISODate),
                         json.object().value("content").toString(),
                         QByteArray::fromBase64(json.object().value("from").toString().toUtf8()),
                         toEncoding(json.object().value("encoding").toString()),
@@ -460,7 +460,7 @@ uint64_t Peer::sendMessage(const core::Message &message)
         QJsonObject{
             {"type", "Message"},
             {"message-id", QString{message.getData().messageId.toBase64()}},
-            {"date", static_cast<qint64>(message.getData().composedTime.toTime_t())},
+            {"date", message.getData().composedTime.toString(Qt::ISODate)},
             {"content", message.getData().content},
             {"encoding", encoding_names.at(static_cast<size_t>(message.getData().encoding))},
             {"conversation", QString{message.getData().conversation.toBase64()}},
