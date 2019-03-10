@@ -91,10 +91,10 @@ void Message::setState(Message::State state)
 Conversation *Message::getConversation() const
 {
     QSqlQuery query;
-    query.prepare("SELECT uuid FROM conversation WHERE conversation_id=:id");
+    query.prepare("SELECT uuid FROM conversation WHERE id=:id");
     query.bindValue(":id", getConversationId());
     if(!query.exec()) {
-        throw Error(QStringLiteral("Failed to fetch conversation from hash: %1").arg(
+        throw Error(QStringLiteral("Failed to fetch conversation from id: %1").arg(
                         query.lastError().text()));
     }
 
