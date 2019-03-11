@@ -42,8 +42,12 @@ public:
     // QAbstractItemModel interface
 public:
     QVariant data(const QModelIndex &index, int role) const override;
-    int rowCount(const QModelIndex &parent) const override;
+    int rowCount(const QModelIndex &parent = {}) const override;
     QHash<int, QByteArray> roleNames() const override;
+    Qt::ItemFlags flags(const QModelIndex &index) const override;
+
+signals:
+    void dataChangedLater();
 
 
 private slots:
@@ -59,7 +63,7 @@ private:
     void onMessageChanged(const core::Message::ptr_t& message, const int role);
 
     rows_t rows_;
-    core::Conversation::ptr_t conversation_;
+    core::Conversation::ptr_t conversation_;    
 };
 
 }} // namespaces

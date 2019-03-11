@@ -101,6 +101,11 @@ QHash<int, QByteArray> MessagesModel::roleNames() const
     return names;
 }
 
+Qt::ItemFlags MessagesModel::flags(const QModelIndex &index) const
+{
+    return Qt::ItemIsSelectable | Qt::ItemIsEnabled;
+}
+
 void MessagesModel::onMessageAdded(const Message::ptr_t &message)
 {
     if (!conversation_ || (conversation_->getId() != message->getConversationId())) {
@@ -109,9 +114,11 @@ void MessagesModel::onMessageAdded(const Message::ptr_t &message)
 
     // Always add at the end
     const int rowid = static_cast<int>(rows_.size());
+    LFLOG_DEBUG << "beginInsertRows";
     beginInsertRows({}, rowid, rowid);
     rows_.push_back({message->getId(), loadData(*message)});
     endInsertRows();
+    LFLOG_DEBUG << "endInsertRows";
 }
 
 void MessagesModel::onMessageDeleted(const Message::ptr_t &message)

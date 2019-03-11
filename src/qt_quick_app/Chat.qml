@@ -50,8 +50,17 @@ Page {
         //height: parent.height - input_height
         spacing: 4
         clip: true
-
+        ScrollIndicator.vertical: ScrollIndicator {}
         model: messages
+
+        // Scroll to the end
+        onCountChanged: {
+            if (currentIndex === -1 || currentIndex === (count -2)) {
+                var newIndex = count - 1; // last index
+                positionViewAtEnd();
+                currentIndex = newIndex;
+            }
+        }
 
         delegate:
             Component {
@@ -71,8 +80,8 @@ Page {
                     font.pointSize: 8
                     color: direction === Message.INCOMING
                         ? "darkblue" : "darkgreen"
-                    text: root.states[messageState] + ' ' + index
-                    //text: messageState
+                    //text: root.states[messageState] + ' ' + index
+                    text: messageState
                 }
 
                 TextEdit {
