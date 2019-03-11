@@ -227,6 +227,13 @@ void MessagesModel::onMessageChanged(const Message::ptr_t &message, const int ro
     int rowid = 0;
     for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
         if (it->id == messageId) {
+
+            if (role == H_STATE) {
+                it->data_->state = message->getState();
+            } else if (role == H_RECEIVED) {
+                it->data_->sentReceivedTime = message->getSentReceivedTime();
+            }
+
             LFLOG_DEBUG << "Emitting dataChanged for message " << message->getId()
                         << " for role " << role
                         << " on row " << rowid;

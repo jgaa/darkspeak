@@ -9,7 +9,7 @@ Page {
     property int input_height: 96
     property int msg_border: 16
     visible: conversations.current
-    property var states: [qsTr("Composed"), qsTr("Queued"), qsTr("Sent"), qsTr("Received"), qsTr("Rejected")]
+    property var states: [qsTr("Composed"), qsTr("Queued"), qsTr("Sent"), qsTr("Delivered"), qsTr("Rejected")]
     property var scolors: ["silver", "orange", "yellow", "lightgreen", "red"]
 
     header: Label {
@@ -38,6 +38,18 @@ Page {
         }
     }
 
+    function scrollToEnd() {
+        var newIndex = list.count - 1; // last index
+        list.positionViewAtEnd();
+        list.currentIndex = newIndex;
+    }
+
+    Connections {
+        target: messages
+        onModelReset: {
+            scrollToEnd()
+        }
+    }
 
     ListView {
         id: list
@@ -47,18 +59,15 @@ Page {
         anchors.top: parent.top
         anchors.topMargin: 4
         highlightRangeMode: ListView.NoHighlightRange
-        //height: parent.height - input_height
         spacing: 4
         clip: true
-        ScrollIndicator.vertical: ScrollIndicator {}
+        ScrollBar.vertical: ScrollBar { id: scrollbar}
         model: messages
 
         // Scroll to the end
         onCountChanged: {
             if (currentIndex === -1 || currentIndex === (count -2)) {
-                var newIndex = count - 1; // last index
-                positionViewAtEnd();
-                currentIndex = newIndex;
+                scrollToEnd()
             }
         }
 
@@ -68,7 +77,7 @@ Page {
                 id: textbox
                 property int margin: 4
                 x: direction === Message.OUTGOING ? 0 : msg_border
-                width: parent.width - msg_border
+                width: parent.width - msg_border - scrollbar.width
                 height: textarea.contentHeight + (margin * 2) + date.height
                 color: pickColor(direction, messageState)
                 radius: 4
@@ -80,8 +89,9 @@ Page {
                     font.pointSize: 8
                     color: direction === Message.INCOMING
                         ? "darkblue" : "darkgreen"
-                    //text: root.states[messageState] + ' ' + index
-                    text: messageState
+                    text: direction === Message.OUTGOING
+                          ? root.states[messageState]
+                          : qsTr("Received")
                 }
 
                 TextEdit {
@@ -92,7 +102,7 @@ Page {
                     font.pointSize: 8
                     color: direction === Message.INCOMING
                         ? "darkblue" : "darkgreen"
-                    text: composedTime
+                    text: new Date(composedTime).toLocaleString(Qt.locale(), "ddd yyyy-MM-dd hh:mm")
                 }
 
                 TextEdit {
