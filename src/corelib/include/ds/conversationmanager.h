@@ -2,7 +2,6 @@
 #define CONVERSATIONMANAGER_H
 
 #include <deque>
-#include <unordered_map>
 #include <QUuid>
 #include <QObject>
 
@@ -34,7 +33,7 @@ public:
     void deleteConversation(const QUuid& uuid);
 
     // Add p2p conversation
-     Conversation::ptr_t addConversation(const QString& name, const QString& topic, Contact *participant);
+    Conversation::ptr_t addConversation(const QString& name, const QString& topic, Contact *participant);
 
     // Put the Conversation at the front of the lru cache
     void touch(const Conversation::ptr_t& conversation);
