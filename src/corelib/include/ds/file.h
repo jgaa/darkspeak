@@ -58,7 +58,7 @@ public:
     QString getName() const noexcept;
     void setName(const QString& name);
     QString getPath() const noexcept;
-    void setPath(const QString& name);
+    void setPath(const QString& path);
     QByteArray getHash() const noexcept;
     void setHash(const QByteArray& hash);
     QDateTime getCreated() const noexcept;
@@ -72,6 +72,19 @@ public:
     void setAckTime(const QDateTime& when);
     void touchAckTime();
 
+    /*! Add the new File to the database. */
+    void addToDb();
+
+    /*! Delete from the database */
+    void deleteFromDb();
+
+    static File::ptr_t load(QObject& parent, const int dbId);
+    static File::ptr_t load(QObject& parent, int conversation, const QByteArray& hash);
+
+    const char *getTableName() const noexcept { return "file"; }
+
+    void asynchCalculateHash();
+
 signals:
     void stateChanged();
     void isActiveChanged();
@@ -82,8 +95,12 @@ signals:
     void fileTimeChanged();
     void sizeChanged();
     void bytesTransferredChanged();
+    void onHashCalculated();
 
 private:
+    static ptr_t load(QObject& parent, const std::function<void(QSqlQuery&)>& prepare);
+
+    int id_ = 0;
     std::unique_ptr<FileData> data_;
 };
 
@@ -105,5 +122,8 @@ struct FileData {
 
 
 }}
+
+Q_DECLARE_METATYPE(ds::core::File *)
+Q_DECLARE_METATYPE(ds::core::FileData)
 
 #endif // FILE_H

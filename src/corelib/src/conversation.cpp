@@ -177,7 +177,7 @@ void Conversation::addToDb()
 
 
     if (!created_.isValid()) {
-        created_ = QDateTime::fromTime_t((QDateTime::currentDateTime().toTime_t() / 60) * 60);
+        created_ = DsEngine::getSafeNow();
     }
 
     if (!lastActivity_.isValid()) {
@@ -225,7 +225,7 @@ void Conversation::addToDb()
     query.bindValue(":hash", hash_);
 
     if(!query.exec()) {
-        throw Error(QStringLiteral("Failed to load Conversation: %1").arg(
+        throw Error(QStringLiteral("Failed to save Conversation: %1").arg(
                         query.lastError().text()));
     }
 
