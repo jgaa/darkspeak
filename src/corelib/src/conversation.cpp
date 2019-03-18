@@ -1,7 +1,6 @@
 #include "ds/conversation.h"
 #include "ds/errors.h"
 #include "ds/update_helper.h"
-#include "ds/errors.h"
 #include "ds/dsengine.h"
 #include "ds/crypto.h"
 #include "ds/identity.h"

@@ -1,8 +1,11 @@
 #ifndef UPDATE_HELPER_H
 #define UPDATE_HELPER_H
 
+#include <QObject>
 #include <QSqlQuery>
 #include <QSqlError>
+
+#include "ds/errors.h"
 
 namespace ds {
 namespace core {

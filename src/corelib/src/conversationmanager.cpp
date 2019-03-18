@@ -49,7 +49,7 @@ Conversation::ptr_t ConversationManager::getConversation(Contact *participant)
 Conversation::ptr_t ConversationManager::getConversation(const QByteArray &hash, Contact *participant)
 {
     QSqlQuery query;
-    query.prepare("SELECT uuid FROM conversation WHERE HASH=:hash AND participants=:uuid AND identity=:identity");
+    query.prepare("SELECT uuid FROM conversation WHERE hash=:hash AND participants=:uuid AND identity=:identity");
     query.bindValue(":hash", hash);
     query.bindValue(":uuid", participant->getUuid());
     query.bindValue(":identity", participant->getIdentityId());

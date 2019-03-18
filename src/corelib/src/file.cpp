@@ -1,10 +1,16 @@
-#include "ds/update_helper.h"
+
 #include "ds/errors.h"
 #include "ds/dsengine.h"
+#include "ds/update_helper.h"
 #include "ds/crypto.h"
 #include "ds/file.h"
 
+#include <sodium.h>
+
 #include "logfault/logfault.h"
+
+#include <QFile>
+#include <QThreadPool>
 
 using namespace std;
 
@@ -14,7 +20,11 @@ namespace core {
 File::File(QObject &parent)
     : QObject (&parent), data_{make_unique<FileData>()}
 {
+}
 
+File::File(QObject &parent, std::unique_ptr<FileData> data)
+    : QObject (&parent), data_{std::move(data)}
+{
 }
 
 int File::getId() const noexcept
@@ -117,6 +127,12 @@ void File::touchAckTime()
     setAckTime(DsEngine::getSafeNow());
 }
 
+bool File::isActive() const noexcept
+{
+    auto state = getState();
+    return state == FS_WAITING || state == FS_TRANSFERRING;
+}
+
 void File::addToDb()
 {
     QSqlQuery query;
@@ -185,6 +201,45 @@ File::ptr_t File::load(QObject &parent, int conversation, const QByteArray &hash
         query.bindValue(":hash", hash);
         query.bindValue(":cid", conversation);
     });
+}
+
+void File::asynchCalculateHash()
+{
+    auto self = shared_from_this();
+    auto task = new Task([self]() {
+        QFile file(self->getName());
+        if (!file.open(QIODevice::ReadOnly)) {
+            emit self->hashCalculationFailed("Failed to open file");
+            return;
+        }
+
+        crypto_hash_sha256_state state = {};
+        crypto_hash_sha256_init(&state);
+
+        std::array<uint8_t, 1024 * 8> buffer;
+        while(!file.isOpen()) {
+
+            const auto bytes_read = file.read(reinterpret_cast<char *>(buffer.data()),
+                                              static_cast<qint64>(buffer.size()));
+            if (bytes_read > 0) {
+                crypto_hash_sha256_update(&state, buffer.data(),
+                                          static_cast<size_t>(bytes_read));
+            } else if (bytes_read == 0) {
+                file.close();
+            } else {
+                emit self->hashCalculationFailed("Read failed");
+                file.close();
+                return;
+            }
+        }
+
+        QByteArray out;
+        out.resize(crypto_hash_sha256_BYTES);
+        crypto_hash_sha256_final(&state, reinterpret_cast<uint8_t *>(out.data()));
+        emit self->hashCalculated(out);
+    });
+
+     QThreadPool::globalInstance()->start(task);
 }
 
 QString File::getSelectStatement(const QString &where)

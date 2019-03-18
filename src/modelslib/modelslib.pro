@@ -26,7 +26,8 @@ SOURCES += \
     src/manager.cpp \
     src/logmodel.cpp \
     src/notificationsmodel.cpp \
-    src/messagesmodel.cpp
+    src/messagesmodel.cpp \
+    src/filesmodel.cpp
 
 HEADERS += \
     include/ds/contactsmodel.h \
@@ -36,7 +37,8 @@ HEADERS += \
     include/ds/manager.h \
     include/ds/logmodel.h \
     include/ds/notificationsmodel.h \
-    include/ds/messagesmodel.h
+    include/ds/messagesmodel.h \
+    include/ds/filesmodel.h
 
 INCLUDEPATH += \
     $$PWD/include \
