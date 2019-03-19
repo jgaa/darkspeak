@@ -133,6 +133,21 @@ bool File::isActive() const noexcept
     return state == FS_WAITING || state == FS_TRANSFERRING;
 }
 
+int File::getConversationId() const noexcept
+{
+    return  data_->conversation;
+}
+
+int File::getContactId() const noexcept
+{
+    return data_->contact;
+}
+
+int File::getIdentityId() const noexcept
+{
+    return data_->identity;
+}
+
 void File::addToDb()
 {
     QSqlQuery query;

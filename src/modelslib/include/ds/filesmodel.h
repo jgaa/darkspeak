@@ -31,22 +31,24 @@ public:
     FilesModel(QObject& parent);
 
     // Reset the model to track files for this conversation
-    Q_INVOKABLE void setConversation(const core::Conversation *conversation);
+    Q_INVOKABLE void setConversation(core::Conversation *conversation);
 
     // Reset the model to track files for this contact
-    Q_INVOKABLE void setContact(const core::Contact *contact);
+    Q_INVOKABLE void setContact(core::Contact *contact);
 
     // Reset the model to track files for this identity
-    Q_INVOKABLE void setIdentity(const core::Identity *identity);
+    Q_INVOKABLE void setIdentity(core::Identity *identity);
 
 private slots:
     void onFileAdded(const core::File::ptr_t& file);
     void onFileDeleted(const int dbId);
 
 private:
+    void queryRows(rows_t& rows);
+
     rows_t rows_;
     core::Conversation::ptr_t currentConversation_;
-    core::Conversation::ptr_t currentContact_;
+    core::Contact::ptr_t currentContact_;
     core::Identity *currentIdentity_ = {};
 };
 

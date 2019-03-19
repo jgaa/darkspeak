@@ -42,7 +42,7 @@ ToolBar {
             text: qsTr("Identity")
             icon.name: "document-new"
             height: parent.height
-            visible: manager.currentPage === 1
+            visible: manager.currentPage === Manager.IDENTITIES
 
             onClicked: {
                 var component = Qt.createComponent("qrc:/EditIdentityDialog.qml")
@@ -60,7 +60,7 @@ ToolBar {
             text: qsTr("Contact")
             icon.name: "document-new"
             height: parent.height
-            visible: manager.currentPage === 2
+            visible: manager.currentPage === Manager.CONTACTS
 
             onClicked: {
                 var clip = manager.getIdenityFromClipboard()
@@ -74,6 +74,28 @@ ToolBar {
                     "parent"   : mainWindow,
                     "clip"     : clip,
                     "identity" : identities.getCurrentIdentity()
+                });
+                dlg.open()
+            }
+        }
+
+        ToolButton {
+            text: qsTr("Send File")
+            icon.source: "qrc:/images/FileUpload.svg"
+            height: parent.height
+            visible: ((manager.currentPage === Manager.CHAT) || (manager.currentPage === Manager.CONVERSATIONS))
+                     && conversations.current
+
+            onClicked: {
+                var component = Qt.createComponent("qrc:/EditUploadFileDialog.qml")
+                if (component.status !== Component.Ready) {
+                    if(component.status === Component.Error )
+                        console.debug("Error:"+ component.errorString() );
+                    return;
+                }
+                var dlg = component.createObject(mainWindow, {
+                    "parent"   : mainWindow,
+                    "conversation" : conversations.current
                 });
                 dlg.open()
             }

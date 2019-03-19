@@ -29,7 +29,7 @@ struct ContactData;
  * The Contact is owned by an Identity instance
  *
  */
-struct Contact : public QObject {
+struct Contact : public QObject, public std::enable_shared_from_this<Contact> {
         Q_OBJECT
 
 public:

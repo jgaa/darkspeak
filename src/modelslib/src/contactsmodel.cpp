@@ -92,6 +92,7 @@ void ContactsModel::onContactDeleted(const QUuid &uuid)
             beginRemoveRows({}, rowid, rowid);
             rows_.erase(it);
             endRemoveRows();
+            break;
         }
     }
 }
@@ -140,7 +141,7 @@ void ContactsModel::queryRows(rows_t &rows)
     query.bindValue(":identity", identity_->getId());
 
     if(!query.exec()) {
-        throw Error(QStringLiteral("Failed to add identity: %1").arg(
+        throw Error(QStringLiteral("Failed to query contacts: %1").arg(
                         query.lastError().text()));
     }
 

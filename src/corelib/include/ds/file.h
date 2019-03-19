@@ -94,6 +94,9 @@ public:
     void setAckTime(const QDateTime& when);
     void touchAckTime();
     bool isActive() const noexcept;
+    int getConversationId() const noexcept;
+    int getContactId() const noexcept;
+    int getIdentityId() const noexcept;
 
     /*! Add the new File to the database. */
     void addToDb();
