@@ -54,6 +54,18 @@ void Conversation::sendMessage(const QString &text)
     DsEngine::instance().getMessageManager()->sendMessage(*this, data);
 }
 
+void Conversation::sendFile(const QVariantMap &args)
+{
+    auto data = make_unique<FileData>();
+    data->name = args.value("name").toString();
+    data->path = args.value("path").toString();
+    data->conversation = getId();
+    data->contact = getFirstParticipant()->getId();
+    data->identity = getIdentityId();
+
+    DsEngine::instance().getFileManager()->addFile(move(data));
+}
+
 void Conversation::incomingMessage(Contact *contact, const MessageData &data)
 {
     // Add to the database

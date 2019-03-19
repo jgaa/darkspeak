@@ -4,13 +4,16 @@
 #include "ds/update_helper.h"
 #include "ds/crypto.h"
 #include "ds/file.h"
+#include "ds/task.h"
 
 #include <sodium.h>
 
 #include "logfault/logfault.h"
 
 #include <QFile>
+#include <QFileInfo>
 #include <QThreadPool>
+#include <QUrl>
 
 using namespace std;
 
@@ -161,6 +164,18 @@ void File::addToDb()
         data_->createdTime = DsEngine::getSafeNow();
     }
 
+    if (data_->direction == File::OUTGOING) {
+        QFile file{QUrl(data_->path).toLocalFile()};
+        if (data_->size == 0) {
+            data_->size = file.size();
+        }
+
+        if (!data_->fileTime.isValid()) {
+            QFileInfo fi{file};
+            data_->fileTime = fi.lastModified();
+        }
+    }
+
     query.bindValue(":state", static_cast<int>(data_->state));
     query.bindValue(":direction", static_cast<int>(data_->direction));
     query.bindValue(":identity_id", data_->identity);
@@ -174,7 +189,6 @@ void File::addToDb()
     query.bindValue(":created_time", data_->createdTime);
     query.bindValue(":ack_time", data_->ackTime);
     query.bindValue(":bytes_transferred", data_->bytesTransferred);
-
 
     if(!query.exec()) {
         throw Error(QStringLiteral("Failed to save File: %1").arg(

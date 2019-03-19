@@ -39,6 +39,16 @@ public:
     // Reset the model to track files for this identity
     Q_INVOKABLE void setIdentity(core::Identity *identity);
 
+    Q_INVOKABLE qlonglong getFileLength(const QString& path) const;
+    Q_INVOKABLE QString getFileName(const QString& path) const;
+
+    // QAbstractItemModel interface
+public:
+    int rowCount(const QModelIndex &parent) const override;
+    QVariant data(const QModelIndex &index, int role) const override;
+    QHash<int, QByteArray> roleNames() const override;
+
+
 private slots:
     void onFileAdded(const core::File::ptr_t& file);
     void onFileDeleted(const int dbId);

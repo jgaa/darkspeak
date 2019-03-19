@@ -1,4 +1,5 @@
 
+#include <QUrl>
 #include <assert.h>
 
 #include "ds/dsengine.h"
@@ -46,6 +47,53 @@ void FilesModel::setIdentity(Identity *identity)
     currentIdentity_ = identity;
 
     queryRows(rows_);
+}
+
+qlonglong FilesModel::getFileLength(const QString &path) const
+{
+    QFile file(QUrl(path).toLocalFile());
+    if (file.exists()) {
+        return file.size();
+    }
+
+    return {};
+}
+
+QString FilesModel::getFileName(const QString &path) const
+{
+    return QUrl(path).fileName();
+}
+
+int FilesModel::rowCount(const QModelIndex &parent) const
+{
+    return static_cast<int>(rows_.size());
+}
+
+QVariant FilesModel::data(const QModelIndex &ix, int role) const
+{
+    if (ix.isValid() && ix.column() == 0 && role == Qt::DisplayRole) {
+        auto &r = rows_.at(static_cast<size_t>(ix.row()));
+
+        // Lazy loading
+        if (!r.file) {
+            r.file = DsEngine::instance().getFileManager()->getFile(r.id);
+        }
+
+        assert(currentIdentity_ != nullptr);
+
+        return QVariant::fromValue<ds::core::File *>(r.file.get());
+    }
+
+    return {};
+}
+
+QHash<int, QByteArray> FilesModel::roleNames() const
+{
+    static const QHash<int, QByteArray> names = {
+        {Qt::DisplayRole, "file"},
+    };
+
+    return names;
 }
 
 void FilesModel::onFileAdded(const File::ptr_t &file)

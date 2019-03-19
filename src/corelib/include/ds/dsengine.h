@@ -19,6 +19,7 @@
 #include "ds/conversation.h"
 #include "ds/conversationmanager.h"
 #include "ds/messagemanager.h"
+#include "ds/filemanager.h"
 
 namespace ds {
 namespace core {
@@ -55,6 +56,7 @@ public:
     ContactManager *getContactManager();
     ConversationManager *getConversationManager();
     MessageManager *getMessageManager();
+    FileManager *getFileManager();
 
     QSettings& settings() noexcept { return *settings_; }
     ProtocolManager& getProtocolMgr(ProtocolManager::Transport transport);
@@ -69,6 +71,7 @@ public:
     void whenOnline(std::function<void ()> fn);
 
     static QDateTime getSafeNow() noexcept;
+    static QDateTime getSafeTime(const QDateTime& when) noexcept;
 
 public slots:
     void createNewTransport(const QByteArray& name, const QUuid& uuid);
@@ -106,10 +109,11 @@ protected:
     ProtocolManager::ptr_t tor_mgr_;
     State state_ = State::INITIALIZING;
     QList<std::function<void ()>> when_online_;
-    IdentityManager *identityManager_ = nullptr;
-    ContactManager *contactManager_ = nullptr;
-    ConversationManager *conversationManager_ = nullptr;
-    MessageManager *messageManager_ = nullptr;
+    IdentityManager *identityManager_ = {};
+    ContactManager *contactManager_ = {};
+    ConversationManager *conversationManager_ = {};
+    MessageManager *messageManager_ = {};
+    FileManager *fileManager_ = {};
 };
 
 }} // namepsaces

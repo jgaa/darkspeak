@@ -14,6 +14,7 @@
 #include "ds/notificationsmodel.h"
 #include "ds/conversationsmodel.h"
 #include "ds/messagesmodel.h"
+#include "ds/filesmodel.h"
 
 #ifndef PROGRAM_VERSION
     #define PROGRAM_VERSION "develop"
@@ -54,6 +55,7 @@ public:
     Q_INVOKABLE NotificationsModel *notificationsModel();
     Q_INVOKABLE ConversationsModel *conversationsModel();
     Q_INVOKABLE MessagesModel *messagesModel();
+    Q_INVOKABLE FilesModel *filesModel();
     Q_INVOKABLE void textToClipboard(QString text);
     Q_INVOKABLE QVariantMap getIdenityFromClipboard() const;
 
@@ -93,6 +95,7 @@ private:
     std::unique_ptr<NotificationsModel> notifications_;
     std::unique_ptr<ConversationsModel> conversationsModel_;
     std::unique_ptr<MessagesModel> messagesModel_;
+    std::unique_ptr<FilesModel> filesModel_;
     int page_ = 3; // Home
 };
 

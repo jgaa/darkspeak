@@ -7,11 +7,15 @@ import com.jgaa.darkspeak 1.0
 Dialog {
     id: root
     property Conversation conversation: null
-    standardButtons: StandardButton.Ok | StandardButton.Cancel
+    standardButtons: path.text ? (StandardButton.Ok | StandardButton.Cancel) : StandardButton.Cancel
     width: mainWindow.width < 450 ? mainWindow.width : 450
 
-    function updateInfo() {
-
+    function updateInfo(fpath) {
+        name.text = files.getFileName(fpath)
+        var len = files.getFileLength(fpath)
+        if (len) {
+            size.text = len
+        }
     }
 
     ColumnLayout {
@@ -21,14 +25,14 @@ Dialog {
         GridLayout {
             id: fields
             rowSpacing: 4
-            rows: 4
+            rows: 3
             Layout.fillWidth: parent.width
             flow: GridLayout.TopToBottom
 
             Label { font.pointSize: 9; text: qsTr("Path")}
             Label { font.pointSize: 9; text: qsTr("Name")}
             Label { font.pointSize: 9; text: qsTr("Size")}
-            Label { font.pointSize: 9; text: qsTr("Hash")}
+            //Label { font.pointSize: 9; text: qsTr("Hash")}
 
             Row {
                 Layout.fillWidth: true
@@ -38,7 +42,8 @@ Dialog {
                     width: parent.width - 50
 
                     onTextChanged: {
-                        updateInfo()
+                        onTextChanged: console.log("Text has changed to:", text)
+                        updateInfo(text)
                     }
                 }
 
@@ -64,11 +69,11 @@ Dialog {
                 readOnly: true
             }
 
-            TextField {
-                id: hash
-                Layout.fillWidth: true
-                readOnly: true
-            }
+//            TextField {
+//                id: hash
+//                Layout.fillWidth: true
+//                readOnly: true
+//            }
         }
 
         FileDialog {
@@ -83,21 +88,15 @@ Dialog {
     }
 
     onAccepted: {
+        const args = {
+            "name" : name.text ? name.text : files.getFileName(path.text),
+            "path" : path.text
+        }
 
-//        const args = {
-//            "identity" : identity.id,
-//            "name" : name.text ? name.text : qsTr("Anononymous Coward"),
-//            "nickName" : clip ? clip.nickName : null,
-//            "handle" : handle.text,
-//            "address" : address.text,
-//            "addmeMessage" : addmeMessage.text,
-//            "autoConnect" : autoConnect.checked,
-//            "notes" : notes.text
+        conversation.sendFile(args);
 
-//        }
-
-        close()
-        //destroy()
+        //close()
+        destroy()
     }
 
     onRejected: {

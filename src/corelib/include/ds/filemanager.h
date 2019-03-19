@@ -1,6 +1,7 @@
 #ifndef FILEMANAGER_H
 #define FILEMANAGER_H
 
+#include <set>
 #include <deque>
 #include <QUuid>
 #include <QObject>
@@ -35,8 +36,11 @@ signals:
 public slots:
 
 private:
+    void hashIt(const File::ptr_t& file);
+
     Registry<int, File> registry_;
     LruCache<File::ptr_t> lru_cache_{3};
+    std::set<File::ptr_t> hashing_;
 };
 
 }}

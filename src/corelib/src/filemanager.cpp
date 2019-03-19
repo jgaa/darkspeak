@@ -1,5 +1,7 @@
 #include "include/ds/filemanager.h"
 
+#include "logfault/logfault.h"
+
 using namespace std;
 
 namespace ds {
@@ -39,12 +41,42 @@ File::ptr_t FileManager::addFile(std::unique_ptr<FileData> data)
     registry_.add(file->getId(), file);
     touch(file);
     emit fileAdded(file);
+
+    if (file->getState() == File::FS_CREATED) {
+        hashIt(file);
+    }
+
     return file;
 }
 
 void FileManager::touch(const File::ptr_t &file)
 {
     lru_cache_.touch(file);
+}
+
+void FileManager::hashIt(const File::ptr_t &file)
+{
+    if (hashing_.insert(file).second) {
+
+        connect(file.get(), & File::hashCalculated, this, [this, file](const QByteArray& hash) {
+            hashing_.erase(file);
+            LFLOG_DEBUG << "Calculted hash for file #" << file->getId() << " " << file->getPath();
+            file->setHash(hash);
+            file->setState(File::FS_WAITING);
+
+            // TODO: If the conversation is to a connected contact, start sending
+            touch(file);
+        });
+
+        connect(file.get(), & File::hashCalculationFailed, this, [this, file](const QString& why) {
+            hashing_.erase(file);
+            LFLOG_DEBUG << "Failed to hash file #" << file->getId() << " " << file->getPath()
+                        << ": " << why;
+            touch(file);
+        });
+
+        file->asynchCalculateHash();
+    }
 }
 
 

@@ -82,6 +82,11 @@ MessageManager *DsEngine::getMessageManager()
     return messageManager_;
 }
 
+FileManager *DsEngine::getFileManager()
+{
+    return fileManager_;
+}
+
 ProtocolManager &DsEngine::getProtocolMgr(ProtocolManager::Transport)
 {
     assert(tor_mgr_);
@@ -138,7 +143,12 @@ void DsEngine::whenOnline(std::function<void ()> fn)
 
 QDateTime DsEngine::getSafeNow() noexcept
 {
-    auto secs = QDateTime::currentDateTime().currentSecsSinceEpoch();
+    return getSafeTime(QDateTime::currentDateTime());
+}
+
+QDateTime DsEngine::getSafeTime(const QDateTime &when) noexcept
+{
+    auto secs = when.currentSecsSinceEpoch();
     secs /= 60;
     secs *= 60;
     return QDateTime::fromSecsSinceEpoch(secs);
@@ -302,6 +312,8 @@ void DsEngine::initialize()
         qRegisterMetaType<ds::core::PeerConnection::ptr_t>("ds::core::PeerConnection::ptr_t");
         qRegisterMetaType<ds::core::Conversation *>("Message *");
         qRegisterMetaType<ds::core::Conversation *>("MessageData");
+        qRegisterMetaType<ds::core::Conversation *>("File *");
+        qRegisterMetaType<ds::core::Conversation *>("FileData");
     }
 
     auto data_path = QStandardPaths::writableLocation(

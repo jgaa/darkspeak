@@ -16,6 +16,7 @@
 #include "ds/conversationsmodel.h"
 #include "ds/messagesmodel.h"
 #include "ds/message.h"
+#include "ds/filesmodel.h"
 
 #include "logfault/logfault.h"
 
@@ -100,6 +101,15 @@ int main(int argc, char *argv[])
                                                    "MessagesModel",
                                                    "Cannot create Messages in QML");
 
+    qmlRegisterUncreatableType<ds::core::File>("com.jgaa.darkspeak", 1, 0,
+                                                   "File",
+                                                   "Cannot create File in QML");
+
+    qmlRegisterUncreatableType<ds::models::FilesModel>("com.jgaa.darkspeak", 1, 0,
+                                                   "FilesModel",
+                                                   "Cannot create FilesModel in QML");
+
+
     qmlRegisterType<ds::core::QmlIdentityReq>("com.jgaa.darkspeak", 1, 0, "QmlIdentityReq");
 
     QQmlApplicationEngine engine;
@@ -111,6 +121,7 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("notifications", manager->notificationsModel());
     engine.rootContext()->setContextProperty("conversations", manager->conversationsModel());
     engine.rootContext()->setContextProperty("messages", manager->messagesModel());
+    engine.rootContext()->setContextProperty("files", manager->filesModel());
 
     //QQuickStyle::setStyle("Fusion");
 

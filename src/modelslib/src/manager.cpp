@@ -46,6 +46,11 @@ MessagesModel *Manager::messagesModel()
     return messagesModel_.get();
 }
 
+FilesModel *Manager::filesModel()
+{
+    return filesModel_.get();
+}
+
 void Manager::textToClipboard(QString text)
 {
     auto cb = QGuiApplication::clipboard();
@@ -134,6 +139,7 @@ Manager::Manager()
     notifications_ = make_unique<NotificationsModel>(engine_->settings());
     conversationsModel_ = make_unique<ConversationsModel>(*this);
     messagesModel_ = make_unique<MessagesModel>(*this);
+    filesModel_ = make_unique<FilesModel>(*this);
 
     instance_ = this;
 }

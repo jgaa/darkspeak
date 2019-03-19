@@ -16,26 +16,6 @@ namespace core {
 
 struct FileData;
 
-class Task : public QObject, public QRunnable {
-    Q_OBJECT
-public:
-    using fn_t = std::function<void()>;
-
-    Task(fn_t func)
-        : func_{std::move(func)} {}
-
-    // QRunnable interface
-    void run() override {
-        if (func_) {
-            func_();
-        }
-    }
-
-private:
-    fn_t func_;
-};
-
-
 class File : public QObject, std::enable_shared_from_this<File>
 {
     Q_OBJECT
@@ -43,6 +23,8 @@ public:
     using ptr_t = std::shared_ptr<File>;
 
     enum State {
+        FS_CREATED,
+        FS_HASHING,
         FS_WAITING,
         FS_TRANSFERRING,
         FS_DONE,
@@ -133,7 +115,7 @@ private:
 };
 
 struct FileData {
-    File::State state = File::FS_WAITING;
+    File::State state = File::FS_CREATED;
     File::Direction direction = File::OUTGOING;
     int identity = 0;
     int contact = 0;
