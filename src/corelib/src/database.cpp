@@ -3,6 +3,7 @@
 #include <QFileInfo>
 
 #include "ds/database.h"
+#include "ds/file.h"
 
 #include "logfault/logfault.h"
 
@@ -49,6 +50,8 @@ Database::Database(QSettings& settings)
                    << " while I expected " << currentVersion;
     }
 
+    prepareData();
+
 }
 
 Database::~Database()
@@ -71,7 +74,7 @@ void Database::createDatabase()
         exec(R"(CREATE TABLE "conversation" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `identity` INTEGER NOT NULL, `type` INTEGER NOT NULL DEFAULT 0, `name` TEXT NOT NULL, `uuid` INTEGER, `hash` BLOB NOT NULL, `participants` TEXT, `topic` TEXT, `created` TEXT NOT NULL, `updated` TEXT NOT NULL, `unread` INTEGER, FOREIGN KEY(`identity`) REFERENCES `identity`(`id`) ))");
         exec(R"(CREATE TABLE "message" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `direction` INTEGER NOT NULL, `state` INTEGER NOT NULL, `conversation_id` INTEGER NOT NULL, `conversation` BLOB NOT NULL, `message_id` BLOB NOT NULL, `composed_time` INTEGER NOT NULL, `received_time` INTEGER, `content` TEXT NOT NULL, `signature` BLOB NOT NULL, `sender` BLOB NOT NULL, `encoding` INTEGER NOT NULL ))");
         exec(R"(CREATE TABLE "notification" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `status` INTEGER NOT NULL, `priority` INTEGER NOT NULL, `identity` INTEGER NOT NULL, `contact` INTEGER, `type` INTEGER NOT NULL, `timestamp` TEXT NOT NULL, `message` TEXT, `data` BLOB, `hash` BLOB ))");
-        exec(R"(CREATE TABLE `file` ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `state` INTEGER, `direction` INTEGER, `identity_id` INTEGER NOT NULL, `conversation_id` INTEGER, `contact_id` INTEGER NOT NULL, `hash` BLOB NOT NULL, `name` TEXT NOT NULL, `path` TEXT, `size` INTEGER NOT NULL, `file_time` TEXT, `created_time` TEXT NOT NULL, `ack_time` TEXT, `bytes_transferred` INTEGER DEFAULT 0, FOREIGN KEY(`identity_id`) REFERENCES `identity`(`id`), FOREIGN KEY(`contact_id`) REFERENCES `contact`(`id`), FOREIGN KEY(`conversation_id`) REFERENCES `conversation`(`id`) ))");
+        exec(R"(CREATE TABLE "file" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `file_id` BLOB NOT NULL, `state` INTEGER, `direction` INTEGER, `identity_id` INTEGER NOT NULL, `conversation_id` INTEGER, `contact_id` INTEGER NOT NULL, `hash` BLOB, `name` TEXT NOT NULL, `path` TEXT, `size` INTEGER NOT NULL, `file_time` TEXT, `created_time` TEXT NOT NULL, `ack_time` TEXT, `bytes_transferred` INTEGER DEFAULT 0, FOREIGN KEY(`conversation_id`) REFERENCES `conversation`(`id`), FOREIGN KEY(`identity_id`) REFERENCES `identity`(`id`), FOREIGN KEY(`contact_id`) REFERENCES `contact`(`id`) ))");
         exec(R"(CREATE UNIQUE INDEX `ix_contact_hash` ON `contact` ( `identity`, `hash` ))");
         exec(R"(CREATE UNIQUE INDEX `ix_contact_name` ON `contact` ( `identity`, `name` ))");
         exec(R"(CREATE UNIQUE INDEX `ix_message_id` ON `message` (`conversation_id` ,`id` ))");
@@ -99,6 +102,20 @@ void Database::exec(const char *sql)
     }
 }
 
+void Database::prepareData()
+{
+    {   // Set files that was being transferred, when we last quit, to waiting state
+        QSqlQuery query(db_);
+        query.prepare("UPDATE file SET state=:waiting WHERE state IN(:transferring, :offered)");
+        query.bindValue(":waiting", static_cast<int>(File::FS_WAITING));
+        query.bindValue(":transferring", static_cast<int>(File::FS_TRANSFERRING));
+        query.bindValue(":offered", static_cast<int>(File::FS_OFFERED));
+        query.exec();
+        if (query.lastError().type() != QSqlError::NoError) {
+            throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
+        }
+    }
+}
 
 
 }} // namespaces

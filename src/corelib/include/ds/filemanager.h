@@ -41,6 +41,7 @@ private:
     Registry<int, File> registry_;
     LruCache<File::ptr_t> lru_cache_{3};
     std::set<File::ptr_t> hashing_;
+    QSettings &settings_;
 };
 
 }}

@@ -1,3 +1,6 @@
+
+#include <QSqlQuery>
+
 #include "include/ds/filemanager.h"
 
 #include "logfault/logfault.h"
@@ -6,6 +9,12 @@ using namespace std;
 
 namespace ds {
 namespace core {
+
+FileManager::FileManager(QObject &parent, QSettings &settings)
+    : QObject{&parent}, settings_{settings}
+{
+    // TODO: Load non-hashed files and start hashing them.
+}
 
 File::ptr_t FileManager::getFile(const int dbId)
 {
@@ -60,11 +69,22 @@ void FileManager::hashIt(const File::ptr_t &file)
 
         connect(file.get(), & File::hashCalculated, this, [this, file](const QByteArray& hash) {
             hashing_.erase(file);
-            LFLOG_DEBUG << "Calculted hash for file #" << file->getId() << " " << file->getPath();
-            file->setHash(hash);
-            file->setState(File::FS_WAITING);
 
-            // TODO: If the conversation is to a connected contact, start sending
+            if (file->getState() == File::FS_HASHING) {
+                LFLOG_DEBUG << "Calculted hash for file #" << file->getId() << " " << file->getPath();
+                file->setHash(hash);
+                file->setState(File::FS_WAITING);
+            } else {
+                LFLOG_WARN << "Calculted hash for file #" << file->getId() << " " << file->getPath()
+                           << " but the state was not FS_HASHING but " << file->getState();
+            }
+
+            if (auto contact = file->getContact()) {
+                contact->queueFile(file);
+            } else {
+                LFLOG_WARN << "Failed to obtain contact for file " << file->getId() << " " << file->getPath();
+            }
+
             touch(file);
         });
 

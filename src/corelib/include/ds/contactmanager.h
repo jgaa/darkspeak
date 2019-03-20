@@ -22,6 +22,7 @@ public:
     ContactManager(QObject& parent);
 
     Contact::ptr_t getContact(const QUuid& uuid);
+    Contact::ptr_t getContact(const int dbId);
     void deleteContact(const QUuid& uuid);
     Contact *addContact(Contact::data_t data);
 

@@ -5,9 +5,6 @@
 #include <deque>
 
 #include <QDateTime>
-#include <QSqlError>
-#include <QSqlQuery>
-#include <QString>
 #include <QString>
 #include <QUuid>
 #include <QVariant>
@@ -17,12 +14,15 @@
 #include "ds/peerconnection.h"
 #include "ds/message.h"
 
+class QSqlQuery;
+
 namespace ds {
 namespace core {
 
 class Identity;
 class Conversation;
 struct ContactData;
+class File;
 
 /*! Representation of a contact.
  *
@@ -148,6 +148,7 @@ public:
     int getIdentityId() const noexcept;
 
     void queueMessage(const Message::ptr_t& message);
+    void queueFile(const std::shared_ptr<File>& file);
 
     /*! Add the new Identity to the database. */
     void addToDb();
@@ -191,16 +192,19 @@ private slots:
     void onProcessOnlineLater();
     void onReceivedAck(const PeerAck& ack);
     void procesMessageQueue();
+    void processFilesQueue();
     void onReceivedMessage(const PeerMessage& msg);
     void onOutputBufferEmptied();
 
 private:
     static void bind(QSqlQuery& query, ContactData& data);
     void loadMessageQueue();
+    void loadFileQueue();
 
     int id_ = -1; // Database id
     bool online_ = false;
     bool loadedMessageQueue_ = false;
+    bool loadedFileQueue_ = false;
     data_t data_;
     QString onlineIcon_ = "qrc:///images/onion-bw.svg";
     OnlineStatus onlineStatus_ = DISCONNECTED;
@@ -208,6 +212,9 @@ private:
     std::unique_ptr<Connection> connection_;
     std::deque<Message::ptr_t> messageQueue_;
     std::deque<Message::ptr_t> unconfirmedMessageQueue_; // Waiting for ack
+    std::deque<std::shared_ptr<File>> fileQueue_;
+    std::deque<std::shared_ptr<File>> transferringFileQueue_; // Currently transferring, (we have slots)
+    std::deque<std::shared_ptr<File>> unconfirmedFileQueue_; // Waiting for ack
 };
 
 struct ContactData {

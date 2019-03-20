@@ -293,6 +293,18 @@ void Contact::queueMessage(const Message::ptr_t &message)
     }
 }
 
+void Contact::queueFile(const std::shared_ptr<File> &file)
+{
+    loadFileQueue();
+
+    if (file->getDirection() == File::OUTGOING) {
+        // Send offer
+        fileQueue_.push_back(file);
+        file->setState(File::FS_WAITING);
+        processFilesQueue();
+    }
+}
+
 Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
 {
     QSqlQuery query;
@@ -699,6 +711,26 @@ void Contact::procesMessageQueue()
     }
 }
 
+void Contact::processFilesQueue()
+{
+    // Only prioritize files when there are no messages pending
+    if (isOnline() && messageQueue_.empty() && !fileQueue_.empty()) {
+        // TODO: Check ready status on socket
+        // TODO: Offer up to /n/ files in one message, to pipeline them
+        //       and to make metadata leaks less lileky to idnetify file numbers
+        //       and file sizes.
+        try {
+            connection_->peer->offerFile(*fileQueue_.front());
+            fileQueue_.front()->setState(File::FS_OFFERED);
+        } catch(const std::exception& ex) {
+            LFLOG_WARN << "Caught exception while sending message: " << ex.what();
+            return;
+        }
+
+        fileQueue_.erase(fileQueue_.begin());
+    }
+}
+
 void Contact::onReceivedMessage(const PeerMessage &msg)
 {
     if (getState() != ACCEPTED) {
@@ -790,6 +822,38 @@ void Contact::loadMessageQueue()
     }
 
     loadedMessageQueue_ = true;
+}
+
+void Contact::loadFileQueue()
+{
+    if (loadedFileQueue_) {
+        return;
+    }
+
+    QSqlQuery query;
+    query.prepare("SELECT id FROM file WHERE contact=:cid AND state=:waiting");
+    query.bindValue(":cid", getId());
+    query.bindValue(":waiting", static_cast<int>(File::FS_WAITING));
+
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to query file-queue: %1").arg(
+                        query.lastError().text()));
+    }
+
+    auto fileMgr = DsEngine::instance().getFileManager();
+
+    while(query.next()) {
+        fileQueue_.push_back(fileMgr->getFile(query.value(0).toInt()));
+    }
+
+    if (!fileQueue_.empty()) {
+        LFLOG_DEBUG << "Loaded " << fileQueue_.size()
+                    << " queued files for contact "
+                    << getName()
+                    << " on identity " << getIdentity()->getName();
+    }
+
+    loadedFileQueue_ = true;
 }
 
 void Contact::onAddmeRequest(const PeerAddmeReq &req)

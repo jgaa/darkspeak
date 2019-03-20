@@ -26,6 +26,7 @@ public:
         FS_CREATED,
         FS_HASHING,
         FS_WAITING,
+        FS_OFFERED,
         FS_TRANSFERRING,
         FS_DONE,
         FS_FAILED,
@@ -43,6 +44,7 @@ public:
     File(QObject& parent, std::unique_ptr<FileData> data);
 
     Q_PROPERTY(int id READ getId)
+    Q_PROPERTY(QByteArray fileId READ getFileId)
     Q_PROPERTY(State state READ getState NOTIFY stateChanged)
     Q_PROPERTY(Direction direction READ getDirection)
     Q_PROPERTY(bool active READ isActive NOTIFY isActiveChanged)
@@ -56,6 +58,7 @@ public:
     Q_PROPERTY(qlonglong bytesTransferred READ getBytesTransferred NOTIFY bytesTransferredChanged)
 
     int getId() const noexcept;
+    QByteArray getFileId() const noexcept;
     State getState() const noexcept;
     void setState(const State state);
     Direction getDirection() const noexcept;
@@ -79,6 +82,7 @@ public:
     int getConversationId() const noexcept;
     int getContactId() const noexcept;
     int getIdentityId() const noexcept;
+    Contact *getContact();
 
     /*! Add the new File to the database. */
     void addToDb();
@@ -120,6 +124,7 @@ struct FileData {
     int identity = 0;
     int contact = 0;
     int conversation = 0;
+    QByteArray fileId;
     QByteArray hash;
     QString name; // The adverticed name, may be something else than then the real name
     QString path; // Full path with actual name

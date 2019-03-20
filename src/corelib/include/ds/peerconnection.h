@@ -14,6 +14,7 @@ namespace core {
 
 class PeerConnection;
 class Message;
+class File;
 
 struct PeerReq
 {
@@ -115,6 +116,7 @@ public:
     virtual uint64_t sendAck(const QString& what, const QString& status, const QString& data = {}) = 0;
     virtual bool isConnected() const noexcept = 0;
     virtual uint64_t sendMessage(const Message& message) = 0;
+    virtual uint64_t offerFile(const File& file) = 0;
 
 signals:
     void connectedToPeer(const std::shared_ptr<PeerConnection>& peer);

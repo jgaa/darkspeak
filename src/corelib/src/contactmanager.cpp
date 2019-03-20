@@ -32,6 +32,19 @@ Contact::ptr_t ContactManager::getContact(const QUuid &uuid)
     return contact;
 }
 
+Contact::ptr_t ContactManager::getContact(const int dbId)
+{
+    QSqlQuery query;
+    query.prepare("SELECT uuid FROM contact WHERE id=:id");
+    query.bindValue(":id", dbId);
+    query.exec();
+    if (query.next()) {
+        return getContact(query.value(0).toUuid());
+    }
+
+    return {};
+}
+
 void ContactManager::deleteContact(const QUuid &uuid)
 {
     if (auto contact = registry_.fetch(uuid)) {

@@ -39,6 +39,7 @@ public slots:
 protected:
     void createDatabase();
     void exec(const char *sql);
+    void prepareData();
 
     static constexpr int currentVersion = 1;
     QSqlDatabase db_;

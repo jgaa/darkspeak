@@ -139,6 +139,7 @@ public:
     uint64_t sendAck(const QString& what, const QString& status, const QString& data) override;
     bool isConnected() const noexcept override;
     uint64_t sendMessage(const core::Message &message) override;
+    uint64_t offerFile(const core::File& file) override;
 };
 
 }} // namespaces

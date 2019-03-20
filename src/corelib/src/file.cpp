@@ -35,6 +35,11 @@ int File::getId() const noexcept
     return id_;
 }
 
+QByteArray File::getFileId() const noexcept
+{
+    return data_->fileId;
+}
+
 File::State File::getState() const noexcept
 {
     return data_->state;
@@ -151,13 +156,18 @@ int File::getIdentityId() const noexcept
     return data_->identity;
 }
 
+Contact *File::getContact()
+{
+    return DsEngine::instance().getContactManager()->getContact(getContactId()).get();
+}
+
 void File::addToDb()
 {
     QSqlQuery query;
     query.prepare("INSERT INTO file ("
-                  "state, direction, identity_id, conversation_id, contact_id, hash, name, path, size, file_time, created_time, ack_time, bytes_transferred"
+                  "state, direction, identity_id, conversation_id, contact_id, hash, file_id, name, path, size, file_time, created_time, ack_time, bytes_transferred"
                   ") VALUES ("
-                  ":state, :direction, :identity_id, :conversation_id, :contact_id, :hash, :name, :path, :size, :file_time, :created_time, :ack_time, :bytes_transferred"
+                  ":state, :direction, :identity_id, :conversation_id, :contact_id, :hash, :file_id, :name, :path, :size, :file_time, :created_time, :ack_time, :bytes_transferred"
                   ")");
 
     if (!data_->createdTime.isValid()) {
@@ -176,12 +186,17 @@ void File::addToDb()
         }
     }
 
+    if (data_->fileId.isEmpty()) {
+         data_->fileId = crypto::Crypto::generateId();
+    }
+
     query.bindValue(":state", static_cast<int>(data_->state));
     query.bindValue(":direction", static_cast<int>(data_->direction));
     query.bindValue(":identity_id", data_->identity);
     query.bindValue(":conversation_id", data_->conversation);
     query.bindValue(":contact_id", data_->contact);
     query.bindValue(":hash", data_->hash);
+    query.bindValue(":file_id", data_->fileId);
     query.bindValue(":name", data_->name);
     query.bindValue(":path", data_->path);
     query.bindValue(":size", data_->size);
@@ -189,7 +204,6 @@ void File::addToDb()
     query.bindValue(":created_time", data_->createdTime);
     query.bindValue(":ack_time", data_->ackTime);
     query.bindValue(":bytes_transferred", data_->bytesTransferred);
-
     if(!query.exec()) {
         throw Error(QStringLiteral("Failed to save File: %1").arg(
                         query.lastError().text()));
@@ -273,7 +287,7 @@ void File::asynchCalculateHash()
 
 QString File::getSelectStatement(const QString &where)
 {
-    return QStringLiteral("SELECT id, state, direction, identity_id, conversation_id, contact_id, hash, name, path, size, file_time, created_time, ack_time, bytes_transferred FROM file WHERE %1")
+    return QStringLiteral("SELECT id, file_id, state, direction, identity_id, conversation_id, contact_id, hash, name, path, size, file_time, created_time, ack_time, bytes_transferred FROM file WHERE %1")
             .arg(where);
 }
 
@@ -282,7 +296,7 @@ File::ptr_t File::load(QObject &parent, const std::function<void (QSqlQuery &)> 
     QSqlQuery query;
 
     enum Fields {
-        id, state, direction, identity_id, conversation_id, contact_id, hash, name, path, size, file_time, created_time, ack_time, bytes_transferred
+        id, file_id, state, direction, identity_id, conversation_id, contact_id, hash, name, path, size, file_time, created_time, ack_time, bytes_transferred
     };
 
     prepare(query);
@@ -298,6 +312,7 @@ File::ptr_t File::load(QObject &parent, const std::function<void (QSqlQuery &)> 
 
     auto ptr = make_shared<File>(parent);
     ptr->id_ = query.value(id).toInt();
+    ptr->data_->fileId = query.value(file_id).toByteArray();
     ptr->data_->state = static_cast<State>(query.value(state).toInt());
     ptr->data_->direction = static_cast<Direction>(query.value(direction).toInt());
     ptr->data_->identity = query.value(identity_id).toInt();

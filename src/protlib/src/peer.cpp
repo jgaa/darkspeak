@@ -11,6 +11,8 @@
 #include "ds/peer.h"
 #include "ds/message.h"
 #include "ds/errors.h"
+#include "ds/file.h"
+
 #include "logfault/logfault.h"
 
 namespace ds {
@@ -452,7 +454,7 @@ uint64_t Peer::sendAck(const QString &what, const QString &status, const QString
 bool Peer::isConnected() const noexcept
 {
     return connection_ && connection_->isOpen();
-}
+};
 
 uint64_t Peer::sendMessage(const core::Message &message)
 {
@@ -470,6 +472,26 @@ uint64_t Peer::sendMessage(const core::Message &message)
     };
 
     LFLOG_DEBUG << "Sending Message: " << message.getId()
+                << " over connection " << getConnectionId().toString();
+
+    return send(json);
+}
+
+uint64_t Peer::offerFile(const File &file)
+{
+    auto json = QJsonDocument{
+        QJsonObject{
+            {"type", "IncomingFile"},
+            {"sha512", QString{file.getHash().toBase64()}},
+            {"name", file.getName()},
+            {"size", file.getSize()},
+            {"type", "binary"},
+            {"rest", 0},
+            {"file-id", QString{file.getFileId().toBase64()}}
+        }
+    };
+
+    LFLOG_DEBUG << "Sending File Offer for file: " << file.getId()
                 << " over connection " << getConnectionId().toString();
 
     return send(json);
