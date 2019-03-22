@@ -358,6 +358,7 @@ void DsEngine::initialize()
     contactManager_ = new ContactManager(*this);
     conversationManager_ = new ConversationManager(*this);
     messageManager_ = new MessageManager(*this);
+    fileManager_ = new FileManager(*this, *settings_);
 }
 
 void DsEngine::setState(DsEngine::State state)

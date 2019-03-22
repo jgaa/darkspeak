@@ -7,6 +7,8 @@
 
 #include "logfault/logfault.h"
 
+#include <QUrl>
+
 namespace ds {
 namespace core {
 
@@ -58,7 +60,11 @@ void Conversation::sendFile(const QVariantMap &args)
 {
     auto data = make_unique<FileData>();
     data->name = args.value("name").toString();
-    data->path = args.value("path").toString();
+
+    // Convert from "file:///" to local path now
+    const auto path = args.value("path").toString();
+    data->path = QUrl(path).toLocalFile();
+
     data->conversation = getId();
     data->contact = getFirstParticipant()->getId();
     data->identity = getIdentityId();
@@ -76,6 +82,18 @@ void Conversation::incomingMessage(Contact *contact, const MessageData &data)
 
     // Send ack
     contact->sendAck("Message", "Received", data.messageId.toBase64());
+}
+
+void Conversation::incomingFileOffer(Contact *contact, const PeerFileOffer &offer)
+{
+    // Add to the database
+    if (!DsEngine::instance().getFileManager()->receivedFileOffer(*this, offer)) {
+        contact->sendAck("Message", "Rejected", offer.fileId.toBase64());
+        return;
+    }
+
+    // Send ack
+    contact->sendAck("IncomingFile", "Received", offer.fileId.toBase64());
 }
 
 int Conversation::getId() const noexcept {

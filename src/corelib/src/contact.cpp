@@ -498,6 +498,9 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
     connect(connection_->peer.get(), &PeerConnection::receivedMessage,
             this, &Contact::onReceivedMessage);
 
+    connect(connection_->peer.get(), &PeerConnection::receivedFileOffer,
+            this, &Contact::onReceivedFileOffer);
+
     connect(connection_->peer.get(), &PeerConnection::outputBufferEmptied,
             this, &Contact::onOutputBufferEmptied);
 
@@ -607,7 +610,8 @@ void Contact::onProcessOnlineLater()
     assert(connection_);
 
     loadMessageQueue();
-    procesMessageQueue();
+    loadFileQueue();
+    onOutputBufferEmptied();
 }
 
 void Contact::onReceivedAck(const PeerAck &ack)
@@ -692,7 +696,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
     }
 }
 
-void Contact::procesMessageQueue()
+bool Contact::procesMessageQueue()
 {
     if (isOnline() && !messageQueue_.empty()) {
         // Send one message. Wait for the socket's buffer to be clear before proceeding with the next
@@ -703,12 +707,15 @@ void Contact::procesMessageQueue()
             messageQueue_.front()->setState(Message::MS_SENT);
         } catch(const std::exception& ex) {
             LFLOG_WARN << "Caught exception while sending message: " << ex.what();
-            return;
+            return false;
         }
 
         unconfirmedMessageQueue_.push_back(move(messageQueue_.front()));
         messageQueue_.erase(messageQueue_.begin());
+        return true;
     }
+
+    return false;
 }
 
 void Contact::processFilesQueue()
@@ -736,45 +743,18 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
     if (getState() != ACCEPTED) {
         LFLOG_WARN << "Rejecting message on connection "
                    << msg.peer->getConnectionId().toString()
-                   << ". Not in ACEPTED state.";
+                   << ". Not in ACCEPTED state.";
 
         msg.peer->sendAck("Message", "Rejected", msg.data.messageId.toBase64());
         msg.peer->close();
         return;
     }
 
-    //auto conversation = getIdentity()->convesationFromHash(msg.data.conversation).get();
-    auto conversation = DsEngine::instance().getConversationManager()->getConversation(msg.data.conversation, this).get();
+    auto conversation = getRequestedOrDefaultConversation(
+                msg.data.conversation, *msg.peer, "Message",
+                msg.data.messageId);
 
     if (!conversation) {
-        // Try the default conversation and see if it match the peers conversation hash
-        auto defaultHash = Conversation::calculateHash(*this);
-        if (!comparesEqual(defaultHash, msg.data.conversation)) {
-            LFLOG_WARN << "Rejecting message on connection "
-                       << msg.peer->getConnectionId().toString()
-                       << ". Unknown conversation: " << msg.data.conversation.toHex();
-
-            msg.peer->sendAck("Message", "Rejected", msg.data.messageId.toBase64());
-            return;
-        }
-
-        LFLOG_DEBUG << "Will create a new default conversation now for contact " << getName()
-                    << " at identity " << getIdentity()->getName();
-
-        conversation = getDefaultConversation();
-    }
-
-    assert(conversation);
-
-    if (!conversation->haveParticipant(*this)) {
-        LFLOG_WARN << "Rejecting message on connection "
-                   << msg.peer->getConnectionId().toString()
-                   << ". Contact " << getName()
-                   << " on Identyty " << getIdentity()->getName()
-                   << " is not part of converation " << msg.data.conversation.toHex();
-
-        msg.peer->sendAck("Message", "Rejected", msg.data.messageId.toBase64());
-        msg.peer->close();
         return;
     }
 
@@ -786,10 +766,40 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
     conversation->incomingMessage(this, msg.data);
 }
 
+void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
+{
+    if (getState() != ACCEPTED) {
+        LFLOG_WARN << "Rejecting file on connection "
+                   << msg.peer->getConnectionId().toString()
+                   << ". Not in ACCEPTED state.";
+
+        msg.peer->sendAck("IncomingFile", "Rejected", msg.fileId.toBase64());
+        msg.peer->close();
+        return;
+    }
+
+    auto conversation = getRequestedOrDefaultConversation(
+                msg.conversation, *msg.peer, "IncomingFile", msg.fileId);
+    if (!conversation) {
+        return;
+    }
+
+    LFLOG_DEBUG << "Accepting incoming file offer with id: " << msg.fileId.toHex()
+                << " over connection " << msg.peer->getConnectionId().toString()
+                << " to " << getName()
+                << " for local delivery to conversation " << conversation->getName();
+
+    conversation->incomingFileOffer(this, msg);
+}
+
 void Contact::onOutputBufferEmptied()
 {
     if (isOnline()) {
-        procesMessageQueue();
+        if (procesMessageQueue()) {
+            return;
+        }
+
+        processFilesQueue();
     }
 }
 
@@ -831,7 +841,7 @@ void Contact::loadFileQueue()
     }
 
     QSqlQuery query;
-    query.prepare("SELECT id FROM file WHERE contact=:cid AND state=:waiting");
+    query.prepare("SELECT id FROM file WHERE contact_id=:cid AND state=:waiting");
     query.bindValue(":cid", getId());
     query.bindValue(":waiting", static_cast<int>(File::FS_WAITING));
 
@@ -854,6 +864,47 @@ void Contact::loadFileQueue()
     }
 
     loadedFileQueue_ = true;
+}
+
+Conversation *Contact::getRequestedOrDefaultConversation(const QByteArray &hash,
+                                                         PeerConnection &peer,
+                                                         const QString &what,
+                                                         const QByteArray& id)
+{
+    auto conversation = DsEngine::instance().getConversationManager()->getConversation(
+                hash, this).get();
+
+    if (!conversation) {
+        // Try the default conversation and see if it match the peers conversation hash
+        auto defaultHash = Conversation::calculateHash(*this);
+        if (!comparesEqual(defaultHash, hash)) {
+            LFLOG_WARN << "Rejecting incoming " << what << " on connection "
+                       << peer.getConnectionId().toString()
+                       << ". Unknown conversation: " << hash.toHex();
+
+            peer.sendAck(what, "Rejected", id.toBase64());
+            return {};
+        }
+
+        LFLOG_DEBUG << "Will create a new default conversation now for contact " << getName()
+                    << " at identity " << getIdentity()->getName();
+
+        conversation = getDefaultConversation();
+    }
+
+    if (!conversation->haveParticipant(*this)) {
+        LFLOG_WARN << "Rejecting message on connection "
+                   << peer.getConnectionId().toString()
+                   << ". Contact " << getName()
+                   << " on Identyty " << getIdentity()->getName()
+                   << " is not part of converation " << hash.toHex();
+
+        peer.sendAck(what, "Rejected", id.toBase64());
+        peer.close();
+        return {};
+    }
+
+    return conversation;
 }
 
 void Contact::onAddmeRequest(const PeerAddmeReq &req)

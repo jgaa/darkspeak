@@ -32,6 +32,19 @@ Conversation::ptr_t ConversationManager::getConversation(const QUuid &uuid)
     return conversation;
 }
 
+Conversation::ptr_t ConversationManager::getConversation(const int dbId)
+{
+    QSqlQuery query;
+    query.prepare("SELECT uuid FROM conversation WHERE id=:id");
+    query.bindValue(":id", dbId);
+    query.exec();
+    if (query.next()) {
+        return getConversation(query.value(0).toUuid());
+    }
+
+    return {};
+}
+
 Conversation::ptr_t ConversationManager::getConversation(Contact *participant)
 {
     QSqlQuery query;

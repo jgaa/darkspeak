@@ -44,6 +44,7 @@ public:
     Q_INVOKABLE void sendFile(const QVariantMap& args);
 
     void incomingMessage(Contact *contact, const MessageData& data);
+    void incomingFileOffer(Contact *contact, const PeerFileOffer& offer);
 
     int getId() const noexcept;
     QString getName() const noexcept;

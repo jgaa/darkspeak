@@ -211,6 +211,18 @@ void Peer::onReceivedData(const quint32 channel, const quint64 id, QByteArray da
 
             LFLOG_DEBUG << "Emitting PeerMessage";
             emit receivedMessage(msg);
+        } else if (type == "IncomingFile") {
+            PeerFileOffer msg{shared_from_this(), getConnectionId(), id,
+                        QByteArray::fromBase64(json.object().value("conversation").toString().toUtf8()),
+                        QByteArray::fromBase64(json.object().value("file-id").toString().toUtf8()),
+                        json.object().value("name").toString(),
+                        json.object().value("size").toString().toLongLong(),
+                        json.object().value("rest").toString().toLongLong(),
+                        json.object().value("type").toString(),
+                        QByteArray::fromBase64(json.object().value("sha512").toString().toUtf8())};
+
+            LFLOG_DEBUG << "Emitting PeerFileOffer";
+            emit receivedFileOffer(msg);
         } else {
             LFLOG_WARN << "Unrecognized request from peer at connection "
                        << getConnectionId().toString();
@@ -484,10 +496,11 @@ uint64_t Peer::offerFile(const File &file)
             {"type", "IncomingFile"},
             {"sha512", QString{file.getHash().toBase64()}},
             {"name", file.getName()},
-            {"size", file.getSize()},
+            {"size", QString::number(file.getSize())},
             {"type", "binary"},
-            {"rest", 0},
-            {"file-id", QString{file.getFileId().toBase64()}}
+            {"rest", QString::number(0)},
+            {"file-id", QString{file.getFileId().toBase64()}},
+            {"conversation", QString{file.getConversation()->getHash().toBase64()}},
         }
     };
 

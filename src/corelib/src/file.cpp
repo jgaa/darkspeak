@@ -30,6 +30,11 @@ File::File(QObject &parent, std::unique_ptr<FileData> data)
 {
 }
 
+void File::cancel()
+{
+    setState(FS_CANCELLED);
+}
+
 int File::getId() const noexcept
 {
     return id_;
@@ -78,6 +83,11 @@ void File::setPath(const QString &path)
 QByteArray File::getHash() const noexcept
 {
     return data_->hash;
+}
+
+QString File::getPrintableHash() const noexcept
+{
+    return getHash().toBase64();
 }
 
 void File::setHash(const QByteArray &hash)
@@ -156,7 +166,12 @@ int File::getIdentityId() const noexcept
     return data_->identity;
 }
 
-Contact *File::getContact()
+Conversation *File::getConversation() const
+{
+    return DsEngine::instance().getConversationManager()->getConversation(getConversationId()).get();
+}
+
+Contact *File::getContact() const
 {
     return DsEngine::instance().getContactManager()->getContact(getContactId()).get();
 }
@@ -175,7 +190,7 @@ void File::addToDb()
     }
 
     if (data_->direction == File::OUTGOING) {
-        QFile file{QUrl(data_->path).toLocalFile()};
+        QFile file{data_->path};
         if (data_->size == 0) {
             data_->size = file.size();
         }
@@ -246,11 +261,12 @@ File::ptr_t File::load(QObject &parent, int conversation, const QByteArray &hash
     });
 }
 
-void File::asynchCalculateHash()
+void File::asynchCalculateHash(const File::ptr_t& self)
 {
-    auto self = shared_from_this();
+    self->setState(File::FS_HASHING);
+
     auto task = new Task([self]() {
-        QFile file(self->getName());
+        QFile file(self->getPath());
         if (!file.open(QIODevice::ReadOnly)) {
             emit self->hashCalculationFailed("Failed to open file");
             return;

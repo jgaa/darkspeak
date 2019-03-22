@@ -191,15 +191,22 @@ private slots:
     void onSendAddmeAckLater();
     void onProcessOnlineLater();
     void onReceivedAck(const PeerAck& ack);
-    void procesMessageQueue();
+    bool procesMessageQueue();
     void processFilesQueue();
     void onReceivedMessage(const PeerMessage& msg);
+    void onReceivedFileOffer(const PeerFileOffer& msg);
     void onOutputBufferEmptied();
 
 private:
     static void bind(QSqlQuery& query, ContactData& data);
     void loadMessageQueue();
     void loadFileQueue();
+
+    // Sends reject message if the conversation is not the default and don't exist.
+    Conversation *getRequestedOrDefaultConversation(const QByteArray& hash,
+                                                    PeerConnection& peer,
+                                                    const QString& what,
+                                                    const QByteArray& id);
 
     int id_ = -1; // Database id
     bool online_ = false;

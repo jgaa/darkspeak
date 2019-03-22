@@ -30,7 +30,8 @@ public:
         FS_TRANSFERRING,
         FS_DONE,
         FS_FAILED,
-        FS_REJECTED
+        FS_REJECTED,
+        FS_CANCELLED
     };
     Q_ENUM(State)
 
@@ -50,12 +51,14 @@ public:
     Q_PROPERTY(bool active READ isActive NOTIFY isActiveChanged)
     Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
     Q_PROPERTY(QString path READ getPath WRITE setPath NOTIFY pathChanged)
-    Q_PROPERTY(QByteArray hash READ getHash NOTIFY hashChanged)
+    Q_PROPERTY(QString hash READ getPrintableHash NOTIFY hashChanged)
     Q_PROPERTY(QDateTime created READ getCreated)
     Q_PROPERTY(QDateTime ackTime READ getAckTime NOTIFY ackTimeChanged)
     Q_PROPERTY(QDateTime fileTime READ getFileTime NOTIFY fileTimeChanged)
     Q_PROPERTY(qlonglong size READ getSize NOTIFY sizeChanged)
     Q_PROPERTY(qlonglong bytesTransferred READ getBytesTransferred NOTIFY bytesTransferredChanged)
+
+    Q_INVOKABLE void cancel();
 
     int getId() const noexcept;
     QByteArray getFileId() const noexcept;
@@ -67,6 +70,7 @@ public:
     QString getPath() const noexcept;
     void setPath(const QString& path);
     QByteArray getHash() const noexcept;
+    QString getPrintableHash() const noexcept;
     void setHash(const QByteArray& hash);
     QDateTime getCreated() const noexcept;
     QDateTime getFileTime() const noexcept;
@@ -82,7 +86,8 @@ public:
     int getConversationId() const noexcept;
     int getContactId() const noexcept;
     int getIdentityId() const noexcept;
-    Contact *getContact();
+    Contact *getContact() const;
+    Conversation *getConversation() const;
 
     /*! Add the new File to the database. */
     void addToDb();
@@ -95,7 +100,7 @@ public:
 
     const char *getTableName() const noexcept { return "file"; }
 
-    void asynchCalculateHash();
+    static void asynchCalculateHash(const File::ptr_t& file);
 
 signals:
     void stateChanged();

@@ -9,17 +9,12 @@ Page {
     property int input_height: 96
     property int msg_border: 16
     visible: conversations.current
-    property var states: [qsTr("Composed"), qsTr("Queued"), qsTr("Sent"), qsTr("Delivered"), qsTr("Rejected")]
     property var scolors: ["silver", "orange", "yellow", "lightgreen", "red"]
 
     header: Label {
         text: conversations.current ? (qsTr("Chat with ") + conversations.current.name) : qsTr("No conversation selected")
         font.pixelSize: Qt.application.font.pixelSize * 2
         padding: 10
-    }
-
-    function getStateName(state) {
-        return states[state]
     }
 
     function pickColor(direction, state) {
@@ -75,10 +70,11 @@ Page {
             Component {
                 Rectangle {
                 id: textbox
+                property File cfile: file
                 property int margin: 4
                 x: direction === Message.OUTGOING ? 0 : msg_border
                 width: parent.width - msg_border - scrollbar.width
-                height: textarea.contentHeight + (margin * 2) + date.height
+                height: type === MessagesModel.MESSAGE ? textarea.contentHeight + (margin * 2) + date.height : 48
                 color: pickColor(direction, messageState)
                 radius: 4
 
@@ -89,9 +85,7 @@ Page {
                     font.pointSize: 8
                     color: direction === Message.INCOMING
                         ? "darkblue" : "darkgreen"
-                    text: direction === Message.OUTGOING
-                          ? root.states[messageState]
-                          : qsTr("Received")
+                    text: qsTr(stateName)
                 }
 
                 TextEdit {
@@ -118,8 +112,74 @@ Page {
                     wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                     width: parent.width - (margin * 2)
                     //height: parent.height - (margin * 2)
-                    text: content
+                    text: type === MessagesModel.MESSAGE ? content : null
                     clip: true
+                    visible: type === MessagesModel.MESSAGE
+                }
+
+                Image {
+                    id: icon
+                    source: type === MessagesModel.FILE ? "qrc:/images/FileTansferActive.svg" : ""
+                    visible: type === MessagesModel.FILE
+                    height: 32
+                    width: 32
+                    anchors.top: date.bottom
+                    anchors.leftMargin: 2
+                    anchors.rightMargin: 2
+                }
+
+                Label {
+                    id: fileName
+                    visible: type === MessagesModel.FILE
+                    text: type === MessagesModel.FILE ? file.name : null
+                    anchors.top: date.bottom
+                    anchors.left: icon.right
+                    anchors.leftMargin: 2
+                    anchors.rightMargin: 2
+                    color: "black"
+                }
+
+                Label {
+                    id: fileSize
+                    visible: type === MessagesModel.FILE
+                    text: type === MessagesModel.FILE ? file.size + " bytes" : null
+                    anchors.top: date.bottom
+                    anchors.left: fileName.right
+                    color: "gray"
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 2
+                }
+
+                MouseArea {
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    anchors.fill: parent
+                    onClicked: {
+                        list.currentIndex = index
+                        if (mouse.button === Qt.RightButton) {
+                            showMenu(mouse)
+                        }
+                    }
+
+                    onPressAndHold: {
+                        list.currentIndex = index
+                        showMenu(mouse)
+                    }
+                }
+
+                function showMenu(mouse) {
+                    if (type === MessagesModel.FILE) {
+
+                        if (file.direction === File.OUTGOING) {
+                            var ctxmenu = contextFileSendMenu
+                        } else {
+                            var ctxmenu = contextFileReceiveMenu
+                        }
+
+                        ctxmenu.x = mouse.x;
+                        ctxmenu.y = mouse.y;
+                        ctxmenu.file = file
+                        ctxmenu.open();
+                    }
                 }
             } // Rectangle
         } // Delegate
@@ -179,5 +239,62 @@ Page {
         }
     }
 
+    Menu {
+        id: contextFileSendMenu
+        property File file: null
 
+        MenuItem {
+            onTriggered: {
+                contextFileSendMenu.file.cancel()
+            }
+
+            enabled : contextFileSendMenu.file.state === File.FS_WAITING
+            text: qsTr("Cancel")
+        }
+
+        MenuItem {
+            onTriggered: {
+                manager.textToClipboard(contextFileSendMenu.file.name + ": " + contextFileSendMenu.file.hash)
+            }
+
+            text: qsTr("Copy Sha512")
+        }
+    }
+
+    Menu {
+        id: contextFileReceiveMenu
+        property File file: null
+
+
+        MenuItem {
+            onTriggered: {
+
+            }
+            text: qsTr("Accept")
+        }
+
+        MenuItem {
+            onTriggered: {
+
+            }
+
+            text: qsTr("Reject")
+        }
+
+        MenuItem {
+            onTriggered: {
+                manager.textToClipboard(contextFileReceiveMenu.file.name)
+            }
+
+            text: qsTr("Copy Name")
+        }
+
+        MenuItem {
+            onTriggered: {
+                manager.textToClipboard(contextFileReceiveMenu.file.name + ": " + contextFileReceiveMenu.file.hash)
+            }
+
+            text: qsTr("Copy Sha512")
+        }
+    }
 }

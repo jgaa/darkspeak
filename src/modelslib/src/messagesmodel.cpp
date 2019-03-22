@@ -64,24 +64,31 @@ QVariant MessagesModel::data(const QModelIndex &ix, int role) const
     }
 
     auto &r = rows_.at(static_cast<size_t>(ix.row()));
+
     // Lazy loading
-    if (!r.data_) {
-        r.data_ = loadData(r.id);
+    if (!r.loaded()) {
+        load(r);
     }
 
     switch(role) {
+    case H_TYPE:
+        return r.type_;
     case H_ID:
         return r.id;
+    case H_FILE:
+        return QVariant::fromValue<ds::core::File *>(r.file_.get());
     case H_CONTENT:
-        return r.data_->content;
+        return (r.type_ == MESSAGE) ? r.data_->content : QVariant();
     case H_COMPOSED:
-        return r.data_->composedTime;
+        return (r.type_ == MESSAGE) ? r.data_->composedTime : r.file_->getCreated();
     case H_DIRECTION:
-        return r.data_->direction;
+        return (r.type_ == MESSAGE) ? r.data_->direction : r.file_->getDirection();
     case H_RECEIVED:
-        return r.data_->sentReceivedTime;
+        return (r.type_ == MESSAGE) ? r.data_->sentReceivedTime : QVariant();
     case H_STATE:
-        return r.data_->state;
+        return (r.type_ == MESSAGE) ? r.data_->state : r.file_->getState();
+    case H_STATE_NAME:
+        return getStateName(r);
     }
 
     return {};
@@ -95,7 +102,10 @@ QHash<int, QByteArray> MessagesModel::roleNames() const
         {H_COMPOSED, "composedTime"},
         {H_DIRECTION, "direction"},
         {H_RECEIVED, "receivedTime"},
-        {H_STATE, "messageState"}
+        {H_STATE, "messageState"},
+        {H_TYPE, "type"},
+        {H_FILE, "file"},
+        {H_STATE_NAME, "stateName"}
     };
 
     return names;
@@ -156,7 +166,12 @@ void MessagesModel::queryRows(MessagesModel::rows_t &rows)
     }
 
     QSqlQuery query;
-    query.prepare("SELECT id FROM message WHERE conversation_id=:cid ORDER BY id");
+    //query.prepare("SELECT id FROM message WHERE conversation_id=:cid ORDER BY id");
+    query.prepare(
+        "SELECT 0 as type, id, composed_time AS created FROM message WHERE conversation_id=:cid "
+        "UNION ALL "
+        "SELECT 1 as type, id, created_time AS created FROM file WHERE conversation_id=:cid "
+        "ORDER BY created ");
     query.bindValue(":cid", conversation_->getId());
 
     if(!query.exec()) {
@@ -164,9 +179,23 @@ void MessagesModel::queryRows(MessagesModel::rows_t &rows)
                         query.lastError().text()));
     }
 
+    enum Fiels { type, id };
+
     // Populate
     while(query.next()) {
-        rows.emplace_back(query.value(0).toInt());
+        rows.emplace_back(query.value(id).toInt(),
+                          static_cast<Type>(query.value(type).toInt()));
+    }
+
+    LFLOG_DEBUG << "Loaded " << rows.size() << " rows with messages and/or files";
+}
+
+void MessagesModel::load(MessagesModel::Row &row) const
+{
+    if (row.type_ == MESSAGE) {
+        row.data_ = loadData(row.id);
+    } else if (row.type_ == FILE) {
+        row.file_ = DsEngine::instance().getFileManager()->getFile(row.id);
     }
 }
 
@@ -239,10 +268,31 @@ void MessagesModel::onMessageChanged(const Message::ptr_t &message, const int ro
                         << " on row " << rowid;
 
             const auto where = index(rowid);
-            emit dataChanged(where, where, {role});
+            if (role == H_STATE) {
+                emit dataChanged(where, where, {H_STATE, H_STATE_NAME});
+            } else {
+                emit dataChanged(where, where, {role});
+            }
             return;
         }
     }
+}
+
+QString MessagesModel::getStateName(const MessagesModel::Row &r) const
+{
+    static const std::array<QString, 5> mnames = {"Composed", "Queued", "Sent", "Delivered", "Rejected"};
+    static const std::array<QString, 9> fnames = {"Created", "Hashing", "Waiting", "Offered",
+                                                  "Transferring", "Done", "Failed", "Rejected",
+                                                  "Cancelled"};
+
+    if (r.type_ == MESSAGE) {
+        if (r.data_->direction == Message::OUTGOING) {
+            return mnames.at(static_cast<size_t>(r.data_->state));
+        }
+        return "Received";
+    }
+
+    return fnames.at(static_cast<size_t>(r.file_->getState()));
 }
 
 

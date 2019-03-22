@@ -27,6 +27,8 @@ public:
 
     File::ptr_t addFile(std::unique_ptr<FileData> data);
 
+    bool receivedFileOffer(Conversation& conversation, const PeerFileOffer& offer);
+
     void touch(const File::ptr_t& file);
 
 signals:

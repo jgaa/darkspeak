@@ -9,6 +9,7 @@
 #include "ds/identity.h"
 #include "ds/message.h"
 #include "ds/conversation.h"
+#include "ds/file.h"
 
 namespace ds {
 namespace models {
@@ -17,19 +18,32 @@ class MessagesModel : public QAbstractListModel
 {
     Q_OBJECT
 
+public:
+    enum Type {MESSAGE, FILE};
+    Q_ENUM(Type)
+
+private:
     struct Row {
-        Row(int idVal) : id{idVal} {}
+        Row(int idVal, const Type type = MESSAGE) : id{idVal}, type_{type} {}
         Row(int idVal, std::shared_ptr<core::MessageContent> data) : id{idVal}, data_{std::move(data)} {}
+        Row(int idVal, core::File::ptr_t file) : id{idVal}, type_{FILE}, file_{std::move(file)} {}
         Row(Row&&) = default;
         Row(const Row&) = default;
         Row& operator = (const Row&) = default;
 
+        bool loaded() const noexcept {
+            return ((type_ == MESSAGE) && data_)
+                    || ((type_ == FILE) && file_);
+        }
+
         int id;
+        Type type_ = MESSAGE;
         mutable std::shared_ptr<core::MessageContent> data_;
+        mutable core::File::ptr_t file_;
     };
 
     enum Cols {
-        H_ID = Qt::UserRole, H_CONTENT, H_COMPOSED, H_DIRECTION, H_RECEIVED, H_STATE
+        H_ID = Qt::UserRole, H_CONTENT, H_COMPOSED, H_DIRECTION, H_RECEIVED, H_STATE, H_TYPE, H_FILE, H_STATE_NAME
     };
 public:
 
@@ -58,11 +72,13 @@ private slots:
 
 private:
     void queryRows(rows_t& rows);
+    void load(Row& row) const;
     std::shared_ptr<core::MessageContent> loadData(const int id) const;
     std::shared_ptr<core::MessageContent> loadData(const core::Message& message) const;
     void onMessageChanged(const core::Message::ptr_t& message, const int role);
+    QString getStateName(const Row& r) const;
 
-    rows_t rows_;
+    mutable rows_t rows_;
     core::Conversation::ptr_t conversation_;    
 };
 

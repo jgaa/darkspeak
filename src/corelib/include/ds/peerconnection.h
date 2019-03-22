@@ -88,6 +88,37 @@ struct PeerMessage : public PeerReq
     MessageData data;
 };
 
+struct PeerFileOffer : public PeerReq
+{
+    PeerFileOffer(const PeerFileOffer&) = default;
+
+    PeerFileOffer(std::shared_ptr<PeerConnection> peer, QUuid connectionId, quint64 requestId,
+                QByteArray conversation,
+                QByteArray fileId,
+                QString name,
+                qlonglong size,
+                qlonglong rest,
+                QString type,
+                QByteArray sha512)
+    : PeerReq{peer, std::move(connectionId), requestId}
+    {
+        this->conversation = std::move(conversation);
+        this->fileId = std::move(fileId);
+        this->name = std::move(name);
+        this->size = size;
+        this->rest = rest;
+        this->type = type;
+        this->sha512 = std::move(sha512);
+    }
+
+    QByteArray conversation;
+    QByteArray fileId;
+    QString name;
+    qlonglong size;
+    qlonglong rest;
+    QString type;
+    QByteArray sha512;
+};
 
 /*! Representation of a incoming or outgoing connection to a contact.
  *
@@ -125,6 +156,7 @@ signals:
     void addmeRequest(const PeerAddmeReq& req);
     void receivedAck(const PeerAck& ack);
     void receivedMessage(const PeerMessage& msg);
+    void receivedFileOffer(const PeerFileOffer& msg);
     void outputBufferEmptied();
 };
 

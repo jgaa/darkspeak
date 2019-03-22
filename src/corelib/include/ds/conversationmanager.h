@@ -23,6 +23,9 @@ public:
     // Get existing conversation
     Conversation::ptr_t getConversation(const QUuid& uuid);
 
+    // Get existing conversation
+    Conversation::ptr_t getConversation(const int dbId);
+
     // Get or create a new p2p conversation with this contact
     Conversation::ptr_t getConversation(Contact *participant);
 

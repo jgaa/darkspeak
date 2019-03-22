@@ -58,6 +58,11 @@ File::ptr_t FileManager::addFile(std::unique_ptr<FileData> data)
     return file;
 }
 
+bool FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOffer &offer)
+{
+
+}
+
 void FileManager::touch(const File::ptr_t &file)
 {
     lru_cache_.touch(file);
@@ -92,10 +97,13 @@ void FileManager::hashIt(const File::ptr_t &file)
             hashing_.erase(file);
             LFLOG_DEBUG << "Failed to hash file #" << file->getId() << " " << file->getPath()
                         << ": " << why;
+
+            file->setState(File::FS_FAILED);
+
             touch(file);
         });
 
-        file->asynchCalculateHash();
+        File::asynchCalculateHash(file);
     }
 }
 
