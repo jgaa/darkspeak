@@ -10,6 +10,7 @@
 #include "ds/crypto.h"
 #include "ds/identity.h"
 #include "ds/base32.h"
+#include "ds/database.h"
 
 #include <QString>
 #include <QDebug>
@@ -206,6 +207,16 @@ void DsEngine::onTransportHandleReady(const TransportHandle &th)
 
 void DsEngine::onTransportHandleError(const TransportHandleError &the)
 {
+    if (auto identity = getIdentityManager()->identityFromUuid(the.uuid)) {
+        if (!identity->getAddress().isEmpty()) {
+            LFLOG_WARN << "Failed to start " << identity->getAddress()
+                       << " for identity " << identity->getName()
+                       << ": " << the.explanation;
+
+            return; // Don't create a new service ...
+        }
+    }
+
     auto name = the.identityName;
     auto uuid = the.uuid;
     LFLOG_DEBUG << "Transport-handle creaton failed: " << name

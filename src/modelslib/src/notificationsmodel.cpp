@@ -1,7 +1,9 @@
 #include "include/ds/notificationsmodel.h"
 #include "ds/crypto.h"
 
+
 #include <QDateTime>
+#include <QSqlQuery>
 
 namespace ds {
 namespace models {

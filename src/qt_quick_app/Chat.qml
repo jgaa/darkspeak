@@ -257,7 +257,7 @@ Page {
                 manager.textToClipboard(contextFileSendMenu.file.name + ": " + contextFileSendMenu.file.hash)
             }
 
-            text: qsTr("Copy Sha512")
+            text: qsTr("Copy Sha256")
         }
     }
 
@@ -268,14 +268,14 @@ Page {
 
         MenuItem {
             onTriggered: {
-
+                contextFileReceiveMenu.file.accept();
             }
             text: qsTr("Accept")
         }
 
         MenuItem {
             onTriggered: {
-
+                contextFileReceiveMenu.file.reject();
             }
 
             text: qsTr("Reject")
@@ -294,7 +294,7 @@ Page {
                 manager.textToClipboard(contextFileReceiveMenu.file.name + ": " + contextFileReceiveMenu.file.hash)
             }
 
-            text: qsTr("Copy Sha512")
+            text: qsTr("Copy Sha256")
         }
     }
 }

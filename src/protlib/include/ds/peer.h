@@ -7,6 +7,7 @@
 #include "ds/protocolmanager.h"
 #include "ds/connectionsocket.h"
 #include "ds/peerconnection.h"
+#include "ds/file.h"
 
 namespace ds {
 namespace prot {
@@ -75,6 +76,13 @@ public:
         mview_t signature;
     };
 
+    struct Channel {
+        using ptr_t = std::shared_ptr<Channel>;
+
+        core::File::ptr_t file;
+        QFile io;
+    };
+
     Peer(ConnectionSocket::ptr_t connection,
          core::ConnectData connectionData);
     ~Peer() override;
@@ -121,6 +129,7 @@ protected:
     void prepareDecryption(stream_state_t& state, const mview_t& header, const mview_t& key);
     void decrypt(mview_t& data, const mview_t& ciphertext);
     QByteArray safePayload(const mview_t& data);
+    int createChannel(const core::File& file);
 
     InState inState_ = InState::DISABLED;
     ConnectionSocket::ptr_t connection_;
@@ -128,6 +137,8 @@ protected:
     stream_state_t stateIn;
     stream_state_t stateOut;
     quint64 request_id_ = {}; // Counter for outgoing requests
+    int next_channel_ = 1;
+    std::map<int, Channel::ptr_t> channels_;
 
     // PeerConnection interface
 public:
@@ -140,6 +151,7 @@ public:
     bool isConnected() const noexcept override;
     uint64_t sendMessage(const core::Message &message) override;
     uint64_t offerFile(const core::File& file) override;
+    uint64_t startTransfer(const core::File& file) override;
 };
 
 }} // namespaces

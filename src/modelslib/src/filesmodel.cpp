@@ -1,5 +1,8 @@
 
+#include <QSqlQuery>
 #include <QUrl>
+#include <QSqlError>
+
 #include <assert.h>
 
 #include "ds/dsengine.h"

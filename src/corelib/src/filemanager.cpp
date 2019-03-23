@@ -48,9 +48,24 @@ File::ptr_t FileManager::getFile(const QByteArray &hash, Conversation &conversat
 File::ptr_t FileManager::getFileFromId(const QByteArray &fileId, Conversation &conversation)
 {
     QSqlQuery query;
-    query.prepare("SELECT count(*) FROM file WHERE file_id=:fid AND conversation_id=:cid");
+    query.prepare("SELECT id FROM file WHERE file_id=:fid AND conversation_id=:cid");
     query.bindValue(":fid", fileId);
     query.bindValue(":cid", conversation.getId());
+    query.exec();
+
+    if (query.next()) {
+        return getFile(query.value(0).toInt());
+    }
+
+    return {};
+}
+
+File::ptr_t FileManager::getFileFromId(const QByteArray &fileId, const File::Direction direction)
+{
+    QSqlQuery query;
+    query.prepare("SELECT id FROM file WHERE file_id=:fid AND direction=:direction");
+    query.bindValue(":fid", fileId);
+    query.bindValue(":direction", static_cast<int>(direction));
     query.exec();
 
     if (query.next()) {

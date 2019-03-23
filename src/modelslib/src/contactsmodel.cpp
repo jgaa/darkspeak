@@ -11,8 +11,10 @@
 #include <QBuffer>
 #include <QDateTime>
 #include <QDebug>
+#include <QSqlQuery>
 #include <QSqlRecord>
 #include <QUuid>
+#include <QSqlError>
 
 #include "logfault/logfault.h"
 

@@ -297,12 +297,10 @@ void Contact::queueFile(const std::shared_ptr<File> &file)
 {
     loadFileQueue();
 
-    if (file->getDirection() == File::OUTGOING) {
-        // Send offer
-        fileQueue_.push_back(file);
-        file->setState(File::FS_WAITING);
-        processFilesQueue();
-    }
+    // Send offer or start transfer, depending on direction
+    fileQueue_.push_back(file);
+    file->setState(File::FS_WAITING);
+    processFilesQueue();
 }
 
 Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
@@ -655,7 +653,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
         // The conversation must relate to this contact
         // The message-state must not be MS_REJECTED
 
-        auto messageId = QByteArray::fromBase64(ack.data.toUtf8());
+        const auto messageId = QByteArray::fromBase64(ack.data.toUtf8());
         if (messageId.isEmpty()) {
             LFLOG_WARN << "Received ack with empty or invalid message-id: " << ack.data.toUtf8().toHex();
             return;
@@ -693,6 +691,42 @@ void Contact::onReceivedAck(const PeerAck &ack)
         } else if (ack.status == "Rejected" || ack.status == "Rejected-Encoding") {
             message->setState(Message::MS_REJECTED);
         }
+    } else if (ack.what == "IncomingFile") {
+
+        const auto fileId = QByteArray::fromBase64(ack.data.toUtf8());
+        if (fileId.isEmpty()) {
+            LFLOG_WARN << "Received ack with empty or invalid file-id: " << ack.data.toUtf8().toHex();
+            return;
+        }
+
+        auto file = DsEngine::instance().getFileManager()->getFileFromId(fileId, File::OUTGOING);
+
+        if (file->getContactId() != getId()) {
+            LFLOG_WARN << "Received ack for file #" << file->getId()
+                       << " that belonds to another contact: "
+                       << ack.data.toUtf8().toHex();
+            return;
+        }
+
+        file->touchAckTime();
+
+        if (file->getState() == File::FS_CANCELLED) {
+            return; // The transfer is cancelled.
+        }
+
+        if (ack.status == "Received") {
+            file->setState(File::FS_OFFERED);
+        } else if (ack.status == "Rejected") {
+            file->setState(File::FS_REJECTED);
+        } else if (ack.status == "Completed") {
+            file->setState(File::FS_DONE);
+        } else if (ack.status == "Abort") {
+            file->setState(File::FS_CANCELLED);
+        } else if (ack.status == "Proceed") {
+            // TODO: Start transfer
+        } else if (ack.status == "Resume") {
+            // TODO: Start transfer with rest
+        }
     }
 }
 
@@ -726,11 +760,17 @@ void Contact::processFilesQueue()
         // TODO: Offer up to /n/ files in one message, to pipeline them
         //       and to make metadata leaks less lileky to idnetify file numbers
         //       and file sizes.
+        auto file = fileQueue_.front();
         try {
-            connection_->peer->offerFile(*fileQueue_.front());
-            fileQueue_.front()->setState(File::FS_OFFERED);
+            if (file->getDirection() == File::OUTGOING) {
+                connection_->peer->offerFile(*file);
+                file->setState(File::FS_OFFERED);
+            } else {
+                connection_->peer->startTransfer(*file);
+                file->setState(File::FS_TRANSFERRING);
+            }
         } catch(const std::exception& ex) {
-            LFLOG_WARN << "Caught exception while sending message: " << ex.what();
+            LFLOG_WARN << "Caught exception while sending file request: " << ex.what();
             return;
         }
 

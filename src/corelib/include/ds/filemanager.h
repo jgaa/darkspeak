@@ -25,6 +25,7 @@ public:
     File::ptr_t getFile(const int dbId);
     File::ptr_t getFile(const QByteArray& hash, Conversation& conversation);
     File::ptr_t getFileFromId(const QByteArray& hash, Conversation& conversation);
+    File::ptr_t getFileFromId(const QByteArray& hash, const File::Direction direction);
 
     File::ptr_t addFile(std::unique_ptr<FileData> data);
 

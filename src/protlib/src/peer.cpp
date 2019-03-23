@@ -12,6 +12,7 @@
 #include "ds/message.h"
 #include "ds/errors.h"
 #include "ds/file.h"
+#include "ds/dsengine.h"
 
 #include "logfault/logfault.h"
 
@@ -219,7 +220,7 @@ void Peer::onReceivedData(const quint32 channel, const quint64 id, QByteArray da
                         json.object().value("size").toString().toLongLong(),
                         json.object().value("rest").toString().toLongLong(),
                         json.object().value("file-type").toString(),
-                        QByteArray::fromBase64(json.object().value("sha512").toString().toUtf8())};
+                        QByteArray::fromBase64(json.object().value("sha256").toString().toUtf8())};
 
             LFLOG_DEBUG << "Emitting PeerFileOffer";
             emit receivedFileOffer(msg);
@@ -424,6 +425,26 @@ QByteArray Peer::safePayload(const Peer::mview_t &data)
     return "*** NOT Json ***";
 }
 
+int Peer::createChannel(const File &file)
+{
+    auto ch = make_shared<Channel>();
+    ch->file = core::DsEngine::instance().getFileManager()->getFile(file.getId());
+    ch->io.setFileName(file.getPath());
+
+    if (file.getDirection() == File::INCOMING) {
+        if (!ch->io.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            LFLOG_ERROR << "Failed to open \"" << file.getPath()
+                        << "\" for write: " << ch->io.errorString();
+            throw Error("Failed to open file");
+        }
+    }
+
+    assert(channels_.find(next_channel_) == channels_.end());
+
+    channels_[next_channel_] = ch;
+    return next_channel_++;
+}
+
 QUuid Peer::getConnectionId() const
 {
     return uuid_;
@@ -494,7 +515,7 @@ uint64_t Peer::offerFile(const File &file)
     auto json = QJsonDocument{
         QJsonObject{
             {"type", "IncomingFile"},
-            {"sha512", QString{file.getHash().toBase64()}},
+            {"sha256", QString{file.getHash().toBase64()}},
             {"name", file.getName()},
             {"size", QString::number(file.getSize())},
             {"file-type", "binary"},
@@ -505,6 +526,36 @@ uint64_t Peer::offerFile(const File &file)
     };
 
     LFLOG_DEBUG << "Sending File Offer for file: " << file.getId()
+                << " over connection " << getConnectionId().toString();
+
+    return send(json);
+}
+
+uint64_t Peer::startTransfer(const File &file)
+{
+    auto channelId = createChannel(file);
+
+    LFLOG_DEBUG << "Preparing to start receiving file #" << file.getId()
+                << " \"" << file.getName()
+                << "\" of size "
+                << file.getSize()
+                << " from " << file.getContact()->getName()
+                << " on identiy "
+                << file.getConversation()->getIdentity()->getName()
+                << " with channel #"
+                << channelId;
+
+    auto json = QJsonDocument{
+        QJsonObject{
+            {"type", "SendFile"},
+            {"rest", QString::number(0)},
+            {"file-id", QString{file.getFileId().toBase64()}},
+            {"channel", channelId}
+        }
+    };
+
+    LFLOG_DEBUG << "Requesting File : " << file.getId()
+                << " with channel #" << channelId
                 << " over connection " << getConnectionId().toString();
 
     return send(json);

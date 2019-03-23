@@ -35,6 +35,24 @@ void File::cancel()
     setState(FS_CANCELLED);
 }
 
+void File::accept()
+{
+    if (getDirection() != INCOMING) {
+        return;
+    }
+
+    setState(FS_WAITING);
+    getContact()->queueFile(shared_from_this());
+}
+
+void File::reject()
+{
+    if (getDirection() != INCOMING) {
+        return;
+    }
+    setState(FS_REJECTED);
+}
+
 int File::getId() const noexcept
 {
     return id_;

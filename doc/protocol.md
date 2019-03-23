@@ -242,7 +242,7 @@ Reply:
 {
     "type" : "IncomingFile",
     "name" : "cutecat.jpg",
-    "sha512" : "GfE6564...",
+    "sha256" : "GfE6564...",
     "size" : 12345,
     "file-type" : "binary" | "text",
     "rest" : 50,
@@ -252,7 +252,7 @@ Reply:
 
 - what: IncomingFile
 - name: Suggested name of the file. Cannot contain slashes. May be restricted to us-ascii at some clients.
-- sha512: Sha512 hash of the file
+- sha256: Sha256 hash of the file, encoded as base64
 - size: Size of the file in bytes
 - type: Binary or text. DarkSpeak will convert text-files to UNIX format, and save in the local format for the operating system used by the client. This feature makes it harder to deduce the operating system used by a client.
 - rest: Restore point. Used to continue an aborted or incomplete transfer. The transfer will start at the file-offset (in bytes) specified here.

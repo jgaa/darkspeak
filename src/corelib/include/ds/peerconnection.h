@@ -120,6 +120,27 @@ struct PeerFileOffer : public PeerReq
     QByteArray sha512;
 };
 
+struct PeerSendFile : public PeerReq
+{
+    PeerSendFile(const PeerSendFile&) = default;
+
+    PeerSendFile(std::shared_ptr<PeerConnection> peer, QUuid connectionId, quint64 requestId,
+                 QByteArray fileId,
+                 qlonglong rest,
+                 int channel)
+    : PeerReq{peer, std::move(connectionId), requestId}
+    {
+        this->fileId = std::move(fileId);
+        this->rest = rest;
+        this->channel = channel;
+    }
+
+    QByteArray fileId;
+    qlonglong rest = {};
+    int channel = {};
+};
+
+
 /*! Representation of a incoming or outgoing connection to a contact.
  *
  *  Owned by the protocol module. Lifetime is purely managed as std::shared_ptr.
@@ -148,6 +169,7 @@ public:
     virtual bool isConnected() const noexcept = 0;
     virtual uint64_t sendMessage(const Message& message) = 0;
     virtual uint64_t offerFile(const File& file) = 0;
+    virtual uint64_t startTransfer(const File& file) = 0;
 
 signals:
     void connectedToPeer(const std::shared_ptr<PeerConnection>& peer);

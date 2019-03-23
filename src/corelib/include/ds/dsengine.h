@@ -8,7 +8,7 @@
 #include <QMap>
 
 #include "ds/message.h"
-#include "ds/database.h"
+//#include "ds/database.h"
 #include "ds/identity.h"
 #include "ds/contact.h"
 #include "ds/transporthandle.h"
@@ -21,8 +21,12 @@
 #include "ds/messagemanager.h"
 #include "ds/filemanager.h"
 
+class QSqlDatabase;
+
 namespace ds {
 namespace core {
+
+class Database;
 
 /*! The core engine of DarkSpeak.
  *

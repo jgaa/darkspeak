@@ -2,6 +2,7 @@
 #include <memory>
 #include <algorithm>
 
+#include "ds/database.h"
 #include "ds/contactmanager.h"
 #include "ds/dsengine.h"
 

@@ -59,6 +59,8 @@ public:
     Q_PROPERTY(qlonglong bytesTransferred READ getBytesTransferred NOTIFY bytesTransferredChanged)
 
     Q_INVOKABLE void cancel();
+    Q_INVOKABLE void accept();
+    Q_INVOKABLE void reject();
 
     int getId() const noexcept;
     QByteArray getFileId() const noexcept;

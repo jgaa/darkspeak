@@ -1,5 +1,6 @@
 #include "ds/messagemanager.h"
 #include "ds/dsengine.h"
+#include "ds/database.h"
 
 #include "logfault/logfault.h"
 

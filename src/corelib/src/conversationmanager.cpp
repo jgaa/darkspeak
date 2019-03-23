@@ -5,6 +5,7 @@
 #include "ds/conversationmanager.h"
 #include "ds/dsengine.h"
 #include "ds/identity.h"
+#include "ds/database.h"
 
 #include "logfault/logfault.h"
 
