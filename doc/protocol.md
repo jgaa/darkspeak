@@ -244,7 +244,7 @@ Reply:
     "name" : "cutecat.jpg",
     "sha512" : "GfE6564...",
     "size" : 12345,
-    "type" : "binary" | "text",
+    "file-type" : "binary" | "text",
     "rest" : 50,
     "file-id" : "123"
 }

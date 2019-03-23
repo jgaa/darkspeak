@@ -218,7 +218,7 @@ void Peer::onReceivedData(const quint32 channel, const quint64 id, QByteArray da
                         json.object().value("name").toString(),
                         json.object().value("size").toString().toLongLong(),
                         json.object().value("rest").toString().toLongLong(),
-                        json.object().value("type").toString(),
+                        json.object().value("file-type").toString(),
                         QByteArray::fromBase64(json.object().value("sha512").toString().toUtf8())};
 
             LFLOG_DEBUG << "Emitting PeerFileOffer";
@@ -497,7 +497,7 @@ uint64_t Peer::offerFile(const File &file)
             {"sha512", QString{file.getHash().toBase64()}},
             {"name", file.getName()},
             {"size", QString::number(file.getSize())},
-            {"type", "binary"},
+            {"file-type", "binary"},
             {"rest", QString::number(0)},
             {"file-id", QString{file.getFileId().toBase64()}},
             {"conversation", QString{file.getConversation()->getHash().toBase64()}},

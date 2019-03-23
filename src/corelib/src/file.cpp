@@ -52,7 +52,9 @@ File::State File::getState() const noexcept
 
 void File::setState(const File::State state)
 {
-    updateIf("state", state, data_->state, this, &File::stateChanged);
+    if (updateIf("state", state, data_->state, this, &File::stateChanged)) {
+        DsEngine::instance().getFileManager()->onFileStateChanged(this);
+    }
 }
 
 File::Direction File::getDirection() const noexcept

@@ -1,5 +1,7 @@
 
+#include <QDir>
 #include <QSqlQuery>
+#include <QStandardPaths>
 
 #include "include/ds/filemanager.h"
 
@@ -43,6 +45,21 @@ File::ptr_t FileManager::getFile(const QByteArray &hash, Conversation &conversat
     return {};
 }
 
+File::ptr_t FileManager::getFileFromId(const QByteArray &fileId, Conversation &conversation)
+{
+    QSqlQuery query;
+    query.prepare("SELECT count(*) FROM file WHERE file_id=:fid AND conversation_id=:cid");
+    query.bindValue(":fid", fileId);
+    query.bindValue(":cid", conversation.getId());
+    query.exec();
+
+    if (query.next()) {
+        return getFile(query.value(0).toInt());
+    }
+
+    return {};
+}
+
 File::ptr_t FileManager::addFile(std::unique_ptr<FileData> data)
 {
     auto file = make_shared<File>(*this, move(data));
@@ -51,21 +68,76 @@ File::ptr_t FileManager::addFile(std::unique_ptr<FileData> data)
     touch(file);
     emit fileAdded(file);
 
-    if (file->getState() == File::FS_CREATED) {
+    if (file->getDirection() == File::OUTGOING
+            && file->getState() == File::FS_CREATED) {
         hashIt(file);
     }
 
     return file;
 }
 
-bool FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOffer &offer)
+void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOffer &offer)
 {
+    // Check if we have the file.
+    try {
+        if (auto file = getFileFromId(offer.fileId, conversation)) {
+            if (file->getState() == File::FS_REJECTED) {
+                offer.peer->sendAck("IncomingFile", "Rejected", offer.fileId.toBase64());
+            } else if (file->getState() == File::FS_DONE) {
+                offer.peer->sendAck("IncomingFile", "Completed", offer.fileId.toBase64());
+            } else {
+                offer.peer->sendAck("IncomingFile", "Received", offer.fileId.toBase64());
+            }
 
+            return;
+        }
+    } catch(const NotFoundError&) {
+        ; // It's a new offer
+    }
+
+    auto data = make_unique<FileData>();
+
+    // Validate name
+    // TODO: Add Windows forbidden device names
+    static const QRegExp forbidden{R"(\\|\/|\||\.\.)"};
+
+    if (offer.name.count(forbidden)) {
+        LFLOG_WARN << "Rejecting file #" << offer.fileId.toBase64()
+                   << " from peer " << conversation.getFirstParticipant()->getName()
+                   << " on identity " << conversation.getIdentity()->getName()
+                   << ": Suspicious file name!";
+
+        offer.peer->sendAck("IncomingFile", "Rejected", offer.fileId.toBase64());
+        return;
+    }
+
+    data->state = File::FS_OFFERED;
+    data->name = offer.name;
+    data->path = conversation.getFilesLocation() + "/" + offer.name;
+    data->direction = File::INCOMING;
+    data->conversation = conversation.getId();
+    data->identity = conversation.getIdentityId();
+    data->contact = conversation.getFirstParticipant()->getId();
+    data->identity = conversation.getIdentityId();
+    data->fileId = offer.fileId;
+    data->size = offer.size;
+    data->hash = offer.sha512;
+
+    if (addFile(move(data))) {
+        offer.peer->sendAck("IncomingFile", "Received", offer.fileId.toBase64());
+    } else {
+        offer.peer->sendAck("IncomingFile", "Rejected", offer.fileId.toBase64());
+    }
 }
 
 void FileManager::touch(const File::ptr_t &file)
 {
     lru_cache_.touch(file);
+}
+
+void FileManager::onFileStateChanged(const File *file)
+{
+    emit fileStateChanged(file);
 }
 
 void FileManager::hashIt(const File::ptr_t &file)

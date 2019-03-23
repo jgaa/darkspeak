@@ -69,6 +69,9 @@ private slots:
     void onMessageDeleted(const core::Message::ptr_t& message);
     void onMessageReceivedDateChanged(const core::Message::ptr_t& message);
     void onMessageStateChanged(const core::Message::ptr_t& message);
+    void onFileAdded(const core::File::ptr_t& file);
+    void onFileDeleted(const int dbId);
+    void onFileStateChanged(const core::File *file);
 
 private:
     void queryRows(rows_t& rows);
@@ -76,6 +79,7 @@ private:
     std::shared_ptr<core::MessageContent> loadData(const int id) const;
     std::shared_ptr<core::MessageContent> loadData(const core::Message& message) const;
     void onMessageChanged(const core::Message::ptr_t& message, const int role);
+    void onFileChanged(const core::File *file, const int role);
     QString getStateName(const Row& r) const;
 
     mutable rows_t rows_;

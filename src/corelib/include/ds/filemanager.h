@@ -24,16 +24,20 @@ public:
 
     File::ptr_t getFile(const int dbId);
     File::ptr_t getFile(const QByteArray& hash, Conversation& conversation);
+    File::ptr_t getFileFromId(const QByteArray& hash, Conversation& conversation);
 
     File::ptr_t addFile(std::unique_ptr<FileData> data);
 
-    bool receivedFileOffer(Conversation& conversation, const PeerFileOffer& offer);
+    void receivedFileOffer(Conversation& conversation, const PeerFileOffer& offer);
 
     void touch(const File::ptr_t& file);
+
+    void onFileStateChanged(const File *file);
 
 signals:
     void fileAdded(const File::ptr_t& file);
     void fileDeleted(const int dbId);
+    void fileStateChanged(const core::File *file);
 
 public slots:
 

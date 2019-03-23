@@ -3,6 +3,7 @@
 
 #include <set>
 
+#include <QDir>
 #include <QObject>
 
 #include "ds/contact.h"
@@ -65,6 +66,7 @@ public:
     int getIdentityId() const noexcept;
     Identity *getIdentity() const;
     bool haveParticipant(const Contact& contact) const;
+    QString getFilesLocation() const;
 
 
     /*! Add the new Conversation to the database. */

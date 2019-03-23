@@ -25,6 +25,7 @@ MessagesModel::MessagesModel(QObject &parent)
     : QAbstractListModel(&parent)
 {
     auto mgr = DsEngine::instance().getMessageManager();
+    auto fmgr = DsEngine::instance().getFileManager();
     connect(mgr, &MessageManager::messageAdded,
             this, &MessagesModel::onMessageAdded);
     connect(mgr, &MessageManager::messageDeleted,
@@ -33,6 +34,12 @@ MessagesModel::MessagesModel(QObject &parent)
             this, &MessagesModel::onMessageReceivedDateChanged);
     connect(mgr, &MessageManager::messageStateChanged,
             this, &MessagesModel::onMessageStateChanged);
+    connect(fmgr, &FileManager::fileAdded,
+            this, &MessagesModel::onFileAdded);
+    connect(fmgr, &FileManager::fileDeleted,
+            this, &MessagesModel::onFileDeleted);
+    connect(fmgr, &FileManager::fileStateChanged,
+            this, &MessagesModel::onFileStateChanged);
 }
 
 void MessagesModel::setConversation(Conversation *conversation)
@@ -124,11 +131,9 @@ void MessagesModel::onMessageAdded(const Message::ptr_t &message)
 
     // Always add at the end
     const int rowid = static_cast<int>(rows_.size());
-    LFLOG_DEBUG << "beginInsertRows";
     beginInsertRows({}, rowid, rowid);
     rows_.push_back({message->getId(), loadData(*message)});
     endInsertRows();
-    LFLOG_DEBUG << "endInsertRows";
 }
 
 void MessagesModel::onMessageDeleted(const Message::ptr_t &message)
@@ -140,7 +145,7 @@ void MessagesModel::onMessageDeleted(const Message::ptr_t &message)
     const int messageId = message->getId();
     int rowid = 0;
     for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
-        if (it->id == messageId) {
+        if (it->type_ == MESSAGE && it->id == messageId) {
             beginRemoveRows({}, rowid, rowid);
             rows_.erase(it);
             endRemoveRows();
@@ -157,6 +162,42 @@ void MessagesModel::onMessageReceivedDateChanged(const Message::ptr_t &message)
 void MessagesModel::onMessageStateChanged(const Message::ptr_t &message)
 {
     onMessageChanged(message, H_STATE);
+}
+
+void MessagesModel::onFileAdded(const File::ptr_t &file)
+{
+    if (!conversation_ || (conversation_->getId() != file->getConversationId())) {
+        return; // Irrelevant
+    }
+
+    // Always add at the end
+    const int rowid = static_cast<int>(rows_.size());
+
+    beginInsertRows({}, rowid, rowid);
+    rows_.push_back({file->getId(), file});
+    endInsertRows();
+}
+
+void MessagesModel::onFileDeleted(const int dbId)
+{
+    if (!conversation_) {
+        return; // Irrelevant
+    }
+
+    int rowid = 0;
+    for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
+        if (it->type_ == FILE && it->id == dbId) {
+            beginRemoveRows({}, rowid, rowid);
+            rows_.erase(it);
+            endRemoveRows();
+            return;
+        }
+    }
+}
+
+void MessagesModel::onFileStateChanged(const File *file)
+{
+     onFileChanged(file, H_STATE);
 }
 
 void MessagesModel::queryRows(MessagesModel::rows_t &rows)
@@ -255,7 +296,7 @@ void MessagesModel::onMessageChanged(const Message::ptr_t &message, const int ro
     const int messageId = message->getId();
     int rowid = 0;
     for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
-        if (it->id == messageId) {
+        if (it->type_ == MESSAGE && it->id == messageId) {
 
             if (role == H_STATE) {
                 it->data_->state = message->getState();
@@ -264,6 +305,32 @@ void MessagesModel::onMessageChanged(const Message::ptr_t &message, const int ro
             }
 
             LFLOG_DEBUG << "Emitting dataChanged for message " << message->getId()
+                        << " for role " << role
+                        << " on row " << rowid;
+
+            const auto where = index(rowid);
+            if (role == H_STATE) {
+                emit dataChanged(where, where, {H_STATE, H_STATE_NAME});
+            } else {
+                emit dataChanged(where, where, {role});
+            }
+            return;
+        }
+    }
+}
+
+void MessagesModel::onFileChanged(const File *file, const int role)
+{
+    if (!conversation_ || (conversation_->getId() != file->getConversationId())) {
+        return; // Irrelevant
+    }
+
+    const int fileId = file->getId();
+    int rowid = 0;
+    for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
+        if (it->type_ == FILE && it->id == fileId) {
+
+            LFLOG_DEBUG << "Emitting dataChanged for file " << fileId
                         << " for role " << role
                         << " on row " << rowid;
 

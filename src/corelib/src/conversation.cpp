@@ -7,6 +7,7 @@
 
 #include "logfault/logfault.h"
 
+#include <QStandardPaths>
 #include <QUrl>
 
 namespace ds {
@@ -87,13 +88,8 @@ void Conversation::incomingMessage(Contact *contact, const MessageData &data)
 void Conversation::incomingFileOffer(Contact *contact, const PeerFileOffer &offer)
 {
     // Add to the database
-    if (!DsEngine::instance().getFileManager()->receivedFileOffer(*this, offer)) {
-        contact->sendAck("Message", "Rejected", offer.fileId.toBase64());
-        return;
-    }
-
-    // Send ack
-    contact->sendAck("IncomingFile", "Received", offer.fileId.toBase64());
+    // The file manager will deal with the ack
+    DsEngine::instance().getFileManager()->receivedFileOffer(*this, offer);
 }
 
 int Conversation::getId() const noexcept {
@@ -192,6 +188,31 @@ Identity *Conversation::getIdentity() const
 bool Conversation::haveParticipant(const Contact &contact) const
 {
     return getFirstParticipant()->getUuid() == contact.getUuid();
+}
+
+QString Conversation::getFilesLocation() const
+{
+    auto home = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    if (home.isEmpty()) {
+        home = QDir::homePath();
+    }
+
+    QDir path(home
+              + "/darkspeak/"
+              + getIdentity()->getUuid().toString()
+              + "/" + getUuid().toString());
+
+    path.makeAbsolute();
+    if (!path.exists()) {
+        LFLOG_DEBUG << "Creating download directory \""
+                    << path.path()
+                    << "\" for conversation "
+                    << getName()
+                    << " at identity " << getIdentity()->getName();
+        path.mkpath(path.path());
+    }
+
+    return path.path();
 }
 
 void Conversation::addToDb()
