@@ -42,7 +42,9 @@ void File::accept()
     }
 
     setState(FS_WAITING);
-    getContact()->queueFile(shared_from_this());
+    // FIXME: shared_from_this() don't work from the file instance
+    getContact()->queueFile(
+                DsEngine::instance().getFileManager()->getFile(getId()));
 }
 
 void File::reject()
@@ -189,6 +191,16 @@ int File::getIdentityId() const noexcept
 Conversation *File::getConversation() const
 {
     return DsEngine::instance().getConversationManager()->getConversation(getConversationId()).get();
+}
+
+int File::getChannel() const noexcept
+{
+    return channel_;
+}
+
+void File::setChannel(int channel)
+{
+    channel_ = channel;
 }
 
 Contact *File::getContact() const

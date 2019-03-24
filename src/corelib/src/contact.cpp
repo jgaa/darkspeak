@@ -299,7 +299,6 @@ void Contact::queueFile(const std::shared_ptr<File> &file)
 
     // Send offer or start transfer, depending on direction
     fileQueue_.push_back(file);
-    file->setState(File::FS_WAITING);
     processFilesQueue();
 }
 
@@ -653,9 +652,9 @@ void Contact::onReceivedAck(const PeerAck &ack)
         // The conversation must relate to this contact
         // The message-state must not be MS_REJECTED
 
-        const auto messageId = QByteArray::fromBase64(ack.data.toUtf8());
+        const auto messageId = QByteArray::fromBase64(ack.data.value("data").toString().toUtf8());
         if (messageId.isEmpty()) {
-            LFLOG_WARN << "Received ack with empty or invalid message-id: " << ack.data.toUtf8().toHex();
+            LFLOG_WARN << "Received ack with empty or invalid message-id: " << messageId.toHex();
             return;
         }
 
@@ -669,18 +668,18 @@ void Contact::onReceivedAck(const PeerAck &ack)
             if (!conversation->haveParticipant(*this)) {
                 LFLOG_WARN << "Received ack for message #" << message->getId()
                            << " that belonds to another contacts conversation: "
-                           << ack.data.toUtf8().toHex();
+                           << conversation->getUuid().toString();;
                 return;
             }
         } else {
             LFLOG_WARN << "Received ack for message #" << message->getId()
-                       << " with non-existing conversation conversation: "
-                       << ack.data.toUtf8().toHex();
+                       << " with non-existing conversation: "
+                       << conversation->getUuid().toString();
             return;
         }
 
         if (message->getState() == Message::MS_REJECTED) {
-             LFLOG_DEBUG << "Received ack for already rejected message " << ack.data.toUtf8().toHex();
+             LFLOG_DEBUG << "Received ack for already rejected message " << messageId.toHex().toHex();
              return;
         }
 
@@ -692,27 +691,39 @@ void Contact::onReceivedAck(const PeerAck &ack)
             message->setState(Message::MS_REJECTED);
         }
     } else if (ack.what == "IncomingFile") {
+        // The file must exist.
+        // The file must belong to an existing conversation
+        // The conversation must relate to this contact
+        // The file-status must not be FS_CANCELLED
 
-        const auto fileId = QByteArray::fromBase64(ack.data.toUtf8());
+        const auto fileId = QByteArray::fromBase64(ack.data.value("data").toString().toUtf8());
         if (fileId.isEmpty()) {
-            LFLOG_WARN << "Received ack with empty or invalid file-id: " << ack.data.toUtf8().toHex();
+            LFLOG_WARN << "Received ack with empty or invalid file-id: " << fileId.toHex();
             return;
         }
 
         auto file = DsEngine::instance().getFileManager()->getFileFromId(fileId, File::OUTGOING);
 
-        if (file->getContactId() != getId()) {
+        if (file->getState() == File::FS_CANCELLED) {
+            LFLOG_DEBUG << "Ignoring cak for cancelled file #" << file->getId();
+            return; // The transfer is cancelled.
+        }
+
+        if (auto conversation = file->getConversation()) {
+            if (!conversation->haveParticipant(*this)) {
+                LFLOG_WARN << "Received ack for file #" << file->getId()
+                           << " that belonds to another contacts conversation: "
+                           << conversation->getUuid().toString();
+                return;
+            }
+        } else {
             LFLOG_WARN << "Received ack for file #" << file->getId()
-                       << " that belonds to another contact: "
-                       << ack.data.toUtf8().toHex();
+                       << " with non-existing conversation: "
+                       << conversation->getUuid().toString();
             return;
         }
 
         file->touchAckTime();
-
-        if (file->getState() == File::FS_CANCELLED) {
-            return; // The transfer is cancelled.
-        }
 
         if (ack.status == "Received") {
             file->setState(File::FS_OFFERED);
@@ -722,10 +733,20 @@ void Contact::onReceivedAck(const PeerAck &ack)
             file->setState(File::FS_DONE);
         } else if (ack.status == "Abort") {
             file->setState(File::FS_CANCELLED);
-        } else if (ack.status == "Proceed") {
-            // TODO: Start transfer
-        } else if (ack.status == "Resume") {
-            // TODO: Start transfer with rest
+        } else if (ack.status == "Proceed" || ack.status == "Resume") {
+            // TODO: Handle REST
+
+            const auto channel = ack.data.value("channel").toInt();
+            if (channel <= 0) {
+                LFLOG_WARN << "Received ack for file #" << file->getId()
+                           << " with invalid channel-id: "
+                           << channel;
+                file->setState(File::FS_FAILED);
+                return;
+            }
+            file->setChannel(channel);
+            file->setState(File::FS_QUEUED);
+            queueFile(file);
         }
     }
 }
@@ -752,10 +773,10 @@ bool Contact::procesMessageQueue()
     return false;
 }
 
-void Contact::processFilesQueue()
+bool Contact::processFilesQueue()
 {
-    // Only prioritize files when there are no messages pending
-    if (isOnline() && messageQueue_.empty() && !fileQueue_.empty()) {
+again:
+    if (isOnline() && !fileQueue_.empty()) {
         // TODO: Check ready status on socket
         // TODO: Offer up to /n/ files in one message, to pipeline them
         //       and to make metadata leaks less lileky to idnetify file numbers
@@ -763,19 +784,62 @@ void Contact::processFilesQueue()
         auto file = fileQueue_.front();
         try {
             if (file->getDirection() == File::OUTGOING) {
-                connection_->peer->offerFile(*file);
-                file->setState(File::FS_OFFERED);
-            } else {
-                connection_->peer->startTransfer(*file);
-                file->setState(File::FS_TRANSFERRING);
+                switch(file->getState()) {
+                case File::FS_WAITING:
+                    connection_->peer->offerFile(*file);
+                    file->setState(File::FS_OFFERED);
+                    break;
+                case File::FS_QUEUED:
+                    queueTransfer(file);
+                    break;
+                default:
+                    // The file don't belong in the queue.
+                    fileQueue_.erase(fileQueue_.begin());
+                    goto again;
+                }
+
+            } else /* File::INCOMING */ {
+                switch(file->getState()) {
+                case File::FS_QUEUED:
+                    queueTransfer(file);
+                    break;
+                default:
+                    // The file don't belong in the queue.
+                    fileQueue_.erase(fileQueue_.begin());
+                    goto again;
+                }
             }
         } catch(const std::exception& ex) {
             LFLOG_WARN << "Caught exception while sending file request: " << ex.what();
-            return;
+            return false;
         }
 
         fileQueue_.erase(fileQueue_.begin());
+        return true;
     }
+
+    return false;
+}
+
+bool Contact::processFileBlocks()
+{
+again:
+    for(auto& file : transferringFileQueue_) {
+        if (!isOnline()) {
+            break; // Ops
+        }
+
+        if (file->getState() !=  File::FS_TRANSFERRING) {
+            transferringFileQueue_.erase(file);
+            goto again; // Yes, goto!
+        }
+
+        if (connection_->peer->sendSome(*file) > 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void Contact::onReceivedMessage(const PeerMessage &msg)
@@ -839,7 +903,11 @@ void Contact::onOutputBufferEmptied()
             return;
         }
 
-        processFilesQueue();
+        if (processFilesQueue()) {
+            return;
+        }
+
+        processFileBlocks();
     }
 }
 
@@ -904,6 +972,24 @@ void Contact::loadFileQueue()
     }
 
     loadedFileQueue_ = true;
+}
+
+void Contact::queueTransfer(const std::shared_ptr<File> &file)
+{
+    connection_->peer->startTransfer(*file);
+    if (transferringFileQueue_.insert(file).second) {
+        std::weak_ptr<File> weak = file;
+        QMetaObject::Connection conn;
+        connect(file.get(), &File::stateChanged,
+                this, [this, weak, conn=move(conn)]() {
+            if (auto file = weak.lock()) {
+                if (file->getState() != File::FS_TRANSFERRING) {
+                    transferringFileQueue_.erase(file);
+                    disconnect(conn);
+                }
+            }
+        });
+    }
 }
 
 Conversation *Contact::getRequestedOrDefaultConversation(const QByteArray &hash,

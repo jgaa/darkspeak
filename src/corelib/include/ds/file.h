@@ -22,11 +22,25 @@ class File : public QObject, std::enable_shared_from_this<File>
 public:
     using ptr_t = std::shared_ptr<File>;
 
+    /*
+     *  Outgoing states:
+     *
+     *      CREATED --> HASHING --> WAITING --> OFFERED --> QUEUED --> TRANSFERRING --> DONE
+     *                                 IncomingFile  ack/proceed
+     *
+     *  Incoming states:
+     *
+     *      OFFERED --> QUEUED --> TRANSFERRING --> HASHING --> DONE
+     *           accepted
+     *
+     */
+
     enum State {
         FS_CREATED,
         FS_HASHING,
         FS_WAITING,
         FS_OFFERED,
+        FS_QUEUED,
         FS_TRANSFERRING,
         FS_DONE,
         FS_FAILED,
@@ -90,6 +104,8 @@ public:
     int getIdentityId() const noexcept;
     Contact *getContact() const;
     Conversation *getConversation() const;
+    int getChannel() const noexcept;
+    void setChannel(int channel);
 
     /*! Add the new File to the database. */
     void addToDb();
@@ -116,6 +132,8 @@ signals:
     void bytesTransferredChanged();
     void hashCalculated(const QByteArray& hash);
     void hashCalculationFailed(const QString& why);
+    void transferDone(File *file);
+    void transferFailed(File *file);
 
 private:
     static QString getSelectStatement(const QString& where);
@@ -123,6 +141,7 @@ private:
 
     int id_ = 0;
     std::unique_ptr<FileData> data_;
+    int channel_ = 0;
 };
 
 struct FileData {

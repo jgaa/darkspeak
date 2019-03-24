@@ -264,8 +264,8 @@ Reply:
 {
     "type" : "Ack",
     "what" : "IncomingFile",
-    "file-id" : "123",
-    "status" : "Proceed" | "Rejected" | "Rejected-Encoding" | "Completed" | "Abort" | "Resume"
+    "data" : "123",
+    "status" : "Proceed" | "Rejected" | "Rejected-Encoding" | "Completed" | "Failed | "Abort" | "Resume"
     "channel" : 5,
     "rest" : 123
 }
@@ -276,6 +276,8 @@ The payload of a file-transfer is sent directly over the transport-layer, using 
 Normally there will be two Ack messages for a transfer, first one with status *proceed*, and and then one with status *completed*.
 
 If the connection between two parties are broken and reestablished, the receiving part may send another Ack message, requesting *resume* of the specified file offset in the optional field *rest*. The sender will then start sending from the specified file-offset.
+
+- data: File-id
 
 **SendFile**: Request to send a file.
 

@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <deque>
+#include <set>
 
 #include <QDateTime>
 #include <QString>
@@ -192,7 +193,8 @@ private slots:
     void onProcessOnlineLater();
     void onReceivedAck(const PeerAck& ack);
     bool procesMessageQueue();
-    void processFilesQueue();
+    bool processFilesQueue();
+    bool processFileBlocks();
     void onReceivedMessage(const PeerMessage& msg);
     void onReceivedFileOffer(const PeerFileOffer& msg);
     void onOutputBufferEmptied();
@@ -201,6 +203,7 @@ private:
     static void bind(QSqlQuery& query, ContactData& data);
     void loadMessageQueue();
     void loadFileQueue();
+    void queueTransfer(const std::shared_ptr<File>& file);
 
     // Sends reject message if the conversation is not the default and don't exist.
     Conversation *getRequestedOrDefaultConversation(const QByteArray& hash,
@@ -220,7 +223,7 @@ private:
     std::deque<Message::ptr_t> messageQueue_;
     std::deque<Message::ptr_t> unconfirmedMessageQueue_; // Waiting for ack
     std::deque<std::shared_ptr<File>> fileQueue_;
-    std::deque<std::shared_ptr<File>> transferringFileQueue_; // Currently transferring, (we have slots)
+    std::set<std::shared_ptr<File>> transferringFileQueue_; // Currently transferring, (we have slots)
     std::deque<std::shared_ptr<File>> unconfirmedFileQueue_; // Waiting for ack
 };
 

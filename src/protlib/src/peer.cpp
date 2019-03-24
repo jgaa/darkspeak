@@ -26,8 +26,116 @@ namespace  {
 const std::vector<QString> encoding_names = {"us-ascii", "utf-8"};
 const std::map<QString, Message::Encoding>  encoding_lookup = {
     {"us-ascii", Message::US_ACSII},
-    {"utf-8", Message::UTF8}
+    {"utf-8", Message::UTF8}        
 };
+
+class IncomingFileChannel : public Peer::Channel {
+public:
+    IncomingFileChannel(const core::File::ptr_t& file)
+        : io_{file->getPath()}
+        , file_{file}
+    {
+        assert(file->getDirection() == File::INCOMING);
+        if (!io_.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            LFLOG_ERROR << "Failed to open \"" << file->getPath()
+                        << "\" for write: " << io_.errorString();
+            throw Error("Failed to open file");
+        }
+
+        file->setBytesTransferred(0);
+
+        LFLOG_DEBUG << "Opened file #" << file->getId()
+                    << " with path \"" << file->getPath()
+                    << " for WRITE for incoming transfer";
+    }
+
+    // Channel interface
+public:
+    void onIncoming(Peer &peer, const quint64 id, QByteArray &data) override {
+        Q_UNUSED(peer);
+        if (io_.write(data) != data.size()) {
+            LFLOG_ERROR << "Failed to write chunk "
+                        << id << " to \"" << file_->getPath()
+                        << "\" for write: " << io_.errorString();
+            throw Error("Failed to write to file");
+        }
+
+        file_->addBytesTransferred(data.size());
+    }
+
+    uint64_t onOutgoing(Peer &peer) override {
+        Q_UNUSED(peer)
+        assert(false);
+        return {};
+    }
+
+private:
+    QFile io_;
+    File::ptr_t file_;
+};
+
+class OutgoingFileChannel : public Peer::Channel {
+public:
+    OutgoingFileChannel(const core::File::ptr_t& file)
+        : io_{file->getPath()}
+        , file_{file}
+    {
+        assert(file->getDirection() == File::OUTGOING);
+        if (!io_.open(QIODevice::ReadOnly | QIODevice::ExistingOnly)) {
+            LFLOG_ERROR << "Failed to open \"" << file->getPath()
+                        << "\" for read: " << io_.errorString();
+            throw Error("Failed to open file");
+        }
+
+        file->setBytesTransferred(0);
+
+        LFLOG_DEBUG << "Opened file #" << file->getId()
+                    << " with path \"" << file->getPath()
+                    << " for READ for outgoing transfer";
+    }
+
+    // Channel interface
+public:
+    void onIncoming(Peer &peer, const quint64 id, QByteArray &data) override {
+        Q_UNUSED(peer);
+        Q_UNUSED(id)
+        Q_UNUSED(data)
+        assert(false);
+    }
+
+    uint64_t onOutgoing(Peer &peer) override {
+
+        auto bytesRead = io_.read(buffer_.data(), static_cast<int>(buffer_.size()));
+
+        if (bytesRead == 0) {
+            emit file_->transferDone(file_.get());
+            file_->setState(File::FS_DONE);
+            return {};
+        }
+
+        if (bytesRead < 0) {
+            LFLOG_ERROR << "Failed to read chunk from file \"" << file_->getPath()
+                        << "\": " << io_.errorString();
+            emit file_->transferFailed(file_.get());
+            file_->setState(File::FS_FAILED);
+            return {};
+        }
+
+        auto rval = peer.send(buffer_.data(),
+                  static_cast<size_t>(bytesRead),
+                  file_->getChannel());
+
+        file_->addBytesTransferred(bytesRead);
+
+        return rval;
+    }
+
+private:
+    QFile io_;
+    File::ptr_t file_;
+    std::array<char, 1024 * 8> buffer_;
+};
+
 
 Message::Encoding toEncoding(const QString& name) {
     const auto it = encoding_lookup.find(name);
@@ -73,6 +181,16 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
     connect(this, &Peer::closeLater,
             this, &Peer::onCloseLater,
             Qt::QueuedConnection);
+
+    connect(this, &Peer::removeTransfer,
+            this, [this](core::File::Direction direction, const int id){
+
+        if (direction == File::INCOMING) {
+            inChannels_.erase(id);
+        } else {
+            outChannels_.erase(id);
+        }
+    }, Qt::QueuedConnection);
 }
 
 Peer::~Peer()
@@ -88,13 +206,29 @@ uint64_t Peer::send(const QJsonDocument &json)
 
     auto jsonData = json.toJson(QJsonDocument::Compact);
 
+    LFLOG_DEBUG << "Sending json to "
+                << connection_->getUuid().toString()
+                << ": "
+                << jsonData;
+
+    return send(jsonData.constData(),
+                static_cast<size_t>(jsonData.size()),
+                /* channel */ 0);
+}
+
+uint64_t Peer::send(const void *data, const size_t bytes, const int ch)
+{
+    if (!connection_->isOpen()) {
+        throw runtime_error("Connection is closed");
+    }
+
     // Data format:
     // Two bytes length | one byte version | four bytes channel | 8 bytes id | data
 
     // The length is encrypted individually to allow the peer to read it before
     // fetching the payload.
 
-    const size_t len = 1 + 4 + 8 + static_cast<size_t>(jsonData.size());
+    const size_t len = 1 + 4 + 8 + static_cast<size_t>(bytes);
     vector<uint8_t> payload_len(2),
             buffer(len),
             cipherlen(2 + crypt_bytes),
@@ -102,12 +236,12 @@ uint64_t Peer::send(const QJsonDocument &json)
     mview_t version{buffer.data(), 1};
     mview_t channel{version.end(), 4};
     mview_t id{channel.end(), 8};
-    mview_t json_payload{id.end(), static_cast<size_t>(jsonData.size())};
+    mview_t payload{id.end(), bytes};
 
     assert(buffer.size() == (+ version.size()
                              + channel.size()
                              + id.size()
-                             + json_payload.size()));
+                             + payload.size()));
 
     union {
         array<unsigned char, 8> bytes;
@@ -134,8 +268,8 @@ uint64_t Peer::send(const QJsonDocument &json)
         id.at(i) = number_u.bytes.at(i);
     }
 
-    assert(static_cast<size_t>(jsonData.size()) == json_payload.size());
-    memcpy(json_payload.data(), jsonData.constData(), static_cast<size_t>(jsonData.size()));
+    assert(bytes == payload.size());
+    memcpy(payload.data(), data, payload.size());
 
     // encrypt length
     if (crypto_secretstream_xchacha20poly1305_push(&stateOut,
@@ -149,10 +283,11 @@ uint64_t Peer::send(const QJsonDocument &json)
 
     connection_->write(cipherlen);
 
-    LFLOG_DEBUG << "Sending payloaad to "
-                << connection_->getUuid().toString()
-                << ": "
-                << jsonData;
+    LFLOG_DEBUG << "Sending chunk #"
+                << request_id_
+                << " with payload of "
+                << payload.size() << " bytes to "
+                << connection_->getUuid().toString();
 
     // Encrypt the payload
     if (crypto_secretstream_xchacha20poly1305_push(&stateOut,
@@ -165,7 +300,6 @@ uint64_t Peer::send(const QJsonDocument &json)
     }
 
     connection_->write(ciphertext);
-
     return request_id_;
 }
 
@@ -193,10 +327,20 @@ void Peer::onReceivedData(const quint32 channel, const quint64 id, QByteArray da
             LFLOG_DEBUG << "Emitting addmeRequest";
             emit addmeRequest(req);
         } else if (type == "Ack") {
+
+            QVariantMap params;
+            for(const auto& key : json.object().keys()) {
+                static const QRegExp irrelevant{"what|status|type"};
+                if (key.count(irrelevant)) {
+                    continue;
+                }
+                params.insert(key, json.object().value(key).toString());
+            }
+
             PeerAck ack{shared_from_this(), getConnectionId(), id,
                         json.object().value("what").toString().toUtf8(),
                         json.object().value("status").toString().toUtf8(),
-                        json.object().value("data").toString()};
+                        params};
 
             LFLOG_DEBUG << "Emitting Ack";
             emit receivedAck(ack);
@@ -427,22 +571,91 @@ QByteArray Peer::safePayload(const Peer::mview_t &data)
 
 int Peer::createChannel(const File &file)
 {
-    auto ch = make_shared<Channel>();
-    ch->file = core::DsEngine::instance().getFileManager()->getFile(file.getId());
-    ch->io.setFileName(file.getPath());
-
+    int channelId = -1;
+    auto filePtr = core::DsEngine::instance().getFileManager()->getFile(file.getId());
+    Channel::ptr_t ch;
     if (file.getDirection() == File::INCOMING) {
-        if (!ch->io.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            LFLOG_ERROR << "Failed to open \"" << file.getPath()
-                        << "\" for write: " << ch->io.errorString();
-            throw Error("Failed to open file");
-        }
+        ch = make_shared<IncomingFileChannel>(filePtr);
+        assert(inChannels_.find(nextInchannel_) == inChannels_.end());
+        channelId = nextInchannel_;
+        inChannels_[channelId] = ch;
+        ++nextInchannel_;
+    } else {
+        channelId = file.getChannel();
+        assert(channelId > 0);
+        assert(outChannels_.find(channelId) == outChannels_.end());
+        ch = make_shared<OutgoingFileChannel>(filePtr);
+        outChannels_[channelId] = ch;
     }
 
-    assert(channels_.find(next_channel_) == channels_.end());
+    connect(filePtr.get(), &File::transferDone,
+            this, [this](File *file) {
+       LFLOG_DEBUG << "File transfer of #" << file->getId()
+                   << " is complete.";
 
-    channels_[next_channel_] = ch;
-    return next_channel_++;
+       if (file->getDirection() == File::OUTGOING) {
+            sendAck("IncomingFile", "Completed", file->getFileId().toBase64());
+       }
+    });
+
+    connect(filePtr.get(), &File::transferFailed,
+            this, [this](File *file) {
+       LFLOG_DEBUG << "File transfer of #" << file->getId()
+                   << " failed.";
+
+       if (file->getDirection() == File::OUTGOING) {
+            sendAck("IncomingFile", "Failed", file->getFileId().toBase64());
+       }
+    });
+
+    const auto direction = file.getDirection();
+    auto fileCPtr = filePtr.get();
+    connect(fileCPtr, &File::stateChanged,
+            this, [this, channelId, direction, fileCPtr]() {
+
+        if (fileCPtr->getState() != File::FS_TRANSFERRING) {
+            emit removeTransfer(direction, channelId);
+        }
+    });
+
+    return channelId;
+}
+
+uint64_t Peer::startReceive(File &file)
+{
+    auto channelId = createChannel(file);
+
+    LFLOG_DEBUG << "Preparing to start receiving file #" << file.getId()
+                << " \"" << file.getName()
+                << "\" of size "
+                << file.getSize()
+                << " from " << file.getContact()->getName()
+                << " on identiy "
+                << file.getConversation()->getIdentity()->getName()
+                << " with channel #"
+                << channelId;
+
+    const auto params = QVariantMap {
+            {"rest", QString::number(0)},
+            {"data", QString{file.getFileId().toBase64()}},
+            {"channel", channelId}
+    };
+
+    LFLOG_DEBUG << "Requesting File : " << file.getId()
+                << " with channel #" << channelId
+                << " over connection " << getConnectionId().toString();
+
+    const auto rval = sendAck("IncomingFile", "Proceed", params);
+    file.setState(File::FS_TRANSFERRING);
+    file.setChannel(channelId);
+    return rval;
+}
+
+uint64_t Peer::startSend(File &file)
+{
+    auto channelId = createChannel(file);
+    file.setState(File::FS_TRANSFERRING);
+    return outChannels_.at(channelId)->onOutgoing(*this);
 }
 
 QUuid Peer::getConnectionId() const
@@ -468,14 +681,27 @@ QUuid Peer::getIdentityId() const noexcept
 
 uint64_t Peer::sendAck(const QString &what, const QString &status, const QString& data)
 {
-    auto json = QJsonDocument{
-        QJsonObject{
-            {"type", "Ack"},
-            {"what", what},
-            {"status", status},
-            {"data", data}
-        }
+    const QVariantMap param = {
+        {"data", data}
     };
+
+    sendAck(what, status, param);
+}
+
+uint64_t Peer::sendAck(const QString &what, const QString &status, const QVariantMap &params)
+{
+    auto object = QJsonObject{
+        {"type", "Ack"},
+        {"what", what},
+        {"status", status},
+    };
+
+    for(const auto& key : params.keys()) {
+        auto v = params.value(key).toString();
+        object.insert(key, v);
+    }
+
+    auto json = QJsonDocument{object};
 
     LFLOG_DEBUG << "Sending Ack: " << what
                 << " with status: " << status
@@ -531,34 +757,33 @@ uint64_t Peer::offerFile(const File &file)
     return send(json);
 }
 
-uint64_t Peer::startTransfer(const File &file)
+uint64_t Peer::startTransfer(File &file)
 {
-    auto channelId = createChannel(file);
+    if (file.getDirection() == File::INCOMING) {
+        return startReceive(file);
+    } else {
+        return startSend(file);
+    }
+}
 
-    LFLOG_DEBUG << "Preparing to start receiving file #" << file.getId()
-                << " \"" << file.getName()
-                << "\" of size "
-                << file.getSize()
-                << " from " << file.getContact()->getName()
-                << " on identiy "
-                << file.getConversation()->getIdentity()->getName()
-                << " with channel #"
-                << channelId;
+uint64_t Peer::sendSome(File &file)
+{
+    assert(file.getState() == File::FS_TRANSFERRING);
 
-    auto json = QJsonDocument{
-        QJsonObject{
-            {"type", "SendFile"},
-            {"rest", QString::number(0)},
-            {"file-id", QString{file.getFileId().toBase64()}},
-            {"channel", channelId}
-        }
-    };
+    auto it = outChannels_.find(file.getChannel());
+    if (it == outChannels_.end()) {
+        LFLOG_ERROR << "Asked to send data for file #"
+                    << file.getId()
+                    << " on channel "
+                    << file.getChannel()
+                    << " but I don't have that channel!";
 
-    LFLOG_DEBUG << "Requesting File : " << file.getId()
-                << " with channel #" << channelId
-                << " over connection " << getConnectionId().toString();
+        emit file.transferFailed(&file);
+        file.setState(File::FS_FAILED);
+        return {};
+    }
 
-    return send(json);
+    return it->second->onOutgoing(*this);
 }
 
 

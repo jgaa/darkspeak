@@ -76,11 +76,15 @@ public:
         mview_t signature;
     };
 
-    struct Channel {
+    class Channel {
+    public:
         using ptr_t = std::shared_ptr<Channel>;
 
-        core::File::ptr_t file;
-        QFile io;
+        virtual ~Channel() = default;
+        virtual void onIncoming(Peer& peer, const quint64 id, QByteArray& data) = 0;
+
+        // Return 0 on EOF
+        virtual uint64_t onOutgoing(Peer& peer) = 0;
     };
 
     Peer(ConnectionSocket::ptr_t connection,
@@ -111,10 +115,12 @@ public slots:
     // Send a request to a connected peer over the encrypted stream
     // Returns a unique id for the request (within the scope of this peer)
     uint64_t send(const QJsonDocument& json);
+    uint64_t send(const void *data, const size_t bytes, const int channel);
 
 signals:
     void incomingPeer(const std::shared_ptr<PeerConnection>& peer);
     void closeLater();
+    void removeTransfer(core::File::Direction direction, const int id);
 
 private slots:
     void onReceivedData(const quint32 channel, const quint64 id, QByteArray data);
@@ -130,6 +136,8 @@ protected:
     void decrypt(mview_t& data, const mview_t& ciphertext);
     QByteArray safePayload(const mview_t& data);
     int createChannel(const core::File& file);
+    uint64_t startReceive(core::File& file);
+    uint64_t startSend(core::File& file);
 
     InState inState_ = InState::DISABLED;
     ConnectionSocket::ptr_t connection_;
@@ -137,8 +145,9 @@ protected:
     stream_state_t stateIn;
     stream_state_t stateOut;
     quint64 request_id_ = {}; // Counter for outgoing requests
-    int next_channel_ = 1;
-    std::map<int, Channel::ptr_t> channels_;
+    int nextInchannel_ = 1;
+    std::map<int, Channel::ptr_t> outChannels_;
+    std::map<int, Channel::ptr_t> inChannels_;
 
     // PeerConnection interface
 public:
@@ -148,10 +157,12 @@ public:
     void close() override;
     QUuid getIdentityId() const noexcept override;
     uint64_t sendAck(const QString& what, const QString& status, const QString& data) override;
+    uint64_t sendAck(const QString& what, const QString& status, const QVariantMap& params) override;
     bool isConnected() const noexcept override;
     uint64_t sendMessage(const core::Message &message) override;
     uint64_t offerFile(const core::File& file) override;
-    uint64_t startTransfer(const core::File& file) override;
+    uint64_t startTransfer(core::File& file) override;
+    uint64_t sendSome(core::File& file) override;
 };
 
 }} // namespaces

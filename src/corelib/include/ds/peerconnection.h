@@ -5,6 +5,7 @@
 
 #include <QUuid>
 #include <QObject>
+#include <QVariantMap>
 
 #include "ds/dscert.h"
 #include "message.h"
@@ -54,14 +55,14 @@ struct PeerAck : public PeerReq
     PeerAck(const PeerAck&) = default;
 
     PeerAck(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal, quint64 requestIdVal,
-            QByteArray whatVal, QByteArray statusVal, QString dataVal = {})
+            QByteArray whatVal, QByteArray statusVal, QVariantMap dataVal)
         : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
         , what{std::move(whatVal)}, status{std::move(statusVal)}
         , data{std::move(dataVal)} {}
 
     QByteArray what;
     QByteArray status;
-    QString data;
+    QVariantMap data;
 };
 
 struct PeerMessage : public PeerReq
@@ -166,10 +167,12 @@ public:
     virtual QUuid getIdentityId() const noexcept = 0;
     virtual void close() = 0;
     virtual uint64_t sendAck(const QString& what, const QString& status, const QString& data = {}) = 0;
+    virtual uint64_t sendAck(const QString& what, const QString& status, const QVariantMap& params) = 0;
     virtual bool isConnected() const noexcept = 0;
     virtual uint64_t sendMessage(const Message& message) = 0;
     virtual uint64_t offerFile(const File& file) = 0;
-    virtual uint64_t startTransfer(const File& file) = 0;
+    virtual uint64_t startTransfer(File& file) = 0;
+    virtual uint64_t sendSome(File& file) = 0;
 
 signals:
     void connectedToPeer(const std::shared_ptr<PeerConnection>& peer);
