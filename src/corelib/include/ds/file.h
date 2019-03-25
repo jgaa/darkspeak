@@ -3,9 +3,9 @@
 #define FILE_H
 
 #include <deque>
+#include <functional>
 #include <QUuid>
 #include <QObject>
-#include <QRunnable>
 
 #include "ds/conversation.h"
 #include "ds/contact.h"
@@ -21,6 +21,7 @@ class File : public QObject, std::enable_shared_from_this<File>
     Q_OBJECT
 public:
     using ptr_t = std::shared_ptr<File>;
+    using hash_cb_t = std::function<void(const QByteArray& hash, const QString& failReason)>;
 
     /*
      *  Outgoing states:
@@ -118,10 +119,15 @@ public:
 
     const char *getTableName() const noexcept { return "file"; }
 
-    static void asynchCalculateHash(const File::ptr_t& file);
+    void asynchCalculateHash(hash_cb_t callback = {});
 
     // Start an incoming transfer in state FS_QUEUED or FS_OFFERED
     void queueForTransfer();
+
+    // Asyncroneously hash he file and verify that it i cirrect.
+    // This is to validate received files before
+    // the state is changed to FS_DONE
+    void validateHash();
 
 signals:
     void stateChanged();
@@ -133,8 +139,8 @@ signals:
     void fileTimeChanged();
     void sizeChanged();
     void bytesTransferredChanged();
-    void hashCalculated(const QByteArray& hash);
-    void hashCalculationFailed(const QString& why);
+//    void hashCalculated(const QByteArray& hash);
+//    void hashCalculationFailed(const QString& why);
     void transferDone(File *file);
     void transferFailed(File *file);
 

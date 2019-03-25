@@ -739,7 +739,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
         } else if (ack.status == "Rejected") {
             file->setState(File::FS_REJECTED);
         } else if (ack.status == "Completed") {
-            file->setState(File::FS_DONE);
+            file->validateHash();
         } else if (ack.status == "Abort") {
             file->setState(File::FS_CANCELLED);
         } else if (ack.status == "Proceed" || ack.status == "Resume") {

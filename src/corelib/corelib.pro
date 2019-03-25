@@ -43,7 +43,8 @@ SOURCES += \
     src/conversationmanager.cpp \
     src/messagemanager.cpp \
     src/filemanager.cpp \
-    src/file.cpp
+    src/file.cpp \
+    src/hashtask.cpp
 
 HEADERS += \
     include/ds/dsengine.h \
@@ -65,7 +66,8 @@ HEADERS += \
     include/ds/lru_cache.h \
     include/ds/messagemanager.h \
     include/ds/filemanager.h \
-    include/ds/file.h
+    include/ds/file.h \
+    include/ds/hashtask.h
 
 INCLUDEPATH += \
     $$PWD/../../dependencies/logfault/include \

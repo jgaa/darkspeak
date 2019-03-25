@@ -175,41 +175,27 @@ void FileManager::onFileStateChanged(const File *file)
 
 void FileManager::hashIt(const File::ptr_t &file)
 {
-    if (hashing_.insert(file).second) {
-
-        connect(file.get(), & File::hashCalculated, this, [this, file](const QByteArray& hash) {
-            hashing_.erase(file);
-
+    file->asynchCalculateHash([file](const QByteArray& hash, const QString& failReason){
+        if (hash.isEmpty()) {
+            LFLOG_DEBUG << "Failed to hash file #" << file->getId() << " " << file->getPath()
+                        << ": " << failReason;
+            file->setState(File::FS_FAILED);
+        } else {
             if (file->getState() == File::FS_HASHING) {
                 LFLOG_DEBUG << "Calculted hash for file #" << file->getId() << " " << file->getPath();
                 file->setHash(hash);
                 file->setState(File::FS_WAITING);
+                if (auto contact = file->getContact()) {
+                    contact->queueFile(file);
+                } else {
+                    LFLOG_WARN << "Failed to obtain contact for file " << file->getId() << " " << file->getPath();
+                }
             } else {
                 LFLOG_WARN << "Calculted hash for file #" << file->getId() << " " << file->getPath()
                            << " but the state was not FS_HASHING but " << file->getState();
             }
-
-            if (auto contact = file->getContact()) {
-                contact->queueFile(file);
-            } else {
-                LFLOG_WARN << "Failed to obtain contact for file " << file->getId() << " " << file->getPath();
-            }
-
-            touch(file);
-        });
-
-        connect(file.get(), & File::hashCalculationFailed, this, [this, file](const QString& why) {
-            hashing_.erase(file);
-            LFLOG_DEBUG << "Failed to hash file #" << file->getId() << " " << file->getPath()
-                        << ": " << why;
-
-            file->setState(File::FS_FAILED);
-
-            touch(file);
-        });
-
-        File::asynchCalculateHash(file);
-    }
+        }
+    });
 }
 
 

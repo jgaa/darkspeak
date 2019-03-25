@@ -20,6 +20,72 @@ using namespace std;
 namespace ds {
 namespace core {
 
+class HashTask : public QObject, public QRunnable {
+    Q_OBJECT
+public:
+    HashTask(QObject *owner, const File::ptr_t& file)
+        : QObject{owner}, file_{file}
+    {
+    }
+
+    void run() override {
+        try {
+            QFile file(file_->getPath());
+            if (!file.open(QIODevice::ReadOnly)) {
+                emit hashed({}, "Failed to open file");
+                return;
+            }
+
+            crypto_hash_sha256_state state = {};
+            crypto_hash_sha256_init(&state);
+
+            std::array<uint8_t, 1024 * 8> buffer;
+            while(!file.isOpen()) {
+                if (file_->getState() != File::FS_HASHING) {
+                    LFLOG_WARN << "File #" << file_->getId()
+                               << " changed state during hashing. Aborting!";
+
+                    emit hashed({}, "Aborted");
+                    file.close();
+                    return;
+                }
+
+                const auto bytes_read = file.read(reinterpret_cast<char *>(buffer.data()),
+                                                  static_cast<qint64>(buffer.size()));
+                if (bytes_read > 0) {
+                    crypto_hash_sha256_update(&state, buffer.data(),
+                                              static_cast<size_t>(bytes_read));
+                } else if (bytes_read == 0) {
+                    file.close();
+                } else {
+                    emit hashed({}, "Read failed");
+                    file.close();
+                    return;
+                }
+            }
+
+            QByteArray out;
+            out.resize(crypto_hash_sha256_BYTES);
+            crypto_hash_sha256_final(&state, reinterpret_cast<uint8_t *>(out.data()));
+            emit hashed(out, {});
+        } catch(const std::exception& ex) {
+            qWarning() << "Caught exception from task: " << ex.what();
+            emit hashed({}, ex.what());
+        }
+    }
+
+    static void schedule(QObject *owner, const File::ptr_t& file) {
+        auto task = new HashTask{owner, file};
+        QThreadPool::globalInstance()->start(task);
+    }
+
+signals:
+    void hashed(const QByteArray& hash, const QString& failReason);
+
+private:
+    const File::ptr_t file_;
+};
+
 File::File(QObject &parent)
     : QObject (&parent), data_{make_unique<FileData>()}
 {
@@ -296,44 +362,30 @@ File::ptr_t File::load(QObject &parent, int conversation, const QByteArray &hash
     });
 }
 
-void File::asynchCalculateHash(const File::ptr_t& self)
+void File::asynchCalculateHash(File::hash_cb_t callback)
 {
-    self->setState(File::FS_HASHING);
+    setState(File::FS_HASHING);
 
-    auto task = new Task([self]() {
-        QFile file(self->getPath());
-        if (!file.open(QIODevice::ReadOnly)) {
-            emit self->hashCalculationFailed("Failed to open file");
-            return;
-        }
+    auto self = DsEngine::instance().getFileManager()->getFile(getId());
+    auto task = make_unique<HashTask>(this, self);
 
-        crypto_hash_sha256_state state = {};
-        crypto_hash_sha256_init(&state);
-
-        std::array<uint8_t, 1024 * 8> buffer;
-        while(!file.isOpen()) {
-
-            const auto bytes_read = file.read(reinterpret_cast<char *>(buffer.data()),
-                                              static_cast<qint64>(buffer.size()));
-            if (bytes_read > 0) {
-                crypto_hash_sha256_update(&state, buffer.data(),
-                                          static_cast<size_t>(bytes_read));
-            } else if (bytes_read == 0) {
-                file.close();
-            } else {
-                emit self->hashCalculationFailed("Read failed");
-                file.close();
-                return;
+    // Prevent the file from going out of scope while hashing
+    // put a smartpointer to it in the lambda
+    connect(task.get(), &HashTask::hashed,
+            this, [self=move(self), callback=move(callback)](const QByteArray& hash, const QString& failReason) {
+        if (callback) {
+            try {
+                callback(hash, failReason);
+            } catch(const std::exception& ex) {
+                LFLOG_ERROR << "Caught exeption from hashing callback: " << ex.what();
             }
         }
 
-        QByteArray out;
-        out.resize(crypto_hash_sha256_BYTES);
-        crypto_hash_sha256_final(&state, reinterpret_cast<uint8_t *>(out.data()));
-        emit self->hashCalculated(out);
-    });
+        // Make sure the file remains in scope a little longer
+        DsEngine::instance().getFileManager()->touch(self);
+    }, Qt::QueuedConnection);
 
-     QThreadPool::globalInstance()->start(task);
+    QThreadPool::globalInstance()->start(task.release());
 }
 
 QString File::getSelectStatement(const QString &where)
@@ -391,6 +443,41 @@ void File::queueForTransfer()
         contact->queueFile(
                     DsEngine::instance().getFileManager()->getFile(getId()));
     }
+}
+
+void File::validateHash()
+{
+    assert(getDirection() == INCOMING);
+    assert(!data_->hash.isEmpty());
+    asynchCalculateHash([this](const QByteArray& hash, const QString& failReason) {
+        if (hash.isEmpty()) {
+            LFLOG_DEBUG << "Failed to hash file #" << getId() << ":  " << failReason;
+            if (getState() == FS_HASHING) {
+                setState(FS_FAILED);
+            }
+        } else if (getState() == FS_HASHING) {
+            // Binary compare hashes
+            if ((hash.size() == data_->hash.size())
+                    && (memcmp(hash.constData(), data_->hash.constData(),
+                               static_cast<size_t>(hash.size())) == 0)) {
+                setState(FS_DONE);
+                LFLOG_INFO << "File #" << getId()
+                           << " at path \"" << getPath()
+                           << " was successfully received from Contact " << getContact()->getName()
+                           << " to Identity "
+                           << getContact()->getIdentity()->getName()
+                           << ". The hash match the annouced hash from your Contact.";
+
+            } else {
+                LFLOG_DEBUG << "Hash from peer and hash from received file mismatch for file #"
+                            << getId()
+                            << " " << getPath();
+                if (getState() == FS_HASHING) {
+                    setState(FS_FAILED);
+                }
+            }
+        }
+    });
 }
 
 
