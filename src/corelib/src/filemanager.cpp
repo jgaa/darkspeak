@@ -75,6 +75,21 @@ File::ptr_t FileManager::getFileFromId(const QByteArray &fileId, const File::Dir
     return {};
 }
 
+File::ptr_t FileManager::getFileFromId(const QByteArray &fileId, const Contact &contact)
+{
+    QSqlQuery query;
+    query.prepare("SELECT id FROM file WHERE file_id=:fid AND contact_id=:cid");
+    query.bindValue(":fid", fileId);
+    query.bindValue(":cid", contact.getId());
+    query.exec();
+
+    if (query.next()) {
+        return getFile(query.value(0).toInt());
+    }
+
+    return {};
+}
+
 File::ptr_t FileManager::addFile(std::unique_ptr<FileData> data)
 {
     auto file = make_shared<File>(*this, move(data));
@@ -100,8 +115,11 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
                 offer.peer->sendAck("IncomingFile", "Rejected", offer.fileId.toBase64());
             } else if (file->getState() == File::FS_DONE) {
                 offer.peer->sendAck("IncomingFile", "Completed", offer.fileId.toBase64());
+            } else if (file->getState() == File::FS_QUEUED) {
+                file->queueForTransfer();
             } else {
                 offer.peer->sendAck("IncomingFile", "Received", offer.fileId.toBase64());
+                file->setState(File::FS_OFFERED);
             }
 
             return;
@@ -141,7 +159,7 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
     if (addFile(move(data))) {
         offer.peer->sendAck("IncomingFile", "Received", offer.fileId.toBase64());
     } else {
-        offer.peer->sendAck("IncomingFile", "Rejected", offer.fileId.toBase64());
+        offer.peer->sendAck("IncomingFile", "Failed", offer.fileId.toBase64());
     }
 }
 

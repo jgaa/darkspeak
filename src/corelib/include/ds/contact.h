@@ -79,6 +79,8 @@ public:
             const bool online,
             data_t data);
 
+    ~Contact() override;
+
     Q_PROPERTY(int id READ getId)
     Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
     Q_PROPERTY(QString nickName READ getNickName WRITE setNickName NOTIFY nickNameChanged)
@@ -204,6 +206,7 @@ private:
     void loadMessageQueue();
     void loadFileQueue();
     void queueTransfer(const std::shared_ptr<File>& file);
+    void clearFileQueues();
 
     // Sends reject message if the conversation is not the default and don't exist.
     Conversation *getRequestedOrDefaultConversation(const QByteArray& hash,
@@ -224,7 +227,6 @@ private:
     std::deque<Message::ptr_t> unconfirmedMessageQueue_; // Waiting for ack
     std::deque<std::shared_ptr<File>> fileQueue_;
     std::set<std::shared_ptr<File>> transferringFileQueue_; // Currently transferring, (we have slots)
-    std::deque<std::shared_ptr<File>> unconfirmedFileQueue_; // Waiting for ack
 };
 
 struct ContactData {

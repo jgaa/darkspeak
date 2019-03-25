@@ -145,9 +145,9 @@ protected:
     stream_state_t stateIn;
     stream_state_t stateOut;
     quint64 request_id_ = {}; // Counter for outgoing requests
-    int nextInchannel_ = 1;
-    std::map<int, Channel::ptr_t> outChannels_;
-    std::map<int, Channel::ptr_t> inChannels_;
+    quint32 nextInchannel_ = 1;
+    std::map<quint32, Channel::ptr_t> outChannels_;
+    std::map<quint32, Channel::ptr_t> inChannels_;
 
     // PeerConnection interface
 public:

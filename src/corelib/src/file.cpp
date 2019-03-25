@@ -41,10 +41,13 @@ void File::accept()
         return;
     }
 
-    setState(FS_WAITING);
-    // FIXME: shared_from_this() don't work from the file instance
-    getContact()->queueFile(
-                DsEngine::instance().getFileManager()->getFile(getId()));
+    if (getState() != FS_OFFERED) {
+        return;
+    }
+
+    LFLOG_DEBUG << "Accepted file #" << getId() << " " << getPath();
+
+    queueForTransfer();
 }
 
 void File::reject()
@@ -376,6 +379,18 @@ File::ptr_t File::load(QObject &parent, const std::function<void (QSqlQuery &)> 
     ptr->data_->bytesTransferred = query.value(bytes_transferred).toLongLong();
 
     return ptr;
+}
+
+void File::queueForTransfer()
+{
+    assert(getDirection() == INCOMING);
+    assert(getState() == FS_OFFERED || getState() == FS_QUEUED);
+    setState(FS_QUEUED);
+    if (auto contact = getContact()) {
+        // FIXME: shared_from_this() don't work from the file instance
+        contact->queueFile(
+                    DsEngine::instance().getFileManager()->getFile(getId()));
+    }
 }
 
 

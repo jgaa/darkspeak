@@ -271,6 +271,7 @@ Page {
                 contextFileReceiveMenu.file.accept();
             }
             text: qsTr("Accept")
+            enabled: contextFileReceiveMenu.file.state == File.FS_OFFERED
         }
 
         MenuItem {
@@ -278,7 +279,7 @@ Page {
                 contextFileReceiveMenu.file.reject();
             }
 
-            text: qsTr("Reject")
+            text: contextFileReceiveMenu.file.state == File.FS_TRANSFERRING ? qsTr("Cancel") : qsTr("Reject")
         }
 
         MenuItem {

@@ -46,6 +46,14 @@ Contact::Contact(QObject &parent,
             Qt::QueuedConnection);
 }
 
+Contact::~Contact()
+{
+    clearFileQueues();
+    if (isOnline()) {
+        disconnectFromContact();
+    }
+}
+
 void Contact::connectToContact()
 {
     if (auto identity = getIdentity()) {
@@ -528,6 +536,7 @@ void Contact::onDisconnectedFromPeer(const std::shared_ptr<PeerConnection>& peer
 
     connection_.reset();
     setOnlineStatus(DISCONNECTED);
+    clearFileQueues();
 }
 
 void Contact::onSendAddMeLater()
@@ -702,7 +711,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
             return;
         }
 
-        auto file = DsEngine::instance().getFileManager()->getFileFromId(fileId, File::OUTGOING);
+        auto file = DsEngine::instance().getFileManager()->getFileFromId(fileId, *this);
 
         if (file->getState() == File::FS_CANCELLED) {
             LFLOG_DEBUG << "Ignoring cak for cancelled file #" << file->getId();
@@ -795,7 +804,7 @@ again:
                 default:
                     // The file don't belong in the queue.
                     fileQueue_.erase(fileQueue_.begin());
-                    goto again;
+                    goto again; // Yes, goto!
                 }
 
             } else /* File::INCOMING */ {
@@ -814,7 +823,8 @@ again:
             return false;
         }
 
-        fileQueue_.erase(fileQueue_.begin());
+        // At this point the file may already be removed due to state change events'
+        fileQueue_.erase(find(fileQueue_.begin(), fileQueue_.end(), file));
         return true;
     }
 
@@ -826,16 +836,24 @@ bool Contact::processFileBlocks()
 again:
     for(auto& file : transferringFileQueue_) {
         if (!isOnline()) {
-            break; // Ops
+            break;
         }
 
-        if (file->getState() !=  File::FS_TRANSFERRING) {
+        if (file->getState() != File::FS_TRANSFERRING) {
             transferringFileQueue_.erase(file);
-            goto again; // Yes, goto!
+            goto again; // Yes, goto
+        }
+
+        if (file->getDirection() != File::OUTGOING) {
+            continue;
         }
 
         if (connection_->peer->sendSome(*file) > 0) {
             return true;
+        }
+
+        if (file->getState() == File::FS_TRANSFERRING) {
+            break; // We could not send, and the file is not complete or failed
         }
     }
 
@@ -949,9 +967,12 @@ void Contact::loadFileQueue()
     }
 
     QSqlQuery query;
-    query.prepare("SELECT id FROM file WHERE contact_id=:cid AND state=:waiting");
+    query.prepare("SELECT id FROM file WHERE contact_id=:cid AND ((direction=:out AND state=:waiting) OR (direction=:in AND state=:queued))");
     query.bindValue(":cid", getId());
+    query.bindValue(":out", static_cast<int>(File::OUTGOING));
+    query.bindValue(":in", static_cast<int>(File::INCOMING));
     query.bindValue(":waiting", static_cast<int>(File::FS_WAITING));
+    query.bindValue(":queued", static_cast<int>(File::FS_QUEUED));
 
     if(!query.exec()) {
         throw Error(QStringLiteral("Failed to query file-queue: %1").arg(
@@ -976,7 +997,10 @@ void Contact::loadFileQueue()
 
 void Contact::queueTransfer(const std::shared_ptr<File> &file)
 {
-    connection_->peer->startTransfer(*file);
+    if (!isOnline()) {
+        return;
+    }
+
     if (transferringFileQueue_.insert(file).second) {
         std::weak_ptr<File> weak = file;
         QMetaObject::Connection conn;
@@ -989,7 +1013,30 @@ void Contact::queueTransfer(const std::shared_ptr<File> &file)
                 }
             }
         });
+
+        connection_->peer->startTransfer(*file);
+
     }
+}
+
+void Contact::clearFileQueues()
+{
+    fileQueue_.clear();
+
+    // transferringFileQueue_ may be modified by file state change events
+    auto tmpTransfers = transferringFileQueue_;
+
+    for(auto& file : tmpTransfers) {
+        if (file->getDirection() == File::OUTGOING) {
+            file->setState(File::FS_OFFERED);
+        } else /* incoming */ {
+            file->setState(File::FS_QUEUED);
+        }
+        file->setChannel(0);
+    }
+
+    transferringFileQueue_.clear();
+    loadedFileQueue_ = false; // No longer loaded
 }
 
 Conversation *Contact::getRequestedOrDefaultConversation(const QByteArray &hash,

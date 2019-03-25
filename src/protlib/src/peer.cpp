@@ -258,7 +258,7 @@ uint64_t Peer::send(const void *data, const size_t bytes, const int ch)
     version.at(0) = '\1';
 
     // Channel 0 is the control channel
-    number_u.uint32 = qToBigEndian(static_cast<quint32>(0));
+    number_u.uint32 = qToBigEndian(static_cast<quint32>(ch));
     for(size_t i = 0; i < channel.size(); ++i) {
         channel.at(i) = number_u.bytes.at(i);
     }
@@ -286,8 +286,8 @@ uint64_t Peer::send(const void *data, const size_t bytes, const int ch)
     LFLOG_DEBUG << "Sending chunk #"
                 << request_id_
                 << " with payload of "
-                << payload.size() << " bytes to "
-                << connection_->getUuid().toString();
+                << payload.size() << " bytes on channel #" << ch
+                << " to connection "<< connection_->getUuid().toString();
 
     // Encrypt the payload
     if (crypto_secretstream_xchacha20poly1305_push(&stateOut,
@@ -372,6 +372,17 @@ void Peer::onReceivedData(const quint32 channel, const quint64 id, QByteArray da
             LFLOG_WARN << "Unrecognized request from peer at connection "
                        << getConnectionId().toString();
         }
+    } else {
+        auto it = inChannels_.find(channel);
+        if (it == inChannels_.end()) {
+            LFLOG_WARN << "Data to unknown channel #" << channel
+                       << " on connection " << getConnectionId().toString();
+
+            // TODO: What do we do about it?
+            return;
+        }
+
+        it->second->onIncoming(*this, id, data);
     }
 }
 

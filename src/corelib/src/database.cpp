@@ -106,10 +106,24 @@ void Database::prepareData()
 {
     {   // Set files that was being transferred, when we last quit, to waiting state
         QSqlQuery query(db_);
-        query.prepare("UPDATE file SET state=:waiting WHERE state IN(:transferring, :offered)");
+        query.prepare("UPDATE file SET state=:waiting WHERE direction=:out AND state IN(:transferring, :offered, :queued)");
         query.bindValue(":waiting", static_cast<int>(File::FS_WAITING));
+        query.bindValue(":out", static_cast<int>(File::OUTGOING));
         query.bindValue(":transferring", static_cast<int>(File::FS_TRANSFERRING));
+        query.bindValue(":queued", static_cast<int>(File::FS_TRANSFERRING));
         query.bindValue(":offered", static_cast<int>(File::FS_OFFERED));
+        query.exec();
+        if (query.lastError().type() != QSqlError::NoError) {
+            throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
+        }
+    }
+
+    {   // Set files that was being transferred, when we last quit, to waiting state
+        QSqlQuery query(db_);
+        query.prepare("UPDATE file SET state=:queued WHERE direction=:in AND state=:transferring");
+        query.bindValue(":queued", static_cast<int>(File::FS_QUEUED));
+        query.bindValue(":in", static_cast<int>(File::INCOMING));
+        query.bindValue(":transferring", static_cast<int>(File::FS_TRANSFERRING));
         query.exec();
         if (query.lastError().type() != QSqlError::NoError) {
             throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));

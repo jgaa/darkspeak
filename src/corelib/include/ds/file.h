@@ -120,6 +120,9 @@ public:
 
     static void asynchCalculateHash(const File::ptr_t& file);
 
+    // Start an incoming transfer in state FS_QUEUED or FS_OFFERED
+    void queueForTransfer();
+
 signals:
     void stateChanged();
     void isActiveChanged();
