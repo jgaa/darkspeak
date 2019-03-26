@@ -6,6 +6,7 @@
 #include <functional>
 #include <QUuid>
 #include <QObject>
+#include <chrono>
 
 #include "ds/conversation.h"
 #include "ds/contact.h"
@@ -97,6 +98,7 @@ public:
     qlonglong getBytesTransferred() const noexcept;
     void setBytesTransferred(const qlonglong bytes);
     void addBytesTransferred(const size_t bytes);
+    void clearBytesTransferred(); // Before start transfer
     void setAckTime(const QDateTime& when);
     void touchAckTime();
     bool isActive() const noexcept;
@@ -147,10 +149,13 @@ signals:
 private:
     static QString getSelectStatement(const QString& where);
     static ptr_t load(QObject& parent, const std::function<void(QSqlQuery&)>& prepare);
+    void flushBytesAdded();
 
     int id_ = 0;
     std::unique_ptr<FileData> data_;
     quint32 channel_ = 0;
+    qlonglong bytesAdded_ = {};
+    std::unique_ptr<std::chrono::steady_clock::time_point> nextFlush_;
 };
 
 struct FileData {
@@ -163,8 +168,8 @@ struct FileData {
     QByteArray hash;
     QString name; // The adverticed name, may be something else than then the real name
     QString path; // Full path with actual name
-    qlonglong size = 0;
-    qlonglong bytesTransferred = 0; // REST offset
+    qlonglong size = {};
+    qlonglong bytesTransferred = {}; // REST offset
     QDateTime fileTime;
     QDateTime createdTime;
     QDateTime ackTime;

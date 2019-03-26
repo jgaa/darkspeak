@@ -304,7 +304,7 @@ void MessagesModel::onMessageChanged(const Message::ptr_t &message, const int ro
                 it->data_->sentReceivedTime = message->getSentReceivedTime();
             }
 
-            LFLOG_DEBUG << "Emitting dataChanged for message " << message->getId()
+            LFLOG_TRACE << "Emitting dataChanged for message " << message->getId()
                         << " for role " << role
                         << " on row " << rowid;
 
@@ -330,7 +330,7 @@ void MessagesModel::onFileChanged(const File *file, const int role)
     for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
         if (it->type_ == FILE && it->id == fileId) {
 
-            LFLOG_DEBUG << "Emitting dataChanged for file " << fileId
+            LFLOG_TRACE << "Emitting dataChanged for file " << fileId
                         << " for role " << role
                         << " on row " << rowid;
 

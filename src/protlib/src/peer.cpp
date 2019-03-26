@@ -220,7 +220,7 @@ uint64_t Peer::send(const QJsonDocument &json)
 
     auto jsonData = json.toJson(QJsonDocument::Compact);
 
-    LFLOG_DEBUG << "Sending json to "
+    LFLOG_TRACE << "Sending json to "
                 << connection_->getUuid().toString()
                 << ": "
                 << jsonData;
@@ -302,7 +302,7 @@ uint64_t Peer::send(const void *data, const size_t bytes,
 
     connection_->write(cipherlen);
 
-    LFLOG_DEBUG << "Sending chunk #"
+    LFLOG_TRACE << "Sending chunk #"
                 << request_id_
                 << " with payload of "
                 << payload.size() << " bytes on channel #" << ch
@@ -374,7 +374,7 @@ void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
                     json.object().value("address").toString().toUtf8(),
                     getPeerCert()->getB58PubKey()};
 
-        LFLOG_DEBUG << "Emitting addmeRequest";
+        LFLOG_TRACE << "Emitting addmeRequest";
         emit addmeRequest(req);
     } else if (type == "Ack") {
 
@@ -392,7 +392,7 @@ void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
                     json.object().value("status").toString().toUtf8(),
                     params};
 
-        LFLOG_DEBUG << "Emitting Ack";
+        LFLOG_TRACE << "Emitting Ack";
         emit receivedAck(ack);
     } else if (type == "Message") {
         PeerMessage msg{shared_from_this(), getConnectionId(), id,
@@ -404,7 +404,7 @@ void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
                     toEncoding(json.object().value("encoding").toString()),
                     QByteArray::fromBase64(json.object().value("signature").toString().toUtf8())};
 
-        LFLOG_DEBUG << "Emitting PeerMessage";
+        LFLOG_TRACE << "Emitting PeerMessage";
         emit receivedMessage(msg);
     } else if (type == "IncomingFile") {
         PeerFileOffer msg{shared_from_this(), getConnectionId(), id,
@@ -416,7 +416,7 @@ void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
                     json.object().value("file-type").toString(),
                     QByteArray::fromBase64(json.object().value("sha256").toString().toUtf8())};
 
-        LFLOG_DEBUG << "Emitting PeerFileOffer";
+        LFLOG_TRACE << "Emitting PeerFileOffer";
         emit receivedFileOffer(msg);
     } else {
         LFLOG_WARN << "Unrecognized request from peer at connection "
@@ -536,7 +536,7 @@ void Peer::processStream(const Peer::data_t &ciphertext)
         const quint64 chunk_id = qFromBigEndian(number_u.uint64);
 
 
-        LFLOG_DEBUG << "Received chunk on "
+        LFLOG_TRACE << "Received chunk on "
                     << connection_->getUuid().toString()
                     << ", size=" << payload.size()
                     << ", channel=" << channel_id
@@ -602,7 +602,7 @@ void Peer::decrypt(Peer::mview_t &data, const Peer::mview_t &ciphertext,  bool& 
 
         // NOTE: Currently we dont use this feature, so this is not supposed to happen.
 
-        LFLOG_DEBUG << "Received tag 'FINAL' on " << connection_->getUuid().toString()
+        LFLOG_TRACE << "Received tag 'FINAL' on " << connection_->getUuid().toString()
                     << ". Closing connection";
 
         connection_->close();
@@ -677,6 +677,7 @@ uint64_t Peer::startReceive(File &file)
                 << " over connection " << getConnectionId().toString();
 
     const auto rval = sendAck("IncomingFile", "Proceed", params);
+    file.clearBytesTransferred();
     file.setState(File::FS_TRANSFERRING);
     file.setChannel(channelId);
     return rval;
@@ -685,6 +686,7 @@ uint64_t Peer::startReceive(File &file)
 uint64_t Peer::startSend(File &file)
 {
     auto channelId = createChannel(file);
+    file.clearBytesTransferred();
     file.setState(File::FS_TRANSFERRING);
     return outChannels_.at(channelId)->onOutgoing(*this);
 }

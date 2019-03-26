@@ -97,7 +97,7 @@ void ConversationsModel::setCurrentRow(int row)
             current_.reset();
         }
 
-        LFLOG_DEBUG << "Emitting: currentRowChanged";
+        LFLOG_TRACE << "Emitting: currentRowChanged";
         emit currentRowChanged();
     }
 }

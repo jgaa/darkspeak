@@ -1,5 +1,4 @@
 
-#include <QDebug>
 #include <QFileInfo>
 
 #include "ds/database.h"
@@ -26,12 +25,12 @@ Database::Database(QSettings& settings)
     db_.setDatabaseName(dbpath);
 
     if (!db_.open()) {
-        qWarning() << "Failed to open database: " << dbpath;
+        LFLOG_WARN << "Failed to open database: " << dbpath;
         throw Error("Failed to open database");
     }
 
     if (new_database) {
-        qInfo() << "Creating new database at location: " << dbpath;
+        LFLOG_NOTICE << "Creating new database at location: " << dbpath;
         createDatabase();
     }
 
@@ -45,7 +44,7 @@ Database::Database(QSettings& settings)
     const auto dbver = query.value(DS_VERSION).toInt();
     LFLOG_DEBUG << "Database schema version is " << dbver;
     if (dbver != currentVersion) {
-        qWarning() << "Database schema version is "
+        LFLOG_WARN << "Database schema version is "
                    << dbver
                    << " while I expected " << currentVersion;
     }

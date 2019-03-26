@@ -177,7 +177,7 @@ int Manager::getCurrentPage()
 void Manager::setCurrentPage(int page)
 {
     if (page != page_) {
-        LFLOG_DEBUG << "Changing to page " << page;
+        LFLOG_TRACE << "Changing to page " << page;
         page_ = page;
         emit currentPageChanged(page);
     }

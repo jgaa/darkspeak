@@ -1,4 +1,6 @@
 
+#include <chrono>
+
 #include "ds/errors.h"
 #include "ds/dsengine.h"
 #include "ds/update_helper.h"
@@ -142,6 +144,7 @@ File::State File::getState() const noexcept
 void File::setState(const File::State state)
 {
     if (updateIf("state", state, data_->state, this, &File::stateChanged)) {
+        flushBytesAdded();
         DsEngine::instance().getFileManager()->onFileStateChanged(this);
     }
 }
@@ -225,9 +228,27 @@ void File::setBytesTransferred(const qlonglong bytes)
 
 void File::addBytesTransferred(const size_t bytes)
 {
-    // TODO: Cache to avoid rapid database updates during transfer
-    setBytesTransferred(getBytesTransferred()
-                        + static_cast<qlonglong>(bytes));
+    bytesAdded_ += static_cast<qlonglong>(bytes);
+    if (getState() == FS_TRANSFERRING) {
+        if (!nextFlush_) {
+            nextFlush_ = make_unique<std::chrono::steady_clock::time_point>(
+                        std::chrono::steady_clock::now()
+                        + std::chrono::seconds(2));
+        } else {
+            if (std::chrono::steady_clock::now() >= *nextFlush_) {
+                flushBytesAdded();
+            }
+        }
+    } else {
+        flushBytesAdded();
+    }
+}
+
+void File::clearBytesTransferred()
+{
+    bytesAdded_ = {};
+    nextFlush_.reset();
+    setBytesTransferred(0);
 }
 
 void File::setAckTime(const QDateTime &when)
@@ -437,6 +458,15 @@ File::ptr_t File::load(QObject &parent, const std::function<void (QSqlQuery &)> 
     return ptr;
 }
 
+void File::flushBytesAdded()
+{
+    if (bytesAdded_) {
+        setBytesTransferred(data_->bytesTransferred + bytesAdded_);
+        bytesAdded_ = {};
+        nextFlush_.reset();
+    }
+}
+
 void File::queueForTransfer()
 {
     assert(getDirection() == INCOMING);
@@ -456,7 +486,7 @@ void File::transferComplete()
     if (getDirection() == INCOMING) {
         LFLOG_INFO << "File #" << getId()
                    << " at path \"" << getPath()
-                   << " was transferred sent from Contact " << getContact()->getName()
+                   << " was successfulle received from Contact " << getContact()->getName()
                    << " to Identity "
                    << getContact()->getIdentity()->getName();
     } else {
@@ -521,7 +551,7 @@ void File::validateHash()
 
     setState(FS_HASHING);
 
-    // asynchCalculateHash will keep an instance of the File until it's done
+    // asynchCalculateHash will keep a shared_ptr to the File until it's done
     asynchCalculateHash([this](const QByteArray& hash, const QString& failReason) {
         if (hash.isEmpty()) {
             LFLOG_DEBUG << "Failed to hash file #" << getId() << ":  " << failReason;
