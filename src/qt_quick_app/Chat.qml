@@ -66,6 +66,24 @@ Page {
             }
         }
 
+        DropArea {
+            anchors.fill: parent
+            onDropped: {
+                if (drop.hasUrls) {
+                    console.log(drop.urls.length + ' files dropped in chat window')
+                    for (var i = 0; i < drop.urls.length; ++i) {
+                        var file = drop.urls[i]
+                        const args = {
+                            "path" : file
+                        }
+
+                        console.log('Sending fropped file: ' + file)
+                        conversations.current.sendFile(args);
+                    }
+                }
+            }
+        }
+
         delegate:
             Component {
                 Rectangle {
@@ -249,6 +267,7 @@ Page {
             }
 
             enabled : contextFileSendMenu.file.state === File.FS_WAITING
+                || contextFileSendMenu.file.state === File.FS_OFFERED
             text: qsTr("Cancel")
         }
 
@@ -258,6 +277,20 @@ Page {
             }
 
             text: qsTr("Copy Sha256")
+        }
+
+        MenuItem {
+            onTriggered: {
+                contextFileSendMenu.file.openInDefaultApplication()
+            }
+            text: qsTr("Open File")
+        }
+
+        MenuItem {
+            onTriggered: {
+                contextFileSendMenu.file.openFolder()
+            }
+            text: qsTr("Open Folder")
         }
     }
 
@@ -296,6 +329,22 @@ Page {
             }
 
             text: qsTr("Copy Sha256")
+        }
+
+        MenuItem {
+            onTriggered: {
+                contextFileReceiveMenu.file.openInDefaultApplication()
+            }
+            text: qsTr("Open File (take care!)")
+            enabled: contextFileReceiveMenu.file.state === File.FS_DONE
+        }
+
+        MenuItem {
+            onTriggered: {
+                contextFileReceiveMenu.file.openFolder()
+            }
+            text: qsTr("Open Folder")
+            enabled: contextFileReceiveMenu.file.state === File.FS_DONE
         }
     }
 }

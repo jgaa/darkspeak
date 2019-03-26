@@ -59,12 +59,23 @@ void Conversation::sendMessage(const QString &text)
 
 void Conversation::sendFile(const QVariantMap &args)
 {
+
+    const auto path = args.value("path").toString();
+    if (path.isEmpty()) {
+        LFLOG_DEBUG << "Ignoring request to send file with no path...";
+        return;
+    }
+
     auto data = make_unique<FileData>();
     data->name = args.value("name").toString();
 
     // Convert from "file:///" to local path now
-    const auto path = args.value("path").toString();
     data->path = QUrl(path).toLocalFile();
+
+    if (data->name.isEmpty()) {
+        QFileInfo fi{data->path};
+        data->name = fi.fileName();
+    }
 
     data->conversation = getId();
     data->contact = getFirstParticipant()->getId();

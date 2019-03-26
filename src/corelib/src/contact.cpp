@@ -714,7 +714,11 @@ void Contact::onReceivedAck(const PeerAck &ack)
         auto file = DsEngine::instance().getFileManager()->getFileFromId(fileId, *this);
 
         if (file->getState() == File::FS_CANCELLED) {
-            LFLOG_DEBUG << "Ignoring cak for cancelled file #" << file->getId();
+            LFLOG_DEBUG << "Ignoring ack for cancelled file #" << file->getId();
+
+            if (ack.status == "Proceed" || ack.status == "Resume") {
+                sendAck("IncomingFile", "Abort", file->getFileId().toBase64());
+            }
             return; // The transfer is cancelled.
         }
 

@@ -10,12 +10,14 @@
 
 #include <sodium.h>
 
-#include "logfault/logfault.h"
 
 #include <QFile>
 #include <QFileInfo>
 #include <QThreadPool>
 #include <QUrl>
+#include <QDesktopServices>
+
+#include "logfault/logfault.h"
 
 using namespace std;
 
@@ -126,6 +128,18 @@ void File::reject()
     setState(FS_REJECTED);
 }
 
+void File::openInDefaultApplication()
+{
+    auto url = QUrl::fromLocalFile(getPath());
+    QDesktopServices::openUrl(url);
+}
+
+void File::openFolder()
+{
+    const auto path = getPath();
+    auto url = QUrl::fromLocalFile(path.left(path.lastIndexOf("/")));
+    QDesktopServices::openUrl(url);
+}
 int File::getId() const noexcept
 {
     return id_;

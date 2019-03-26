@@ -78,6 +78,9 @@ public:
     Q_INVOKABLE void accept();
     Q_INVOKABLE void reject();
 
+    Q_INVOKABLE void openInDefaultApplication();
+    Q_INVOKABLE void openFolder();
+
     int getId() const noexcept;
     QByteArray getFileId() const noexcept;
     State getState() const noexcept;
