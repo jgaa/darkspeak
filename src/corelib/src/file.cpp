@@ -218,12 +218,16 @@ qlonglong File::getBytesTransferred() const noexcept
 
 void File::setBytesTransferred(const qlonglong bytes)
 {
-    updateIf("bytes_transferred", bytes, data_->bytesTransferred, this, &File::bytesTransferredChanged);
+    updateIf("bytes_transferred", bytes,
+             data_->bytesTransferred, this,
+             &File::bytesTransferredChanged);
 }
 
-void File::addBytesTransferred(const qlonglong bytes)
+void File::addBytesTransferred(const size_t bytes)
 {
-    setBytesTransferred(getBytesTransferred() + bytes);
+    // TODO: Cache to avoid rapid database updates during transfer
+    setBytesTransferred(getBytesTransferred()
+                        + static_cast<qlonglong>(bytes));
 }
 
 void File::setAckTime(const QDateTime &when)
@@ -262,12 +266,12 @@ Conversation *File::getConversation() const
     return DsEngine::instance().getConversationManager()->getConversation(getConversationId()).get();
 }
 
-int File::getChannel() const noexcept
+quint32 File::getChannel() const noexcept
 {
     return channel_;
 }
 
-void File::setChannel(int channel)
+void File::setChannel(quint32 channel)
 {
     channel_ = channel;
 }
@@ -445,41 +449,96 @@ void File::queueForTransfer()
     }
 }
 
+void File::transferComplete()
+{
+    assert (getState() == FS_TRANSFERRING || getState() == FS_HASHING);
+
+    if (getDirection() == INCOMING) {
+        LFLOG_INFO << "File #" << getId()
+                   << " at path \"" << getPath()
+                   << " was transferred sent from Contact " << getContact()->getName()
+                   << " to Identity "
+                   << getContact()->getIdentity()->getName();
+    } else {
+        LFLOG_INFO << "File #" << getId()
+                   << " at path \"" << getPath()
+                   << " was successfully sent to Contact " << getContact()->getName()
+                   << " from Identity "
+                   << getContact()->getIdentity()->getName();
+    }
+
+    // Make sure we don't go out of scope during the state change
+    DsEngine::instance().getFileManager()->touch(
+                DsEngine::instance().getFileManager()->getFile(getId()));
+    setState(FS_DONE);
+
+    emit transferDone(this, true);
+}
+
+void File::transferFailed(const QString &reason, const File::State state)
+{
+    if (getState() == state) {
+        return;
+    }
+
+    if (getDirection() == OUTGOING) {
+        LFLOG_ERROR << "File #" << getId()
+                   << " at path \"" << getPath()
+                   << " to Contact " << getContact()->getName()
+                   << " from Identity "
+                   << getContact()->getIdentity()->getName()
+                   << " failed: " << reason;
+    } else {
+        LFLOG_ERROR << "File #" << getId()
+                   << " at path \"" << getPath()
+                   << " from Contact " << getContact()->getName()
+                   << " to Identity "
+                   << getContact()->getIdentity()->getName()
+                   << " failed: " << reason;
+    }
+
+    // Make sure we don't go out of scope during the state change
+    DsEngine::instance().getFileManager()->touch(
+                DsEngine::instance().getFileManager()->getFile(getId()));
+
+    setState(state);
+
+    // Tell the other side that we failed
+    if (auto contact = getContact()) {
+        contact->sendAck("IncomingFile", "Failed", getFileId().toBase64());
+    }
+
+    emit transferDone(this, false);
+}
+
 void File::validateHash()
 {
     assert(getDirection() == INCOMING);
+    assert(getState() == FS_TRANSFERRING);
     assert(!data_->hash.isEmpty());
+
+    LFLOG_DEBUG << "Validating hash for file #" << getId();
+
+    setState(FS_HASHING);
+
+    // asynchCalculateHash will keep an instance of the File until it's done
     asynchCalculateHash([this](const QByteArray& hash, const QString& failReason) {
         if (hash.isEmpty()) {
             LFLOG_DEBUG << "Failed to hash file #" << getId() << ":  " << failReason;
             if (getState() == FS_HASHING) {
-                setState(FS_FAILED);
+                transferFailed(failReason);
             }
         } else if (getState() == FS_HASHING) {
             // Binary compare hashes
             if ((hash.size() == data_->hash.size())
                     && (memcmp(hash.constData(), data_->hash.constData(),
                                static_cast<size_t>(hash.size())) == 0)) {
-                setState(FS_DONE);
-                LFLOG_INFO << "File #" << getId()
-                           << " at path \"" << getPath()
-                           << " was successfully received from Contact " << getContact()->getName()
-                           << " to Identity "
-                           << getContact()->getIdentity()->getName()
-                           << ". The hash match the annouced hash from your Contact.";
-
+                transferComplete();
             } else {
-                LFLOG_DEBUG << "Hash from peer and hash from received file mismatch for file #"
-                            << getId()
-                            << " " << getPath();
-                if (getState() == FS_HASHING) {
-                    setState(FS_FAILED);
-                }
+                transferFailed("Hash from peer and hash from received file mismatch");
             }
         }
     });
 }
 
-
-
-}}
+}} // namespaces

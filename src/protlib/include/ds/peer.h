@@ -81,7 +81,8 @@ public:
         using ptr_t = std::shared_ptr<Channel>;
 
         virtual ~Channel() = default;
-        virtual void onIncoming(Peer& peer, const quint64 id, QByteArray& data) = 0;
+        virtual void onIncoming(Peer& peer, const quint64 id,
+                                const mview_t& data, const bool final) = 0;
 
         // Return 0 on EOF
         virtual uint64_t onOutgoing(Peer& peer) = 0;
@@ -115,27 +116,31 @@ public slots:
     // Send a request to a connected peer over the encrypted stream
     // Returns a unique id for the request (within the scope of this peer)
     uint64_t send(const QJsonDocument& json);
-    uint64_t send(const void *data, const size_t bytes, const int channel);
+
+    // Final is true for the last block of a file-transfer to indicate EOF.
+    uint64_t send(const void *data, const size_t bytes, const quint32 channel, const bool final = false);
 
 signals:
     void incomingPeer(const std::shared_ptr<PeerConnection>& peer);
     void closeLater();
-    void removeTransfer(core::File::Direction direction, const int id);
+    void removeTransfer(core::File::Direction direction, const quint32 id);
 
 private slots:
-    void onReceivedData(const quint32 channel, const quint64 id, QByteArray data);
     void onCloseLater();
 
 protected:
+    void onReceivedData(const quint32 channel, const quint64 id,
+                        const mview_t& data, const bool final);
+    void onReceivedJson(const quint64 id, const mview_t& data);
     void enableEncryptedStream();
     void wantChunkSize();
     void wantChunkData(const size_t bytes);
     void processStream(const data_t& data);
     void prepareEncryption(stream_state_t& state, mview_t& header, mview_t& key);
     void prepareDecryption(stream_state_t& state, const mview_t& header, const mview_t& key);
-    void decrypt(mview_t& data, const mview_t& ciphertext);
+    void decrypt(mview_t& data, const mview_t& ciphertext, bool& final);
     QByteArray safePayload(const mview_t& data);
-    int createChannel(const core::File& file);
+    quint32 createChannel(const core::File& file);
     uint64_t startReceive(core::File& file);
     uint64_t startSend(core::File& file);
 

@@ -51,9 +51,12 @@ public:
 
     // Channel interface
 public:
-    void onIncoming(Peer &peer, const quint64 id, QByteArray &data) override {
+    void onIncoming(Peer &peer, const quint64 id,
+                    const Peer::mview_t& data,
+                    const bool final) override {
         Q_UNUSED(peer);
-        if (io_.write(data) != data.size()) {
+        if (io_.write(reinterpret_cast<const char *>(data.cdata()),
+                      static_cast<qint64>(data.size())) != static_cast<qint64>(data.size())) {
             LFLOG_ERROR << "Failed to write chunk "
                         << id << " to \"" << file_->getPath()
                         << "\" for write: " << io_.errorString();
@@ -61,6 +64,10 @@ public:
         }
 
         file_->addBytesTransferred(data.size());
+
+        if (final) {
+            file_->validateHash();
+        }
     }
 
     uint64_t onOutgoing(Peer &peer) override {
@@ -96,10 +103,12 @@ public:
 
     // Channel interface
 public:
-    void onIncoming(Peer &peer, const quint64 id, QByteArray &data) override {
+    void onIncoming(Peer &peer, const quint64 id, const Peer::mview_t &data,
+                    const bool final) override {
         Q_UNUSED(peer);
         Q_UNUSED(id)
         Q_UNUSED(data)
+        Q_UNUSED(final)
         assert(false);
     }
 
@@ -107,25 +116,30 @@ public:
 
         auto bytesRead = io_.read(buffer_.data(), static_cast<int>(buffer_.size()));
 
-        if (bytesRead == 0) {
-            emit file_->transferDone(file_.get());
-            file_->setState(File::FS_DONE);
-            return {};
-        }
+//        if (bytesRead == 0) {
+//            emit file_->transferDone(file_.get());
+//            file_->setState(File::FS_DONE);
+//            return {};
+//        }
 
         if (bytesRead < 0) {
             LFLOG_ERROR << "Failed to read chunk from file \"" << file_->getPath()
                         << "\": " << io_.errorString();
-            emit file_->transferFailed(file_.get());
-            file_->setState(File::FS_FAILED);
+            file_->transferFailed("Disk Read Error");
             return {};
         }
 
+        const bool finished = io_.atEnd();
+
         auto rval = peer.send(buffer_.data(),
                   static_cast<size_t>(bytesRead),
-                  file_->getChannel());
+                  file_->getChannel(), finished);
 
         file_->addBytesTransferred(bytesRead);
+
+        if (finished) {
+            file_->transferComplete();
+        }
 
         return rval;
     }
@@ -175,15 +189,15 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
        emit outputBufferEmptied();
     }, Qt::QueuedConnection);
 
-    connect(this, &PeerConnection::receivedData,
-            this, &Peer::onReceivedData);// Qt::QueuedConnection);
-
     connect(this, &Peer::closeLater,
             this, &Peer::onCloseLater,
             Qt::QueuedConnection);
 
     connect(this, &Peer::removeTransfer,
-            this, [this](core::File::Direction direction, const int id){
+            this, [this](core::File::Direction direction, const quint32 id){
+
+        LFLOG_TRACE << "Removing channel #" << id
+                    << " from connection " << getConnectionId().toString();
 
         if (direction == File::INCOMING) {
             inChannels_.erase(id);
@@ -216,8 +230,13 @@ uint64_t Peer::send(const QJsonDocument &json)
                 /* channel */ 0);
 }
 
-uint64_t Peer::send(const void *data, const size_t bytes, const int ch)
+uint64_t Peer::send(const void *data, const size_t bytes,
+                    const quint32 ch, const bool eof )
 {
+    const unsigned char tag = eof
+            ? crypto_secretstream_xchacha20poly1305_TAG_PUSH
+            : crypto_secretstream_xchacha20poly1305_TAG_MESSAGE;
+
     if (!connection_->isOpen()) {
         throw runtime_error("Connection is closed");
     }
@@ -295,7 +314,7 @@ uint64_t Peer::send(const void *data, const size_t bytes, const int ch)
                                                nullptr,
                                                buffer.data(),
                                                buffer.size(),
-                                               nullptr, 0, 0) != 0) {
+                                               nullptr, 0, tag) != 0) {
         throw runtime_error("Stream encryption failed");
     }
 
@@ -303,75 +322,11 @@ uint64_t Peer::send(const void *data, const size_t bytes, const int ch)
     return request_id_;
 }
 
-void Peer::onReceivedData(const quint32 channel, const quint64 id, QByteArray data)
+void Peer::onReceivedData(const quint32 channel, const quint64 id,
+                          const Peer::mview_t& data, const bool final)
 {
     if (channel == 0) {
-        // Control channel. Data is supposed to be Json.
-        QJsonDocument json = QJsonDocument::fromJson(data);
-        if (json.isNull()) {
-            LFLOG_ERROR << "Incoming data on " << getConnectionId().toString()
-                        << " with id=" << id
-                        << " is supposed to be in Json format, but it is not.";
-            throw runtime_error("Not Json");
-        }
-
-        const auto type = json.object().value("type");
-
-        if (type == "AddMe") {
-            PeerAddmeReq req{shared_from_this(), getConnectionId(), id,
-                        json.object().value("nick").toString(),
-                        json.object().value("message").toString(),
-                        json.object().value("address").toString().toUtf8(),
-                        getPeerCert()->getB58PubKey()};
-
-            LFLOG_DEBUG << "Emitting addmeRequest";
-            emit addmeRequest(req);
-        } else if (type == "Ack") {
-
-            QVariantMap params;
-            for(const auto& key : json.object().keys()) {
-                static const QRegExp irrelevant{"what|status|type"};
-                if (key.count(irrelevant)) {
-                    continue;
-                }
-                params.insert(key, json.object().value(key).toString());
-            }
-
-            PeerAck ack{shared_from_this(), getConnectionId(), id,
-                        json.object().value("what").toString().toUtf8(),
-                        json.object().value("status").toString().toUtf8(),
-                        params};
-
-            LFLOG_DEBUG << "Emitting Ack";
-            emit receivedAck(ack);
-        } else if (type == "Message") {
-            PeerMessage msg{shared_from_this(), getConnectionId(), id,
-                        QByteArray::fromBase64(json.object().value("conversation").toString().toUtf8()),
-                        QByteArray::fromBase64(json.object().value("message-id").toString().toUtf8()),
-                        QDateTime::fromString(json.object().value("date").toString(), Qt::ISODate),
-                        json.object().value("content").toString(),
-                        QByteArray::fromBase64(json.object().value("from").toString().toUtf8()),
-                        toEncoding(json.object().value("encoding").toString()),
-                        QByteArray::fromBase64(json.object().value("signature").toString().toUtf8())};
-
-            LFLOG_DEBUG << "Emitting PeerMessage";
-            emit receivedMessage(msg);
-        } else if (type == "IncomingFile") {
-            PeerFileOffer msg{shared_from_this(), getConnectionId(), id,
-                        QByteArray::fromBase64(json.object().value("conversation").toString().toUtf8()),
-                        QByteArray::fromBase64(json.object().value("file-id").toString().toUtf8()),
-                        json.object().value("name").toString(),
-                        json.object().value("size").toString().toLongLong(),
-                        json.object().value("rest").toString().toLongLong(),
-                        json.object().value("file-type").toString(),
-                        QByteArray::fromBase64(json.object().value("sha256").toString().toUtf8())};
-
-            LFLOG_DEBUG << "Emitting PeerFileOffer";
-            emit receivedFileOffer(msg);
-        } else {
-            LFLOG_WARN << "Unrecognized request from peer at connection "
-                       << getConnectionId().toString();
-        }
+        onReceivedJson(channel, data);
     } else {
         auto it = inChannels_.find(channel);
         if (it == inChannels_.end()) {
@@ -382,7 +337,90 @@ void Peer::onReceivedData(const quint32 channel, const quint64 id, QByteArray da
             return;
         }
 
-        it->second->onIncoming(*this, id, data);
+        Channel::ptr_t channelInstance;
+        if (final) {
+            // The state change in inIncoming with final will erase the channel, so we need
+            // an extra instance to stay safe until onIncoming() returns;
+            channelInstance = it->second;
+        }
+
+        it->second->onIncoming(*this, id, data, final);
+
+        if (final) {
+            LFLOG_TRACE << "Transfer om channel #" << channel
+                        << " on connection " << getConnectionId().toString()
+                        << " is completed.";
+        }
+    }
+}
+
+void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
+{
+    // Control channel. Data is supposed to be Json.
+    QJsonDocument json = QJsonDocument::fromJson(data.toByteArray());
+    if (json.isNull()) {
+        LFLOG_ERROR << "Incoming data on " << getConnectionId().toString()
+                    << " with id=" << id
+                    << " is supposed to be in Json format, but it is not.";
+        throw Error("Not Json");
+    }
+
+    const auto type = json.object().value("type");
+
+    if (type == "AddMe") {
+        PeerAddmeReq req{shared_from_this(), getConnectionId(), id,
+                    json.object().value("nick").toString(),
+                    json.object().value("message").toString(),
+                    json.object().value("address").toString().toUtf8(),
+                    getPeerCert()->getB58PubKey()};
+
+        LFLOG_DEBUG << "Emitting addmeRequest";
+        emit addmeRequest(req);
+    } else if (type == "Ack") {
+
+        QVariantMap params;
+        for(const auto& key : json.object().keys()) {
+            static const QRegExp irrelevant{"what|status|type"};
+            if (key.count(irrelevant)) {
+                continue;
+            }
+            params.insert(key, json.object().value(key).toString());
+        }
+
+        PeerAck ack{shared_from_this(), getConnectionId(), id,
+                    json.object().value("what").toString().toUtf8(),
+                    json.object().value("status").toString().toUtf8(),
+                    params};
+
+        LFLOG_DEBUG << "Emitting Ack";
+        emit receivedAck(ack);
+    } else if (type == "Message") {
+        PeerMessage msg{shared_from_this(), getConnectionId(), id,
+                    QByteArray::fromBase64(json.object().value("conversation").toString().toUtf8()),
+                    QByteArray::fromBase64(json.object().value("message-id").toString().toUtf8()),
+                    QDateTime::fromString(json.object().value("date").toString(), Qt::ISODate),
+                    json.object().value("content").toString(),
+                    QByteArray::fromBase64(json.object().value("from").toString().toUtf8()),
+                    toEncoding(json.object().value("encoding").toString()),
+                    QByteArray::fromBase64(json.object().value("signature").toString().toUtf8())};
+
+        LFLOG_DEBUG << "Emitting PeerMessage";
+        emit receivedMessage(msg);
+    } else if (type == "IncomingFile") {
+        PeerFileOffer msg{shared_from_this(), getConnectionId(), id,
+                    QByteArray::fromBase64(json.object().value("conversation").toString().toUtf8()),
+                    QByteArray::fromBase64(json.object().value("file-id").toString().toUtf8()),
+                    json.object().value("name").toString(),
+                    json.object().value("size").toString().toLongLong(),
+                    json.object().value("rest").toString().toLongLong(),
+                    json.object().value("file-type").toString(),
+                    QByteArray::fromBase64(json.object().value("sha256").toString().toUtf8())};
+
+        LFLOG_DEBUG << "Emitting PeerFileOffer";
+        emit receivedFileOffer(msg);
+    } else {
+        LFLOG_WARN << "Unrecognized request from peer at connection "
+                   << getConnectionId().toString();
     }
 }
 
@@ -434,13 +472,14 @@ void Peer::processStream(const Peer::data_t &ciphertext)
         return;
     }
 
+    bool final = {};
     if (inState_ == InState::CHUNK_SIZE) {
         union {
             array<uint8_t, 2> bytes;
             quint16 uint16;
         } number_u = {};
         mview_t data{number_u.bytes};
-        decrypt(data, ciphertext);
+        decrypt(data, ciphertext, final);
         wantChunkData(qFromBigEndian(number_u.uint16));
     } else if (inState_ == InState::CHUNK_DATA){
 
@@ -468,7 +507,7 @@ void Peer::processStream(const Peer::data_t &ciphertext)
                                  + id.size()
                                  + payload.size()));
 
-        decrypt(buffer_view, ciphertext);
+        decrypt(buffer_view, ciphertext, final);
 
         if (version.at(0) != '\1') {
             LFLOG_WARN << "Unknown chunk version" << static_cast<unsigned int>(version.at(0));
@@ -505,7 +544,7 @@ void Peer::processStream(const Peer::data_t &ciphertext)
                     << ", payload=" << (channel_id ? binary : safePayload(payload));
 
         try {
-            onReceivedData(channel_id, chunk_id, payload.toByteArray());
+            onReceivedData(channel_id, chunk_id, payload, final);
         } catch (const std::exception& ex) {
             LFLOG_ERROR << "Caught exception while processing incoming message on connection "
                         << getConnectionId().toString()
@@ -543,7 +582,7 @@ void Peer::prepareDecryption(Peer::stream_state_t &state,
     }
 }
 
-void Peer::decrypt(Peer::mview_t &data, const Peer::mview_t &ciphertext)
+void Peer::decrypt(Peer::mview_t &data, const Peer::mview_t &ciphertext,  bool& final)
 {
     assert((data.size() + crypt_bytes) == ciphertext.size());
     unsigned char tag = {};
@@ -557,14 +596,15 @@ void Peer::decrypt(Peer::mview_t &data, const Peer::mview_t &ciphertext)
         throw runtime_error("Decryption of stream failed");
     }
 
-    if (tag == crypto_secretstream_xchacha20poly1305_TAG_FINAL) {
+    final = (tag == crypto_secretstream_xchacha20poly1305_TAG_PUSH);
+
+    if (!final && (tag == crypto_secretstream_xchacha20poly1305_TAG_FINAL)) {
 
         // NOTE: Currently we dont use this feature, so this is not supposed to happen.
 
         LFLOG_DEBUG << "Received tag 'FINAL' on " << connection_->getUuid().toString()
                     << ". Closing connection";
 
-        // TODO: Send final in the other direction before close?
         connection_->close();
     }
 }
@@ -580,9 +620,9 @@ QByteArray Peer::safePayload(const Peer::mview_t &data)
     return "*** NOT Json ***";
 }
 
-int Peer::createChannel(const File &file)
+quint32 Peer::createChannel(const File &file)
 {
-    int channelId = -1;
+    quint32 channelId = 0;
     auto filePtr = core::DsEngine::instance().getFileManager()->getFile(file.getId());
     Channel::ptr_t ch;
     if (file.getDirection() == File::INCOMING) {
@@ -598,26 +638,6 @@ int Peer::createChannel(const File &file)
         ch = make_shared<OutgoingFileChannel>(filePtr);
         outChannels_[channelId] = ch;
     }
-
-    connect(filePtr.get(), &File::transferDone,
-            this, [this](File *file) {
-       LFLOG_DEBUG << "File transfer of #" << file->getId()
-                   << " is complete.";
-
-       if (file->getDirection() == File::OUTGOING) {
-            sendAck("IncomingFile", "Completed", file->getFileId().toBase64());
-       }
-    });
-
-    connect(filePtr.get(), &File::transferFailed,
-            this, [this](File *file) {
-       LFLOG_DEBUG << "File transfer of #" << file->getId()
-                   << " failed.";
-
-       if (file->getDirection() == File::OUTGOING) {
-            sendAck("IncomingFile", "Failed", file->getFileId().toBase64());
-       }
-    });
 
     const auto direction = file.getDirection();
     auto fileCPtr = filePtr.get();
@@ -789,12 +809,12 @@ uint64_t Peer::sendSome(File &file)
                     << file.getChannel()
                     << " but I don't have that channel!";
 
-        emit file.transferFailed(&file);
-        file.setState(File::FS_FAILED);
+        file.transferFailed("No active channel to send to");
         return {};
     }
 
-    return it->second->onOutgoing(*this);
+    auto instance = it->second;
+    return instance->onOutgoing(*this);
 }
 
 

@@ -60,7 +60,7 @@ Database::~Database()
     const auto name = db_.connectionName();
     db_.close();
     db_ = {};
-    db_.removeDatabase(name);
+    QSqlDatabase::removeDatabase(name);
 }
 
 void Database::createDatabase()

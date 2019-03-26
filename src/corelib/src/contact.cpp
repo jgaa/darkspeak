@@ -738,19 +738,45 @@ void Contact::onReceivedAck(const PeerAck &ack)
             file->setState(File::FS_OFFERED);
         } else if (ack.status == "Rejected") {
             file->setState(File::FS_REJECTED);
-        } else if (ack.status == "Completed") {
-            file->validateHash();
+        } else if (ack.status == "Failed") {
+            if (file->getState() == File::FS_TRANSFERRING) {
+                file->transferFailed("Peer reported that the tranfer Failed");
+            } else {
+                file->setState(File::FS_FAILED);
+            }
         } else if (ack.status == "Abort") {
-            file->setState(File::FS_CANCELLED);
+            if (file->getState() == File::FS_TRANSFERRING) {
+                file->transferFailed("Cancelled/Aborted by Peer", File::FS_CANCELLED);
+            } else {
+                file->setState(File::FS_CANCELLED);
+            }
         } else if (ack.status == "Proceed" || ack.status == "Resume") {
             // TODO: Handle REST
 
-            const auto channel = ack.data.value("channel").toInt();
-            if (channel <= 0) {
+            if (file->getDirection() != File::OUTGOING) {
+                LFLOG_WARN << "Received ack/go-on for file #" << file->getId()
+                           << " but the file is not outbound! Failing.";
+                file->setState(File::FS_FAILED);
+                sendAck("IncomingFile", "Failed", file->getFileId().toBase64());
+                return;
+            }
+
+            if (file->getState() != File::FS_OFFERED) {
+                LFLOG_WARN << "Received ack/go-on for file #" << file->getId()
+                           << " but the file is not in FS_OFFERED state (state=" << getState()
+                           << ")! Failing.";
+                file->setState(File::FS_FAILED);
+                sendAck("IncomingFile", "Failed", file->getFileId().toBase64());
+                return;
+            }
+
+            const auto channel = static_cast<quint32>(ack.data.value("channel").toInt());
+            if (channel == 0) {
                 LFLOG_WARN << "Received ack for file #" << file->getId()
                            << " with invalid channel-id: "
                            << channel;
                 file->setState(File::FS_FAILED);
+                sendAck("IncomingFile", "Failed", file->getFileId().toBase64());
                 return;
             }
             file->setChannel(channel);

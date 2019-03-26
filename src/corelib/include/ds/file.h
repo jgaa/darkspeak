@@ -96,7 +96,7 @@ public:
     void setSize(const qlonglong size);
     qlonglong getBytesTransferred() const noexcept;
     void setBytesTransferred(const qlonglong bytes);
-    void addBytesTransferred(const qlonglong bytes);
+    void addBytesTransferred(const size_t bytes);
     void setAckTime(const QDateTime& when);
     void touchAckTime();
     bool isActive() const noexcept;
@@ -105,8 +105,8 @@ public:
     int getIdentityId() const noexcept;
     Contact *getContact() const;
     Conversation *getConversation() const;
-    int getChannel() const noexcept;
-    void setChannel(int channel);
+    quint32 getChannel() const noexcept;
+    void setChannel(quint32 channel);
 
     /*! Add the new File to the database. */
     void addToDb();
@@ -124,6 +124,9 @@ public:
     // Start an incoming transfer in state FS_QUEUED or FS_OFFERED
     void queueForTransfer();
 
+    void transferComplete();
+    void transferFailed(const QString& reason, const State state = FS_CANCELLED);
+
     // Asyncroneously hash he file and verify that it i cirrect.
     // This is to validate received files before
     // the state is changed to FS_DONE
@@ -139,10 +142,7 @@ signals:
     void fileTimeChanged();
     void sizeChanged();
     void bytesTransferredChanged();
-//    void hashCalculated(const QByteArray& hash);
-//    void hashCalculationFailed(const QString& why);
-    void transferDone(File *file);
-    void transferFailed(File *file);
+    void transferDone(File *file, bool succeess);
 
 private:
     static QString getSelectStatement(const QString& where);
@@ -150,7 +150,7 @@ private:
 
     int id_ = 0;
     std::unique_ptr<FileData> data_;
-    int channel_ = 0;
+    quint32 channel_ = 0;
 };
 
 struct FileData {

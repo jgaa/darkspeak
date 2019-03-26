@@ -177,7 +177,7 @@ public:
 signals:
     void connectedToPeer(const std::shared_ptr<PeerConnection>& peer);
     void disconnectedFromPeer(const std::shared_ptr<PeerConnection>& peer);
-    void receivedData(const quint32 channel, const quint64 id, const QByteArray& data);
+    //void receivedData(const quint32 channel, const quint64 id, const QByteArray& data, const bool final);
     void addmeRequest(const PeerAddmeReq& req);
     void receivedAck(const PeerAck& ack);
     void receivedMessage(const PeerMessage& msg);
