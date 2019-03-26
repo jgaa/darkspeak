@@ -72,7 +72,7 @@ core::PeerConnection::ptr_t
 TorServiceInterface::connectToService(const QByteArray &host, const uint16_t port,
                                       core::ConnectData cd)
 {
-    auto connection = make_shared<ConnectionSocket>();
+    auto connection = make_shared<ConnectionSocket>(host, port);
 
     LFLOG_DEBUG << "Connecting to "
                 << host << ":" << port
@@ -86,7 +86,7 @@ TorServiceInterface::connectToService(const QByteArray &host, const uint16_t por
     }, Qt::QueuedConnection);
 
     connection->setProxy(getTorProxy());
-    connection->connectToHost(host, port);
+    connection->connectToDefaultHost();
 
     peers_[connection->getUuid()] = client;
 

@@ -1,3 +1,6 @@
+#include <QTimer>
+#include <QHostAddress>
+#include <QNetworkProxy>
 
 #include <vector>
 #include <sodium.h>
@@ -13,22 +16,8 @@ DsClient::DsClient(ConnectionSocket::ptr_t connection,
                    core::ConnectData connectionData)
     : Peer{move(connection), move(connectionData)}
 {
-    // TODO: Set timeout
-    connect(connection_.get(), &QTcpSocket::connected,
-            this, [this]() {
-        advance();
-    });
-
-    connect(connection_.get(), &QTcpSocket::readyRead,
-            this, [this]() {
-        advance();
-    });
-
-    connect(getConnectionPtr().get(), &ConnectionSocket::haveBytes,
-            this, [this](const auto& data) {
-        advance(data);
-    });
-
+    initConnections();
+    startConnectRetryTimer();
 }
 
 void DsClient::advance()
@@ -139,6 +128,56 @@ void DsClient::getHelloReply(const Peer::data_t &data)
     enableEncryptedStream();
 
     emit connectedToPeer(shared_from_this());
+}
+
+void DsClient::startConnectRetryTimer()
+{
+    if (++numReconnects_ > maxReconnects_) {
+        LFLOG_DEBUG << "Unable to connect on connection " << getConnectionId().toString();
+        emit closeLater();
+        return;
+    }
+    QTimer::singleShot(reconnectDelayMilliseconds_, this, [this]() {
+        if (connection_->state() == QAbstractSocket::ConnectingState
+                || connection_->state() == QAbstractSocket::UnconnectedState) {
+            LFLOG_DEBUG << "Retrying connect on connection " << getConnectionId().toString();
+
+            auto connection = make_shared<ConnectionSocket>(
+                        connection_->getDefaultHost(),
+                        connection_->getDefaultPort(),
+                        getConnectionId());
+
+            connection->setProxy(connection_->proxy());
+            connection_ = move(connection);
+            useConnection(connection_.get());
+            initConnections();
+            startConnectRetryTimer();
+            connection_->connectToDefaultHost();
+        } else {
+            if (connection_) {
+                LFLOG_TRACE << "Not reconnecting " << getConnectionId().toString()
+                            << " , state is " << connection_->state();
+            }
+        }
+    });
+}
+
+void DsClient::initConnections()
+{
+    connect(connection_.get(), &QTcpSocket::connected,
+            this, [this]() {
+        advance();
+    });
+
+    connect(connection_.get(), &QTcpSocket::readyRead,
+            this, [this]() {
+        advance();
+    });
+
+    connect(getConnectionPtr().get(), &ConnectionSocket::haveBytes,
+            this, [this](const auto& data) {
+        advance(data);
+    });
 }
 
 }} // namespaces

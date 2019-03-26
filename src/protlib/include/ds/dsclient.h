@@ -31,8 +31,13 @@ private slots:
 private:
     void sayHello();
     void getHelloReply(const data_t& data);
+    void startConnectRetryTimer();
+    void initConnections();
 
     State state_ = State::CONNECTED;
+    size_t maxReconnects_ = 20;
+    size_t numReconnects_ = {};
+    size_t reconnectDelayMilliseconds_ = 20000;
 
     // PeerConnection interface
 public:

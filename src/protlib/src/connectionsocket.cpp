@@ -1,12 +1,21 @@
+
 #include "include/ds/connectionsocket.h"
 #include "logfault/logfault.h"
 
 namespace ds {
 namespace prot {
 
-ConnectionSocket::ConnectionSocket()
+ConnectionSocket::ConnectionSocket(const QByteArray &host,
+                                   quint16 port, const QUuid &uuid)
+    : host_{host}, port_{port}
 {
     setReadBufferSize(1024 * 64);
+
+    if (uuid.isNull()) {
+        this->uuid = QUuid::createUuid();
+    } else {
+        this->uuid = uuid;
+    }
 
     connect(this, &ConnectionSocket::connected,
             this, &ConnectionSocket::onConnected);
@@ -48,6 +57,11 @@ void ConnectionSocket::wantBytes(size_t bytesRequested)
     processInput();
 }
 
+void ConnectionSocket::connectToDefaultHost()
+{
+    connectToHost(host_, port_);
+}
+
 void ConnectionSocket::onConnected()
 {
     LFLOG_DEBUG << "Socket on connection " << uuid.toString()
@@ -63,7 +77,7 @@ void ConnectionSocket::onDisconnected()
     emit disconnectedFromHost(uuid);
 }
 
-void ConnectionSocket::onSocketFailed(const SocketError& socketError)
+void ConnectionSocket::onSocketFailed(SocketError socketError)
 {
     LFLOG_DEBUG << "Socket on connection " << uuid.toString()
                 << " was failed with error: "

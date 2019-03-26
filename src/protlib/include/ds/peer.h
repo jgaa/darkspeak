@@ -143,6 +143,7 @@ protected:
     quint32 createChannel(const core::File& file);
     uint64_t startReceive(core::File& file);
     uint64_t startSend(core::File& file);
+    void useConnection(ConnectionSocket *cc);
 
     InState inState_ = InState::DISABLED;
     ConnectionSocket::ptr_t connection_;

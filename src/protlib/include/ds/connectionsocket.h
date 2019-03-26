@@ -19,7 +19,7 @@ public:
     using ptr_t = std::shared_ptr<ConnectionSocket>;
     using data_t = crypto::MemoryView<uint8_t>;
 
-    ConnectionSocket();
+    ConnectionSocket(const QByteArray& host = {}, quint16 port = {}, const QUuid& uuid = {});
     ~ConnectionSocket();
 
     const QUuid& getUuid() const noexcept {
@@ -36,6 +36,10 @@ public:
 
     void wantBytes(size_t bytesRequested);
 
+    void connectToDefaultHost();
+    const QByteArray& getDefaultHost() const noexcept { return host_; }
+    quint16 getDefaultPort() const noexcept { return port_; }
+
 signals:
     void connectedToHost(const QUuid& uuid);
     void socketFailed(const QUuid& uuid, const SocketError& socketError);
@@ -46,17 +50,19 @@ signals:
 private slots:
     void onConnected();
     void onDisconnected();
-    void onSocketFailed(const SocketError& socketError);
+    void onSocketFailed(SocketError socketError);
 
 private:
     void processInput();
     void sendMore();
 
-    QUuid uuid = QUuid::createUuid();
+    QUuid uuid;
     QByteArray outData;
     QByteArray inData;
     size_t bytesWanted_ = {};
     size_t maxInDataSize = 1024 * 265;
+    const QByteArray host_;
+    const quint16 port_;
 };
 
 }} // namespaces

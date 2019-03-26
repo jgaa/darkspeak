@@ -166,29 +166,7 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
     : connection_{move(connection)}, connectionData_{move(connectionData)}
     , uuid_{connection_->getUuid()}
 {
-    connect(connection_.get(), &ConnectionSocket::connected,
-            this, [this]() {
-
-        LFLOG_DEBUG << "Peer " << getConnectionId().toString()
-                    << " is connected";
-
-        //emit connectedToPeer(shared_from_this());
-    });
-
-    connect(connection_.get(), &ConnectionSocket::disconnected,
-            this, [this]() {
-
-        LFLOG_DEBUG << "Peer " << getConnectionId().toString()
-                    << " is disconnected";
-
-        emit disconnectedFromPeer(shared_from_this());
-    });
-
-    connect(connection_.get(), &ConnectionSocket::outputBufferEmptied,
-            this, [this]() {
-       emit outputBufferEmptied();
-    }, Qt::QueuedConnection);
-
+    useConnection(connection.get());
     connect(this, &Peer::closeLater,
             this, &Peer::onCloseLater,
             Qt::QueuedConnection);
@@ -689,6 +667,32 @@ uint64_t Peer::startSend(File &file)
     file.clearBytesTransferred();
     file.setState(File::FS_TRANSFERRING);
     return outChannels_.at(channelId)->onOutgoing(*this);
+}
+
+void Peer::useConnection(ConnectionSocket *cc)
+{
+    connect(connection_.get(), &ConnectionSocket::connected,
+            this, [this]() {
+
+        LFLOG_DEBUG << "Peer " << getConnectionId().toString()
+                    << " is connected";
+
+        //emit connectedToPeer(shared_from_this());
+    });
+
+    connect(connection_.get(), &ConnectionSocket::disconnected,
+            this, [this]() {
+
+        LFLOG_DEBUG << "Peer " << getConnectionId().toString()
+                    << " is disconnected";
+
+        emit disconnectedFromPeer(shared_from_this());
+    });
+
+    connect(connection_.get(), &ConnectionSocket::outputBufferEmptied,
+            this, [this]() {
+       emit outputBufferEmptied();
+    }, Qt::QueuedConnection);
 }
 
 QUuid Peer::getConnectionId() const
