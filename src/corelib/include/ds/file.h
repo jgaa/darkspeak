@@ -89,6 +89,7 @@ public:
     QString getName() const noexcept;
     void setName(const QString& name);
     QString getPath() const noexcept;
+    QString getDownloadPath() const noexcept;
     void setPath(const QString& path);
     QByteArray getHash() const noexcept;
     QString getPrintableHash() const noexcept;
@@ -136,6 +137,8 @@ public:
     // This is to validate received files before
     // the state is changed to FS_DONE
     void validateHash();
+
+    static bool findUnusedName(const QString& path, QString unusedPath);
 
 signals:
     void stateChanged();

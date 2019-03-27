@@ -1,4 +1,5 @@
 
+#include <QStringLiteral>
 #include <chrono>
 
 #include "ds/errors.h"
@@ -16,6 +17,7 @@
 #include <QThreadPool>
 #include <QUrl>
 #include <QDesktopServices>
+#include <QStringLiteral>
 
 #include "logfault/logfault.h"
 
@@ -34,7 +36,7 @@ public:
 
     void run() override {
         try {
-            QFile file(file_->getPath());
+            QFile file(getPath());
             if (!file.open(QIODevice::ReadOnly)) {
                 emit hashed({}, "Failed to open file");
                 return;
@@ -76,6 +78,17 @@ public:
             qWarning() << "Caught exception from task: " << ex.what();
             emit hashed({}, ex.what());
         }
+    }
+
+    QString getPath() const noexcept {
+
+        // Incoming files are verified before they are renamed to their
+        // final names.
+        if (file_->getDirection() == File::INCOMING) {
+            return file_->getDownloadPath();
+        }
+
+        return file_->getPath();
     }
 
     static void schedule(QObject *owner, const File::ptr_t& file) {
@@ -181,6 +194,11 @@ void File::setName(const QString &name)
 QString File::getPath() const noexcept
 {
     return data_->path;
+}
+
+QString File::getDownloadPath() const noexcept
+{
+    return getPath() = ".part";
 }
 
 void File::setPath(const QString &path)
@@ -498,6 +516,28 @@ void File::transferComplete()
     assert (getState() == FS_TRANSFERRING || getState() == FS_HASHING);
 
     if (getDirection() == INCOMING) {
+
+        QString unusedPath;
+        if (!findUnusedName(getPath(), unusedPath)) {
+            transferFailed(QStringLiteral("Unable to find a suitable file-name for the existing file: ") + getPath());
+            return;
+        }
+
+        setPath(unusedPath);
+
+        QFile tmpFile{getDownloadPath()};
+        if (!tmpFile.exists()) {
+            transferFailed(QStringLiteral("Temporary file dissapeared: ") + getDownloadPath());
+            return;
+        }
+
+        if (!tmpFile.rename(getPath())) {
+            transferFailed(QStringLiteral("Failed to rename: ")
+                           + getDownloadPath()
+                           + " to " + getPath());
+            return;
+        }
+
         LFLOG_INFO << "File #" << getId()
                    << " at path \"" << getPath()
                    << " was successfulle received from Contact " << getContact()->getName()
@@ -583,6 +623,30 @@ void File::validateHash()
             }
         }
     });
+}
+
+bool File::findUnusedName(const QString &path, QString unusedPath)
+{
+    QFileInfo target(path);
+    if (!target.exists()) {
+        unusedPath = path;
+        return true;
+    }
+
+    for(int i = 0; i < 500; ++i) {
+        const auto tryTarget{QStringLiteral("%1/%2(%3)%4").arg(target.absolutePath()
+                                                          .arg(target.baseName())
+                                                          .arg(i)
+                                                          .arg(target.suffix()))};
+        LFLOG_TRACE << "Trying alternative name: " << tryTarget;
+        const QFileInfo alt{tryTarget};
+        if (!alt.exists()) {
+            unusedPath = alt.absoluteFilePath();
+            return true;
+        }
+    }
+
+    return false;
 }
 
 }} // namespaces

@@ -32,12 +32,12 @@ const std::map<QString, Message::Encoding>  encoding_lookup = {
 class IncomingFileChannel : public Peer::Channel {
 public:
     IncomingFileChannel(const core::File::ptr_t& file)
-        : io_{file->getPath()}
+        : io_{file->getDownloadPath()}
         , file_{file}
     {
         assert(file->getDirection() == File::INCOMING);
         if (!io_.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            LFLOG_ERROR << "Failed to open \"" << file->getPath()
+            LFLOG_ERROR << "Failed to open \"" << file->getDownloadPath()
                         << "\" for write: " << io_.errorString();
             throw Error("Failed to open file");
         }
@@ -45,7 +45,7 @@ public:
         file->setBytesTransferred(0);
 
         LFLOG_DEBUG << "Opened file #" << file->getId()
-                    << " with path \"" << file->getPath()
+                    << " with path \"" << file->getDownloadPath()
                     << " for WRITE for incoming transfer";
     }
 
@@ -58,7 +58,7 @@ public:
         if (io_.write(reinterpret_cast<const char *>(data.cdata()),
                       static_cast<qint64>(data.size())) != static_cast<qint64>(data.size())) {
             LFLOG_ERROR << "Failed to write chunk "
-                        << id << " to \"" << file_->getPath()
+                        << id << " to \"" << file_->getDownloadPath()
                         << "\" for write: " << io_.errorString();
             throw Error("Failed to write to file");
         }
