@@ -138,7 +138,7 @@ public:
     // the state is changed to FS_DONE
     void validateHash();
 
-    static bool findUnusedName(const QString& path, QString unusedPath);
+    static bool findUnusedName(const QString& path, QString& unusedPath);
 
 signals:
     void stateChanged();

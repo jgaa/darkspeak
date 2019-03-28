@@ -7,7 +7,7 @@
 #include "ds/update_helper.h"
 #include "ds/crypto.h"
 #include "ds/file.h"
-#include "ds/task.h"
+#include "ds/hashtask.h"
 
 #include <sodium.h>
 
@@ -25,83 +25,6 @@ using namespace std;
 
 namespace ds {
 namespace core {
-
-class HashTask : public QObject, public QRunnable {
-    Q_OBJECT
-public:
-    HashTask(QObject *owner, const File::ptr_t& file)
-        : QObject{owner}, file_{file}
-    {
-    }
-
-    void run() override {
-        try {
-            QFile file(getPath());
-            if (!file.open(QIODevice::ReadOnly)) {
-                emit hashed({}, "Failed to open file");
-                return;
-            }
-
-            crypto_hash_sha256_state state = {};
-            crypto_hash_sha256_init(&state);
-
-            std::array<uint8_t, 1024 * 8> buffer;
-            while(!file.isOpen()) {
-                if (file_->getState() != File::FS_HASHING) {
-                    LFLOG_WARN << "File #" << file_->getId()
-                               << " changed state during hashing. Aborting!";
-
-                    emit hashed({}, "Aborted");
-                    file.close();
-                    return;
-                }
-
-                const auto bytes_read = file.read(reinterpret_cast<char *>(buffer.data()),
-                                                  static_cast<qint64>(buffer.size()));
-                if (bytes_read > 0) {
-                    crypto_hash_sha256_update(&state, buffer.data(),
-                                              static_cast<size_t>(bytes_read));
-                } else if (bytes_read == 0) {
-                    file.close();
-                } else {
-                    emit hashed({}, "Read failed");
-                    file.close();
-                    return;
-                }
-            }
-
-            QByteArray out;
-            out.resize(crypto_hash_sha256_BYTES);
-            crypto_hash_sha256_final(&state, reinterpret_cast<uint8_t *>(out.data()));
-            emit hashed(out, {});
-        } catch(const std::exception& ex) {
-            qWarning() << "Caught exception from task: " << ex.what();
-            emit hashed({}, ex.what());
-        }
-    }
-
-    QString getPath() const noexcept {
-
-        // Incoming files are verified before they are renamed to their
-        // final names.
-        if (file_->getDirection() == File::INCOMING) {
-            return file_->getDownloadPath();
-        }
-
-        return file_->getPath();
-    }
-
-    static void schedule(QObject *owner, const File::ptr_t& file) {
-        auto task = new HashTask{owner, file};
-        QThreadPool::globalInstance()->start(task);
-    }
-
-signals:
-    void hashed(const QByteArray& hash, const QString& failReason);
-
-private:
-    const File::ptr_t file_;
-};
 
 File::File(QObject &parent)
     : QObject (&parent), data_{make_unique<FileData>()}
@@ -198,7 +121,7 @@ QString File::getPath() const noexcept
 
 QString File::getDownloadPath() const noexcept
 {
-    return getPath() = ".part";
+    return getPath() + ".part";
 }
 
 void File::setPath(const QString &path)
@@ -517,6 +440,7 @@ void File::transferComplete()
 
     if (getDirection() == INCOMING) {
 
+        const auto actualPath = getDownloadPath();
         QString unusedPath;
         if (!findUnusedName(getPath(), unusedPath)) {
             transferFailed(QStringLiteral("Unable to find a suitable file-name for the existing file: ") + getPath());
@@ -525,7 +449,7 @@ void File::transferComplete()
 
         setPath(unusedPath);
 
-        QFile tmpFile{getDownloadPath()};
+        QFile tmpFile{actualPath};
         if (!tmpFile.exists()) {
             transferFailed(QStringLiteral("Temporary file dissapeared: ") + getDownloadPath());
             return;
@@ -625,7 +549,7 @@ void File::validateHash()
     });
 }
 
-bool File::findUnusedName(const QString &path, QString unusedPath)
+bool File::findUnusedName(const QString &path, QString& unusedPath)
 {
     QFileInfo target(path);
     if (!target.exists()) {
@@ -634,10 +558,18 @@ bool File::findUnusedName(const QString &path, QString unusedPath)
     }
 
     for(int i = 0; i < 500; ++i) {
-        const auto tryTarget{QStringLiteral("%1/%2(%3)%4").arg(target.absolutePath()
-                                                          .arg(target.baseName())
-                                                          .arg(i)
-                                                          .arg(target.suffix()))};
+        // Don't work!
+//        const auto tryTarget{QStringLiteral("%1/%2(%3).%4").arg(target.absolutePath()
+//                                                          .arg(target.baseName())
+//                                                          .arg(QString::number(i))
+//                                                          .arg(target.suffix()))};
+
+        const auto tryTarget = QString{target.absolutePath()}
+                    + "/"
+                    + target.baseName()
+                    + "(" + QString::number(i) + ")."
+                    + target.suffix();
+
         LFLOG_TRACE << "Trying alternative name: " << tryTarget;
         const QFileInfo alt{tryTarget};
         if (!alt.exists()) {

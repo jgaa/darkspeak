@@ -66,6 +66,8 @@ public:
         file_->addBytesTransferred(data.size());
 
         if (final) {
+            io_.flush();
+            io_.close();
             file_->validateHash();
         }
     }

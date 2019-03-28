@@ -15,7 +15,7 @@ HashTask::HashTask(QObject *owner, const File::ptr_t& file)
 
 void HashTask::run() {
     try {
-        QFile file(file_->getPath());
+        QFile file(getPath());
         if (!file.open(QIODevice::ReadOnly)) {
             emit hashed({}, "Failed to open file");
             return;
@@ -57,6 +57,17 @@ void HashTask::run() {
         qWarning() << "Caught exception from task: " << ex.what();
         emit hashed({}, ex.what());
     }
+}
+
+QString HashTask::getPath() const noexcept {
+
+    // Incoming files are verified before they are renamed to their
+    // final names.
+    if (file_->getDirection() == File::INCOMING) {
+        return file_->getDownloadPath();
+    }
+
+    return file_->getPath();
 }
 
 }}

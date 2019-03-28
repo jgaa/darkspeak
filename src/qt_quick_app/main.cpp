@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
 #ifdef QT_DEBUG
     LogManager::Instance().AddHandler(
                 make_unique<StreamHandler>(
-                    clog, LogLevel::DEBUGGING));
+                    clog, LogLevel::TRACE));
 #endif
 
     LFLOG_DEBUG << "Darkspeak is starting up cwd='"

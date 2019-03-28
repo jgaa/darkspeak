@@ -21,6 +21,8 @@ signals:
     void hashed(const QByteArray& hash, const QString& failReason);
 
 private:
+    QString getPath() const noexcept;
+
     const File::ptr_t file_;
 };
 
