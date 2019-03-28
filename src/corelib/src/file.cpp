@@ -439,17 +439,7 @@ void File::transferComplete()
     assert (getState() == FS_TRANSFERRING || getState() == FS_HASHING);
 
     if (getDirection() == INCOMING) {
-
-        const auto actualPath = getDownloadPath();
-        QString unusedPath;
-        if (!findUnusedName(getPath(), unusedPath)) {
-            transferFailed(QStringLiteral("Unable to find a suitable file-name for the existing file: ") + getPath());
-            return;
-        }
-
-        setPath(unusedPath);
-
-        QFile tmpFile{actualPath};
+        QFile tmpFile{getDownloadPath()};
         if (!tmpFile.exists()) {
             transferFailed(QStringLiteral("Temporary file dissapeared: ") + getDownloadPath());
             return;
@@ -557,13 +547,7 @@ bool File::findUnusedName(const QString &path, QString& unusedPath)
         return true;
     }
 
-    for(int i = 0; i < 500; ++i) {
-        // Don't work!
-//        const auto tryTarget{QStringLiteral("%1/%2(%3).%4").arg(target.absolutePath()
-//                                                          .arg(target.baseName())
-//                                                          .arg(QString::number(i))
-//                                                          .arg(target.suffix()))};
-
+    for(int i = 1; i <= 500; ++i) {
         const auto tryTarget = QString{target.absolutePath()}
                     + "/"
                     + target.baseName()

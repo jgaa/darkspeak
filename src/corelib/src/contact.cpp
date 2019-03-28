@@ -1044,6 +1044,31 @@ void Contact::queueTransfer(const std::shared_ptr<File> &file)
             }
         });
 
+        if (file->getDirection() == File::INCOMING) {
+            QString path;
+            if (!File::findUnusedName(file->getPath(), path)) {
+                LFLOG_ERROR << "Rejecting file #" << file->getId()
+                            << " from peer " << file->getContact()->getName()
+                            << " on identity " << file->getConversation()->getIdentity()->getName()
+                            << ": Failes to deduce unused file-name!";
+
+                file->transferFailed("Failed to deduce unused file-name!");
+                return;
+            }
+
+            if (file->getPath() != path) {
+                LFLOG_NOTICE << "Renaming incoming file #" << file->getId()
+                             << " from Concact " << file->getContact()->getName()
+                             << " to Identity " << file->getConversation()->getIdentity()
+                             << " from \"" << file->getPath()
+                             << "\" to \"" << path << "\"";
+
+                file->setPath(path);
+                QFileInfo fi{path};
+                file->setName(fi.fileName());
+            }
+        }
+
         connection_->peer->startTransfer(*file);
 
     }
