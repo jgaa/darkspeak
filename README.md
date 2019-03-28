@@ -14,7 +14,11 @@ To make a Secure and Private Communication Platform for people.
 
 All communication is encrypted using Public Key Cryptography (PKS) at the endpoints. Not even the Tor proxy-servers sees the content of any message or even the signaling. There are no central servers and no company-run services. That mean's that there are no-one to subpoena to get even the metadata regarding any conversation. The only traces left of any communications are the TCP connections in the Tor network.
 
-Each peer run it's own Tor Hidden Service. This means that DarkSpeak will work as long as Tor works at any given time or place in the world. If a government feels threatened by Free Speech (and it seems like most of them do), there is still no way they can shut you down. There are no domain-names to block or take over and no IP addresses to block. If Tor works, you are free to talk with whoever you want.
+Each peer run it's own Tor Hidden Service. This means that DarkSpeak will work as long as Tor works at any given time and place in the world. If a government feels threatened by Free Speech (and it seems like most of them do), there is still no way they can shut you down. There are no domain-names to block or take over and no IP addresses to block. If Tor works, you are free to talk with whoever you want.
+
+# Alternative networks
+
+The protocol used by DarkSpeak does not depend on Tor. It is designed so that it can be used by alternative networks in the future, or even directly over TCP (if no anonymity is required). At the moment however, only Tor is used.
 
 # History
 
@@ -54,6 +58,7 @@ Working towards a public Beta release for Desktop in April 2019.
 - [ ] Multiple device support (Like Skype - you have DarkSpeak on your laptop, phone and tablet, and people can reach you on any one of them, while the messsage-history are available on all of them) (Fall 2019).
 - [ ] Built in File Server (like running your own FTP server, just much more secure) (2020)
 - [ ] Feeds (like RSS subscriptions, but designed to be used for anything from Twitter-like short messages, to publishing newsletters).
+- [ ] Add I2P support as an alternative to the Tor transport (so you can be reached on one or both networks).
 
 # Links to related and relevant projects
  - [Ricochet, anonymous peer-to-peer instant messaging](https://github.com/ricochet-im/ricochet)
