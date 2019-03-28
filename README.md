@@ -24,21 +24,31 @@ The [original implementation](https://github.com/jgaa/darkspeak/tree/original-im
 
 **Implementing**
 
-- The program compiles and runs on Linux and macos.
-- Messaging works.
-- File Transfers works.
+- [x] Builds on Linux (Ubuntu LTS)
+- [x] Builds on macos
+- [ ] Builds on Windows 10 (MSVC)
+- [x] Send and receive messages
+- [x] Send and receive files
+- [ ] Automated builds (Jenkins)
+- [ ] Automated tests
+- [x] Use an external Tor server
+- [ ] Use an embedded Tor server
+- [x] Legacy onion addresses
+- [ ] New onion addresses
+- [ ] Encrypt private keys and require password
+- [ ] Encrypt messages locally and require password to read them
 
-Working towards a public Beta release for desktop in April 2019.
 
-# Planned features
+Working towards a public Beta release for Desktop in April 2019.
 
-- Android version (Spring 2019)
-- IOS version (Spring 2019)
-- Group Chat (Summer 2019)
-- Multiple device support (Like Skype - you have DarkSpeak on your laptop, phone and tablet, and people can reach you on any one of them, while the messsage-history are available on all of them) (Fall 2019).
-- Built in File Server (like running your own FTP server, just much more secure) (2020)
-- Feeds (like RSS subscriptions, but designed to be used for anything from Twitter-like short messages, to publishing newsletters).
+# Planned post-beta features
 
+- [ ] Android version (Spring 2019)
+- [ ] IOS version (Spring 2019)
+- [ ] Group Chat (Summer 2019)
+- [ ] Multiple device support (Like Skype - you have DarkSpeak on your laptop, phone and tablet, and people can reach you on any one of them, while the messsage-history are available on all of them) (Fall 2019).
+- [ ] Built in File Server (like running your own FTP server, just much more secure) (2020)
+- [ ] Feeds (like RSS subscriptions, but designed to be used for anything from Twitter-like short messages, to publishing newsletters).
 
 # Links to related and relevant projects
  - [Ricochet, anonymous peer-to-peer instant messaging](https://github.com/ricochet-im/ricochet)
