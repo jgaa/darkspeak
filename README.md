@@ -2,6 +2,10 @@
 
 Secure Peer to Peer Instant Messenger, using the Tor network for anonymity and best practice cryptorafic measures to provide privacy and authenticity.
 
+Screenshots
+
+![contact](screenshots/ds_chat.jpeg) ![chat](screenshots/ds_contact.jpeg)
+
 # Mission Statement
 
 To make a Secure and Private Communication Platform for people.
@@ -29,13 +33,14 @@ The [original implementation](https://github.com/jgaa/darkspeak/tree/original-im
 - [ ] Builds on Windows 10 (MSVC)
 - [x] Send and receive messages
 - [x] Send and receive files
+- [x] Multiple, independent Identities
 - [ ] Automated builds (Jenkins)
 - [ ] Automated tests
 - [x] Use an external Tor server
 - [ ] Use an embedded Tor server
 - [x] Legacy onion addresses
 - [ ] New onion addresses
-- [ ] Encrypt private keys and require password
+- [ ] Encrypt private keys and require password to use them
 - [ ] Encrypt messages locally and require password to read them
 
 
