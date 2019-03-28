@@ -10,6 +10,10 @@ Screenshots
 
 To make a Secure and Private Communication Platform for Good People.
 
+# Ad free
+
+This application does not collect data about you, and it does not serve ads. It's very purpose is to prevent greedy and hostile entities to dig into your conversations and social network for manipulation, profit & greed.
+
 # Secure and anonymous
 
 All communication is encrypted using Public Key Cryptography (PKS) at the endpoints. Not even the Tor proxy-servers sees the content of any message or even the signaling. There are no central servers and no company-run services. That mean's that there are no-one to subpoena to get even the metadata regarding any conversation. The only traces left of any communications are the TCP connections in the Tor network.
@@ -27,6 +31,7 @@ This project began in April 2016, when I wanted to chat with my friends without 
 However, because the legacy Tor Chat client was bundling an obsolete Tor server, my program was unable to maintain reliable connections with actual "Tor Chat" users. So at some point I decided to learn from my experience with the original implementation and write a new one from scratch.
 
 The [original implementation](https://github.com/jgaa/darkspeak/tree/original-impl-torchat-prot) is still available.
+
 
 # Current status
 
