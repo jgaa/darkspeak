@@ -8,7 +8,7 @@ Screenshots
 
 # Mission Statement
 
-To make a Secure and Private Communication Platform for people.
+To make a Secure and Private Communication Platform for Good People.
 
 # Secure and anonymous
 
