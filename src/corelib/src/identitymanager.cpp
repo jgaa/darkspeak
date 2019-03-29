@@ -217,7 +217,7 @@ QHash<int, QByteArray> IdentityManager::roleNames() const
 void IdentityManager::onOnline()
 {
     for(auto identity : rows_) {
-        if (identity->isAutoConnect() && !identity->isOnline()) {
+        if (identity->isAutoConnect() && !identity->isOnline() && !identity->getAddress().isEmpty()) {
             identity->startService();
         }
     }

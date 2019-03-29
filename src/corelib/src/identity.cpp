@@ -52,6 +52,12 @@ void Identity::addContact(const QVariantMap &args)
 
 void Identity::startService()
 {
+    if (data_.addressData.isEmpty()) {
+        LFLOG_ERROR << "The identity " << getName()
+                    << " has no address. Cannot go online.";
+        return;
+
+    }
     getProtocolManager().startService(data_.uuid,
                                       data_.cert,
                                       DsEngine::fromJson(data_.addressData));
