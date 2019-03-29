@@ -183,7 +183,7 @@ Page {
 
         function toggleOnline() {
             if (currentItem.cco.online) {
-                currentItem.cco.disconnectFromContact();
+                currentItem.cco.disconnectFromContact(true);
             } else {
                 currentItem.cco.connectToContact();
             }

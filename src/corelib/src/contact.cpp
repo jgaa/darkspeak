@@ -1,4 +1,4 @@
-
+﻿
 #include <memory>
 
 #include "ds/contact.h"
@@ -79,11 +79,14 @@ void Contact::connectToContact()
         connect(peer.get(), &PeerConnection::disconnectedFromPeer,
                 this, &Contact::onDisconnectedFromPeer);
     }
+
+    setManuallyDisconnected(false);
 }
 
-void Contact::disconnectFromContact()
+void Contact::disconnectFromContact(bool manual)
 {
     connection_.reset();
+    setManuallyDisconnected(manual);
 }
 
 Conversation *Contact::getDefaultConversation()
@@ -290,6 +293,17 @@ int Contact::getIdentityId() const noexcept
     return data_->identity;
 }
 
+bool Contact::wasManuallyDisconnected() const noexcept
+{
+    return data_->manuallyDisconnected;
+}
+
+void Contact::setManuallyDisconnected(bool state)
+{
+    updateIf("manually_disconnected", state, data_->manuallyDisconnected,
+             this, &Contact::manuallyDisconnectedChanged);
+}
+
 void Contact::queueMessage(const Message::ptr_t &message)
 {
     loadMessageQueue();
@@ -315,11 +329,11 @@ Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
     QSqlQuery query;
 
     enum Fields {
-        id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified
+        id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path
     };
 
     query.prepare("SELECT "
-                  "id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified "
+                  "id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path "
                   " from contact where uuid=:uuid");
     query.bindValue(":uuid", key);
     if(!query.exec()) {
@@ -349,6 +363,8 @@ Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
     data->addMeMessage = query.value(addme_message).toString();
     data->autoConnect = query.value(auto_connect).toBool();
     data->peerVerified = query.value(peer_verified).toBool();
+    data->manuallyDisconnected = query.value(manually_disconnected).toBool();
+    data->downloadPath = query.value(download_path).toString();
 
     return make_shared<Contact>(parent,
                                query.value(id).toInt(),
@@ -361,9 +377,9 @@ void Contact::addToDb()
     QSqlQuery query;
 
     query.prepare("INSERT INTO contact ("
-                  "identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified "
+                  "identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path "
                   ") VALUES ("
-                  ":identity, :uuid, :name, :nickname, :cert, :address, :notes, :contact_group, :avatar, :created, :initiated_by, :last_seen, :state, :addme_message, :auto_connect, :hash, :peer_verified "
+                  ":identity, :uuid, :name, :nickname, :cert, :address, :notes, :contact_group, :avatar, :created, :initiated_by, :last_seen, :state, :addme_message, :auto_connect, :hash, :peer_verified, :manually_disconnected, :download_path "
                   ")");
 
     if (data_->group.isEmpty()) {
@@ -395,6 +411,8 @@ void Contact::addToDb()
     query.bindValue(":auto_connect", data_->autoConnect);
     query.bindValue(":hash", data_->hash);
     query.bindValue(":peer_verified", data_->peerVerified);
+    query.bindValue(":manually_disconnected", data_->manuallyDisconnected);
+    query.bindValue(":download_path", data_->downloadPath);
 
     if(!query.exec()) {
         throw Error(QStringLiteral("Failed to add Contact: %1").arg(
@@ -426,6 +444,8 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
                 << " to Contact " << getName()
                 << " on Identity " << getIdentity()->getName()
                 << " is successfully established.";
+
+    setManuallyDisconnected(false); // No longer relevant
 
     if (!isPeerVerified()) {
         if (peer->getDirection() == PeerConnection::OUTGOING) {

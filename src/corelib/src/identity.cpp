@@ -112,7 +112,7 @@ void Identity::onAddmeRequest(const PeerAddmeReq &req)
     DsEngine::instance().getIdentityManager()->relayNewContactRequest(this, req);
 
     // No further input is required until we have deciced if we want to add the contact,
-    // and we have verified it's handle.
+    // and we have verified its handle.
     req.peer->close();
 }
 
@@ -134,20 +134,30 @@ void Identity::connectContacts()
     while (query.next()) {
         auto contact = DsEngine::instance().getContactManager()->getContact(query.value(0).toUuid());
 
+        // Connect to contacts with random delays to make it a tiny bit harder for
+        // NSA, German intelligence and GRU to deduce what's going on,
+        // based on based on the meta-date they collect from the transport
+        // layer on the network.
         const auto delay = getRandomConnectDelay();
 
         LFLOG_DEBUG << "Identity " << getName()
                     << " will connect to Contact " << contact->getName()
                     << " in " << (delay / 1000) << " seconds.";
 
-        QTimer::singleShot(delay, this, [this, contact]() {
-            if (isOnline()
-                  && contact->isAutoConnect()
-                  && (contact->getOnlineStatus() == Contact::DISCONNECTED)
-                  && ((contact->getState() == Contact::WAITING_FOR_ACCEPTANCE)
-                   || (contact->getState() == Contact::ACCEPTED)
-                   || (contact->getState() == Contact::PENDING))) {
-                contact->connectToContact();
+        auto uuid = contact->getUuid();
+        QTimer::singleShot(delay, this, [this, uuid]() {
+            // Get the contact again fromn the manager.
+            // This will fail if the contact was deleted while the timer was running...
+            if (auto contact = DsEngine::instance().getContactManager()->getContact(uuid)) {
+                if (isOnline()
+                      && contact->isAutoConnect()
+                      && !contact->wasManuallyDisconnected()
+                      && (contact->getOnlineStatus() == Contact::DISCONNECTED)
+                      && ((contact->getState() == Contact::WAITING_FOR_ACCEPTANCE)
+                       || (contact->getState() == Contact::ACCEPTED)
+                       || (contact->getState() == Contact::PENDING))) {
+                    contact->connectToContact();
+                }
             }
         });
     }

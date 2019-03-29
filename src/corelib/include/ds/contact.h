@@ -104,7 +104,7 @@ public:
     Q_PROPERTY(Identity * identity READ getIdentity)
 
     Q_INVOKABLE void connectToContact();
-    Q_INVOKABLE void disconnectFromContact();
+    Q_INVOKABLE void disconnectFromContact(bool manual = false);
     Q_INVOKABLE Conversation *getDefaultConversation();
 
     static Contact::ptr_t load(QObject& parent, const QUuid &uuid);
@@ -149,6 +149,8 @@ public:
     OnlineStatus getOnlineStatus() const noexcept;
     void setOnlineStatus(const OnlineStatus status);
     int getIdentityId() const noexcept;
+    bool wasManuallyDisconnected() const noexcept;
+    void setManuallyDisconnected(bool state);
 
     void queueMessage(const Message::ptr_t& message);
     void queueFile(const std::shared_ptr<File>& file);
@@ -183,6 +185,7 @@ signals:
     void sendAddMeLater();
     void sendAddmeAckLater();
     void processOnlineLater();
+    void manuallyDisconnectedChanged();
 
 public slots:
     void onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer);
@@ -285,6 +288,13 @@ struct ContactData {
 
     // True if we ever have connected to the remote peer's address
     bool peerVerified = false;
+
+    // True if the user manually disconnected the contact
+    // Auto-connect will be disabled for the duration of the application-session.
+    bool manuallyDisconnected = false;
+
+    // If set, this overrides the default download-path for the contact
+    QString downloadPath;
 };
 
 

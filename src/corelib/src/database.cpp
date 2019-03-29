@@ -69,7 +69,7 @@ void Database::createDatabase()
     try {
         exec(R"(CREATE TABLE "ds" ( `version` INTEGER NOT NULL))");
         exec(R"(CREATE TABLE "identity" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `uuid` BLOB NOT NULL UNIQUE, `hash` BLOB NOT NULL, `name` TEXT NOT NULL, `cert` BLOB NOT NULL, `address` TEXT, `address_data` TEXT, `notes` TEXT, `avatar` BLOB, `created` TEXT NOT NULL, `auto_connect` INTEGER NOT NULL DEFAULT 1 ))");
-        exec(R"(CREATE TABLE "contact" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `identity` INTEGER NOT NULL, `uuid` BLOB NOT NULL UNIQUE, `name` TEXT NOT NULL, `nickname` TEXT, `cert` BLOB NOT NULL, `address` TEXT NOT NULL, `notes` TEXT, `contact_group` TEXT NOT NULL DEFAULT 'other', `avatar` BLOB, `created` TEXT NOT NULL, `initiated_by` TEXT NOT NULL, `last_seen` TEXT, `state` INTEGER NOT NULL DEFAULT 0, `addme_message` TEXT DEFAULT 0, `auto_connect` INTEGER NOT NULL DEFAULT 0, `hash` BLOB NOT NULL, `peer_verified` INTEGER DEFAULT 0, FOREIGN KEY(`identity`) REFERENCES `identity`(`id`) ))");
+        exec(R"(CREATE TABLE "contact" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `identity` INTEGER NOT NULL, `uuid` BLOB NOT NULL UNIQUE, `name` TEXT NOT NULL, `nickname` TEXT, `cert` BLOB NOT NULL, `address` TEXT NOT NULL, `notes` TEXT, `contact_group` TEXT NOT NULL DEFAULT 'other', `avatar` BLOB, `created` TEXT NOT NULL, `initiated_by` TEXT NOT NULL, `last_seen` TEXT, `state` INTEGER NOT NULL DEFAULT 0, `addme_message` TEXT DEFAULT 0, `auto_connect` INTEGER NOT NULL DEFAULT 0, `hash` BLOB NOT NULL, `peer_verified` INTEGER DEFAULT 0, `manually_disconnected` INTEGER DEFAULT 0, `download_path` TEXT, FOREIGN KEY(`identity`) REFERENCES `identity`(`id`) ))");
         exec(R"(CREATE TABLE "conversation" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `identity` INTEGER NOT NULL, `type` INTEGER NOT NULL DEFAULT 0, `name` TEXT NOT NULL, `uuid` INTEGER, `hash` BLOB NOT NULL, `participants` TEXT, `topic` TEXT, `created` TEXT NOT NULL, `updated` TEXT NOT NULL, `unread` INTEGER, FOREIGN KEY(`identity`) REFERENCES `identity`(`id`) ))");
         exec(R"(CREATE TABLE "message" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `direction` INTEGER NOT NULL, `state` INTEGER NOT NULL, `conversation_id` INTEGER NOT NULL, `conversation` BLOB NOT NULL, `message_id` BLOB NOT NULL, `composed_time` INTEGER NOT NULL, `received_time` INTEGER, `content` TEXT NOT NULL, `signature` BLOB NOT NULL, `sender` BLOB NOT NULL, `encoding` INTEGER NOT NULL ))");
         exec(R"(CREATE TABLE "notification" ( `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `status` INTEGER NOT NULL, `priority` INTEGER NOT NULL, `identity` INTEGER NOT NULL, `contact` INTEGER, `type` INTEGER NOT NULL, `timestamp` TEXT NOT NULL, `message` TEXT, `data` BLOB, `hash` BLOB ))");
@@ -103,7 +103,7 @@ void Database::exec(const char *sql)
 
 void Database::prepareData()
 {
-    {   // Set files that was being transferred, when we last quit, to waiting state
+    {   // Set outgoing files that was being transferred, when we last quit, to waiting state
         QSqlQuery query(db_);
         query.prepare("UPDATE file SET state=:waiting WHERE direction=:out AND state IN(:transferring, :offered, :queued)");
         query.bindValue(":waiting", static_cast<int>(File::FS_WAITING));
@@ -117,7 +117,7 @@ void Database::prepareData()
         }
     }
 
-    {   // Set files that was being transferred, when we last quit, to waiting state
+    {   // Set incoming files that was being transferred, when we last quit, to queued state
         QSqlQuery query(db_);
         query.prepare("UPDATE file SET state=:queued WHERE direction=:in AND state=:transferring");
         query.bindValue(":queued", static_cast<int>(File::FS_QUEUED));
@@ -128,6 +128,9 @@ void Database::prepareData()
             throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
         }
     }
+
+    // Re-enable auto-connect for all contacts with that flag.
+    exec("UPDATE contact SET manually_disconnected=0");
 }
 
 
