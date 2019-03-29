@@ -96,9 +96,9 @@ class Identity : public QObject {
 
 
     struct Connected {
+        Connected(const Contact::ptr_t& contact)
+            : contact{contact} {}
         Contact::ptr_t contact;
-        bool established = false;
-        bool outgoing = false;
     };
 
 public:
@@ -164,6 +164,9 @@ public:
 
     const char *getTableName() const noexcept { return "identity"; }
 
+    void registerConnection(const Contact::ptr_t& contact);
+    void unregisterConnection(const QUuid& uuid);
+
 public slots:
     void onAddmeRequest(const PeerAddmeReq& req);
 
@@ -183,6 +186,7 @@ private slots:
 private:
     void connectContacts();
     static int getRandomConnectDelay();
+    void disconnectContacts();
 
     Contact::ptr_t contactFromHandle(const QByteArray& handle);
     Contact::ptr_t contactFromHash(const QByteArray& hash);

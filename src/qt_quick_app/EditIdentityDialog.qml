@@ -11,7 +11,7 @@ Dialog {
     standardButtons: StandardButton.Ok | StandardButton.Cancel
 
     Component.onCompleted: {
-        title = identity ? qsTr("Edit identity") : qsTr("Create a new identity")
+        root.title = identity ? qsTr("Edit Identity") : qsTr("Create a new Identity")
 
         // Initialize from Identity if we have one
         if (identity) {

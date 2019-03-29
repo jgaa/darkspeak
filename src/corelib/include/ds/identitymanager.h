@@ -39,6 +39,7 @@ public:
     Q_INVOKABLE void createIdentity(const QmlIdentityReq *req);
 
     void relayNewContactRequest(Identity *identity, const core::PeerAddmeReq &req);
+    void disconnectAll();
 
     // QAbstractItemModel interface
 public:

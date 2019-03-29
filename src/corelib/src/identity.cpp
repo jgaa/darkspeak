@@ -59,6 +59,7 @@ void Identity::startService()
 
 void Identity::stopService()
 {
+    disconnectContacts();
     getProtocolManager().stopService(data_.uuid);
 }
 
@@ -171,6 +172,22 @@ int Identity::getRandomConnectDelay()
      return dis(gen);
 }
 
+void Identity::disconnectContacts()
+{
+    std::deque<Contact::ptr_t> contacts;
+    for(const auto& it : connected_) {
+        assert(it.second->contact);
+        contacts.push_back(it.second->contact);
+    }
+
+    for(auto& contact : contacts) {
+        LFLOG_DEBUG << "Identity " << getName()
+                    << " is disconnected; disconnecting Contact: "
+                    << contact->getName();
+        contact->disconnectFromContact();
+    }
+}
+
 Contact::ptr_t Identity::contactFromHandle(const QByteArray &handle)
 {
     auto cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(
@@ -224,6 +241,16 @@ Conversation::ptr_t Identity::convesationFromHash(const QByteArray &hash)
     }
 
     return {};
+}
+
+void Identity::registerConnection(const Contact::ptr_t &contact)
+{
+    connected_[contact->getUuid()] = make_unique<Connected>(contact);
+}
+
+void Identity::unregisterConnection(const QUuid &uuid)
+{
+    connected_.erase(uuid);
 }
 
 int Identity::getId() const noexcept {
@@ -290,6 +317,8 @@ void Identity::setOnline(const bool value) {
 
         if (online_) {
             emit processOnlineLater();
+        } else {
+            disconnectContacts();
         }
     }
 }

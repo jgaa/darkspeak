@@ -194,6 +194,13 @@ Page {
             conversations.setCurrent(cv);
             manager.currentPage = Manager.CHAT
         }
+
+        function editCurrent() {
+            var component = Qt.createComponent("qrc:/EditContactDialog.qml")
+            var dlg = component.createObject(mainWindow, {"parent" : mainWindow,
+                                              "contact" : currentItem.cco});
+            dlg.open()
+        }
     }
 
     Component {
@@ -222,6 +229,12 @@ Page {
             enabled: list.currentItem
             onTriggered: list.sendMessage()
             text: qsTr("Send Message")
+        }
+
+        MenuItem {
+            text: qsTr("Edit")
+            icon.name: "insert-text"
+            onTriggered: list.editCurrent()
         }
     }
 }

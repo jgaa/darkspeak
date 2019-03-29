@@ -150,6 +150,15 @@ void IdentityManager::relayNewContactRequest(Identity *identity, const PeerAddme
     }
 }
 
+void IdentityManager::disconnectAll()
+{
+    LFLOG_DEBUG << "Disconnecting all Identities.";
+    auto tmpList = rows_;
+    for(auto identity : tmpList) {
+        identity->stopService();
+    }
+}
+
 void IdentityManager::tryMakeTransport(const QString &name, const QUuid& uuid)
 {
     TransportHandleReq req{name, uuid};

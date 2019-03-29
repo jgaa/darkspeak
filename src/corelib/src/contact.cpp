@@ -78,6 +78,9 @@ void Contact::connectToContact()
 
         connect(peer.get(), &PeerConnection::disconnectedFromPeer,
                 this, &Contact::onDisconnectedFromPeer);
+
+        getIdentity()->registerConnection(shared_from_this());
+
     }
 
     setManuallyDisconnected(false);
@@ -86,7 +89,9 @@ void Contact::connectToContact()
 void Contact::disconnectFromContact(bool manual)
 {
     connection_.reset();
+    setOnlineStatus(DISCONNECTED);
     setManuallyDisconnected(manual);
+    getIdentity()->unregisterConnection(getUuid());
 }
 
 Conversation *Contact::getDefaultConversation()
@@ -530,7 +535,6 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
             this, &Contact::onOutputBufferEmptied);
 
     setOnlineStatus(ONLINE);
-
     touchLastSeen();
 }
 
@@ -557,6 +561,7 @@ void Contact::onDisconnectedFromPeer(const std::shared_ptr<PeerConnection>& peer
     connection_.reset();
     setOnlineStatus(DISCONNECTED);
     clearFileQueues();
+    getIdentity()->unregisterConnection(getUuid());
 }
 
 void Contact::onSendAddMeLater()

@@ -11,8 +11,17 @@ Dialog {
     property var clip: null
     standardButtons: StandardButton.Ok | StandardButton.Cancel
 
+
     Component.onCompleted: {
-        if (clip) {
+        root.title = identity ? qsTr("Edit Contact") : qsTr("Create a new Contact")
+
+        if (contact) {
+            name.text = contact.name
+            handle.text = contact.handle
+            address.text = contact.address
+            addmeMessage.text = contact.addMeMessage
+            notes.text = contact.notes
+        } else if (clip) {
             name.text = clip.nickName
             handle.text = clip.handle
             address.text = clip.address
@@ -22,13 +31,11 @@ Dialog {
 
     ColumnLayout {
         spacing: 4
-        Layout.fillWidth: parent.width
 
         GridLayout {
             id: fields
             rowSpacing: 4
             rows: 4
-            Layout.fillWidth: parent.width
             flow: GridLayout.TopToBottom
 
             Label { font.pointSize: 9; text: qsTr("Name")}
@@ -46,6 +53,7 @@ Dialog {
                 id: handle
                 Layout.fillWidth: true
                 text: root.handle
+                enabled: contact === null
             }
 
             TextField {
@@ -58,6 +66,8 @@ Dialog {
                 id: addmeMessage
                 Layout.fillWidth: true
                 placeholderText: qsTr("Please add me")
+                enabled: contact === null ||
+                         (contact.state === Contact.WAITING_FOR_ACCEPTANCE && contact.whoInitiated == Contact.ME)
             }
         }
 
@@ -67,7 +77,7 @@ Dialog {
             CheckBox {
                 id: autoConnect
                 text: "AutoConnect"
-                checked: true
+                checked: contact ? contact.autoConnect : true
 
             }
         }
@@ -85,28 +95,27 @@ Dialog {
 
     onAccepted: {
 
-        const args = {
-            "identity" : identity.id,
-            "name" : name.text ? name.text : qsTr("Anononymous Coward"),
-            "nickName" : clip ? clip.nickName : null,
-            "handle" : handle.text,
-            "address" : address.text,
-            "addmeMessage" : addmeMessage.text,
-            "autoConnect" : autoConnect.checked,
-            "notes" : notes.text
+        if (contact) {
+            contact.name = name.text
+            contact.address = address.text
+            contact.addMeMessage = addmeMessage.text
+            contact.autoConnect = autoConnect.checked
+            contact.notes = notes.text
+        } else {
+            const args = {
+                "identity" : identity.id,
+                "name" : name.text ? name.text : qsTr("Anononymous Coward"),
+                "nickName" : clip ? clip.nickName : null,
+                "handle" : handle.text,
+                "address" : address.text,
+                "addmeMessage" : addmeMessage.text,
+                "autoConnect" : autoConnect.checked,
+                "notes" : notes.text
+            }
 
+            identity.addContact(args)
         }
-
-        identity.addContact(args)
-//        contacts.createContact(root.nickName,
-//                               name.text,
-//                               handle.text,
-//                               address.text,
-//                               addmeMessage.text,
-//                               notes.text,
-//                               autoConnect.checked)
         close()
-        //destroy()
     }
 
     onRejected: {

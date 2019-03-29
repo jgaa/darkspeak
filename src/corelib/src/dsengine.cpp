@@ -213,6 +213,10 @@ void DsEngine::onTransportHandleError(const TransportHandleError &the)
                        << " for identity " << identity->getName()
                        << ": " << the.explanation;
 
+            if (identity->isOnline()) {
+                identity->stopService();
+            }
+
             return; // Don't create a new service ...
         }
     }
@@ -228,6 +232,7 @@ void DsEngine::close()
 {
     setState(State::CLOSING);
     if (tor_mgr_) {
+        identityManager_->disconnectAll();
         tor_mgr_->stop();
     }
 }
