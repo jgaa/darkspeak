@@ -1,4 +1,4 @@
-
+#include <random>
 
 #include "ds/dsengine.h"
 #include "ds/identity.h"
@@ -8,6 +8,8 @@
 #include "ds/base58.h"
 
 #include "logfault/logfault.h"
+
+#include <QTimer>
 
 namespace ds {
 namespace core {
@@ -21,7 +23,12 @@ Identity::Identity(QObject& parent,
              IdentityData data)
     : QObject{&parent}
     , id_{dbId}, online_{online}, data_{std::move(data)}, created_{created}
-{}
+{
+
+    connect(this, &Identity::processOnlineLater,
+            this, &Identity::onProcessOnlineLater,
+            Qt::QueuedConnection);
+}
 
 void Identity::addContact(const QVariantMap &args)
 {
@@ -109,6 +116,51 @@ void Identity::onAddmeRequest(const PeerAddmeReq &req)
     req.peer->close();
 }
 
+void Identity::onProcessOnlineLater()
+{
+    connectContacts();
+}
+
+void Identity::connectContacts()
+{
+    QSqlQuery query;
+    query.prepare("SELECT uuid FROM contact WHERE identity=:id AND auto_connect=1");
+    query.bindValue(":id", getId());
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to fetch contact from hash: %1").arg(
+                        query.lastError().text()));
+    }
+
+    while (query.next()) {
+        auto contact = DsEngine::instance().getContactManager()->getContact(query.value(0).toUuid());
+
+        const auto delay = getRandomConnectDelay();
+
+        LFLOG_DEBUG << "Identity " << getName()
+                    << " will connect to Contact " << contact->getName()
+                    << " in " << (delay / 1000) << " seconds.";
+
+        QTimer::singleShot(delay, this, [this, contact]() {
+            if (isOnline()
+                  && contact->isAutoConnect()
+                  && (contact->getOnlineStatus() == Contact::DISCONNECTED)
+                  && ((contact->getState() == Contact::WAITING_FOR_ACCEPTANCE)
+                   || (contact->getState() == Contact::ACCEPTED)
+                   || (contact->getState() == Contact::PENDING))) {
+                contact->connectToContact();
+            }
+        });
+    }
+}
+
+int Identity::getRandomConnectDelay()
+{
+     static random_device rd;
+     static mt19937 gen{rd()}; //Standard mersenne_twister_engine seeded with rd()
+     static std::uniform_int_distribution<> dis(3000, 60000);
+     return dis(gen);
+}
+
 Contact::ptr_t Identity::contactFromHandle(const QByteArray &handle)
 {
     auto cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(
@@ -124,7 +176,7 @@ Contact::ptr_t Identity::contactFromHash(const QByteArray &hash)
     query.bindValue(":id", getId());
     query.bindValue(":hash", hash);
     if(!query.exec()) {
-        throw Error(QStringLiteral("Failed to fetch identity from hash: %1").arg(
+        throw Error(QStringLiteral("Failed to fetch contact from hash: %1").arg(
                         query.lastError().text()));
     }
 
@@ -225,6 +277,10 @@ void Identity::setOnline(const bool value) {
     if (value != online_) {
         online_ = value;
         emit onlineChanged();
+
+        if (online_) {
+            emit processOnlineLater();
+        }
     }
 }
 

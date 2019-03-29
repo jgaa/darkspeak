@@ -175,8 +175,15 @@ signals:
     void avatarChanged();
     void onlineChanged();
     void autoConnectChanged();
+    void processOnlineLater();
+
+private slots:
+    void onProcessOnlineLater();
 
 private:
+    void connectContacts();
+    static int getRandomConnectDelay();
+
     Contact::ptr_t contactFromHandle(const QByteArray& handle);
     Contact::ptr_t contactFromHash(const QByteArray& hash);
     Contact::ptr_t contactFromUuid(const QUuid& uuid);
