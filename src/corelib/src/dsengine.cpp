@@ -57,6 +57,11 @@ DsEngine &DsEngine::instance()
     return *instance_;
 }
 
+DsEngine::State DsEngine::getState() const
+{
+    return state_;
+}
+
 QSqlDatabase& DsEngine::getDb()
 {
     assert(database_);
@@ -202,6 +207,10 @@ void DsEngine::onTransportHandleReady(const TransportHandle &th)
                      << " to identity " << identity->getName();
         identity->setAddress(th.handle);
         identity->setAddressData(toJson(th.data));
+
+        if (getState() == RUNNING && isOnline() && identity->isAutoConnect()) {
+            identity->startService();
+        }
     }
 }
 

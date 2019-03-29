@@ -130,6 +130,7 @@ void IdentityManager::createIdentity(const QmlIdentityReq *req)
     id.avatar = req->value.avatar;
     id.notes = req->value.notes;
     id.uuid = req->value.uuid;
+    id.autoConnect = req->autoConnect();
     id.cert = DsCert::create();
     id.hash = id.cert->getHash().toByteArray();
 
