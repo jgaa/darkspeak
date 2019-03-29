@@ -1,5 +1,6 @@
 import QtQuick 2.12
 import QtQuick.Controls 2.5
+import Qt.labs.settings 1.0
 import com.jgaa.darkspeak 1.0
 
 ApplicationWindow {
@@ -8,6 +9,13 @@ ApplicationWindow {
     width: 640
     height: 480
     title: manager.programNameAndVersion
+
+    Settings {
+        property alias x: mainWindow.x
+        property alias y: mainWindow.y
+        property alias width: mainWindow.width
+        property alias height: mainWindow.height
+    }
 
     header: MainToolBar {
         id: mainToolBar

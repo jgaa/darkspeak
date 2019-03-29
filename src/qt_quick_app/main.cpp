@@ -131,6 +131,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+
     const auto rval = app.exec();
 
     LFLOG_DEBUG << "Darkspeak is done. So Long, and Thanks for All the Fish.";
