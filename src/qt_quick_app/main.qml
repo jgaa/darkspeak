@@ -11,6 +11,7 @@ ApplicationWindow {
     title: manager.programNameAndVersion
 
     Settings {
+        category: "ApplicationWindow"
         property alias x: mainWindow.x
         property alias y: mainWindow.y
         property alias width: mainWindow.width
