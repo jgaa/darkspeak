@@ -32,7 +32,7 @@ ApplicationWindow {
             manager.currentPage = currentIndex
         }
 
-        LogForm {
+        Log {
         }
 
         Identities {

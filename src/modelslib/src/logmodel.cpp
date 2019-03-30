@@ -2,6 +2,7 @@
 #include <memory>
 #include <QDateTime>
 
+#include "ds/logutil.h"
 #include "ds/logmodel.h"
 
 using namespace  std;
@@ -12,9 +13,11 @@ namespace models {
 LogModel::LogModel(QSettings &settings)
     : settings_{settings}
 {
-    auto handler = make_unique<LogModelHandler>(logfault::LogLevel::DEBUGGING);
-    connect(handler.get(), &LogModelHandler::message, this, &LogModel::log);
-    logfault::LogManager::Instance().AddHandler(move(handler));
+    if (core::isEnabled(core::LogSystem::APPLICATION)) {
+        auto handler = make_unique<LogModelHandler>(core::getLogLevel(core::LogSystem::APPLICATION));
+        connect(handler.get(), &LogModelHandler::message, this, &LogModel::log);
+        logfault::LogManager::Instance().AddHandler(move(handler));
+    }
 }
 
 QVariant LogModel::data(const QModelIndex &index, int role) const

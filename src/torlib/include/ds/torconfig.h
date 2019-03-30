@@ -27,7 +27,7 @@ struct TorConfig {
     uint16_t service_from_port = 1025;
     uint16_t service_to_port = 29999;
     QHostAddress app_host = QHostAddress::LocalHost;
-    uint16_t app_port = 29998;
+    //uint16_t app_port = 29998;
 };
 
 }} // namespaces

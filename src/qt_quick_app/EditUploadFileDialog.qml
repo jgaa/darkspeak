@@ -32,7 +32,6 @@ Dialog {
             Label { font.pointSize: 9; text: qsTr("Path")}
             Label { font.pointSize: 9; text: qsTr("Name")}
             Label { font.pointSize: 9; text: qsTr("Size")}
-            //Label { font.pointSize: 9; text: qsTr("Hash")}
 
             Row {
                 Layout.fillWidth: true
@@ -68,12 +67,6 @@ Dialog {
                 width: 200
                 readOnly: true
             }
-
-//            TextField {
-//                id: hash
-//                Layout.fillWidth: true
-//                readOnly: true
-//            }
         }
 
         FileDialog {

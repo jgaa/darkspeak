@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <array>
 #include <regex>
+#include <iostream>
 
 #include "ds/dsengine.h"
 #include "ds/errors.h"
@@ -11,6 +12,7 @@
 #include "ds/identity.h"
 #include "ds/base32.h"
 #include "ds/database.h"
+#include "ds/logutil.h"
 
 #include <QString>
 #include <QDebug>
@@ -27,6 +29,7 @@
 
 using namespace ds::crypto;
 using namespace std;
+using namespace logfault;
 
 namespace ds {
 namespace core {
@@ -367,14 +370,65 @@ void DsEngine::initialize()
         settings_->setValue("dbpath", dbpath);
     }
 
-    if (settings_->value("log-path", "").toString().isEmpty()) {
+    if (settings_->value("downloadLocation", "").toString().isEmpty()) {
+        QDir path = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation) + "/darkspeak";
+        settings_->setValue("downloadLocation", path.path());
+        if (!path.exists()) {
+            LFLOG_NOTICE << "Creating download directory \"" << path.path() << "\".";
+            path.mkpath(path.path());
+        }
+    }
+
+    if (settings_->value("logPath", "").toString().isEmpty()) {
         QString logpath = data_path;
 #ifdef QT_DEBUG
         logpath += "/darkspeak-debug.log";
 #else
         logpath += "/darkspeak.log";
 #endif
-        settings_->setValue("log-path", logpath);
+        settings_->setValue("logPath", logpath);
+    }
+
+    if (!settings_->contains("logLevelApp")) {
+        settings_->setValue("logLevelApp", static_cast<int>(logfault::LogLevel::NOTICE));
+    }
+
+    if (!settings_->contains("logLevelFile")) {
+        settings_->setValue("logLevelFile", static_cast<int>(logfault::LogLevel::DISABLED));
+    }
+
+    if (!settings_->contains("logLevelStdout")) {
+#ifdef QT_DEBUG
+        settings_->setValue("logLevelStdout", static_cast<int>(logfault::LogLevel::DEBUGGING));
+#else
+        settings_->setValue("logLevelApp", static_cast<int>(logfault::LogLevel::DISABLED));
+#endif
+    }
+
+    LogManager::Instance().ClearHandlers();
+
+    if (isEnabled(LogSystem::STDOUT)) {
+
+        const auto level = getLogLevel(LogSystem::STDOUT);
+        LogManager::Instance().AddHandler(
+                make_unique<StreamHandler>(
+                    clog, level));
+
+        LFLOG_NOTICE << "Enabled logging to standard output at level "
+                     << logfault::Handler::LevelName(level);
+    }
+
+    if (isEnabled(LogSystem::LOGFILE)) {
+        const auto level = getLogLevel(LogSystem::LOGFILE);
+        auto logPath = settings_->value("logPath", "").toString().toUtf8().toStdString();
+        LogManager::Instance().AddHandler(
+                make_unique<StreamHandler>(
+                    logPath, level));
+
+        LFLOG_NOTICE << "Enabled logging to \""
+                     << logPath
+                     << "\" at level "
+                     << logfault::Handler::LevelName(level);
     }
 
     database_ = std::make_unique<Database>(*settings_);

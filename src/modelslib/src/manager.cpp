@@ -108,6 +108,18 @@ QVariantMap Manager::getIdenityFromClipboard() const
     return values;
 }
 
+QString Manager::urlToPath(QString url)
+{
+    QUrl uurl{url};
+    return uurl.toLocalFile();
+}
+
+QString Manager::pathToUrl(QString path)
+{
+    auto url = QUrl::fromLocalFile(path);
+    return url.url();
+}
+
 Manager::Manager()
 {
     engine_ = make_unique<DsEngine>();

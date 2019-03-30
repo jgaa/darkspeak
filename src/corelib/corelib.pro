@@ -43,7 +43,8 @@ SOURCES += \
     src/messagemanager.cpp \
     src/filemanager.cpp \
     src/file.cpp \
-    src/hashtask.cpp
+    src/hashtask.cpp \
+    src/logutil.cpp
 
 HEADERS += \
     include/ds/dsengine.h \
@@ -66,7 +67,8 @@ HEADERS += \
     include/ds/messagemanager.h \
     include/ds/filemanager.h \
     include/ds/file.h \
-    include/ds/hashtask.h
+    include/ds/hashtask.h \
+    include/ds/logutil.h
 
 INCLUDEPATH += \
     $$PWD/../../dependencies/logfault/include \

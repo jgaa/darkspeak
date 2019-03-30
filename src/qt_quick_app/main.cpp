@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
 #ifdef QT_DEBUG
     LogManager::Instance().AddHandler(
                 make_unique<StreamHandler>(
-                    clog, LogLevel::TRACE));
+                    clog, LogLevel::DEBUGGING));
 #endif
 
     LFLOG_DEBUG << "Darkspeak is starting up cwd='"
@@ -131,10 +131,14 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    LFLOG_INFO << "==================================================================";
+    LFLOG_INFO << "==================================================================";
+    LFLOG_INFO << "==================================================================";
+    LFLOG_INFO << "DarkSpeak is ready";
 
     const auto rval = app.exec();
 
-    LFLOG_DEBUG << "Darkspeak is done. So Long, and Thanks for All the Fish.";
+    LFLOG_NOTICE << "Darkspeak is done. So Long, and Thanks for All the Fish.";
 
     return rval;
 }

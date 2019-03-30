@@ -203,13 +203,17 @@ bool Conversation::haveParticipant(const Contact &contact) const
 
 QString Conversation::getFilesLocation() const
 {
-    auto home = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    auto home = DsEngine::instance().settings().value("downloadLocation").toString();
+
     if (home.isEmpty()) {
-        home = QDir::homePath();
+        throw Error("No download location specified in settings");
+    }
+
+    if (!home.endsWith('/')) {
+        home += "/";
     }
 
     QDir path(home
-              + "/darkspeak/"
               + getIdentity()->getUuid().toString()
               + "/" + getUuid().toString());
 

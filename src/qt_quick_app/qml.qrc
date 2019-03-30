@@ -1,7 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>main.qml</file>
-        <file>LogForm.ui.qml</file>
+        <file>Log.qml</file>
         <file>Home.qml</file>
         <file>qtquickcontrols2.conf</file>
         <file>Contacts.qml</file>
@@ -38,5 +38,9 @@
         <file>images/FileUploadOk.svg</file>
         <file>images/Tor-logo-2011-shaded.svg</file>
         <file>EditUploadFileDialog.qml</file>
+        <file>TorSettings.qml</file>
+        <file>SettingsDialog.qml</file>
+        <file>PathsSettings.qml</file>
+        <file>LogSettings.qml</file>
     </qresource>
 </RCC>

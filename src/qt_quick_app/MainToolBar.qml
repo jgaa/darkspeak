@@ -100,5 +100,26 @@ ToolBar {
                 dlg.open()
             }
         }
+
+        ToolButton {
+            text: qsTr("Settings")
+            icon.name: "document-properties"
+            height: parent.height
+            visible: (manager.currentPage === Manager.HOME)
+
+            onClicked: {
+                var component = Qt.createComponent("qrc:/SettingsDialog.qml")
+                if (component.status !== Component.Ready) {
+                    if(component.status === Component.Error )
+                        console.debug("Error:"+ component.errorString() );
+                    return;
+                }
+                var dlg = component.createObject(mainWindow, {
+                    "parent"   : mainWindow,
+                    "conversation" : conversations.current
+                });
+                dlg.open()
+            }
+        }
     }
 }

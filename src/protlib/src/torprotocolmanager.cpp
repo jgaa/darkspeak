@@ -109,26 +109,42 @@ TorConfig TorProtocolManager::getConfig() const
      TorConfig config;
 
      config.ctl_host = QHostAddress(
-                 settings_.value(QStringLiteral("tor.ctl.host"),
+                 settings_.value(QStringLiteral("torCtlHost"),
                                  config.ctl_host.toString()).toString());
+     if (config.ctl_host.isNull()) {
+         config.ctl_host = QHostAddress::LocalHost;
+     }
      config.ctl_port = static_cast<uint16_t>(
-                 settings_.value(QStringLiteral("tor.ctl.port"),
+                 settings_.value(QStringLiteral("torCtlPort"),
                                  config.ctl_port).toUInt());
      config.ctl_passwd = settings_.value(
-                 QStringLiteral("tor.ctl.passwd"),
+                 QStringLiteral("torCtlPasswd"),
                  config.ctl_passwd).toString();
      config.service_from_port = static_cast<uint16_t>(
-                 settings_.value(QStringLiteral("tor.service.from-port"),
+                 settings_.value(QStringLiteral("torServiceFromPort"),
                                  config.service_from_port).toUInt());
      config.service_to_port = static_cast<uint16_t>(
-                 settings_.value(QStringLiteral("tor.service.to-port"),
+                 settings_.value(QStringLiteral("torServiceToPort"),
                                  config.service_to_port).toUInt());
      config.app_host = QHostAddress(
-                 settings_.value(QStringLiteral("tor.app.host"),
+                 settings_.value(QStringLiteral("torAppHost"),
                                  config.app_host.toString()).toString());
-     config.app_port = static_cast<uint16_t>(
-                 settings_.value(QStringLiteral("tor.app.port"),
-                                 config.app_port).toUInt());
+     if (config.app_host.isNull()) {
+         config.app_host = QHostAddress::LocalHost;
+     }
+
+     auto amode = settings_.value("torCtlAuthMode", -1).toInt();
+     switch(amode) {
+        case 1:
+         config.allowed_auth_methods.clear();
+         config.allowed_auth_methods.append("HASHEDPASSWORD");
+         break;
+        case 0:
+         config.allowed_auth_methods.clear();
+         config.allowed_auth_methods.append("SAFECOOKIE");
+
+     }
+
      return config;
 }
 

@@ -58,6 +58,8 @@ public:
     Q_INVOKABLE FilesModel *filesModel();
     Q_INVOKABLE void textToClipboard(QString text);
     Q_INVOKABLE QVariantMap getIdenityFromClipboard() const;
+    Q_INVOKABLE static QString urlToPath(QString url);
+    Q_INVOKABLE static QString pathToUrl(QString path);
 
     Manager();
 
