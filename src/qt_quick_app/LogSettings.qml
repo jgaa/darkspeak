@@ -48,11 +48,47 @@ Item {
                 currentIndex: settings.logLevelFile
             }
 
-            TextField {
-                id: logPath
-                text: settings.logPath
+//            TextField {
+//                id: logPath
+//                text: settings.logPath
+//                Layout.fillWidth: true
+//            }
+
+            Row {
+                height: logPath.height
                 Layout.fillWidth: true
+                TextField {
+                    id: logPath
+                    text: settings.logPath
+                    anchors.right: logPathBtn.left
+                    anchors.rightMargin: 6
+                    anchors.left: parent.left
+                    anchors.leftMargin: 0
+                }
+
+                Button {
+                    id: logPathBtn
+                    width: 45
+                    text: "...";
+                    anchors.right: parent.right
+                    anchors.rightMargin: 0
+
+                    onClicked: {
+                        logFileSelector.open()
+                    }
+                }
+
+                FileDialog {
+                    id: logFileSelector
+                    title: qsTr("Select Log File")
+                    folder: manager.pathToUrl(logPath.text)
+
+                    onAccepted: {
+                        logPath.text = manager.urlToPath(fileUrl)
+                    }
+                }
             }
+
 
             ComboBox {
                 id: appLog
