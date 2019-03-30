@@ -60,7 +60,8 @@ Page {
                             width: 96
                             x: 2
                             y: 2
-                            source: "qrc:///images/anonymous.svg"
+                            source: cid.avatarUrl
+                            cache: false
 
                             Rectangle {
                                 height: parent.width / 3

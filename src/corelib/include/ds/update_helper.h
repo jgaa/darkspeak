@@ -4,11 +4,14 @@
 #include <QObject>
 #include <QSqlQuery>
 #include <QSqlError>
+#include <QBuffer>
+#include <QImage>
 
 #include "ds/errors.h"
 
 namespace ds {
 namespace core {
+
 
 template <typename T>
 void update(T *self, const char *name, const QVariant& value) {
@@ -26,6 +29,19 @@ void update(T *self, const char *name, const QVariant& value) {
         throw Error(QStringLiteral("SQL query failed: %1").arg(
                         query.lastError().text()));
     }
+}
+
+// https://wiki.qt.io/How_to_Store_and_Retrieve_Image_on_SQLite
+template <typename T>
+void update(T *self, const char *name, const QImage& image) {
+    QByteArray buffer;
+    {
+        QBuffer inBuffer( &buffer );
+        inBuffer.open( QIODevice::WriteOnly );
+        image.save(&inBuffer, "PNG");
+    }
+
+    update(self, name, buffer);
 }
 
 template <typename T, typename Obj, typename S>

@@ -49,7 +49,7 @@ void IdentityManager::load()
             query.value(address).toByteArray(),
             query.value(address_data).toByteArray(),
             query.value(notes).toString(),
-            QImage::fromData(query.value(avatar).toByteArray()),
+            QImage::fromData(query.value(avatar).toByteArray(), "PNG"),
             DsCert::create(query.value(cert).toByteArray()),
             query.value(auto_connect).toBool()
         };

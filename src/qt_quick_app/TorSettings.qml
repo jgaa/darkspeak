@@ -32,7 +32,7 @@ Item {
 
         GridLayout {
             id: fields
-            Layout.fillWidth: true
+            Layout.fillWidth: parent.width
             rowSpacing: 4
             rows: 7
             flow: GridLayout.TopToBottom

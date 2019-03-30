@@ -120,6 +120,39 @@ QString Manager::pathToUrl(QString path)
     return url.url();
 }
 
+void Manager::setTmpImageFromPath(QString path, const QSize &size)
+{
+    const QUrl location{path};
+
+    QImage image;
+
+    if (!image.load(location.toLocalFile())) {
+        LFLOG_ERROR << "Failed to load file: \"" << location.toLocalFile() << "\".";
+        return;
+    }
+
+    tmpImage_ = make_unique<QImage>(image.scaled(size.width(),
+                                                 size.height(),
+                                                 Qt::KeepAspectRatioByExpanding,
+                                                 Qt::SmoothTransformation));
+
+    LFLOG_TRACE << "Loaded tmp image \"" << location.toLocalFile() << "\".";
+}
+
+void Manager::setTmpImageFromImage(QImage &image)
+{
+    tmpImage_ = make_unique<QImage>(image);
+}
+
+QImage Manager::getTmpImage() const
+{
+    if (tmpImage_) {
+        return *tmpImage_;
+    }
+
+    return {};
+}
+
 Manager::Manager()
 {
     engine_ = make_unique<DsEngine>();

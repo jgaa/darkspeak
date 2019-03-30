@@ -17,6 +17,7 @@
 #include "ds/messagesmodel.h"
 #include "ds/message.h"
 #include "ds/filesmodel.h"
+#include "ds/imageprovider.h"
 
 #include "logfault/logfault.h"
 
@@ -122,6 +123,22 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("conversations", manager->conversationsModel());
     engine.rootContext()->setContextProperty("messages", manager->messagesModel());
     engine.rootContext()->setContextProperty("files", manager->filesModel());
+
+    ImageProvider tmpProvider{"temp", [&manager](const QString& id) {
+            return manager->getTmpImage();
+        }};
+
+    engine.addImageProvider(tmpProvider.getName(), &tmpProvider);
+
+    ImageProvider identityProvider{"identity", [](const QString& id) -> QImage {
+            if (auto identity = DsEngine::instance().getIdentityManager()->identityFromUuid({id})) {
+                return identity->getAvatar();
+            }
+
+            return {};
+        }};
+
+    engine.addImageProvider(identityProvider.getName(), &identityProvider);
 
     //QQuickStyle::setStyle("Fusion");
 

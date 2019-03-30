@@ -61,6 +61,10 @@ public:
     Q_INVOKABLE static QString urlToPath(QString url);
     Q_INVOKABLE static QString pathToUrl(QString path);
 
+    Q_INVOKABLE void setTmpImageFromPath(QString path, const QSize& size = {128, 128});
+    Q_INVOKABLE void setTmpImageFromImage(QImage& image);
+    Q_INVOKABLE QImage getTmpImage() const;
+
     Manager();
 
     static Manager& instance() noexcept {
@@ -99,6 +103,7 @@ private:
     std::unique_ptr<MessagesModel> messagesModel_;
     std::unique_ptr<FilesModel> filesModel_;
     int page_ = 3; // Home
+    std::unique_ptr<QImage> tmpImage_;
 };
 
 }} // namespaces

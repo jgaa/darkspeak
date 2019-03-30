@@ -49,6 +49,7 @@ public:
     Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
     Q_PROPERTY(QString notes READ notes WRITE setNotes NOTIFY notesChanged)
     Q_PROPERTY(bool autoConnect READ autoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
+    Q_PROPERTY(QImage avatar READ avatar WRITE setAvatar NOTIFY avatarChanged)
 
     QString name() const { return value.name; }
     void setName(QString name) {
@@ -74,10 +75,20 @@ public:
         }
     }
 
+    QImage avatar() const noexcept { return value.avatar; }
+
+    void setAvatar(QImage avatar) {
+        if (value.avatar != avatar) {
+            value.avatar = avatar;
+            emit avatarChanged();
+        }
+    }
+
 signals:
     void nameChanged();
     void notesChanged();
     void autoConnectChanged();
+    void avatarChanged();
 
 public:
     IdentityReq value;
@@ -114,7 +125,9 @@ public:
     Q_PROPERTY(QByteArray address READ getAddress WRITE setAddress NOTIFY addressChanged)
     Q_PROPERTY(QByteArray addressData READ getAddressData WRITE setAddressData NOTIFY addressDataChanged)
     Q_PROPERTY(QString notes READ getNotes WRITE setNotes NOTIFY notesChanged)
-    Q_PROPERTY(QString avatar READ getAvatarUri NOTIFY avatarChanged)
+    Q_PROPERTY(QString notes READ getNotes WRITE setNotes NOTIFY notesChanged)
+    Q_PROPERTY(QImage avatar READ getAvatar WRITE setAvatar NOTIFY avatarChanged)
+    Q_PROPERTY(QString avatarUrl READ getAvatarUrl NOTIFY avatarUrlChanged)
     Q_PROPERTY(QUuid uuid READ getUuid)
     Q_PROPERTY(QDateTime created READ getCreated)
     Q_PROPERTY(bool online READ isOnline WRITE setOnline NOTIFY onlineChanged)
@@ -138,7 +151,7 @@ public:
     QString getNotes() const noexcept;
     void setNotes(const QString& notes);
     QImage getAvatar() const noexcept;
-    QString getAvatarUri() const noexcept;
+    QString getAvatarUrl() const noexcept;
     void setAvatar(const QImage& avatar);
     bool isOnline() const noexcept;
     void setOnline(const bool value);
@@ -176,6 +189,7 @@ signals:
     void addressDataChanged();
     void notesChanged();
     void avatarChanged();
+    void avatarUrlChanged();
     void onlineChanged();
     void autoConnectChanged();
     void processOnlineLater();
@@ -196,6 +210,7 @@ private:
     bool online_ = false;
     IdentityData data_;
     QDateTime created_;
+    bool avatarUrlChanging_ = false;
 
     // Active Connections in any direction
     // Keeps connected Contacts in memory

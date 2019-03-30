@@ -9,6 +9,10 @@ Dialog {
     property Identity identity: null
     property QmlIdentityReq value: QmlIdentityReq {}
     standardButtons: StandardButton.Ok | StandardButton.Cancel
+    property int dlg_width: mainWindow.width > 400 ? 400 : mainWindow.width
+    property int dlg_height: mainWindow.height > 500 ? 370 : mainWindow.height
+    width: dlg_width
+    height: dlg_height
 
     Component.onCompleted: {
         root.title = identity ? qsTr("Edit Identity") : qsTr("Create a new Identity")
@@ -18,27 +22,80 @@ Dialog {
             value.name = identity.name;
             value.notes = identity.notes;
             value.autoConnect = identity.autoConnect;
+            value.avatar = identity.avatar
         }
     }
 
     ColumnLayout {
         spacing: 4
-        Layout.fillWidth: parent.width
+        anchors.fill: parent
 
         GridLayout {
             id: fields
             rowSpacing: 4
-            rows: 1
+            rows: 2
             Layout.fillWidth: parent.width
             flow: GridLayout.TopToBottom
 
             Label { font.pointSize: 9; text: qsTr("Name")}
+            Label { font.pointSize: 9; text: qsTr("Avatar")}
 
             TextField {
                 id: name
                 Layout.fillWidth: true
                 placeholderText: qsTr("Anonymous Coward")
                 text: value.name
+            }
+
+            Row {
+                id: row
+                height: avatar.height
+                Layout.fillWidth: true
+                spacing: 6
+
+                Image {
+                    id: avatar
+                    width: 64
+                    height: 64
+                    Layout.maximumHeight: 128
+                    Layout.maximumWidth: 128
+                    Layout.minimumHeight: 32
+                    Layout.minimumWidth: 32
+                    Layout.preferredHeight: 64
+                    Layout.preferredWidth: 64
+                    fillMode: Image.PreserveAspectFit
+                    source: identity ? identity.avatarUrl : "image://temp/image";
+                    cache: false
+                }
+
+                Button {
+                    id: avatarBtn
+                    text: qsTr("Select ...");
+                    anchors.verticalCenter: avatar.verticalCenter
+                    anchors.left: avatar.right
+                    anchors.leftMargin: 6
+                    onClicked: {
+                        avatarSelector.open()
+                    }
+                }
+
+                FileDialog {
+                    id: avatarSelector
+                    title: qsTr("Avatar Image")
+                    selectExisting: true
+                    selectMultiple: false
+
+                    nameFilters: ["Image files (*.jpg, *.jpeg, *.png)"]
+                    onAccepted: {
+                        var url = fileUrl
+                        manager.setTmpImageFromPath(url);
+
+                        // Give it a unique url so it fetches the new image...
+                        var newUrl = "image://temp/image" + Math.floor(Math.random() * 100000000);
+                        avatar.source = newUrl;
+                        value.avatar = manager.getTmpImage()
+                    }
+                }
             }
         }
 
@@ -69,9 +126,10 @@ Dialog {
         value.autoConnect = autoConnect.checked
 
         if (identity) {
-            identity.name = value.name;
-            identity.notes = value.notes;
-            identity.autoConnect = value.autoConnect;
+            identity.name = value.name
+            identity.notes = value.notes
+            identity.autoConnect = value.autoConnect
+            identity.avatar = value.avatar
         } else {
             // Add a new identity
             identities.createIdentity(value)
@@ -83,38 +141,6 @@ Dialog {
         close();
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

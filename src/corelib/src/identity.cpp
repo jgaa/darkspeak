@@ -299,17 +299,26 @@ QImage Identity::getAvatar() const noexcept  {
     return data_.avatar;
 }
 
-QString Identity::getAvatarUri() const noexcept
+QString Identity::getAvatarUrl() const noexcept
 {
+    if (avatarUrlChanging_) {
+        return "";
+    }
+
     if (data_.avatar.isNull()) {
         return "qrc:///images/anonymous.svg";
     }
 
-    return QStringLiteral("image://identity/%s").arg(data_.uuid.toString());
+    return QStringLiteral("image://identity/%1").arg(data_.uuid.toString());
 }
 
 void Identity::setAvatar(const QImage &avatar) {
-    updateIf("notes", avatar, data_.avatar, this, &Identity::avatarChanged);
+    if (updateIf("avatar", avatar, data_.avatar, this, &Identity::avatarChanged)) {
+        avatarUrlChanging_ = true;
+        emit avatarUrlChanged();
+        avatarUrlChanging_ = false;
+        emit avatarUrlChanged();
+    }
 }
 
 bool Identity::isOnline() const noexcept {

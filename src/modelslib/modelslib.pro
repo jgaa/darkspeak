@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += core sql gui network
+QT       += core sql gui network quick
 INCLUDEPATH += $$PWD/../../dependencies/logfault/include/
 TARGET = modelslib
 TEMPLATE = lib
@@ -27,7 +27,8 @@ SOURCES += \
     src/logmodel.cpp \
     src/notificationsmodel.cpp \
     src/messagesmodel.cpp \
-    src/filesmodel.cpp
+    src/filesmodel.cpp \
+    src/imageprovider.cpp
 
 HEADERS += \
     include/ds/contactsmodel.h \
@@ -38,7 +39,8 @@ HEADERS += \
     include/ds/logmodel.h \
     include/ds/notificationsmodel.h \
     include/ds/messagesmodel.h \
-    include/ds/filesmodel.h
+    include/ds/filesmodel.h \
+    include/ds/imageprovider.h
 
 INCLUDEPATH += \
     $$PWD/include \
