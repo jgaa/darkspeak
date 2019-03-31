@@ -133,7 +133,7 @@ void Manager::setTmpImageFromPath(QString path, const QSize &size)
 
     tmpImage_ = make_unique<QImage>(image.scaled(size.width(),
                                                  size.height(),
-                                                 Qt::KeepAspectRatioByExpanding,
+                                                 Qt::KeepAspectRatio,
                                                  Qt::SmoothTransformation));
 
     LFLOG_TRACE << "Loaded tmp image \"" << location.toLocalFile() << "\".";

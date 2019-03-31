@@ -91,8 +91,10 @@ Dialog {
                         manager.setTmpImageFromPath(url);
 
                         // Give it a unique url so it fetches the new image...
-                        var newUrl = "image://temp/image" + Math.floor(Math.random() * 100000000);
-                        avatar.source = newUrl;
+                        //var newUrl = "image://temp/image" + Math.floor(Math.random() * 100000000);
+                        //avatar.source = newUrl;
+                        avatar.source = "";
+                        avatar.source = "image://temp/image";
                         value.avatar = manager.getTmpImage()
                     }
                 }

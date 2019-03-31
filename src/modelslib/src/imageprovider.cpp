@@ -39,7 +39,7 @@ QImage ImageProvider::requestImage(const QString &id, QSize *size,
     } else {
         copy = image.scaled(requestedSize.width(),
                              requestedSize.height(),
-                             Qt::KeepAspectRatioByExpanding,
+                             Qt::KeepAspectRatio,
                              Qt::SmoothTransformation);
     }
 
