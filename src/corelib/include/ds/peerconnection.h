@@ -6,6 +6,7 @@
 #include <QUuid>
 #include <QObject>
 #include <QVariantMap>
+#include <QImage>
 
 #include "ds/dscert.h"
 #include "message.h"
@@ -47,6 +48,19 @@ struct PeerAddmeReq : public PeerReq
     QString message;
     QByteArray address;
     QByteArray handle;
+};
+
+struct PeerSetAvatarReq : public PeerReq
+{
+    PeerSetAvatarReq() = default;
+    PeerSetAvatarReq(const PeerSetAvatarReq&) = default;
+    PeerSetAvatarReq(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal, quint64 requestIdVal,
+                 QImage avatar)
+        : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
+        , avatar{std::move(avatar)}
+        {}
+
+    QImage avatar;
 };
 
 struct PeerAck : public PeerReq
@@ -170,6 +184,7 @@ public:
     virtual uint64_t sendAck(const QString& what, const QString& status, const QVariantMap& params) = 0;
     virtual bool isConnected() const noexcept = 0;
     virtual uint64_t sendMessage(const Message& message) = 0;
+    virtual uint64_t sendAvatar(const QImage& avatar) = 0;
     virtual uint64_t offerFile(const File& file) = 0;
     virtual uint64_t startTransfer(File& file) = 0;
     virtual uint64_t sendSome(File& file) = 0;
@@ -181,6 +196,7 @@ signals:
     void receivedAck(const PeerAck& ack);
     void receivedMessage(const PeerMessage& msg);
     void receivedFileOffer(const PeerFileOffer& msg);
+    void receivedAvatar(const PeerSetAvatarReq& avatar);
     void outputBufferEmptied();
 };
 

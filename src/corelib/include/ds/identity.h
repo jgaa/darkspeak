@@ -201,6 +201,8 @@ private:
     void connectContacts();
     static int getRandomConnectDelay();
     void disconnectContacts();
+    void forAllContacts(const std::function<void (const Contact::ptr_t&)>& fn );
+    std::deque<QUuid> getAllContacts() const;
 
     Contact::ptr_t contactFromHandle(const QByteArray& handle);
     Contact::ptr_t contactFromHash(const QByteArray& hash);

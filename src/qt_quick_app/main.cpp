@@ -140,6 +140,17 @@ int main(int argc, char *argv[])
 
     engine.addImageProvider(identityProvider.getName(), &identityProvider);
 
+    ImageProvider contactProvider{"contact", [](const QString& id) -> QImage {
+            if (auto contact = DsEngine::instance().getContactManager()->getContact(QUuid{id})) {
+                return contact->getAvatar();
+            }
+
+            return {};
+        }};
+
+    engine.addImageProvider(contactProvider.getName(), &contactProvider);
+
+
     //QQuickStyle::setStyle("Fusion");
 
     engine.load(QUrl(QStringLiteral("qrc:/main.qml")));

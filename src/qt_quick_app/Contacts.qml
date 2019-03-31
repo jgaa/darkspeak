@@ -65,7 +65,8 @@ Page {
                         width: 96
                         x: 2
                         y: 2
-                        source: cco.avatar
+                        source: cco.avatarUrl
+                        cache: false
 
                         Rectangle {
                             height: parent.width / 3

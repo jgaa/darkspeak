@@ -87,7 +87,8 @@ public:
     Q_PROPERTY(QString group READ getGroup WRITE setGroup NOTIFY groupChanged)
     Q_PROPERTY(QByteArray address READ getAddress WRITE setAddress NOTIFY addressChanged)
     Q_PROPERTY(QString notes READ getNotes WRITE setNotes NOTIFY notesChanged)
-    Q_PROPERTY(QString avatar READ getAvatarUri NOTIFY avatarChanged)
+    Q_PROPERTY(QImage avatar READ getAvatar WRITE setAvatar NOTIFY avatarChanged)
+    Q_PROPERTY(QString avatarUrl READ getAvatarUrl NOTIFY avatarUrlChanged)
     Q_PROPERTY(QUuid uuid READ getUuid)
     Q_PROPERTY(InitiatedBy whoInitiated READ getWhoInitiated)
     Q_PROPERTY(QDateTime created READ getCreated)
@@ -102,6 +103,7 @@ public:
     Q_PROPERTY(QString addMeMessage READ getAddMeMessage WRITE setAddMeMessage NOTIFY addMeMessageChanged)
     Q_PROPERTY(bool peerVerified READ isPeerVerified WRITE setPeerVerified NOTIFY peerVerifiedChanged)
     Q_PROPERTY(Identity * identity READ getIdentity)
+    Q_PROPERTY(bool sentAvatar READ isAvatarSent WRITE setSentAvatar NOTIFY sentAvatarChanged)
 
     Q_INVOKABLE void connectToContact();
     Q_INVOKABLE void disconnectFromContact(bool manual = false);
@@ -121,8 +123,10 @@ public:
     QString getNotes() const noexcept;
     void setNotes(const QString& notes);
     QImage getAvatar() const noexcept;
-    QString getAvatarUri() const noexcept;
+    QString getAvatarUrl() const noexcept;
     void setAvatar(const QImage& avatar);
+    bool isAvatarSent() const noexcept;
+    void setSentAvatar(const bool value);
     bool isOnline() const noexcept;
     void setOnline(const bool value);
     QUuid getUuid() const noexcept;
@@ -154,6 +158,7 @@ public:
 
     void queueMessage(const Message::ptr_t& message);
     void queueFile(const std::shared_ptr<File>& file);
+    void sendAvatar(const QImage& avatar);
 
     /*! Add the new Identity to the database. */
     void addToDb();
@@ -186,6 +191,8 @@ signals:
     void sendAddmeAckLater();
     void processOnlineLater();
     void manuallyDisconnectedChanged();
+    void sentAvatarChanged();
+    void avatarUrlChanged();
 
 public slots:
     void onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer);
@@ -202,6 +209,7 @@ private slots:
     bool processFileBlocks();
     void onReceivedMessage(const PeerMessage& msg);
     void onReceivedFileOffer(const PeerFileOffer& msg);
+    void onReceivedAvatar(const PeerSetAvatarReq& avatar);
     void onOutputBufferEmptied();
 
 private:
@@ -224,6 +232,8 @@ private:
     data_t data_;
     QString onlineIcon_ = "qrc:///images/onion-bw.svg";
     OnlineStatus onlineStatus_ = DISCONNECTED;
+    bool sentAvatarPendingAck_ = false;
+    bool avatarUrlChanging_ = false;
 
     std::unique_ptr<Connection> connection_;
     std::deque<Message::ptr_t> messageQueue_;
@@ -295,6 +305,8 @@ struct ContactData {
 
     // If set, this overrides the default download-path for the contact
     QString downloadPath;
+
+    bool sentAvatar = false;
 };
 
 

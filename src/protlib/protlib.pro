@@ -5,7 +5,6 @@
 #-------------------------------------------------
 
 QT       += core network
-QT       -= gui
 INCLUDEPATH += $$PWD/../../dependencies/logfault/include/
 TARGET = protlib
 TEMPLATE = lib
@@ -38,8 +37,8 @@ SOURCES += \
     src/dsclient.cpp \
     src/torsocketlistener.cpp \
     src/peer.cpp \
-    src/dsserver.cpp
-
+    src/dsserver.cpp \
+     src/imageutil.cpp
 
 HEADERS += \
     include/ds/torprotocolmanager.h \
@@ -48,7 +47,8 @@ HEADERS += \
     include/ds/dsclient.h \
     include/ds/torsocketlistener.h \
     include/ds/peer.h \
-    include/ds/dsserver.h
+    include/ds/dsserver.h \
+    include/ds/imageutil.h
 
 
 INCLUDEPATH += $$PWD/include \

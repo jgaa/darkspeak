@@ -149,17 +149,36 @@ QImage Contact::getAvatar() const noexcept  {
     return data_->avatar;
 }
 
-QString Contact::getAvatarUri() const noexcept
+QString Contact::getAvatarUrl() const noexcept
 {
+    if (avatarUrlChanging_) {
+        return "";
+    }
+
     if (data_->avatar.isNull()) {
         return "qrc:///images/anonymous.svg";
     }
 
-    return QStringLiteral("image://identity/%s").arg(data_->uuid.toString());
+    return QStringLiteral("image://contact/%1").arg(data_->uuid.toString());
+}
+
+bool Contact::isAvatarSent() const noexcept
+{
+    return data_->sentAvatar;
+}
+
+void Contact::setSentAvatar(const bool value)
+{
+    updateIf("sent_avatar", value, data_->sentAvatar, this, &Contact::sentAvatarChanged);
 }
 
 void Contact::setAvatar(const QImage &avatar) {
-    updateIf("notes", avatar, data_->avatar, this, &Contact::avatarChanged);
+    if (updateIf("avatar", avatar, data_->avatar, this, &Contact::avatarChanged)) {
+        avatarUrlChanging_ = true;
+        emit avatarUrlChanged();
+        avatarUrlChanging_ = false;
+        emit avatarUrlChanged();
+    }
 }
 
 bool Contact::isOnline() const noexcept {
@@ -329,6 +348,17 @@ void Contact::queueFile(const std::shared_ptr<File> &file)
     processFilesQueue();
 }
 
+void Contact::sendAvatar(const QImage &avatar)
+{
+    if (!isOnline()) {
+        return;
+    }
+
+    // TODO: Check if the connection is ready to receive data
+    connection_->peer->sendAvatar(avatar);
+    sentAvatarPendingAck_ = true;
+}
+
 Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
 {
     QSqlQuery query;
@@ -451,6 +481,7 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
                 << " is successfully established.";
 
     setManuallyDisconnected(false); // No longer relevant
+    sentAvatarPendingAck_ = false; // No longer relevant
 
     if (!isPeerVerified()) {
         if (peer->getDirection() == PeerConnection::OUTGOING) {
@@ -527,6 +558,9 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
 
     connect(connection_->peer.get(), &PeerConnection::receivedMessage,
             this, &Contact::onReceivedMessage);
+
+    connect(connection_->peer.get(), &PeerConnection::receivedAvatar,
+            this, &Contact::onReceivedAvatar);
 
     connect(connection_->peer.get(), &PeerConnection::receivedFileOffer,
             this, &Contact::onReceivedFileOffer);
@@ -679,6 +713,17 @@ void Contact::onReceivedAck(const PeerAck &ack)
                        << " at Identity "
                        << getIdentity()->getName()
                        << ". Ignoring the message.";
+        }
+    }if (ack.what == "AddAvatar") {
+        sentAvatarPendingAck_ = false;
+        if (ack.status == "Accepted") {
+            LFLOG_TRACE << "Contact " << getName()
+                        << " accepted the avatar sent from Identity "
+                        << getIdentity()->getName();
+        } else {
+            LFLOG_TRACE << "Contact " << getName()
+                        << " rejected the avatar sent from Identity "
+                        << getIdentity()->getName();
         }
     } else if (ack.what == "Message") {
         // The message must exist.
@@ -969,10 +1014,21 @@ void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
     conversation->incomingFileOffer(this, msg);
 }
 
+void Contact::onReceivedAvatar(const PeerSetAvatarReq &avatar)
+{
+    setAvatar(avatar.avatar);
+    avatar.peer->sendAck("SetAvatar", "Accepted");
+}
+
 void Contact::onOutputBufferEmptied()
 {
     if (isOnline()) {
         if (procesMessageQueue()) {
+            return;
+        }
+
+        if (!isAvatarSent() && !sentAvatarPendingAck_) {
+            sendAvatar(getIdentity()->getAvatar());
             return;
         }
 

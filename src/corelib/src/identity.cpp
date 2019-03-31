@@ -194,6 +194,43 @@ void Identity::disconnectContacts()
     }
 }
 
+void Identity::forAllContacts(const std::function<void (const Contact::ptr_t &)>& fn)
+{
+    auto contacts = getAllContacts();
+    assert(fn);
+    for(const auto& uuid : contacts) {
+        if (auto contact = contactFromUuid(uuid)) {
+            try {
+                fn(contact);
+            } catch(const std::exception& ex) {
+                LFLOG_ERROR << "Caught exception from generic operation on Contact "
+                            << contact->getName()
+                            << " of Identity " << contact->getIdentity()->getName()
+                            << ": " << ex.what();
+            }
+        }
+    }
+}
+
+std::deque<QUuid> Identity::getAllContacts() const
+{
+    std::deque<QUuid> contacts;
+
+    QSqlQuery query;
+    query.prepare("SELECT uuid FROM contact WHERE identity=:id");
+    query.bindValue(":id", getId());
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to fetch contact from hash: %1").arg(
+                        query.lastError().text()));
+    }
+
+    if (query.next()) {
+        contacts.push_back(query.value(0).toUuid());
+    }
+
+    return contacts;
+}
+
 Contact::ptr_t Identity::contactFromHandle(const QByteArray &handle)
 {
     auto cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(
@@ -318,6 +355,13 @@ void Identity::setAvatar(const QImage &avatar) {
         emit avatarUrlChanged();
         avatarUrlChanging_ = false;
         emit avatarUrlChanged();
+
+        forAllContacts([&avatar](const Contact::ptr_t& contact){
+            contact->setSentAvatar(false);
+            if (contact->isOnline()) {
+                contact->sendAvatar(avatar);
+            }
+        });
     }
 }
 
@@ -377,6 +421,13 @@ void Identity::setAutoConnect(bool value)
 void Identity::addToDb() {
     QSqlQuery query;
 
+    QByteArray avatar;
+    if (!data_.avatar.isNull()) {
+        QBuffer inBuffer( &avatar );
+        inBuffer.open( QIODevice::WriteOnly );
+        data_.avatar.save(&inBuffer, "PNG");
+    }
+
     query.prepare("INSERT INTO identity ("
                   "uuid, hash, name, cert, address, address_data, notes, avatar, created, auto_connect"
                   ") VALUES ("
@@ -389,7 +440,7 @@ void Identity::addToDb() {
     query.bindValue(":address", data_.address);
     query.bindValue(":address_data", data_.addressData);
     query.bindValue(":notes", data_.notes);
-    query.bindValue(":avatar", data_.avatar);
+    query.bindValue(":avatar", avatar);
     query.bindValue(":created", created_);
     query.bindValue(":auto_connect", data_.autoConnect);
 

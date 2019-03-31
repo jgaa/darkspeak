@@ -13,6 +13,7 @@
 #include "ds/errors.h"
 #include "ds/file.h"
 #include "ds/dsengine.h"
+#include "ds/imageutil.h"
 
 #include "logfault/logfault.h"
 
@@ -398,6 +399,12 @@ void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
 
         LFLOG_TRACE << "Emitting PeerFileOffer";
         emit receivedFileOffer(msg);
+    } else if (type == "SetAvatar") {
+        PeerSetAvatarReq avatar{shared_from_this(), getConnectionId(), id,
+                    toQimage(json.object())};
+
+        LFLOG_TRACE << "Emitting PeerSetAvatarReq";
+        emit receivedAvatar(avatar);
     } else {
         LFLOG_WARN << "Unrecognized request from peer at connection "
                    << getConnectionId().toString();
@@ -771,6 +778,19 @@ uint64_t Peer::sendMessage(const core::Message &message)
 
     LFLOG_DEBUG << "Sending Message: " << message.getId()
                 << " over connection " << getConnectionId().toString();
+
+    return send(json);
+}
+
+uint64_t Peer::sendAvatar(const QImage &avatar)
+{
+    auto obj = toJson(avatar);
+    obj.insert("type", "SetAvatar");
+    auto json = QJsonDocument{
+        QJsonObject{ move(obj) }
+    };
+
+    LFLOG_DEBUG << "Sending Avatar over connection " << getConnectionId().toString();
 
     return send(json);
 }

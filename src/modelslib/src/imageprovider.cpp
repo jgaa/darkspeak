@@ -25,7 +25,7 @@ QImage ImageProvider::requestImage(const QString &id, QSize *size,
 {
     QString key = QUrl::fromPercentEncoding(id.toUtf8());
 
-    LFLOG_TRACE << "Requesting image " << key;
+    LFLOG_TRACE << "Requesting image (" << getName() << ") " << key;
 
     auto image = provider_(key);
     if (image.isNull()) {
