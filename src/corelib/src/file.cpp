@@ -54,6 +54,7 @@ void File::accept()
     LFLOG_DEBUG << "Accepted file #" << getId() << " " << getPath();
 
     queueForTransfer();
+    getConversation()->touchLastActivity();
 }
 
 void File::reject()

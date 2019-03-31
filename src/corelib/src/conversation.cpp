@@ -55,6 +55,7 @@ void Conversation::sendMessage(const QString &text)
                            data.composedTime.toString().toUtf8()});
 
     DsEngine::instance().getMessageManager()->sendMessage(*this, data);
+    touchLastActivity();
 }
 
 void Conversation::sendFile(const QVariantMap &args)
@@ -82,6 +83,7 @@ void Conversation::sendFile(const QVariantMap &args)
     data->identity = getIdentityId();
 
     DsEngine::instance().getFileManager()->addFile(move(data));
+    touchLastActivity();
 }
 
 void Conversation::incomingMessage(Contact *contact, const MessageData &data)
@@ -94,6 +96,8 @@ void Conversation::incomingMessage(Contact *contact, const MessageData &data)
 
     // Send ack
     contact->sendAck("Message", "Received", data.messageId.toBase64());
+
+    touchLastActivity();
 }
 
 void Conversation::incomingFileOffer(Contact *contact, const PeerFileOffer &offer)
@@ -101,6 +105,8 @@ void Conversation::incomingFileOffer(Contact *contact, const PeerFileOffer &offe
     // Add to the database
     // The file manager will deal with the ack
     DsEngine::instance().getFileManager()->receivedFileOffer(*this, offer);
+
+    touchLastActivity();
 }
 
 int Conversation::getId() const noexcept {

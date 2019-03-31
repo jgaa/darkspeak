@@ -77,6 +77,7 @@ void Contact::connectToContact()
                     << " at " << getAddress()
                     << " with connection-id: " << peer->getConnectionId().toString();
 
+        prepareForNewConnection();
         connection_ = make_unique<Connection>(peer, *this);
         setOnlineStatus(CONNECTING);
 
@@ -95,6 +96,7 @@ void Contact::connectToContact()
 
 void Contact::disconnectFromContact(bool manual)
 {
+    prepareForNewConnection();
     connection_.reset();
     setOnlineStatus(DISCONNECTED);
     setManuallyDisconnected(manual);
@@ -549,9 +551,7 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
                     << " at Identity " << getIdentity()->getName()
                     << " to " << peer->getConnectionId().toString();
 
-        if (connection_ && connection_->peer) {
-            connection_->peer->disableNotifications();
-        }
+        prepareForNewConnection();
         connection_ = make_unique<Connection>(peer, *this);
     }
 
@@ -1184,6 +1184,14 @@ void Contact::clearFileQueues()
 
     transferringFileQueue_.clear();
     loadedFileQueue_ = false; // No longer loaded
+}
+
+void Contact::prepareForNewConnection()
+{
+    if (connection_ && connection_->peer) {
+        connection_->peer->disableNotifications();
+        connection_->peer->close();
+    }
 }
 
 Conversation *Contact::getRequestedOrDefaultConversation(const QByteArray &hash,

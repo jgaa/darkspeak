@@ -138,8 +138,9 @@ void DsClient::startConnectRetryTimer()
         return;
     }
     QTimer::singleShot(reconnectDelayMilliseconds_, this, [this]() {
-        if (connection_->state() == QAbstractSocket::ConnectingState
-                || connection_->state() == QAbstractSocket::UnconnectedState) {
+        if (!notificationsDisabled_
+                && ((connection_->state() == QAbstractSocket::ConnectingState)
+                 || (connection_->state() == QAbstractSocket::UnconnectedState))) {
             LFLOG_DEBUG << "Retrying connect on connection " << getConnectionId().toString();
 
             auto connection = make_shared<ConnectionSocket>(

@@ -47,6 +47,8 @@ signals:
     void conversationTouched(const Conversation::ptr_t& conversation);
 
 private:
+    void initConnections(const Conversation::ptr_t& conversation);
+
     Registry<QUuid, Conversation> registry_;
     LruCache<Conversation::ptr_t> lru_cache_{3};
 

@@ -49,6 +49,8 @@ void ConversationsModel::setIdentity(const QUuid &uuid)
     identity_ = identityManager_.identityFromUuid(uuid);
 
     if (identity_ != nullptr) {
+        LFLOG_TRACE << "Loading conversations for Identiy: "
+                    << identity_->getName();
         queryRows(rows_);
     }
 
@@ -172,6 +174,10 @@ QVariant ConversationsModel::data(const QModelIndex &ix, int role) const
         // Lazy loading
         if (!r.conversation) {
             r.conversation = conversationManager_.getConversation(r.uuid);
+
+            if (r.conversation) {
+                assert(r.conversation->getUuid() == r.uuid);
+            }
         }
 
         assert(identity_ != nullptr);

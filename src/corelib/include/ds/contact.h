@@ -218,6 +218,7 @@ private:
     void loadFileQueue();
     void queueTransfer(const std::shared_ptr<File>& file);
     void clearFileQueues();
+    void prepareForNewConnection();
 
     // Sends reject message if the conversation is not the default and don't exist.
     Conversation *getRequestedOrDefaultConversation(const QByteArray& hash,

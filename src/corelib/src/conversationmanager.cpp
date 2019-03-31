@@ -23,13 +23,19 @@ ConversationManager::ConversationManager(QObject &parent)
 Conversation::ptr_t ConversationManager::getConversation(const QUuid &uuid)
 {
     auto conversation = registry_.fetch(uuid);
+    if (conversation) {
+        assert(conversation->getUuid() == uuid);
+    }
 
     if (!conversation) {
         conversation = Conversation::load(*this, uuid);
-        registry_.add(uuid, conversation);
+        assert(conversation->getUuid() == uuid);
+        registry_.add(conversation->getUuid(), conversation);
+        initConnections(conversation);
     }
 
     touch(conversation);
+    assert(conversation->getUuid() == uuid);
     return conversation;
 }
 
@@ -102,15 +108,24 @@ Conversation::ptr_t ConversationManager::addConversation(const QString &name, co
     registry_.add(conversation->getUuid(), conversation);
     touch(conversation);
     emit conversationAdded(conversation);
+    initConnections(conversation);
     return conversation;
 }
 
 void ConversationManager::touch(const Conversation::ptr_t &conversation)
 {
     lru_cache_.touch(conversation);
-    conversationTouched(conversation);
 }
 
+void ConversationManager::initConnections(const Conversation::ptr_t& conversation)
+{
+    auto conversationPtr = conversation.get();
+    connect(conversation.get(), &Conversation::lastActivityChanged,
+            [this, conversationPtr]() {
 
+        LFLOG_TRACE << "Emitting conversationTouched for conversation #" << conversationPtr->getId();
+        emit conversationTouched(conversationPtr->shared_from_this());
+    });
+}
 
 }}
