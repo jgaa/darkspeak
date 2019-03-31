@@ -11,10 +11,13 @@ Page {
     visible: conversations.current
     property var scolors: ["silver", "orange", "yellow", "lightgreen", "red"]
 
-    header: Label {
-        text: conversations.current ? (qsTr("Chat with ") + conversations.current.name) : qsTr("No conversation selected")
-        font.pixelSize: Qt.application.font.pixelSize * 2
-        padding: 10
+    header: Header {
+        whom: conversations.current.participant
+        text: qsTr("Chat with ")
+        anchors.left: parent.left
+        anchors.leftMargin: 4
+        anchors.top: parent.top
+        anchors.topMargin: 4
     }
 
     function pickColor(direction, state) {

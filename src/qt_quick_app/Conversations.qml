@@ -9,10 +9,13 @@ Page {
     width: 600
     height: 400
 
-    header: Label {
-        text: qsTr("Conversations for ") + identities.current.name
-        font.pixelSize: Qt.application.font.pixelSize * 2
-        padding: 10
+    header: Header {
+        whom: identities.current
+        text: qsTr("Conversations for ")
+        anchors.left: parent.left
+        anchors.leftMargin: 4
+        anchors.top: parent.top
+        anchors.topMargin: 4
     }
 
     Connections {
@@ -54,27 +57,56 @@ Page {
                 anchors.fill: parent
                 spacing: 4
 
-                Rectangle {
-                    id: avatarFrame
+                RoundedImage {
+                    source: cco.participant.avatarUrl
                     height: 45
                     width: 45
-                    radius: 5
                     anchors.left: parent.left
                     anchors.leftMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
-                    border.color: "blue"
-
-                    Image {
-                        id: avatar
-                        fillMode: Image.PreserveAspectFit
-                        height: 36
-                        width: 36
-                        x: 2
-                        y: 2
-                        source: cco.participant.avatarUrl
-                        cache: false
-                    }
+                    border.width: 2
+                    border.color: cco.participant.online ? "lime" : "red"
+                    color: "black"
                 }
+
+
+//                Rectangle {
+//                    id: avatarFrame
+//                    height: 45
+//                    width: 45
+//                    anchors.left: parent.left
+//                    anchors.leftMargin: 4
+//                    anchors.verticalCenter: parent.verticalCenter
+//                    border.width: 1
+//                    radius: width*0.5
+//                    border.color: cco.participant.online ? "lime" : "red"
+
+//                    Image {
+//                        id: img
+//                        fillMode: Image.PreserveAspectFit
+//                        height: 36
+//                        anchors.horizontalCenter: parent.horizontalCenter
+//                        anchors.verticalCenter: parent.verticalCenter
+//                        width: 36
+//                        source: cco.participant.avatarUrl
+//                        cache: false
+//                        property bool rounded: true
+//                        property bool adapt: true
+//                        layer.enabled: rounded
+//                        layer.effect: OpacityMask {
+//                            maskSource: Item {
+//                                width: img.width
+//                                height: img.height
+//                                Rectangle {
+//                                    anchors.centerIn: parent
+//                                    width: img.adapt ? img.width : Math.min(img.width, img.height)
+//                                    height: img.adapt ? img.height : width
+//                                    radius: Math.min(width, height)
+//                                }
+//                            }
+//                        }
+//                    }
+//                }
 
                 Column {
                     spacing: 10

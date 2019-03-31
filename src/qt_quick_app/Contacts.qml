@@ -6,10 +6,13 @@ import com.jgaa.darkspeak 1.0
 
 Page {
     id: root
-    header: Label {
-        text: qsTr("Contacts for ") + identities.current.name
-        font.pixelSize: Qt.application.font.pixelSize * 2
-        padding: 10
+    header: Header {
+        whom: identities.current
+        text: qsTr("Contacts for ")
+        anchors.left: parent.left
+        anchors.leftMargin: 4
+        anchors.top: parent.top
+        anchors.topMargin: 4
     }
 
     property var states: [qsTr("Pending"), qsTr("Waiting"), qsTr("OK"), qsTr("Rejected"), qsTr("BLOCKED")]
@@ -47,44 +50,72 @@ Page {
                 anchors.fill: parent
                 spacing: 8
 
-                Rectangle {
-                    id: avatarFrame
+                RoundedImage {
+                    source: cco.avatarUrl
                     height: 100
                     width: 100
-                    radius: 5
                     anchors.left: parent.left
                     anchors.leftMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
+                    border.width: 2
                     border.color: cco.online ? "lime" : "firebrick"
                     color: "black"
 
-                    Image {
-                        id: avatar
-                        fillMode: Image.PreserveAspectFit
-                        height: 96
-                        width: 96
-                        x: 2
-                        y: 2
-                        source: cco.avatarUrl
-                        cache: false
+                    Rectangle {
+                        height: parent.width / 3
+                        color: root.onlineColors[cco.onlineStatus]
+                        width: height
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: 0
+                        radius: width*0.5
 
-                        Rectangle {
-                            height: parent.width / 3
-                            color: root.onlineColors[cco.onlineStatus]
-                            width: height
-                            anchors.right: parent.right
-                            anchors.top: parent.top
-                            anchors.topMargin: 0
-                            radius: width*0.5
-
-                            Image {
-                                id: torStatus
-                                anchors.fill: parent
-                                source: cco.onlineIcon
-                            }
+                        Image {
+                            id: torStatus
+                            anchors.fill: parent
+                            source: cco.onlineIcon
                         }
                     }
                 }
+
+//                Rectangle {
+//                    id: avatarFrame
+//                    height: 100
+//                    width: 100
+//                    radius: 5
+//                    anchors.left: parent.left
+//                    anchors.leftMargin: 4
+//                    anchors.verticalCenter: parent.verticalCenter
+//                    border.color: cco.online ? "lime" : "firebrick"
+//                    color: "black"
+
+//                    Image {
+//                        id: avatar
+//                        fillMode: Image.PreserveAspectFit
+//                        height: 96
+//                        width: 96
+//                        x: 2
+//                        y: 2
+//                        source: cco.avatarUrl
+//                        cache: false
+
+//                        Rectangle {
+//                            height: parent.width / 3
+//                            color: root.onlineColors[cco.onlineStatus]
+//                            width: height
+//                            anchors.right: parent.right
+//                            anchors.top: parent.top
+//                            anchors.topMargin: 0
+//                            radius: width*0.5
+
+//                            Image {
+//                                id: torStatus
+//                                anchors.fill: parent
+//                                source: cco.onlineIcon
+//                            }
+//                        }
+//                    }
+//                }
 
                 Column {
                     spacing: 10
@@ -239,3 +270,10 @@ Page {
         }
     }
 }
+
+
+
+/*##^## Designer {
+    D{i:0;autoSize:true;height:480;width:640}
+}
+ ##^##*/

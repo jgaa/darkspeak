@@ -42,5 +42,7 @@
         <file>SettingsDialog.qml</file>
         <file>PathsSettings.qml</file>
         <file>LogSettings.qml</file>
+        <file>RoundedImage.qml</file>
+        <file>Header.qml</file>
     </qresource>
 </RCC>
