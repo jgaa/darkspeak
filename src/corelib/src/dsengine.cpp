@@ -423,7 +423,7 @@ void DsEngine::initialize()
         auto logPath = settings_->value("logPath", "").toString().toUtf8().toStdString();
         LogManager::Instance().AddHandler(
                 make_unique<StreamHandler>(
-                    logPath, level));
+                    logPath, level, true));
 
         LFLOG_NOTICE << "Enabled logging to \""
                      << logPath

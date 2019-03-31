@@ -118,13 +118,6 @@ public:
     uint64_t onOutgoing(Peer &peer) override {
 
         auto bytesRead = io_.read(buffer_.data(), static_cast<int>(buffer_.size()));
-
-//        if (bytesRead == 0) {
-//            emit file_->transferDone(file_.get());
-//            file_->setState(File::FS_DONE);
-//            return {};
-//        }
-
         if (bytesRead < 0) {
             LFLOG_ERROR << "Failed to read chunk from file \"" << file_->getPath()
                         << "\": " << io_.errorString();
@@ -337,6 +330,10 @@ void Peer::onReceivedData(const quint32 channel, const quint64 id,
 
 void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
 {
+    if (notificationsDisabled_) {
+        return;
+    }
+
     // Control channel. Data is supposed to be Json.
     QJsonDocument json = QJsonDocument::fromJson(data.toByteArray());
     if (json.isNull()) {
@@ -417,7 +414,9 @@ void Peer::onCloseLater()
         connection_->close();
     }
 
-    emit disconnectedFromPeer(shared_from_this());
+    if (!notificationsDisabled_) {
+        emit disconnectedFromPeer(shared_from_this());
+    }
 }
 
 void Peer::enableEncryptedStream()
@@ -685,8 +684,6 @@ void Peer::useConnection(ConnectionSocket *cc)
 
         LFLOG_DEBUG << "Peer " << getConnectionId().toString()
                     << " is connected";
-
-        //emit connectedToPeer(shared_from_this());
     });
 
     connect(connection_.get(), &ConnectionSocket::disconnected,
@@ -695,12 +692,17 @@ void Peer::useConnection(ConnectionSocket *cc)
         LFLOG_DEBUG << "Peer " << getConnectionId().toString()
                     << " is disconnected";
 
-        emit disconnectedFromPeer(shared_from_this());
+        if (!notificationsDisabled_) {
+            emit disconnectedFromPeer(shared_from_this());
+        }
     });
 
     connect(connection_.get(), &ConnectionSocket::outputBufferEmptied,
             this, [this]() {
-       emit outputBufferEmptied();
+
+        if (!notificationsDisabled_) {
+            emit outputBufferEmptied();
+        }
     }, Qt::QueuedConnection);
 }
 
@@ -731,7 +733,7 @@ uint64_t Peer::sendAck(const QString &what, const QString &status, const QString
         {"data", data}
     };
 
-    sendAck(what, status, param);
+    return sendAck(what, status, param);
 }
 
 uint64_t Peer::sendAck(const QString &what, const QString &status, const QVariantMap &params)
@@ -843,6 +845,11 @@ uint64_t Peer::sendSome(File &file)
 
     auto instance = it->second;
     return instance->onOutgoing(*this);
+}
+
+void Peer::disableNotifications()
+{
+    notificationsDisabled_ = true;
 }
 
 

@@ -288,12 +288,25 @@ Conversation::ptr_t Identity::convesationFromHash(const QByteArray &hash)
 
 void Identity::registerConnection(const Contact::ptr_t &contact)
 {
+    assert(contact);
     connected_[contact->getUuid()] = make_unique<Connected>(contact);
+    assert(connected_[contact->getUuid()]->contact);
+
+    LFLOG_TRACE << "Added contact #" << contact->getId() << " " << contact->getName()
+                << " with uuid " << contact->getUuid().toString()
+                << " for identity " << getName()
+                << ". I now have " << connected_.size()
+                << " active connections ";
 }
 
 void Identity::unregisterConnection(const QUuid &uuid)
 {
     connected_.erase(uuid);
+
+    LFLOG_TRACE << "Removed contact with uuid " << uuid.toString()
+                << " for identity " << getName()
+                << ". I now have " << connected_.size()
+                << " active connections ";
 }
 
 int Identity::getId() const noexcept {

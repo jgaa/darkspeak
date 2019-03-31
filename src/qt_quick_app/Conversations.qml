@@ -71,7 +71,8 @@ Page {
                         width: 36
                         x: 2
                         y: 2
-                        source: "qrc:///images/anonymous.svg"
+                        source: cco.participant.avatarUrl
+                        cache: false
                     }
                 }
 

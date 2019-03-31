@@ -44,10 +44,17 @@ Contact::Contact(QObject &parent,
     connect(this, &Contact::processOnlineLater,
             this, &Contact::onProcessOnlineLater,
             Qt::QueuedConnection);
+
+    LFLOG_TRACE << "Contact #" << getId() << " " << getName()
+                << " is being constructed.";
+
 }
 
 Contact::~Contact()
 {
+    LFLOG_TRACE << "Contact #" << getId() << " " << getName()
+                << " is being destructed.";
+
     clearFileQueues();
     if (isOnline()) {
         disconnectFromContact();
@@ -480,6 +487,7 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
                 << " on Identity " << getIdentity()->getName()
                 << " is successfully established.";
 
+    getIdentity()->registerConnection(shared_from_this());
     setManuallyDisconnected(false); // No longer relevant
     sentAvatarPendingAck_ = false; // No longer relevant
 
@@ -541,6 +549,9 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
                     << " at Identity " << getIdentity()->getName()
                     << " to " << peer->getConnectionId().toString();
 
+        if (connection_ && connection_->peer) {
+            connection_->peer->disableNotifications();
+        }
         connection_ = make_unique<Connection>(peer, *this);
     }
 

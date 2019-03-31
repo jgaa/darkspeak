@@ -154,6 +154,7 @@ protected:
     quint32 nextInchannel_ = 1;
     std::map<quint32, Channel::ptr_t> outChannels_;
     std::map<quint32, Channel::ptr_t> inChannels_;
+    bool notificationsDisabled_ = false;
 
     // PeerConnection interface
 public:
@@ -170,6 +171,7 @@ public:
     uint64_t offerFile(const core::File& file) override;
     uint64_t startTransfer(core::File& file) override;
     uint64_t sendSome(core::File& file) override;
+    void disableNotifications() override;
 };
 
 }} // namespaces

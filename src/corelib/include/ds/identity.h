@@ -216,7 +216,7 @@ private:
 
     // Active Connections in any direction
     // Keeps connected Contacts in memory
-    std::map<QUuid /* connection id */, std::unique_ptr<Connected>> connected_;
+    std::map<QUuid /* contact id */, std::unique_ptr<Connected>> connected_;
 };
 
 }} // identities

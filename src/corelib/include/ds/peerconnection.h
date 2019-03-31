@@ -188,6 +188,7 @@ public:
     virtual uint64_t offerFile(const File& file) = 0;
     virtual uint64_t startTransfer(File& file) = 0;
     virtual uint64_t sendSome(File& file) = 0;
+    virtual void disableNotifications() = 0;
 
 signals:
     void connectedToPeer(const std::shared_ptr<PeerConnection>& peer);
