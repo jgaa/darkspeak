@@ -136,11 +136,11 @@ Dialog {
             // Add a new identity
             identities.createIdentity(value)
         }
-        close()
+        destroy()
     }
 
     onRejected: {
-        close();
+        destroy();
     }
 }
 

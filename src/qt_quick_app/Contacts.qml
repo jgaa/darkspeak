@@ -39,6 +39,11 @@ Page {
         anchors.fill: parent
         highlight: highlightBar
 
+        onCurrentItemChanged: {
+            // This is where we synchronize conversations with the current selected Contact
+            conversations.setContact(currentItem.cco)
+        }
+
         delegate: Item {
             id: itemDelegate
             width: parent.width
@@ -77,45 +82,6 @@ Page {
                         }
                     }
                 }
-
-//                Rectangle {
-//                    id: avatarFrame
-//                    height: 100
-//                    width: 100
-//                    radius: 5
-//                    anchors.left: parent.left
-//                    anchors.leftMargin: 4
-//                    anchors.verticalCenter: parent.verticalCenter
-//                    border.color: cco.online ? "lime" : "firebrick"
-//                    color: "black"
-
-//                    Image {
-//                        id: avatar
-//                        fillMode: Image.PreserveAspectFit
-//                        height: 96
-//                        width: 96
-//                        x: 2
-//                        y: 2
-//                        source: cco.avatarUrl
-//                        cache: false
-
-//                        Rectangle {
-//                            height: parent.width / 3
-//                            color: root.onlineColors[cco.onlineStatus]
-//                            width: height
-//                            anchors.right: parent.right
-//                            anchors.top: parent.top
-//                            anchors.topMargin: 0
-//                            radius: width*0.5
-
-//                            Image {
-//                                id: torStatus
-//                                anchors.fill: parent
-//                                source: cco.onlineIcon
-//                            }
-//                        }
-//                    }
-//                }
 
                 Column {
                     spacing: 10

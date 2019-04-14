@@ -45,6 +45,7 @@ ToolBar {
             visible: manager.currentPage === Manager.IDENTITIES
 
             onClicked: {
+                manager.clearTmpImage();
                 var component = Qt.createComponent("qrc:/EditIdentityDialog.qml")
                 if (component.status !== Component.Ready) {
                     if(component.status === Component.Error )
@@ -63,6 +64,7 @@ ToolBar {
             visible: manager.currentPage === Manager.CONTACTS
 
             onClicked: {
+                manager.clearTmpImage();
                 var clip = manager.getIdenityFromClipboard()
                 var component = Qt.createComponent("qrc:/EditContactDialog.qml")
                 if (component.status !== Component.Ready) {

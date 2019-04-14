@@ -63,6 +63,7 @@ public:
 
     Q_INVOKABLE void setTmpImageFromPath(QString path, const QSize& size = {128, 128});
     Q_INVOKABLE void setTmpImageFromImage(QImage& image);
+    Q_INVOKABLE void clearTmpImage();
     Q_INVOKABLE QImage getTmpImage() const;
 
     Manager();

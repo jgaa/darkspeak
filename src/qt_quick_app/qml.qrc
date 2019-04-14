@@ -44,5 +44,6 @@
         <file>LogSettings.qml</file>
         <file>RoundedImage.qml</file>
         <file>Header.qml</file>
+        <file>FileSelecter.qml</file>
     </qresource>
 </RCC>

@@ -16,6 +16,7 @@
 
 using namespace std;
 using namespace ds::core;
+using namespace std::string_literals;
 
 namespace ds {
 namespace models {
@@ -56,6 +57,24 @@ void ConversationsModel::setIdentity(const QUuid &uuid)
 
     endResetModel();
     emit currentRowChanged();
+    contact_ = nullptr;
+}
+
+void ConversationsModel::setContact(Contact *contact)
+{
+    LFLOG_TRACE << "Selecting contact " << (contact ? contact->getName() : QStringLiteral("[none]"));
+    contact_ = contact;
+
+    if (contact) {
+
+        // Make sure we have a current conversation for that contact
+        auto defaultConversation = DsEngine::instance().getConversationManager()->getConversation(contact);
+
+        if (!current_ || (current_->getFirstParticipant()->getId() != contact->getId()) ) {
+            // Select the default conversation
+            setCurrent(defaultConversation.get());
+        }
+    }
 }
 
 void ConversationsModel::setCurrent(Conversation *conversation)

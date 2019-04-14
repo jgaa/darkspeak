@@ -1,4 +1,4 @@
-QT += network core sql quick quickcontrols2
+QT += network core sql quick quickcontrols2 widgets
 CONFIG += c++17
 TARGET = darkspeak
 

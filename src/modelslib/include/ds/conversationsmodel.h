@@ -40,6 +40,7 @@ public:
 
     // Set the identity to work with
     Q_INVOKABLE void setIdentity(const QUuid& uuid);
+    Q_INVOKABLE void setContact(ds::core::Contact *contact);
     Q_INVOKABLE void setCurrent(ds::core::Conversation *conversation);
 
     int getCurrentRow() const noexcept;
@@ -71,6 +72,7 @@ private:
     core::Identity *identity_ = {}; // Active identity
     int currentRow_ = -1;
     core::Conversation::ptr_t current_;
+    core::Contact *contact_;
 };
 
 }} // namespaces

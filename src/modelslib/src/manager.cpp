@@ -144,6 +144,11 @@ void Manager::setTmpImageFromImage(QImage &image)
     tmpImage_ = make_unique<QImage>(image);
 }
 
+void Manager::clearTmpImage()
+{
+    tmpImage_.reset();
+}
+
 QImage Manager::getTmpImage() const
 {
     if (tmpImage_) {
