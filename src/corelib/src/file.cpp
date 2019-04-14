@@ -189,7 +189,7 @@ void File::addBytesTransferred(const size_t bytes)
         if (!nextFlush_) {
             nextFlush_ = make_unique<std::chrono::steady_clock::time_point>(
                         std::chrono::steady_clock::now()
-                        + std::chrono::seconds(2));
+                        + std::chrono::milliseconds(700));
         } else {
             if (std::chrono::steady_clock::now() >= *nextFlush_) {
                 flushBytesAdded();
@@ -251,6 +251,22 @@ quint32 File::getChannel() const noexcept
 void File::setChannel(quint32 channel)
 {
     channel_ = channel;
+}
+
+float File::getProgress() const noexcept
+{
+    if (getState() == State::FS_DONE) {
+        return 1.0F;
+    }
+
+    if (!getSize()) {
+        return 0.0F;
+    }
+    const auto status = ((static_cast<float>(getBytesTransferred()) / static_cast<float>(getSize())));
+
+    LFLOG_TRACE << "File transfer or file #" << getId() << " is at " << static_cast<int>(status * 100.0F) << "%.";
+
+    return status;
 }
 
 Contact *File::getContact() const
@@ -551,7 +567,7 @@ bool File::findUnusedName(const QString &path, QString& unusedPath)
     for(int i = 1; i <= 500; ++i) {
         const auto tryTarget = QString{target.absolutePath()}
                     + "/"
-                    + target.baseName()
+                    + target.completeBaseName()
                     + "(" + QString::number(i) + ")."
                     + target.suffix();
 

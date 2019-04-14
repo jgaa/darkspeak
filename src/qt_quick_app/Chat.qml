@@ -171,6 +171,20 @@ Page {
                     anchors.rightMargin: 2
                 }
 
+                ProgressBar {
+                    id: pbar
+                    anchors.right: parent.right
+                    anchors.rightMargin: 6
+                    anchors.top: fileName.bottom
+                    anchors.topMargin: 0
+                    anchors.left: fileName.left
+                    anchors.leftMargin: 0
+                    visible: type === MessagesModel.FILE
+                    from: 0.0
+                    to: 1.0
+                    value: cfile.progress
+                }
+
                 MouseArea {
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     anchors.fill: parent
@@ -351,3 +365,10 @@ Page {
         }
     }
 }
+
+
+
+/*##^## Designer {
+    D{i:0;autoSize:true;height:480;width:640}
+}
+ ##^##*/

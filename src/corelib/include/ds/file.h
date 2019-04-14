@@ -72,6 +72,7 @@ public:
     Q_PROPERTY(QDateTime ackTime READ getAckTime NOTIFY ackTimeChanged)
     Q_PROPERTY(QDateTime fileTime READ getFileTime NOTIFY fileTimeChanged)
     Q_PROPERTY(qlonglong size READ getSize NOTIFY sizeChanged)
+    Q_PROPERTY(float progress READ getProgress NOTIFY bytesTransferredChanged)
     Q_PROPERTY(qlonglong bytesTransferred READ getBytesTransferred NOTIFY bytesTransferredChanged)
 
     Q_INVOKABLE void cancel();
@@ -113,6 +114,7 @@ public:
     Conversation *getConversation() const;
     quint32 getChannel() const noexcept;
     void setChannel(quint32 channel);
+    float getProgress() const noexcept;
 
     /*! Add the new File to the database. */
     void addToDb();
