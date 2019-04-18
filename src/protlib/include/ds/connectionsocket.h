@@ -19,7 +19,7 @@ public:
     using ptr_t = std::shared_ptr<ConnectionSocket>;
     using data_t = crypto::MemoryView<uint8_t>;
 
-    ConnectionSocket(const QByteArray& host = {}, quint16 port = {}, const QUuid& uuid = {});
+    ConnectionSocket(QByteArray host = {}, quint16 port = {}, const QUuid& uuid = {});
     ~ConnectionSocket();
 
     const QUuid& getUuid() const noexcept {

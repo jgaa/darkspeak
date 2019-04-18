@@ -2,7 +2,7 @@
 #define PEER_H
 
 #include <array>
-#include <assert.h>
+#include <cassert>
 
 #include "ds/protocolmanager.h"
 #include "ds/connectionsocket.h"
@@ -42,7 +42,7 @@ public:
             , pubkey{header.end(), crypto_sign_PUBLICKEYBYTES}
             , signature{pubkey.end(), crypto_sign_BYTES}
         {
-            assert((1 + key.size() + header.size() + pubkey.size() + signature.size())
+            Q_ASSERT((1 + key.size() + header.size() + pubkey.size() + signature.size())
                    == buffer.size());
         }
 
@@ -65,7 +65,7 @@ public:
             , header{key.end(), crypto_secretstream_xchacha20poly1305_HEADERBYTES}
             , signature{header.end(), crypto_sign_BYTES}
         {
-            assert((1 + key.size() + header.size() + signature.size())
+            Q_ASSERT((1 + key.size() + header.size() + signature.size())
                    == buffer.size());
         }
 
@@ -90,7 +90,7 @@ public:
 
     Peer(ConnectionSocket::ptr_t connection,
          core::ConnectData connectionData);
-    ~Peer() override;
+    ~Peer() override = default;
 
     ConnectionSocket& getConnection() {
         if (!connection_) {
@@ -148,8 +148,8 @@ protected:
     InState inState_ = InState::DISABLED;
     ConnectionSocket::ptr_t connection_;
     core::ConnectData connectionData_;
-    stream_state_t stateIn;
-    stream_state_t stateOut;
+    stream_state_t stateIn = {};
+    stream_state_t stateOut = {};
     quint64 request_id_ = {}; // Counter for outgoing requests
     quint32 nextInchannel_ = 1;
     std::map<quint32, Channel::ptr_t> outChannels_;

@@ -1,7 +1,7 @@
 
 #include <array>
 #include <vector>
-#include <assert.h>
+#include <cassert>
 #include <QByteArray>
 
 
@@ -12,7 +12,7 @@ using namespace std;
 
 QByteArray onion16decode(const QByteArray& src) {
     //Refactored from eschalot.c
-    array<uint8_t, 16> tmp;
+    array<uint8_t, 16> tmp = {};
 
     if (src.size() != 16) {
         throw runtime_error("onion16decode: source size must be 16");
@@ -71,7 +71,7 @@ QByteArray onion16encode(const QByteArray& src) {
     QByteArray dst;
     dst.resize(16);
 
-    const uint8_t *usrc = reinterpret_cast<const uint8_t *>(src.constData());
+    auto usrc = reinterpret_cast<const uint8_t *>(src.constData());
 
     dst[ 0] = alphabet.at( (usrc[0] >> 3)			    );
     dst[ 1] = alphabet.at(((usrc[0] << 2) | (usrc[1] >> 6))	& 31);

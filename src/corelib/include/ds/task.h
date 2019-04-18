@@ -7,6 +7,8 @@
 #include <QDebug>
 #include <QThreadPool>
 
+#include "logfault/logfault.h"
+
 namespace ds {
 namespace core {
 
@@ -20,7 +22,7 @@ public:
         try {
             fn_();
         } catch(const std::exception& ex) {
-            qWarning() << "Caught exception from task: " << ex.what();
+            LFLOG_WARN << "Caught exception from task: " << ex.what();
         }
     }
 

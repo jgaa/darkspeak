@@ -79,7 +79,7 @@ void DsClient::sayHello()
                 {hello.version, hello.key, hello.header, hello.pubkey});
 
     // Encrypt the payload with the receipients public encryption key
-    array<uint8_t, hello.buffer.size() + crypto_box_SEALBYTES> ciphertext;
+    array<uint8_t, hello.buffer.size() + crypto_box_SEALBYTES> ciphertext = {};
     connectionData_.contactsCert->encrypt(ciphertext, hello.buffer);
 
     // Send the message to the server.

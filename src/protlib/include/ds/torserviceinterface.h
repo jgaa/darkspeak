@@ -43,10 +43,10 @@ class TorServiceInterface : public QObject
 public:
     using ptr_t = std::shared_ptr<TorServiceInterface>;
 
-    TorServiceInterface(const crypto::DsCert::ptr_t& cert,
+    TorServiceInterface(crypto::DsCert::ptr_t cert,
                         const QByteArray& address,
-                        const QUuid identityId);
-    virtual ~TorServiceInterface();
+                        const QUuid& identityId);
+    virtual ~TorServiceInterface() override = default;
 
     /*! Start a service.
      * Any existing service will be terminated.

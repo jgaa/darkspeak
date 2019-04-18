@@ -72,7 +72,7 @@ private:
     core::Identity *identity_ = {}; // Active identity
     int currentRow_ = -1;
     core::Conversation::ptr_t current_;
-    core::Contact *contact_;
+    core::Contact *contact_ = {};
 };
 
 }} // namespaces

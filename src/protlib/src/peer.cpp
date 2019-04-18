@@ -1,7 +1,7 @@
 #include <array>
 #include <algorithm>
 #include <vector>
-#include <assert.h>
+#include <cassert>
 #include <sodium.h>
 
 #include <QJsonDocument>
@@ -14,6 +14,7 @@
 #include "ds/file.h"
 #include "ds/dsengine.h"
 #include "ds/imageutil.h"
+#include "ds/bytes.h"
 
 #include "logfault/logfault.h"
 
@@ -131,7 +132,7 @@ public:
                   static_cast<size_t>(bytesRead),
                   file_->getChannel(), finished);
 
-        file_->addBytesTransferred(bytesRead);
+        file_->addBytesTransferred(static_cast<size_t>(bytesRead));
 
         if (finished) {
             file_->transferComplete();
@@ -143,7 +144,7 @@ public:
 private:
     QFile io_;
     File::ptr_t file_;
-    std::array<char, 1024 * 8> buffer_;
+    std::array<char, 1024 * 8> buffer_ = {};
 };
 
 
@@ -179,11 +180,6 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
             outChannels_.erase(id);
         }
     }, Qt::QueuedConnection);
-}
-
-Peer::~Peer()
-{
-
 }
 
 uint64_t Peer::send(const QJsonDocument &json)
@@ -236,30 +232,15 @@ uint64_t Peer::send(const void *data, const size_t bytes,
                              + id.size()
                              + payload.size()));
 
-    union {
-        array<unsigned char, 8> bytes;
-        quint16 uint16;
-        quint32 uint32;
-        quint64 uint64;
-    } number_u = {};
+    static_assert(sizeof(decltype(qToBigEndian(static_cast<quint16>(len)))) == sizeof(quint16),
+                  "qToBigEndian() must return the correct type");
 
-    number_u.uint16 = qToBigEndian(static_cast<quint16>(len));
-    for(size_t i = 0; i < payload_len.size(); ++i) {
-        payload_len.at(i) = number_u.bytes.at(i);
-    }
+    valueToBytes(qToBigEndian(static_cast<quint16>(len)), payload_len);
 
     version.at(0) = '\1';
 
-    // Channel 0 is the control channel
-    number_u.uint32 = qToBigEndian(static_cast<quint32>(ch));
-    for(size_t i = 0; i < channel.size(); ++i) {
-        channel.at(i) = number_u.bytes.at(i);
-    }
-
-    number_u.uint64 = qToBigEndian(++request_id_);
-    for(size_t i = 0; i < id.size(); ++i) {
-        id.at(i) = number_u.bytes.at(i);
-    }
+    valueToBytes(qToBigEndian(static_cast<quint32>(ch)), channel);
+    valueToBytes(qToBigEndian(static_cast<quint64>(++request_id_)), id);
 
     assert(bytes == payload.size());
     memcpy(payload.data(), data, payload.size());
@@ -460,13 +441,10 @@ void Peer::processStream(const Peer::data_t &ciphertext)
 
     bool final = {};
     if (inState_ == InState::CHUNK_SIZE) {
-        union {
-            array<uint8_t, 2> bytes;
-            quint16 uint16;
-        } number_u = {};
-        mview_t data{number_u.bytes};
+        array<uint8_t, 2> bytes = {};
+        mview_t data{bytes};
         decrypt(data, ciphertext, final);
-        wantChunkData(qFromBigEndian(number_u.uint16));
+        wantChunkData(qFromBigEndian(bytesToValue<quint16>(bytes)));
     } else if (inState_ == InState::CHUNK_DATA){
 
         static const QByteArray binary = {"[binary]"};
@@ -500,27 +478,8 @@ void Peer::processStream(const Peer::data_t &ciphertext)
             throw runtime_error("Unknown chunk version");
         }
 
-        union {
-            array<unsigned char, 8> bytes;
-            quint16 uint16;
-            quint32 uint32;
-            quint64 uint64;
-        } number_u = {};
-
-
-        for(size_t i = 0; i < channel.size(); ++i) {
-            number_u.bytes.at(i) = channel.at(i);
-        }
-
-        const quint32 channel_id = qFromBigEndian(number_u.uint32);
-
-        number_u = {};
-        for(size_t i = 0; i < id.size(); ++i) {
-            number_u.bytes.at(i) = id.at(i);
-        }
-
-        const quint64 chunk_id = qFromBigEndian(number_u.uint64);
-
+        const auto channel_id = qFromBigEndian(bytesToValue<quint32>(channel));
+        const auto chunk_id = qFromBigEndian(bytesToValue<quint64>(id));
 
         LFLOG_TRACE << "Received chunk on "
                     << connection_->getUuid().toString()
@@ -679,6 +638,7 @@ uint64_t Peer::startSend(File &file)
 
 void Peer::useConnection(ConnectionSocket *cc)
 {
+    Q_UNUSED(cc);
     connect(connection_.get(), &ConnectionSocket::connected,
             this, [this]() {
 
@@ -744,18 +704,15 @@ uint64_t Peer::sendAck(const QString &what, const QString &status, const QVarian
         {"status", status},
     };
 
-    for(const auto& key : params.keys()) {
-        auto v = params.value(key).toString();
-        object.insert(key, v);
+    for(auto it = params.constBegin(); it != params.constEnd(); ++it) {
+        object.insert(it.key(), it.value().toString());
     }
-
-    auto json = QJsonDocument{object};
 
     LFLOG_DEBUG << "Sending Ack: " << what
                 << " with status: " << status
                 << " over connection " << getConnectionId().toString();
 
-    return send(json);
+    return send(QJsonDocument{object});
 }
 
 bool Peer::isConnected() const noexcept
@@ -822,9 +779,10 @@ uint64_t Peer::startTransfer(File &file)
 {
     if (file.getDirection() == File::INCOMING) {
         return startReceive(file);
-    } else {
-        return startSend(file);
     }
+
+    return startSend(file);
+
 }
 
 uint64_t Peer::sendSome(File &file)

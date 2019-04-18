@@ -1,4 +1,4 @@
-#include <assert.h>
+#include <cassert>
 #include <mutex>
 
 #include <QMetaType>
@@ -24,9 +24,6 @@ Crypto::Crypto()
     });
 }
 
-Crypto::~Crypto()
-{
-}
 
 QByteArray Crypto::getHmacSha256(const QByteArray& key,
                                  std::initializer_list<const QByteArray*> data)

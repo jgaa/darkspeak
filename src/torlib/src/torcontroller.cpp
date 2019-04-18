@@ -1,7 +1,7 @@
 
 #include <QFile>
 #include <QFileInfo>
-#include <assert.h>
+#include <cassert>
 
 #include "include/ds/torcontroller.h"
 #include "ds/torctlsocket.h"
@@ -167,11 +167,11 @@ void TorController::startAuth()
             try {
                 DoAuthentcate(reply);
             } catch (const std::runtime_error& ex) {
-                qWarning() << "Authentication failed with exception: " << ex.what();
+                LFLOG_WARN << "Authentication failed with exception: " << ex.what();
                 ctl_->abort();
             }
         } else {
-            qWarning() << "Unexpected status from Tor. Resetting.";
+            LFLOG_WARN << "Unexpected status from Tor. Resetting.";
             ctl_->abort();
         }
     });
@@ -195,7 +195,6 @@ void TorController::clear()
 
 void TorController::torEvent(const TorCtlReply &reply)
 {
-    const auto map = reply.parse();
     LFLOG_DEBUG << "Received tor event: " << reply.lines.front().c_str();
 }
 
@@ -332,7 +331,7 @@ QByteArray TorController::GetCookie(const QString &path)
 {
     const auto size = QFileInfo(path).size();
     if (size != 32) {
-        qWarning() << "Cookile file " << path
+        LFLOG_WARN << "Cookile file " << path
                    << " should be 32 bytes. It is "
                    << size << " bytes.";
         throw SecurityError("Suspicious cookie-file.");
@@ -340,7 +339,7 @@ QByteArray TorController::GetCookie(const QString &path)
 
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-        qWarning() << "Failed to open cookie-file: " << path;
+        LFLOG_WARN << "Failed to open cookie-file: " << path;
         throw IoError("Failed to open cookie-file for read");
     }
 

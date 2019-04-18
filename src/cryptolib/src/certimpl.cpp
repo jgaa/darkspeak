@@ -1,5 +1,5 @@
 
-#include <assert.h>
+#include <cassert>
 
 #include <sodium.h>
 #include <QDebug>
@@ -51,9 +51,6 @@ CertImpl::CertImpl(const safe_array_t &cert, const What what)
     CalculateHash();
 }
 
-CertImpl::~CertImpl()
-{
-}
 
 void CertImpl::CalculateHash()
 {

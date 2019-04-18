@@ -22,9 +22,9 @@ Conversation::Conversation(QObject &parent)
 
 }
 
-Conversation::Conversation(QObject &parent, const QString &name, const QString &topic, Contact *participant)
+Conversation::Conversation(QObject &parent, QString name, QString topic, Contact *participant)
     : QObject{&parent}, identity_{participant->getIdentity()->getId()}
-    , name_{name}, topic_{topic}, hash_{calculateHash(*participant)}
+    , name_{move(name)}, topic_{move(topic)}, hash_{calculateHash(*participant)}
 {
     participants_.insert(participant->getUuid());
 }
@@ -102,6 +102,7 @@ void Conversation::incomingMessage(Contact *contact, const MessageData &data)
 
 void Conversation::incomingFileOffer(Contact *contact, const PeerFileOffer &offer)
 {
+    Q_UNUSED(contact)
     // Add to the database
     // The file manager will deal with the ack
     DsEngine::instance().getFileManager()->receivedFileOffer(*this, offer);

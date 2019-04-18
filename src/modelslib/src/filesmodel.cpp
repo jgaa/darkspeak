@@ -3,7 +3,7 @@
 #include <QUrl>
 #include <QSqlError>
 
-#include <assert.h>
+#include <cassert>
 
 #include "ds/dsengine.h"
 #include "ds/errors.h"
@@ -67,7 +67,7 @@ QString FilesModel::getFileName(const QString &path) const
     return QUrl(path).fileName();
 }
 
-int FilesModel::rowCount(const QModelIndex &parent) const
+int FilesModel::rowCount(const QModelIndex &) const
 {
     return static_cast<int>(rows_.size());
 }
@@ -165,7 +165,7 @@ void FilesModel::queryRows(FilesModel::rows_t &rows)
             : currentContact_ ? "contact_id=:key"
             : "identity_id=:key";
     QSqlQuery query;
-    query.prepare(QStringLiteral("SELECT id FROM file WHERE %1 ORDER BY %2").arg(where).arg("id"));
+    query.prepare(QStringLiteral("SELECT id FROM file WHERE %1 ORDER BY %2").arg(where, "id"));
     query.bindValue(":key", currentConversation_
                     ? currentConversation_->getId()
                     : currentContact_ ? currentContact_->getId()

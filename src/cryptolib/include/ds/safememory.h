@@ -3,7 +3,7 @@
 
 #include <QByteArray>
 #include <stdexcept>
-#include <assert.h>
+#include <cassert>
 #include <string.h>
 #include <sodium.h>
 

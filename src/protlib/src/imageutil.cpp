@@ -75,9 +75,9 @@ QImage toQimage(const QJsonObject &object)
     for(int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x, ++ix) {
 
-            const uint8_t r = static_cast<uint8_t>(rd[ix]);
-            const uint8_t g = static_cast<uint8_t>(gd[ix]);
-            const uint8_t b = static_cast<uint8_t>(bd[ix]);
+            const auto r = static_cast<uint8_t>(rd[ix]);
+            const auto g = static_cast<uint8_t>(gd[ix]);
+            const auto b = static_cast<uint8_t>(bd[ix]);
 
             img.setPixel(x, y, qRgb(r, g, b));
         }

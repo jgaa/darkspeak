@@ -19,10 +19,10 @@ using namespace std;
 Identity::Identity(QObject& parent,
              const int dbId, // -1 if the identity is new
              const bool online,
-             const QDateTime& created,
+             QDateTime created,
              IdentityData data)
     : QObject{&parent}
-    , id_{dbId}, online_{online}, data_{std::move(data)}, created_{created}
+    , id_{dbId}, online_{online}, data_{std::move(data)}, created_{move(created)}
 {
 
     connect(this, &Identity::processOnlineLater,

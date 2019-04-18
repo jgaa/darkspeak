@@ -79,7 +79,7 @@ public:
         INCOMING
     };
 
-    ProtocolManager();
+    ProtocolManager() = default;
     virtual ~ProtocolManager() = default;
 
     virtual State getState() const = 0;

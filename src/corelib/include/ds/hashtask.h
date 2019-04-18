@@ -14,7 +14,7 @@ namespace core {
 class HashTask : public QObject, public QRunnable {
     Q_OBJECT
 public:
-    HashTask(QObject *owner, const File::ptr_t& file);
+    HashTask(QObject *owner, File::ptr_t file);
     void run() override;
 
 signals:

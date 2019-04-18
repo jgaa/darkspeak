@@ -55,9 +55,13 @@ Contact::~Contact()
     LFLOG_TRACE << "Contact #" << getId() << " " << getName()
                 << " is being destructed.";
 
-    clearFileQueues();
-    if (isOnline()) {
-        disconnectFromContact();
+    try {
+        clearFileQueues();
+        if (isOnline()) {
+            disconnectFromContact();
+        }
+    } catch(const exception& ex) {
+        LFLOG_ERROR << "Caught exception: " << ex.what();
     }
 }
 
@@ -225,7 +229,7 @@ void Contact::setLastSeen(const QDateTime &when)
 
 void Contact::touchLastSeen()
 {
-    const auto when = QDateTime::fromTime_t((QDateTime::currentDateTime().toTime_t() / 60) * 60);
+    const auto when = QDateTime::fromTime_t((QDateTime::currentDateTimeUtc().toTime_t() / 60) * 60);
     setLastSeen(when);
 }
 
@@ -431,7 +435,7 @@ void Contact::addToDb()
     }
 
     if (!data_->created.isValid()) {
-        data_->created = QDateTime::fromTime_t((QDateTime::currentDateTime().toTime_t() / 60) * 60);
+        data_->created = QDateTime::fromTime_t((QDateTime::currentDateTimeUtc().toTime_t() / 60) * 60);
     }
 
     if (data_->hash.isEmpty()) {
@@ -895,7 +899,6 @@ bool Contact::procesMessageQueue()
 
 bool Contact::processFilesQueue()
 {
-again:
     if (isOnline() && !fileQueue_.empty()) {
         // TODO: Check ready status on socket
         // TODO: Offer up to /n/ files in one message, to pipeline them
@@ -915,7 +918,7 @@ again:
                 default:
                     // The file don't belong in the queue.
                     fileQueue_.erase(fileQueue_.begin());
-                    goto again; // Yes, goto!
+                    return processFilesQueue(); // Try again...
                 }
 
             } else /* File::INCOMING */ {
@@ -926,7 +929,7 @@ again:
                 default:
                     // The file don't belong in the queue.
                     fileQueue_.erase(fileQueue_.begin());
-                    goto again;
+                    return processFilesQueue(); // Try again...
                 }
             }
         } catch(const std::exception& ex) {
@@ -944,7 +947,6 @@ again:
 
 bool Contact::processFileBlocks()
 {
-again:
     for(auto& file : transferringFileQueue_) {
         if (!isOnline()) {
             break;
@@ -952,7 +954,7 @@ again:
 
         if (file->getState() != File::FS_TRANSFERRING) {
             transferringFileQueue_.erase(file);
-            goto again; // Yes, goto
+            return processFileBlocks(); // Try again
         }
 
         if (file->getDirection() != File::OUTGOING) {

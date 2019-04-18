@@ -8,10 +8,6 @@ using namespace std;
 namespace ds {
 namespace core {
 
-ProtocolManager::ProtocolManager()
-{
-
-}
 
 ProtocolManager::ptr_t ProtocolManager::create(QSettings& settings, ProtocolManager::Transport)
 {

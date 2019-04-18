@@ -19,7 +19,7 @@ public:
 
     CertImpl();
     CertImpl(const safe_array_t& cert, const What what);
-    ~CertImpl() override;
+    ~CertImpl() override = default;
 
     const safe_array_t& getCert() const override;
     const safe_view_t& getSigningKey() const override;

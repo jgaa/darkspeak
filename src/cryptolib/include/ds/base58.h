@@ -32,7 +32,7 @@
 namespace ds {
 namespace crypto {
 
-bool b58tobin_(void *bin, size_t *binszp, const std::string b58);
+bool b58tobin_(void *bin, size_t *binszp, const std::string& b58);
 
 template <typename T>
 bool b58enc_(T& b58, const void *data, size_t binsz)

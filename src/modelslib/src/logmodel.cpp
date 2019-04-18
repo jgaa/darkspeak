@@ -29,8 +29,6 @@ QVariant LogModel::data(const QModelIndex &index, int role) const
     if (role == Qt::DisplayRole) {
         const auto& li = log_items_[static_cast<size_t>(index.row())];
         return li->text;
-    } else if (role == Qt::DecorationRole) {
-        // TODO: Add icon
     }
 
     return {};
@@ -62,7 +60,6 @@ void LogModelHandler::LogMessage(const logfault::Message &msg)
     std::ostringstream out;
     PrintMessage(out, msg);
     auto str = out.str();
-    auto text = QString::fromUtf8(str.c_str());
 
     emit message(QString::fromUtf8(str.c_str()), msg.level_);
 }

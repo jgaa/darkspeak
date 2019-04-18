@@ -116,7 +116,7 @@ public:
     Identity(QObject& parent,
          const int dbId, // -1 if the identity is new
          const bool online,
-         const QDateTime& created,
+         QDateTime created,
          IdentityData data);
 
     Q_PROPERTY(int id READ getId)
@@ -124,7 +124,6 @@ public:
     Q_PROPERTY(QByteArray hash READ getHash)
     Q_PROPERTY(QByteArray address READ getAddress WRITE setAddress NOTIFY addressChanged)
     Q_PROPERTY(QByteArray addressData READ getAddressData WRITE setAddressData NOTIFY addressDataChanged)
-    Q_PROPERTY(QString notes READ getNotes WRITE setNotes NOTIFY notesChanged)
     Q_PROPERTY(QString notes READ getNotes WRITE setNotes NOTIFY notesChanged)
     Q_PROPERTY(QImage avatar READ getAvatar WRITE setAvatar NOTIFY avatarChanged)
     Q_PROPERTY(QString avatarUrl READ getAvatarUrl NOTIFY avatarUrlChanged)

@@ -14,7 +14,7 @@ class Crypto
 {
 public:
     Crypto();
-    ~Crypto();
+    ~Crypto() = default;
 
     static QByteArray getHmacSha256(const QByteArray& key, std::initializer_list<const QByteArray*> data);
     static QByteArray getSha256(const QByteArray& data);

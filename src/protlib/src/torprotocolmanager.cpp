@@ -1,5 +1,5 @@
 
-#include <assert.h>
+#include <cassert>
 #include <array>
 
 #include <QJsonObject>
@@ -161,7 +161,6 @@ TorServiceInterface& TorProtocolManager::getService(const QUuid& service)
 
 uint64_t TorProtocolManager::sendAddme(const AddmeReq& req)
 {
-    QString addr;
     auto json = QJsonDocument{
         QJsonObject{
             {"type", "AddMe"},
@@ -283,25 +282,13 @@ core::PeerConnection::ptr_t TorProtocolManager::connectTo(core::ConnectData cd)
 
     const auto port = static_cast<uint16_t>(parts.at(parts.size() -1).toUInt());
     const auto host = parts.at(parts.size() - 2) + ".onion";
-    return getService(cd.service).connectToService(host, port, move(cd));
+    auto service = cd.service;
+    return getService(service).connectToService(host, port, move(cd));
 }
-
-//void TorProtocolManager::disconnectFrom(const QUuid &service, const QUuid &connection)
-//{
-//    return getService(service).close(connection);
-//}
-
-//void TorProtocolManager::autorizeConnection(const QUuid &service,
-//                                            const QUuid &connection,
-//                                            const bool allow)
-//{
-//    getService(service).autorizeConnection(connection, allow);
-//}
-
 
 void TorProtocolManager::onServiceCreated(const ServiceProperties &service)
 {
-    // Convert he service data to a transport-handle
+    // Convert the service data to a transport-handle
     TransportHandle th;
 
     th.identityName = service.name;

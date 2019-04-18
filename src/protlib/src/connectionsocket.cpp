@@ -2,12 +2,14 @@
 #include "include/ds/connectionsocket.h"
 #include "logfault/logfault.h"
 
+using namespace std;
+
 namespace ds {
 namespace prot {
 
-ConnectionSocket::ConnectionSocket(const QByteArray &host,
+ConnectionSocket::ConnectionSocket(QByteArray host,
                                    quint16 port, const QUuid &uuid)
-    : host_{host}, port_{port}
+    : host_{move(host)}, port_{port}
 {
     setReadBufferSize(1024 * 64);
 

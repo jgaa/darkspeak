@@ -1,7 +1,7 @@
 #include <string>
 #include <array>
 #include <vector>
-#include <string.h>
+#include <cstring>
 
 #include <sodium.h>
 
@@ -12,7 +12,7 @@ namespace crypto {
 
 namespace {
 
-static constexpr int8_t b58digits_map[] = {
+constexpr std::array<int8_t, 256> b58digits_map = {
     -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
     -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
     -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
@@ -27,7 +27,7 @@ static constexpr int8_t b58digits_map[] = {
 
 } // anonymous namespace
 
-bool b58tobin_(void *bin, size_t *binszp, const std::string b58) {
+bool b58tobin_(void *bin, size_t *binszp, const std::string& b58) {
     size_t binsz = *binszp;
     const auto *b58u = reinterpret_cast<const unsigned char *>(b58.c_str());
     auto *binu = reinterpret_cast<unsigned char *>(bin);
@@ -51,10 +51,10 @@ bool b58tobin_(void *bin, size_t *binszp, const std::string b58) {
         if (b58u[i] & 0x80)
             // High-bit set on invalid digit
             return false;
-        if (b58digits_map[b58u[i]] == -1)
+        if (b58digits_map.at(b58u[i]) == -1)
             // Invalid base58 digit
             return false;
-        c = (unsigned)b58digits_map[b58u[i]];
+        c = static_cast<unsigned>(b58digits_map.at(b58u[i]));
         for (j = outisz; j--; )
         {
             t = (static_cast<uint64_t>(outi[j])) * 58 + c;

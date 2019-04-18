@@ -61,7 +61,7 @@ public:
     Direction getDirection() const noexcept;
     QDateTime getComposedTime() const noexcept;
     QDateTime getSentReceivedTime() const noexcept;
-    void setSentReceivedTime(const QDateTime when);
+    void setSentReceivedTime(const QDateTime& when);
     void touchSentReceivedTime();
     QString getContent() const noexcept;
     //Direction getType() const noexcept;

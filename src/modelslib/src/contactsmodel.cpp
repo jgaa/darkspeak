@@ -1,4 +1,4 @@
-#include <assert.h>
+#include <cassert>
 
 #include "ds/contactsmodel.h"
 #include "ds/dsengine.h"

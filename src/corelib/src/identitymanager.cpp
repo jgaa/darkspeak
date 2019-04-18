@@ -225,7 +225,7 @@ void IdentityManager::onOnline()
 
 Identity *IdentityManager::addIdentity(const IdentityData &data)
 {
-    const QDateTime when = QDateTime::fromTime_t((QDateTime::currentDateTime().toTime_t() / 60) * 60);
+    const QDateTime when = QDateTime::fromTime_t((QDateTime::currentDateTimeUtc().toTime_t() / 60) * 60);
     auto identity = new Identity{
                 *this,
                 -1,

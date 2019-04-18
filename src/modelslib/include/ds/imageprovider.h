@@ -12,7 +12,7 @@ class ImageProvider : public QQuickImageProvider
 public:
     using provider_t = std::function<QImage (const QString& id)>;
 
-    ImageProvider(const QString& name, provider_t provider);
+    ImageProvider(QString name, provider_t provider);
 
     const QString& getName() const noexcept { return name_; }
 

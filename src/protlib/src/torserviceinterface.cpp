@@ -11,17 +11,13 @@ namespace prot {
 
 using namespace std;
 
-TorServiceInterface::TorServiceInterface(const crypto::DsCert::ptr_t& cert,
+TorServiceInterface::TorServiceInterface(crypto::DsCert::ptr_t cert,
                                          const QByteArray& address,
-                                         const QUuid identityId)
-    : cert_{cert}, address_{address}, identityId_{identityId}
+                                         const QUuid& identityId)
+    : cert_{move(cert)}, address_{address}, identityId_{identityId}
 {
 }
 
-TorServiceInterface::~TorServiceInterface()
-{
-
-}
 
 StartServiceResult TorServiceInterface::startService()
 {
@@ -30,8 +26,8 @@ StartServiceResult TorServiceInterface::startService()
     r.stopped = stopService();
 
     server_ = make_shared<TorSocketListener>(
-                [this](ConnectionSocket::ptr_t connection) {
-        onNewIncomingConnection(move(connection));
+                [this](const ConnectionSocket::ptr_t& connection) {
+        onNewIncomingConnection(connection);
     });
 
     if (!server_->listen(QHostAddress::LocalHost)) {

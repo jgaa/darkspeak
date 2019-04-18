@@ -26,8 +26,8 @@ public:
     Q_ENUM(Type)
 
     Conversation(QObject& parent);
-    Conversation(QObject& parent, const QString &name,
-                 const QString &topic, Contact *participant);
+    Conversation(QObject& parent, QString name,
+                 QString topic, Contact *participant);
 
     Q_PROPERTY(int id READ getId)
     Q_PROPERTY(Type type READ getType)

@@ -8,6 +8,7 @@
 #include "ds/manager.h"
 #include "ds/base58.h"
 #include "ds/base32.h"
+#include "ds/bytes.h"
 
 #include "logfault/logfault.h"
 
@@ -51,7 +52,7 @@ FilesModel *Manager::filesModel()
     return filesModel_.get();
 }
 
-void Manager::textToClipboard(QString text)
+void Manager::textToClipboard(const QString& text)
 {
     auto cb = QGuiApplication::clipboard();
     cb->setText(text);
@@ -87,19 +88,11 @@ QVariantMap Manager::getIdenityFromClipboard() const
             const auto pubkey = data.mid(1, 32);
             const auto host = data.mid(33, 10);
             const auto port = data.mid(43,2);
-
             const auto address = onion16encode(host);
-
-            union {
-                char bytes[2];
-                uint16_t port;
-            } port_u;
-
-            port_u.bytes[0] = port.at(0);
-            port_u.bytes[1] = port.at(1);
+            const auto portVal = bytesToValue<uint16_t>(port);
 
             values["address"] = QString("onion:") + address
-                    + ":" + QString::number(qFromBigEndian(port_u.port));
+                    + ":" + QString::number(qFromBigEndian(portVal));
 
             values["handle"] = b58check_enc<QByteArray>(pubkey, {249, 50});
         }
@@ -108,19 +101,19 @@ QVariantMap Manager::getIdenityFromClipboard() const
     return values;
 }
 
-QString Manager::urlToPath(QString url)
+QString Manager::urlToPath(const QString& url)
 {
     QUrl uurl{url};
     return uurl.toLocalFile();
 }
 
-QString Manager::pathToUrl(QString path)
+QString Manager::pathToUrl(const QString& path)
 {
     auto url = QUrl::fromLocalFile(path);
     return url.url();
 }
 
-void Manager::setTmpImageFromPath(QString path, const QSize &size)
+void Manager::setTmpImageFromPath(const QString& path, const QSize &size)
 {
     const QUrl location{path};
 

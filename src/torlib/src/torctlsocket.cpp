@@ -1,7 +1,9 @@
 
 #include <regex>
-#include <assert.h>
+#include <cassert>
 #include <locale>
+
+#include <QString>
 
 #include "logfault/logfault.h"
 #include "ds/torctlsocket.h"
@@ -24,7 +26,7 @@ TorCtlSocket::TorCtlSocket()
 }
 
 void TorCtlSocket::sendCommand(QByteArray command,
-                               TorCtlSocket::handler_t handler)
+                               const TorCtlSocket::handler_t& handler)
 {
     LFLOG_DEBUG << "Sending Tor command: " << command.toStdString();
 
@@ -37,7 +39,7 @@ void TorCtlSocket::sendCommand(QByteArray command,
         setError(err);
         throw IoError(err);
     }
-    pending_.push_back(move(handler));
+    pending_.push_back(handler);
 }
 
 void TorCtlSocket::processIn()
@@ -86,7 +88,7 @@ void TorCtlSocket::processIn()
             continue;
         }
 
-        Q_ASSERT(state_ == State::IN_REPLY);
+        assert(state_ == State::IN_REPLY);
 
         if (current_reply_.lines.size() > max_reply_lines_) {
             setError(QStringLiteral("Invalid control reply syntax: Too much babble."));
@@ -117,7 +119,7 @@ void TorCtlSocket::processIn()
         }
 
         if (pending_.empty()) {
-            qWarning() << "Received orphan response from tor: "
+            LFLOG_WARN << "Received orphan response from tor: "
                        << current_reply_.status << ' '
                        << current_reply_.lines.front().c_str();
             continue;
@@ -133,8 +135,8 @@ void TorCtlSocket::processIn()
             }
             emit torReply(current_reply_);
         } catch(const std::exception& ex) {
-            qWarning() << "Caught exeption from handler: " << ex.what();
-            qWarning() << "Shutting down connection to torctl!";
+            LFLOG_WARN << "Caught exeption from handler: " << ex.what();
+            LFLOG_WARN << "Shutting down connection to torctl!";
             close();
         }
 
@@ -147,9 +149,9 @@ void TorCtlSocket::clear()
     LFLOG_DEBUG << "TorCtlSocket is disconnected";
 }
 
-void TorCtlSocket::setError(QString errorMsg)
+void TorCtlSocket::setError(const QString& errorMsg)
 {
-    qWarning() << "Error on Tor Conrol channel: " << errorMsg;
+    LFLOG_WARN << "Error on Tor Conrol channel: " << errorMsg;
     emit error(errorMsg);
     abort();
 }

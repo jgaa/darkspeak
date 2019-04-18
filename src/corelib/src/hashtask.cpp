@@ -10,8 +10,8 @@ using namespace std;
 namespace ds {
 namespace core {
 
-HashTask::HashTask(QObject *owner, const File::ptr_t& file)
- : QObject{owner}, file_{file} {}
+HashTask::HashTask(QObject *owner, File::ptr_t file)
+ : QObject{owner}, file_{move(file)} {}
 
 void HashTask::run() {
     try {
@@ -24,7 +24,7 @@ void HashTask::run() {
         crypto_hash_sha256_state state = {};
         crypto_hash_sha256_init(&state);
 
-        std::array<uint8_t, 1024 * 8> buffer;
+        std::array<uint8_t, 1024 * 8> buffer = {};
         while(!file.isOpen()) {
             if (file_->getState() != File::FS_HASHING) {
                 LFLOG_WARN << "File #" << file_->getId()
@@ -54,7 +54,7 @@ void HashTask::run() {
         crypto_hash_sha256_final(&state, reinterpret_cast<uint8_t *>(out.data()));
         emit hashed(out, {});
     } catch(const std::exception& ex) {
-        qWarning() << "Caught exception from task: " << ex.what();
+        LFLOG_WARN << "Caught exception from task: " << ex.what();
         emit hashed({}, ex.what());
     }
 }

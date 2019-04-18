@@ -77,7 +77,7 @@ public:
 
     template <typename Tsign, typename T>
     void sign(Tsign& signature, std::initializer_list<T> data) const {
-        assert(!getSigningKey().empty());
+        Q_ASSERT(!getSigningKey().empty());
         assert(signature.size() == crypto_sign_BYTES);
 
         crypto_sign_state state = {};
@@ -99,7 +99,7 @@ public:
 
     template <typename T, typename Tsign>
     bool verify(const Tsign& signature, std::initializer_list<T> data) const {
-        assert(!getSigningPubKey().empty());
+        Q_ASSERT(!getSigningPubKey().empty());
         crypto_sign_state state = {};
         crypto_sign_init(&state);
         for(const auto& d : data) {

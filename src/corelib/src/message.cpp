@@ -57,7 +57,7 @@ QDateTime Message::getSentReceivedTime() const noexcept
     return sentReceivedTime_;
 }
 
-void Message::setSentReceivedTime(const QDateTime when)
+void Message::setSentReceivedTime(const QDateTime& when)
 {
     if (updateIf("received_time", when, sentReceivedTime_, this, &Message::receivedChanged)) {
         DsEngine::instance().getMessageManager()->onMessageReceivedDateChanged(shared_from_this());

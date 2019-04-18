@@ -72,7 +72,7 @@ public:
     static QByteArray imageToBytes(const QImage& img);
     static QByteArray getIdentityAsBase58(const crypto::DsCert::ptr_t& cert,
                                           const QByteArray& address);
-    void whenOnline(std::function<void ()> fn);
+    void whenOnline(const std::function<void ()>& fn);
 
     static QDateTime getSafeNow() noexcept;
     static QDateTime getSafeTime(const QDateTime& when) noexcept;

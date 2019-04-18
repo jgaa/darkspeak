@@ -89,11 +89,15 @@ QVariant MessagesModel::data(const QModelIndex &ix, int role) const
     case H_COMPOSED:
         return (r.type_ == MESSAGE) ? r.data_->composedTime : r.file_->getCreated();
     case H_DIRECTION:
-        return (r.type_ == MESSAGE) ? r.data_->direction : r.file_->getDirection();
+        return (r.type_ == MESSAGE)
+                ? static_cast<int>(r.data_->direction)
+                : static_cast<int>(r.file_->getDirection());
     case H_RECEIVED:
         return (r.type_ == MESSAGE) ? r.data_->sentReceivedTime : QVariant();
     case H_STATE:
-        return (r.type_ == MESSAGE) ? r.data_->state : r.file_->getState();
+        return (r.type_ == MESSAGE)
+                ? static_cast<int>(r.data_->state)
+                : static_cast<int>(r.file_->getState());
     case H_STATE_NAME:
         return getStateName(r);
     }
@@ -118,7 +122,7 @@ QHash<int, QByteArray> MessagesModel::roleNames() const
     return names;
 }
 
-Qt::ItemFlags MessagesModel::flags(const QModelIndex &index) const
+Qt::ItemFlags MessagesModel::flags(const QModelIndex&) const
 {
     return Qt::ItemIsSelectable | Qt::ItemIsEnabled;
 }

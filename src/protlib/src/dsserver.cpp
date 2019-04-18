@@ -49,7 +49,7 @@ void DsServer::authorize(bool authorize)
                 olleh.signature,
                 {olleh.version, olleh.key, olleh.header});
 
-    array<uint8_t, olleh.buffer.size() + crypto_box_SEALBYTES> ciphertext;
+    array<uint8_t, olleh.buffer.size() + crypto_box_SEALBYTES> ciphertext = {};
     connectionData_.contactsCert->encrypt(ciphertext, olleh.buffer);
 
     // Send the message to the server.

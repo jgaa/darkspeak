@@ -5,13 +5,15 @@
 
 #include "logfault/logfault.h"
 
+using namespace std;
+
 namespace ds {
 namespace models {
 
-ImageProvider::ImageProvider(const QString &name,
+ImageProvider::ImageProvider(QString name,
                              ImageProvider::provider_t provider)
     : QQuickImageProvider(QQuickImageProvider::Pixmap)
-    , provider_{provider}, name_{name}
+    , provider_{move(provider)}, name_{move(name)}
 {
 }
 

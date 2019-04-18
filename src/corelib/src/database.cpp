@@ -34,7 +34,7 @@ Database::Database(QSettings& settings)
         createDatabase();
     }
 
-    QSqlQuery("PRAGMA foreign_keys = ON");
+    exec("PRAGMA foreign_keys = ON");
 
     QSqlQuery query("SELECT * FROM ds");
     if (!query.next()) {

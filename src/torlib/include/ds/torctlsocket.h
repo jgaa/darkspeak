@@ -83,7 +83,7 @@ public:
      * \param handler Handler to deal with the result of the operation. May be empty.
      * \exception IoError is write fails.
     */
-    void sendCommand(QByteArray command, handler_t handler);
+    void sendCommand(QByteArray command, const handler_t& handler);
 
 signals:
     // If triggered, the connection is dead
@@ -101,7 +101,7 @@ protected:
     virtual QByteArray readLine_(qint64 maxLen) {return readLine(maxLen); }
 
 private:
-    void setError(QString error);
+    void setError(const QString& error);
 
     QQueue<handler_t> pending_;
     constexpr static size_t max_buffer_len_ = 1024 * 5;

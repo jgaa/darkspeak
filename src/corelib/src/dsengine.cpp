@@ -1,5 +1,5 @@
 
-#include <assert.h>
+#include <cassert>
 #include <array>
 #include <regex>
 #include <iostream>
@@ -13,6 +13,8 @@
 #include "ds/base32.h"
 #include "ds/database.h"
 #include "ds/logutil.h"
+#include "ds/bytes.h"
+#include "ds/memoryview.h"
 
 #include <QString>
 #include <QDebug>
@@ -141,12 +143,12 @@ void DsEngine::createNewTransport(const QByteArray &name, const QUuid& uuid)
     tryMakeTransport(name, uuid);
 }
 
-void DsEngine::whenOnline(std::function<void ()> fn)
+void DsEngine::whenOnline(const std::function<void ()>& fn)
 {
     if (isOnline()) {
         fn();
     } else {
-        when_online_.append(move(fn));
+        when_online_.append(fn);
     }
 }
 
@@ -157,7 +159,7 @@ QDateTime DsEngine::getSafeNow() noexcept
 
 QDateTime DsEngine::getSafeTime(const QDateTime &when) noexcept
 {
-    auto secs = when.currentSecsSinceEpoch();
+    auto secs = when.toSecsSinceEpoch();
     secs /= 60;
     secs *= 60;
     return QDateTime::fromSecsSinceEpoch(secs);
@@ -551,15 +553,7 @@ QByteArray DsEngine::getIdentityAsBase58(const DsCert::ptr_t &cert, const QByteA
         return "Sorry, Not implemented";
     }
 
-    // Add the port
-    union {
-        char bytes[2];
-        uint16_t port;
-    } port_u;
-
-    port_u.port = qToBigEndian(static_cast<uint16_t>(atoi(port.c_str())));
-    bytes += port_u.bytes[0];
-    bytes += port_u.bytes[1];
+    appendValueToBytes(qToBigEndian(static_cast<uint16_t>(atoi(port.c_str()))), bytes);
 
     return crypto::b58check_enc<QByteArray>(bytes, {11, 176});
 }

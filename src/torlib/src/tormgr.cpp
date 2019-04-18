@@ -1,4 +1,4 @@
-#include <assert.h>
+#include <cassert>
 #include <ds/torcontroller.h>
 #include "ds/tormgr.h"
 #include "logfault/logfault.h"

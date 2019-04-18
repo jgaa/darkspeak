@@ -42,16 +42,16 @@ int main(int argc, char *argv[])
 
     QGuiApplication app(argc, argv);
 
-    app.setOrganizationName("TheLastViking");
-    app.setOrganizationDomain("lastviking.eu");
+    QGuiApplication::setOrganizationName("TheLastViking");
+    QGuiApplication::setOrganizationDomain("lastviking.eu");
 
     // Initialize crypto
     ds::crypto::Crypto crypto;
 
 #ifdef QT_DEBUG
-    app.setApplicationName("DarkSpeak-debug");
+    QGuiApplication::setApplicationName("DarkSpeak-debug");
 #else
-    app.setApplicationName("DarkSpeak");
+    QGuiApplication::setApplicationName("DarkSpeak");
 #endif
 
     auto manager = make_unique<Manager>();
@@ -125,6 +125,7 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("files", manager->filesModel());
 
     ImageProvider tmpProvider{"temp", [&manager](const QString& id) {
+            Q_UNUSED(id)
             return manager->getTmpImage();
         }};
 
@@ -164,7 +165,7 @@ int main(int argc, char *argv[])
     LFLOG_INFO << "==================================================================";
     LFLOG_INFO << "DarkSpeak is ready";
 
-    const auto rval = app.exec();
+    const auto rval = QGuiApplication::exec();
 
     LFLOG_NOTICE << "Darkspeak is done. So Long, and Thanks for All the Fish.";
 
