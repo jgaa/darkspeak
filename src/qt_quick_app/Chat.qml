@@ -9,7 +9,8 @@ Page {
     property int input_height: 96
     property int msg_border: 16
     visible: conversations.current
-    property var scolors: ["silver", "orange", "yellow", "lightgreen", "red"]
+    property var messageColors: ["silver", "orange", "yellow", "lightgreen", "red"]
+    property var fileColors: ["silver", "blue", "silver", "orange", "yellow", "yellowgreen", "lightgreen", "red", "red", "red"]
 
     header: Header {
         whom: conversations.current.participant
@@ -20,10 +21,14 @@ Page {
         anchors.topMargin: 4
     }
 
-    function pickColor(direction, state) {
+    function pickColor(direction, state, type) {
+        if (type === MessagesModel.FILE) {
+            return fileColors[state]
+        }
+
         if (direction === Message.INCOMING)
             return "lightblue"
-        return scolors[state]
+        return messageColors[state]
     }
 
     // Background
@@ -96,7 +101,7 @@ Page {
                 x: direction === Message.OUTGOING ? 0 : msg_border
                 width: parent.width - msg_border - scrollbar.width
                 height: type === MessagesModel.MESSAGE ? textarea.contentHeight + (margin * 2) + date.height : 48
-                color: pickColor(direction, messageState)
+                color: pickColor(direction, messageState, type)
                 radius: 4
 
                 TextEdit {
@@ -204,10 +209,11 @@ Page {
                 function showMenu(mouse) {
                     if (type === MessagesModel.FILE) {
 
+                        var ctxmenu = null
                         if (file.direction === File.OUTGOING) {
-                            var ctxmenu = contextFileSendMenu
+                            ctxmenu = contextFileSendMenu
                         } else {
-                            var ctxmenu = contextFileReceiveMenu
+                            ctxmenu = contextFileReceiveMenu
                         }
 
                         ctxmenu.x = mouse.x;
@@ -361,7 +367,7 @@ Page {
                 contextFileReceiveMenu.file.openFolder()
             }
             text: qsTr("Open Folder")
-            enabled: contextFileReceiveMenu.file.state === File.FS_DONE
+            enabled: contextFileReceiveMenu.file && contextFileReceiveMenu.file.state === File.FS_DONE
         }
     }
 }

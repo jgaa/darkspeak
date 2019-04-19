@@ -38,7 +38,22 @@ File::File(QObject &parent, std::unique_ptr<FileData> data)
 
 void File::cancel()
 {
+    if (getState() == FS_FAILED || getState() == FS_REJECTED) {
+        return;
+    }
+
+    if (getState() == FS_TRANSFERRING) {
+        transferFailed("Cancelled");
+        return;
+    }
+
     setState(FS_CANCELLED);
+
+    if (auto contact = getContact()) {
+        if (contact->isOnline()) {
+            contact->sendAck("IncomingFile", "Abort", getFileId().toBase64());
+        }
+    }
 }
 
 void File::accept()
@@ -255,9 +270,9 @@ void File::setChannel(quint32 channel)
 
 float File::getProgress() const noexcept
 {
-    if (getState() == State::FS_DONE) {
-        return 1.0F;
-    }
+//    if (getState() == State::FS_DONE) {
+//        return 1.0F;
+//    }
 
     if (!getSize()) {
         return 0.0F;
@@ -520,7 +535,18 @@ void File::transferFailed(const QString &reason, const File::State state)
 
     // Tell the other side that we failed
     if (auto contact = getContact()) {
-        contact->sendAck("IncomingFile", "Failed", getFileId().toBase64());
+        QString ackStatus;
+        switch(state) {
+        case FS_REJECTED:
+            ackStatus = QStringLiteral("Rejected");
+            break;
+        case FS_CANCELLED:
+            ackStatus = QStringLiteral("Abort");
+            break;
+        default:
+            ackStatus = QStringLiteral("Failed");
+        }
+        contact->sendAck("IncomingFile", ackStatus, getFileId().toBase64());
     }
 
     emit transferDone(this, false);
