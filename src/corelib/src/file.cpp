@@ -49,6 +49,8 @@ void File::cancel()
 
     setState(FS_CANCELLED);
 
+    LFLOG_DEBUG << "Cancelled file #" << getId() << " " << getPath();
+
     if (auto contact = getContact()) {
         if (contact->isOnline()) {
             contact->sendAck("IncomingFile", "Abort", getFileId().toBase64());
@@ -77,7 +79,16 @@ void File::reject()
     if (getDirection() != INCOMING) {
         return;
     }
+
     setState(FS_REJECTED);
+
+    LFLOG_DEBUG << "Rejected file #" << getId() << " " << getPath();
+
+    if (auto contact = getContact()) {
+        if (contact->isOnline()) {
+            contact->sendAck("IncomingFile", "Rejected", getFileId().toBase64());
+        }
+    }
 }
 
 void File::openInDefaultApplication()
@@ -535,18 +546,20 @@ void File::transferFailed(const QString &reason, const File::State state)
 
     // Tell the other side that we failed
     if (auto contact = getContact()) {
-        QString ackStatus;
-        switch(state) {
-        case FS_REJECTED:
-            ackStatus = QStringLiteral("Rejected");
-            break;
-        case FS_CANCELLED:
-            ackStatus = QStringLiteral("Abort");
-            break;
-        default:
-            ackStatus = QStringLiteral("Failed");
+        if (contact->isOnline()) {
+            QString ackStatus;
+            switch(state) {
+            case FS_REJECTED:
+                ackStatus = QStringLiteral("Rejected");
+                break;
+            case FS_CANCELLED:
+                ackStatus = QStringLiteral("Abort");
+                break;
+            default:
+                ackStatus = QStringLiteral("Failed");
+            }
+            contact->sendAck("IncomingFile", ackStatus, getFileId().toBase64());
         }
-        contact->sendAck("IncomingFile", ackStatus, getFileId().toBase64());
     }
 
     emit transferDone(this, false);

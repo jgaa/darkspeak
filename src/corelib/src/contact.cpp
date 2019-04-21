@@ -1176,12 +1176,9 @@ void Contact::clearFileQueues()
     auto tmpTransfers = transferringFileQueue_;
 
     for(auto& file : tmpTransfers) {
-        if (file->getDirection() == File::OUTGOING) {
-            file->setState(File::FS_OFFERED);
-        } else /* incoming */ {
-            file->setState(File::FS_QUEUED);
+        if (file->getState() == File::FS_TRANSFERRING) {
+            file->transferFailed("Broken connection", File::FS_FAILED);
         }
-        file->setChannel(0);
     }
 
     transferringFileQueue_.clear();

@@ -363,7 +363,26 @@ QString MessagesModel::getStateName(const MessagesModel::Row &r) const
         return "Received";
     }
 
-    return fnames.at(static_cast<size_t>(r.file_->getState()));
+    assert(r.file_);
+
+    const auto state = r.file_->getState();
+    if (state == File::FS_TRANSFERRING) {
+        if (r.file_->getDirection() == File::INCOMING) {
+            return "Receiving";
+        }
+
+        return "Sending";
+    }
+
+    if (state == File::FS_DONE) {
+        if (r.file_->getDirection() == File::INCOMING) {
+            return "Received";
+        }
+
+        return "Sent";
+    }
+
+    return fnames.at(static_cast<size_t>(state));
 }
 
 

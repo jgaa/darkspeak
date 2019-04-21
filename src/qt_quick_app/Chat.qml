@@ -30,6 +30,16 @@ Page {
         return messageColors[state]
     }
 
+    function getTransferHeight(direction, state, type) {
+        var height = 48
+
+        if (direction === File.INCOMING && state === File.FS_OFFERED) {
+            height += 32
+        }
+
+        return height
+    }
+
     // Background
     Rectangle {
         width: parent.width
@@ -99,7 +109,9 @@ Page {
                 property int margin: 4
                 x: direction === Message.OUTGOING ? 0 : msg_border
                 width: parent.width - msg_border - scrollbar.width
-                height: type === MessagesModel.MESSAGE ? textarea.contentHeight + (margin * 2) + date.height : 48
+                height: type === MessagesModel.MESSAGE
+                        ? textarea.contentHeight + (margin * 2) + date.height
+                        : getTransferHeight(direction, messageState, type)
                 color: pickColor(direction, messageState, type)
                 radius: 4
 
@@ -205,6 +217,33 @@ Page {
                     }
                 }
 
+                Button {
+                    id: accepptBtn
+                    height: 28
+                    text: qsTr("Accept")
+                    anchors.top: fileName.bottom
+                    anchors.topMargin: 4
+                    anchors.left: fileName.left
+                    anchors.leftMargin: 0
+                    visible: cfile && (cfile.direction === File.INCOMING) && (cfile.state === File.FS_OFFERED)
+                    onClicked: {
+                        cfile.accept()
+                    }
+                }
+
+                Button {
+                    height: 28
+                    text: qsTr("Reject")
+                    anchors.top: fileName.bottom
+                    anchors.topMargin: 4
+                    anchors.left: accepptBtn.right
+                    anchors.leftMargin: 6
+                    visible: cfile && cfile.direction === File.INCOMING && cfile.state === File.FS_OFFERED
+                    onClicked: {
+                        cfile.reject()
+                    }
+                }
+
                 function showMenu(mouse) {
                     if (type === MessagesModel.FILE) {
 
@@ -290,6 +329,7 @@ Page {
 
             enabled : (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_WAITING)
                 || (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_OFFERED)
+                || (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_TRANSFERRING)
             text: qsTr("Cancel")
         }
 
@@ -331,7 +371,11 @@ Page {
 
         MenuItem {
             onTriggered: {
-                contextFileReceiveMenu.file.reject();
+                if (contextFileReceiveMenu.file && contextFileReceiveMenu.file.state == File.FS_TRANSFERRING) {
+                    contextFileReceiveMenu.file.cancel();
+                } else {
+                    contextFileReceiveMenu.file.reject();
+                }
             }
 
             text: (contextFileReceiveMenu.file && contextFileReceiveMenu.file.state == File.FS_TRANSFERRING)
@@ -371,6 +415,10 @@ Page {
         }
     }
 }
+
+
+
+
 
 
 
