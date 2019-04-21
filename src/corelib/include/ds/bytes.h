@@ -14,7 +14,10 @@ void valueToBytes(const valueT value, bufT& buffer) {
     assert(sizeof(value) == buffer.size());
 
     auto bytes = static_cast<const char *>(static_cast<const void *>(&value));
-    std::copy(bytes, bytes + sizeof(bufT), buffer.data());
+    //std::copy(bytes, bytes + sizeof(bufT), buffer.data());
+    for(size_t i = 0; i < sizeof(value); ++i) {
+        buffer.at(i) = bytes[i];
+    }
 }
 
 template <typename valueT, typename bufT>

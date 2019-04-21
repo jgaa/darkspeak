@@ -4,8 +4,6 @@ import com.jgaa.darkspeak 1.0
 
 Page {
     id: root
-    //width: 600
-    //height: 400
     property int input_height: 96
     property int msg_border: 16
     visible: conversations.current
@@ -13,21 +11,22 @@ Page {
     property var fileColors: ["silver", "blue", "silver", "orange", "yellow", "yellowgreen", "lightgreen", "red", "red", "red"]
 
     header: Header {
-        whom: conversations.current.participant
+        whom: conversations.current ? conversations.current.participant : null
         text: qsTr("Chat with ")
-        anchors.left: parent.left
-        anchors.leftMargin: 4
-        anchors.top: parent.top
-        anchors.topMargin: 4
     }
 
     function pickColor(direction, state, type) {
+        if (typeof state !== 'number') {
+            return "grey"
+        }
+
         if (type === MessagesModel.FILE) {
             return fileColors[state]
         }
 
         if (direction === Message.INCOMING)
             return "lightblue"
+
         return messageColors[state]
     }
 
@@ -96,7 +95,7 @@ Page {
             Component {
                 Rectangle {
                 id: textbox
-                property File cfile: file
+                property File cfile: file ? file : null
                 property int margin: 4
                 x: direction === Message.OUTGOING ? 0 : msg_border
                 width: parent.width - msg_border - scrollbar.width
@@ -111,7 +110,7 @@ Page {
                     font.pointSize: 8
                     color: direction === Message.INCOMING
                         ? "darkblue" : "darkgreen"
-                    text: qsTr(stateName)
+                    text: stateName ? qsTr(stateName) : ""
                 }
 
                 TextEdit {
@@ -167,7 +166,7 @@ Page {
 
                 Label {
                     id: fileSize
-                    visible: type === MessagesModel.FILE
+                    visible: cfile && (type === MessagesModel.FILE)
                     text: type === MessagesModel.FILE ? file.size + " bytes" : null
                     anchors.top: date.bottom
                     anchors.left: fileName.right
@@ -187,7 +186,7 @@ Page {
                     visible: type === MessagesModel.FILE
                     from: 0.0
                     to: 1.0
-                    value: cfile.progress
+                    value: cfile ? cfile.progress : 0
                 }
 
                 MouseArea {
@@ -289,8 +288,8 @@ Page {
                 contextFileSendMenu.file.cancel()
             }
 
-            enabled : contextFileSendMenu.file.state === File.FS_WAITING
-                || contextFileSendMenu.file.state === File.FS_OFFERED
+            enabled : (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_WAITING)
+                || (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_OFFERED)
             text: qsTr("Cancel")
         }
 
@@ -327,7 +326,7 @@ Page {
                 contextFileReceiveMenu.file.accept();
             }
             text: qsTr("Accept")
-            enabled: contextFileReceiveMenu.file.state == File.FS_OFFERED
+            enabled: contextFileReceiveMenu.file && contextFileReceiveMenu.file.state == File.FS_OFFERED
         }
 
         MenuItem {
@@ -335,7 +334,8 @@ Page {
                 contextFileReceiveMenu.file.reject();
             }
 
-            text: contextFileReceiveMenu.file.state == File.FS_TRANSFERRING ? qsTr("Cancel") : qsTr("Reject")
+            text: (contextFileReceiveMenu.file && contextFileReceiveMenu.file.state == File.FS_TRANSFERRING)
+                  ? qsTr("Cancel") : qsTr("Reject")
         }
 
         MenuItem {
@@ -359,7 +359,7 @@ Page {
                 contextFileReceiveMenu.file.openInDefaultApplication()
             }
             text: qsTr("Open File (take care!)")
-            enabled: contextFileReceiveMenu.file.state === File.FS_DONE
+            enabled: contextFileReceiveMenu.file && contextFileReceiveMenu.file.state === File.FS_DONE
         }
 
         MenuItem {

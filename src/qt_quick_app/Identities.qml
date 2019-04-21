@@ -42,14 +42,15 @@ Page {
                 anchors.fill: parent
                 spacing: 8
 
+                Column {
+                    padding: 5
+                    anchors.verticalCenter: parent.verticalCenter
+
                     Rectangle {
                         id: avatarFrame
                         height: 100
                         width: 100
                         radius: 5
-                        anchors.left: parent.left
-                        anchors.leftMargin: 4
-                        anchors.verticalCenter: parent.verticalCenter
                         border.color: cid.online ? "lime" : "firebrick"
                         color: "black"
 
@@ -80,10 +81,10 @@ Page {
                             }
                         }
                     }
+                }
 
                 Column {
                     spacing: 10
-                    x: 116
                     Text {
                         font.pointSize: 14
                         color: "white"

@@ -81,7 +81,7 @@ public:
 
     ~Contact() override;
 
-    Q_PROPERTY(int id READ getId)
+    Q_PROPERTY(int id READ getId CONSTANT)
     Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
     Q_PROPERTY(QString nickName READ getNickName WRITE setNickName NOTIFY nickNameChanged)
     Q_PROPERTY(QString group READ getGroup WRITE setGroup NOTIFY groupChanged)
@@ -89,20 +89,20 @@ public:
     Q_PROPERTY(QString notes READ getNotes WRITE setNotes NOTIFY notesChanged)
     Q_PROPERTY(QImage avatar READ getAvatar WRITE setAvatar NOTIFY avatarChanged)
     Q_PROPERTY(QString avatarUrl READ getAvatarUrl NOTIFY avatarUrlChanged)
-    Q_PROPERTY(QUuid uuid READ getUuid)
-    Q_PROPERTY(InitiatedBy whoInitiated READ getWhoInitiated)
-    Q_PROPERTY(QDateTime created READ getCreated)
+    Q_PROPERTY(QUuid uuid READ getUuid CONSTANT)
+    Q_PROPERTY(InitiatedBy whoInitiated READ getWhoInitiated CONSTANT)
+    Q_PROPERTY(QDateTime created READ getCreated CONSTANT)
     Q_PROPERTY(QDateTime lastSeen READ getLastSeen NOTIFY lastSeenChanged)
     Q_PROPERTY(bool online READ isOnline WRITE setOnline NOTIFY onlineChanged)
     Q_PROPERTY(OnlineStatus onlineStatus READ getOnlineStatus NOTIFY onlineStatusChanged)
     Q_PROPERTY(QString onlineIcon READ getOnlineIcon WRITE setOnlineIcon NOTIFY onlineIconChanged)
-    Q_PROPERTY(QByteArray b58identity READ getB58EncodedIdetity)
-    Q_PROPERTY(QByteArray handle READ getHandle)
+    Q_PROPERTY(QByteArray b58identity READ getB58EncodedIdetity CONSTANT)
+    Q_PROPERTY(QByteArray handle READ getHandle CONSTANT)
     Q_PROPERTY(bool autoConnect READ isAutoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
     Q_PROPERTY(ContactState state READ getState WRITE setState NOTIFY stateChanged)
     Q_PROPERTY(QString addMeMessage READ getAddMeMessage WRITE setAddMeMessage NOTIFY addMeMessageChanged)
     Q_PROPERTY(bool peerVerified READ isPeerVerified WRITE setPeerVerified NOTIFY peerVerifiedChanged)
-    Q_PROPERTY(Identity * identity READ getIdentity)
+    Q_PROPERTY(Identity * identity READ getIdentity CONSTANT)
     Q_PROPERTY(bool sentAvatar READ isAvatarSent WRITE setSentAvatar NOTIFY sentAvatarChanged)
 
     Q_INVOKABLE void connectToContact();

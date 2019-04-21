@@ -19,7 +19,7 @@ Rectangle {
         anchors.verticalCenterOffset: 0
         anchors.horizontalCenterOffset: 0
         fillMode: Image.PreserveAspectFit
-        source: root.source
+        source: root.source ? root.source : ""
         cache: false
         layer.enabled: root.rounded
         layer.effect: OpacityMask {

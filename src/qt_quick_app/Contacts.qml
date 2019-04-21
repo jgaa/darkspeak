@@ -6,13 +6,10 @@ import com.jgaa.darkspeak 1.0
 
 Page {
     id: root
+
     header: Header {
         whom: identities.current
         text: qsTr("Contacts for ")
-        anchors.left: parent.left
-        anchors.leftMargin: 4
-        anchors.top: parent.top
-        anchors.topMargin: 4
     }
 
     property var states: [qsTr("Pending"), qsTr("Waiting"), qsTr("OK"), qsTr("Rejected"), qsTr("BLOCKED")]
@@ -41,7 +38,7 @@ Page {
 
         onCurrentItemChanged: {
             // This is where we synchronize conversations with the current selected Contact
-            conversations.setContact(currentItem.cco)
+            conversations.setContact(currentItem ? currentItem.cco : null)
         }
 
         delegate: Item {
@@ -55,30 +52,34 @@ Page {
                 anchors.fill: parent
                 spacing: 8
 
-                RoundedImage {
-                    source: cco.avatarUrl
-                    height: 100
-                    width: 100
-                    anchors.left: parent.left
-                    anchors.leftMargin: 4
+                Column {
+                    padding: 5
                     anchors.verticalCenter: parent.verticalCenter
-                    border.width: 2
-                    border.color: cco.online ? "lime" : "firebrick"
-                    color: "black"
 
-                    Rectangle {
-                        height: parent.width / 3
-                        color: root.onlineColors[cco.onlineStatus]
-                        width: height
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.topMargin: 0
-                        radius: width*0.5
+                    RoundedImage {
+                        source: cco ? cco.avatarUrl : ""
+                        height: 100
+                        width: 100
+                        border.width: 2
+                        border.color: cco
+                                      ? cco.online ? "lime" : "firebrick"
+                                      : "grey"
+                        color: "black"
 
-                        Image {
-                            id: torStatus
-                            anchors.fill: parent
-                            source: cco.onlineIcon
+                        Rectangle {
+                            height: parent.width / 3
+                            color: cco ? root.onlineColors[cco.onlineStatus] : "grey"
+                            width: height
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.topMargin: 0
+                            radius: width*0.5
+
+                            Image {
+                                id: torStatus
+                                anchors.fill: parent
+                                source: cco ? cco.onlineIcon : ""
+                            }
                         }
                     }
                 }
@@ -89,7 +90,9 @@ Page {
                     Text {
                         font.pointSize: 14
                         color: "white"
-                        text: cco.name ? cco.name : cco.nickName
+                        text: cco
+                            ? cco.name ? cco.name : cco.nickName
+                            : ""
                         font.bold: itemDelegate.ListView.isCurrentItem
                     }
 
@@ -106,25 +109,25 @@ Page {
                         Text {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: cco.nickName
+                            text: cco ? cco.nickName : ""
                         }
 
                         Text {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: cco.lastSeen
+                            text: cco ? cco.lastSeen : null
                         }
 
                         Text {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: cco.handle
+                            text: cco ? cco.handle : null
                         }
 
                         Text {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: cco.address
+                            text: cco ? cco.address : ""
                         }
 
                         RowLayout {
@@ -132,26 +135,37 @@ Page {
 
                             Text {
                                 font.pointSize: 8;
-                                color: cco.peerVerified ? "lime" : "yellow"
-                                text: cco.peerVerified ? qsTr("Verified") : qsTr("Unverified")
+                                color: cco
+                                       ? cco.peerVerified ? "lime" : "yellow"
+                                       : "grey"
+                                text: cco
+                                    ? cco.peerVerified ? qsTr("Verified") : qsTr("Unverified")
+                                    : ""
                             }
 
                             Text {
-                                color: root.stateColors[cco.state]
+                                color: cco ? root.stateColors[cco.state] : "grey"
                                 font.pointSize: 8;
-                                text: root.states[cco.state]
+                                text: cco ? root.states[cco.state] : ""
                             }
 
                             Text {
                                 color: "skyblue"
                                 font.pointSize: 8;
-                                text: cco.whoInitiated === Contact.ME ? qsTr("AddedByMe") : ""
+                                text: cco
+                                      ? cco.whoInitiated === Contact.ME ? qsTr("AddedByMe") : ""
+                                      : ""
+
                             }
 
                             Text {
-                                color: cco.autoConnect ? "lime" : "orange"
+                                color: cco
+                                       ? cco.autoConnect ? "lime" : "orange"
+                                       : "grey"
                                 font.pointSize: 8;
-                                text: cco.autoConnect ? qsTr("Auto") : qsTr("Manual")
+                                text: cco
+                                      ? cco.autoConnect ? qsTr("Auto") : qsTr("Manual")
+                                      : ""
                             }
                         }
                     }
@@ -205,10 +219,11 @@ Page {
          id: highlightBar
          Rectangle {
              radius: 5
-             y: list.currentItem.y;
+             y: list.currentItem ? list.currentItem.y : 0;
              color: "midnightblue"
              border.color: "aquamarine"
              Behavior on y { SpringAnimation { spring: 1; damping: 0.1 } }
+             visible: list.currentItem
          }
     }
 
@@ -219,7 +234,7 @@ Page {
             icon.source: "qrc:///images/onion-bw.svg"
             onTriggered: list.toggleOnline()
             enabled: manager.online
-            text: list.currentItem.cco.online ? qsTr("Disconnect") : qsTr("Connect")
+            text: (list.currentItem && list.currentItem.cco.online) ? qsTr("Disconnect") : qsTr("Connect")
         }
 
         MenuItem {
@@ -236,10 +251,3 @@ Page {
         }
     }
 }
-
-
-
-/*##^## Designer {
-    D{i:0;autoSize:true;height:480;width:640}
-}
- ##^##*/

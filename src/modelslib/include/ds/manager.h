@@ -41,8 +41,8 @@ public:
 
     Q_ENUM(Pages)
 
-    Q_PROPERTY(QString programName READ getProgramName)
-    Q_PROPERTY(QString programNameAndVersion READ getProgramNameAndVersion)
+    Q_PROPERTY(QString programName READ getProgramName CONSTANT)
+    Q_PROPERTY(QString programNameAndVersion READ getProgramNameAndVersion CONSTANT)
     Q_PROPERTY(int currentPage READ getCurrentPage WRITE setCurrentPage NOTIFY currentPageChanged)
 
     Q_PROPERTY(int appState READ getAppState NOTIFY appStateChanged)

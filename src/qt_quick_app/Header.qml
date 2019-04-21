@@ -2,7 +2,7 @@ import QtQuick 2.0
 import QtQuick.Controls 2.5
 import QtQuick.Layouts 1.3
 
-Row {
+Item {
     id: root
     height: 50
     property var whom
@@ -10,7 +10,7 @@ Row {
 
     Label {
         id: label
-        text: root.text + root.whom.name
+        text: root.text + (root.whom ? root.whom.name : "")
         anchors.verticalCenter: parent.verticalCenter
         anchors.left: parent.left
         anchors.top: parent.top
@@ -21,11 +21,11 @@ Row {
 
     RoundedImage {
         id: headerImage
-        source: root.whom.avatarUrl
+        source: root.whom ? root.whom.avatarUrl : null
         height: root.height - 2
         width: root.height -2
         border.width: 2
-        border.color: root.whom.online ? "lime" : "firebrick"
+        border.color: (root.whom && root.whom.online) ? "lime" : "firebrick"
         color: "black"
         anchors.left: label.right
         anchors.leftMargin: 6

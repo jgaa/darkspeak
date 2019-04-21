@@ -119,19 +119,19 @@ public:
          QDateTime created,
          IdentityData data);
 
-    Q_PROPERTY(int id READ getId)
+    Q_PROPERTY(int id READ getId CONSTANT)
     Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
-    Q_PROPERTY(QByteArray hash READ getHash)
+    Q_PROPERTY(QByteArray hash READ getHash CONSTANT)
     Q_PROPERTY(QByteArray address READ getAddress WRITE setAddress NOTIFY addressChanged)
     Q_PROPERTY(QByteArray addressData READ getAddressData WRITE setAddressData NOTIFY addressDataChanged)
     Q_PROPERTY(QString notes READ getNotes WRITE setNotes NOTIFY notesChanged)
     Q_PROPERTY(QImage avatar READ getAvatar WRITE setAvatar NOTIFY avatarChanged)
     Q_PROPERTY(QString avatarUrl READ getAvatarUrl NOTIFY avatarUrlChanged)
-    Q_PROPERTY(QUuid uuid READ getUuid)
-    Q_PROPERTY(QDateTime created READ getCreated)
+    Q_PROPERTY(QUuid uuid READ getUuid CONSTANT)
+    Q_PROPERTY(QDateTime created READ getCreated CONSTANT)
     Q_PROPERTY(bool online READ isOnline WRITE setOnline NOTIFY onlineChanged)
-    Q_PROPERTY(QByteArray b58identity READ getB58EncodedIdetity)
-    Q_PROPERTY(QByteArray handle READ getHandle)
+    Q_PROPERTY(QByteArray b58identity READ getB58EncodedIdetity CONSTANT)
+    Q_PROPERTY(QByteArray handle READ getHandle CONSTANT)
     Q_PROPERTY(bool autoConnect READ isAutoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
 
     Q_INVOKABLE void addContact(const QVariantMap& args);

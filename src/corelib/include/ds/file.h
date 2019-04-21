@@ -60,15 +60,15 @@ public:
     File(QObject& parent);
     File(QObject& parent, std::unique_ptr<FileData> data);
 
-    Q_PROPERTY(int id READ getId)
-    Q_PROPERTY(QByteArray fileId READ getFileId)
+    Q_PROPERTY(int id READ getId CONSTANT)
+    Q_PROPERTY(QByteArray fileId READ getFileId CONSTANT)
     Q_PROPERTY(State state READ getState NOTIFY stateChanged)
-    Q_PROPERTY(Direction direction READ getDirection)
+    Q_PROPERTY(Direction direction READ getDirection CONSTANT)
     Q_PROPERTY(bool active READ isActive NOTIFY isActiveChanged)
     Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
     Q_PROPERTY(QString path READ getPath WRITE setPath NOTIFY pathChanged)
     Q_PROPERTY(QString hash READ getPrintableHash NOTIFY hashChanged)
-    Q_PROPERTY(QDateTime created READ getCreated)
+    Q_PROPERTY(QDateTime created READ getCreated CONSTANT)
     Q_PROPERTY(QDateTime ackTime READ getAckTime NOTIFY ackTimeChanged)
     Q_PROPERTY(QDateTime fileTime READ getFileTime NOTIFY fileTimeChanged)
     Q_PROPERTY(qlonglong size READ getSize NOTIFY sizeChanged)
