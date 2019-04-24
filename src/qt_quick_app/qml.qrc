@@ -45,5 +45,8 @@
         <file>RoundedImage.qml</file>
         <file>Header.qml</file>
         <file>FileSelecter.qml</file>
+        <file>MessageComponent.qml</file>
+        <file>FileComponent.qml</file>
+        <file>FormattedTime.qml</file>
     </qresource>
 </RCC>
