@@ -112,10 +112,10 @@ Page {
                             text: cco ? cco.nickName : ""
                         }
 
-                        Text {
+                        FormattedTime {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: cco ? cco.lastSeen : null
+                            value: cco ? cco.lastSeen : null
                         }
 
                         Text {

@@ -101,10 +101,10 @@ Page {
                         Label { font.pointSize: 9; text: qsTr("handle")}
                         Label { font.pointSize: 9; text: qsTr("Onion")}
 
-                        Text {
+                        FormattedTime {
                             font.pointSize: 9;
                             color: "skyblue"
-                            text: cid.created
+                            value: cid.created
                         }
 
                         Text {
