@@ -100,8 +100,8 @@ Creates a new identify for a user of the application.
 - [x] Edit Identity dialog
 - [x] Provide a input where the user can enter a new nickname.
 - [x] Update the database and UI.
-- [ ] Notify connected contacts about the change.
-- [ ] Notify contacts about the new nickname when connecting
+- [x] Notify connected contacts about the change.
+- [x] Notify contacts about the new nickname when connecting
 
 **Connect / Disconnect Tor hidden service**
 - [x] Context menu. (Show text "Connect" | "Disconnect" depending on state)
@@ -122,7 +122,7 @@ Creates a new identify for a user of the application.
 - [ ] Validate input: Name (existing name), hash from pubkey (existing contact), onion address correctness, handle correctnes. Ony allow to proceed when all validations are OK.
 
 **Present contacts**
-- [v] Show a view similar to the Identities list (verbose)
+- [x] Show a view similar to the Identities list (verbose)
 
 Backlog
 - [ ] Show a toggle verbose/brief view mode icon in the toolbar
@@ -165,6 +165,11 @@ Backlog
 **Accept an AddMe request**
 - [x] Accept an addmerequest in the UI and add the contact to the appropriate identity. 
 
+**Name**
+- [ ] The user can chose a name for the contact. That name is used if set.
+- [x] If a contact changes his nickname (name of his identity), the new name is shown in the contact-list under 'Nick'. 
+
+
 ## Notifications
 
 Notifications are shown in the home tab, grouped on identity.
@@ -173,6 +178,7 @@ Notifications are shown in the home tab, grouped on identity.
 - [ ] Notification for unread message(s). Only one notification per contact.
 - [ ] When new messages arrive, show the notification for the latest message
 - [ ] If enabled in app-settings, show notifications via system-notifications as well.
+- [ ] If a contact changes his name, and we have defined a name for that contact, add a notifcation asking if we should change the name, or just automaticllaly use the contacts choosen nick.
 
 ## Messages
 - [ ] If a message is in sent state, but not confirmed, re-send it next time we are connected to that contact.
