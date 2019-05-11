@@ -113,15 +113,15 @@ public:
 
     int getId() const noexcept;
     QString getName() const noexcept;
-    void setName(const QString& name);
+    void setName(QString name);
     QString getNickName() const noexcept;
-    void setNickName(const QString& name);
+    void setNickName(QString name);
     QString getGroup() const noexcept;
     void setGroup(const QString& name);
     QByteArray getAddress() const noexcept;
     void setAddress(const QByteArray& address);
     QString getNotes() const noexcept;
-    void setNotes(const QString& notes);
+    void setNotes(QString notes);
     QImage getAvatar() const noexcept;
     QString getAvatarUrl() const noexcept;
     void setAvatar(const QImage& avatar);
@@ -171,6 +171,8 @@ public:
     void onAddmeRequest(const PeerAddmeReq& req);
     //void onReceivedMessage(const PeerMessage& msg, Conversation *conversation = {});
     void sendAck(const QString& what, const QString& status, const QString& data = {});
+    static bool validateNick(const QString& nickName);
+    void sendUserInfo();
 
 signals:
     void nameChanged();
@@ -189,7 +191,7 @@ signals:
     void onlineStatusChanged();
     void sendAddMeLater();
     void sendAddmeAckLater();
-    void processOnlineLater();
+    //void processOnlineLater();
     void manuallyDisconnectedChanged();
     void sentAvatarChanged();
     void avatarUrlChanged();
@@ -202,12 +204,12 @@ private slots:
     void onDisconnectedFromPeer(const std::shared_ptr<PeerConnection>& peer);
     void onSendAddMeLater();
     void onSendAddmeAckLater();
-    void onProcessOnlineLater();
     void onReceivedAck(const PeerAck& ack);
     bool procesMessageQueue();
     bool processFilesQueue();
     bool processFileBlocks();
     void onReceivedMessage(const PeerMessage& msg);
+    void onReceivedUserInfo(const PeerUserInfo& uinfo);
     void onReceivedFileOffer(const PeerFileOffer& msg);
     void onReceivedAvatar(const PeerSetAvatarReq& avatar);
     void onOutputBufferEmptied();
@@ -219,6 +221,8 @@ private:
     void queueTransfer(const std::shared_ptr<File>& file);
     void clearFileQueues();
     void prepareForNewConnection();
+    void scheduleProcessOnlineLater();
+    void processOnlineLater();
 
     // Sends reject message if the conversation is not the default and don't exist.
     Conversation *getRequestedOrDefaultConversation(const QByteArray& hash,

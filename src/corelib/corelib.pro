@@ -69,7 +69,8 @@ HEADERS += \
     include/ds/file.h \
     include/ds/hashtask.h \
     include/ds/logutil.h \
-    include/ds/bytes.h
+    include/ds/bytes.h \
+    include/ds/userinfo.h
 
 INCLUDEPATH += \
     $$PWD/../../dependencies/logfault/include \

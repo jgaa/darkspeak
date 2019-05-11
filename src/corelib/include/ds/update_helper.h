@@ -49,8 +49,8 @@ bool updateIf(const char *name, const T& value, T& target, Obj *self, const S& s
     if (value != target) {
         target = value;
 
-        // Update only if the object is added to the database
-        if (self->getId() > 0) {
+        // Update only if the object exists in the database
+        if (self->getId() > 0) {            
             update(self, name, target);
         }
         emit (self->*signal)();

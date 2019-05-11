@@ -45,7 +45,7 @@ Dialog {
 
             TextField {
                 id: name
-                placeholderText: qsTr("Anononymous Coward")
+                placeholderText: clip ? clip.nickName : contact ? contact.nickName : qsTr("Anononymous Coward")
                 Layout.fillWidth: true
             }
 
@@ -104,8 +104,8 @@ Dialog {
         } else {
             const args = {
                 "identity" : identity.id,
-                "name" : name.text ? name.text : qsTr("Anononymous Coward"),
-                "nickName" : clip ? clip.nickName : null,
+                "name" : name.text ? name.text : null,
+                "nickName" : clip ? clip.nickName : nullptr,
                 "handle" : handle.text,
                 "address" : address.text,
                 "addmeMessage" : addmeMessage.text,

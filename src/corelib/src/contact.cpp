@@ -1,6 +1,8 @@
 ﻿
 #include <memory>
 
+#include <QTimer>
+
 #include "ds/contact.h"
 #include "ds/dsengine.h"
 #include "ds/identity.h"
@@ -39,10 +41,6 @@ Contact::Contact(QObject &parent,
 
     connect(this, &Contact::sendAddmeAckLater,
             this, &Contact::onSendAddmeAckLater,
-            Qt::QueuedConnection);
-
-    connect(this, &Contact::processOnlineLater,
-            this, &Contact::onProcessOnlineLater,
             Qt::QueuedConnection);
 
     LFLOG_TRACE << "Contact #" << getId() << " " << getName()
@@ -121,7 +119,10 @@ QString Contact::getName() const noexcept  {
     return data_->name;
 }
 
-void Contact::setName(const QString &name) {
+void Contact::setName(QString name) {
+    if (name.isEmpty()) {
+        name = nullptr;
+    }
     updateIf("name", name, data_->name, this, &Contact::nameChanged);
 }
 
@@ -129,8 +130,11 @@ QString Contact::getNickName() const noexcept  {
     return data_->nickName;
 }
 
-void Contact::setNickName(const QString &name) {
-    updateIf("name", name, data_->nickName, this, &Contact::nickNameChanged);
+void Contact::setNickName(QString name) {
+    if (name.isEmpty()) {
+        name = nullptr;
+    }
+    updateIf("nickname", name, data_->nickName, this, &Contact::nickNameChanged);
 }
 
 QString Contact::getGroup() const noexcept
@@ -154,7 +158,10 @@ QString Contact::getNotes() const noexcept {
     return data_->notes;
 }
 
-void Contact::setNotes(const QString &notes) {
+void Contact::setNotes(QString notes) {
+    if (notes.isEmpty()) {
+        notes = nullptr;
+    }
     updateIf("notes", notes, data_->notes, this, &Contact::notesChanged);
 }
 
@@ -377,11 +384,11 @@ Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
     QSqlQuery query;
 
     enum Fields {
-        id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path
+        id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, sent_avatar
     };
 
     query.prepare("SELECT "
-                  "id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path "
+                  "id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, sent_avatar "
                   " from contact where uuid=:uuid");
     query.bindValue(":uuid", key);
     if(!query.exec()) {
@@ -413,6 +420,7 @@ Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
     data->peerVerified = query.value(peer_verified).toBool();
     data->manuallyDisconnected = query.value(manually_disconnected).toBool();
     data->downloadPath = query.value(download_path).toString();
+    data->sentAvatar = query.value(sent_avatar).toBool();
 
     return make_shared<Contact>(parent,
                                query.value(id).toInt(),
@@ -519,7 +527,7 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
         }
         break;
     case ACCEPTED:
-        emit processOnlineLater();
+        scheduleProcessOnlineLater();
         break;
     case REJECTED:
         // Allow the connection, but only accept addme or addme/ack events.
@@ -573,6 +581,9 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
 
     connect(connection_->peer.get(), &PeerConnection::receivedMessage,
             this, &Contact::onReceivedMessage);
+
+    connect(connection_->peer.get(), &PeerConnection::receivedUserInfo,
+            this, &Contact::onReceivedUserInfo);
 
     connect(connection_->peer.get(), &PeerConnection::receivedAvatar,
             this, &Contact::onReceivedAvatar);
@@ -677,7 +688,7 @@ void Contact::onSendAddmeAckLater()
     }
 }
 
-void Contact::onProcessOnlineLater()
+void Contact::processOnlineLater()
 {
     if (getOnlineStatus() != ONLINE) {
         return;
@@ -689,6 +700,7 @@ void Contact::onProcessOnlineLater()
 
     assert(connection_);
 
+    sendUserInfo();
     loadMessageQueue();
     loadFileQueue();
     onOutputBufferEmptied();
@@ -715,7 +727,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
     if (ack.what == "AddMe") {
         if (ack.status == "Added") {
             setState(ACCEPTED);
-            emit processOnlineLater();
+            scheduleProcessOnlineLater();
         } else if (ack.status == "Pending") {
             setState(WAITING_FOR_ACCEPTANCE);
             ack.peer->close();
@@ -729,16 +741,18 @@ void Contact::onReceivedAck(const PeerAck &ack)
                        << getIdentity()->getName()
                        << ". Ignoring the message.";
         }
-    }if (ack.what == "AddAvatar") {
+    }if (ack.what == "SetAvatar") {
         sentAvatarPendingAck_ = false;
         if (ack.status == "Accepted") {
             LFLOG_TRACE << "Contact " << getName()
                         << " accepted the avatar sent from Identity "
                         << getIdentity()->getName();
+            setSentAvatar(true);
         } else {
             LFLOG_TRACE << "Contact " << getName()
                         << " rejected the avatar sent from Identity "
                         << getIdentity()->getName();
+            setSentAvatar(false);
         }
     } else if (ack.what == "Message") {
         // The message must exist.
@@ -1001,6 +1015,32 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
     conversation->incomingMessage(this, msg.data);
 }
 
+void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
+{
+    if (getState() != ACCEPTED) {
+        LFLOG_WARN << "Rejecting user-info on connection "
+                   << uinfo.peer->getConnectionId().toString()
+                   << ". Not in ACCEPTED state.";
+
+        uinfo.peer->sendAck("UserInfo", "Rejected", "Not in ACCEPTED state");
+        uinfo.peer->close();
+        return;
+    }
+
+    if (!validateNick(uinfo.userInfo.nickName)) {
+        LFLOG_WARN << "Rejecting user-info on connection "
+                   << uinfo.peer->getConnectionId().toString()
+                   << ". Invaid nick-name.";
+
+        uinfo.peer->sendAck("UserInfo", "Rejected", "Invalid nick-name");
+        uinfo.peer->close();
+        return;
+    }
+
+    setNickName(uinfo.userInfo.nickName);
+    uinfo.peer->sendAck("UserInfo", "Accepted");
+}
+
 void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
 {
     if (getState() != ACCEPTED) {
@@ -1193,6 +1233,13 @@ void Contact::prepareForNewConnection()
     }
 }
 
+void Contact::scheduleProcessOnlineLater()
+{
+    QTimer::singleShot(1000, this, [this]() {
+        processOnlineLater();
+    });
+}
+
 Conversation *Contact::getRequestedOrDefaultConversation(const QByteArray &hash,
                                                          PeerConnection &peer,
                                                          const QString &what,
@@ -1259,7 +1306,7 @@ void Contact::onAddmeRequest(const PeerAddmeReq &req)
     if (connection_ && isOnline()) {
         connection_->peer->sendAck("AddMe", "Added");
         setState(ACCEPTED);
-        emit processOnlineLater();
+        scheduleProcessOnlineLater();
     }
 }
 
@@ -1267,6 +1314,34 @@ void Contact::sendAck(const QString &what, const QString &status, const QString 
 {
     if (isOnline()) {
         connection_->peer->sendAck(what, status, data);
+    }
+}
+
+bool Contact::validateNick(const QString &nickName)
+{
+    if (nickName.isEmpty() || (nickName.size() > 32)) {
+        return false;
+    }
+
+    // TODO: Check for unicode trickery and potential exploits
+
+    return true;
+}
+
+void Contact::sendUserInfo()
+{
+    if (isOnline()) {
+        assert(connection_);
+        assert(connection_->peer);
+
+        UserInfo ui;
+        ui.nickName = getIdentity()->getName();
+
+        try {
+            connection_->peer->sendUserInfo(ui);
+        } catch(const std::exception& ex) {
+            LFLOG_DEBUG << "Failed to send suer info: " << ex.what();
+        }
     }
 }
 

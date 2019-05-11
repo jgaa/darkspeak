@@ -383,6 +383,12 @@ void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
 
         LFLOG_TRACE << "Emitting PeerSetAvatarReq";
         emit receivedAvatar(avatar);
+    } else if (type == "UserInfo") {
+        PeerUserInfo uinfo{shared_from_this(), getConnectionId(), id,
+                    json.object().value("nick-name").toString()};
+
+        LFLOG_TRACE << "Emitting PeerUserInfo";
+        emit receivedUserInfo(uinfo);
     } else {
         LFLOG_WARN << "Unrecognized request from peer at connection "
                    << getConnectionId().toString();
@@ -718,6 +724,20 @@ uint64_t Peer::sendAck(const QString &what, const QString &status, const QVarian
 bool Peer::isConnected() const noexcept
 {
     return connection_ && connection_->isOpen();
+}
+
+uint64_t Peer::sendUserInfo(const UserInfo &userInfo)
+{
+    auto json = QJsonDocument{
+        QJsonObject{
+            {"type", "UserInfo"},
+            {"nick-name", userInfo.nickName}
+        }
+    };
+
+    LFLOG_DEBUG << "Sending UserInfo over connection " << getConnectionId().toString();
+
+    return send(json);
 };
 
 uint64_t Peer::sendMessage(const core::Message &message)

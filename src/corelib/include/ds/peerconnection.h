@@ -9,7 +9,8 @@
 #include <QImage>
 
 #include "ds/dscert.h"
-#include "message.h"
+#include "ds/message.h"
+#include "ds/userinfo.h"
 
 namespace ds{
 namespace core {
@@ -155,6 +156,19 @@ struct PeerSendFile : public PeerReq
     int channel = {};
 };
 
+struct PeerUserInfo : public PeerReq
+{
+    PeerUserInfo(const PeerUserInfo&) = default;
+    PeerUserInfo(std::shared_ptr<PeerConnection> peer, QUuid connectionId, quint64 requestId,
+                 QString nickName)
+    : PeerReq{peer, std::move(connectionId), requestId}
+    {
+        userInfo.nickName = nickName;
+    }
+
+    UserInfo userInfo;
+};
+
 
 /*! Representation of a incoming or outgoing connection to a contact.
  *
@@ -183,6 +197,7 @@ public:
     virtual uint64_t sendAck(const QString& what, const QString& status, const QString& data = {}) = 0;
     virtual uint64_t sendAck(const QString& what, const QString& status, const QVariantMap& params) = 0;
     virtual bool isConnected() const noexcept = 0;
+    virtual uint64_t sendUserInfo(const core::UserInfo &userInfo) = 0;
     virtual uint64_t sendMessage(const Message& message) = 0;
     virtual uint64_t sendAvatar(const QImage& avatar) = 0;
     virtual uint64_t offerFile(const File& file) = 0;
@@ -198,6 +213,7 @@ signals:
     void receivedMessage(const PeerMessage& msg);
     void receivedFileOffer(const PeerFileOffer& msg);
     void receivedAvatar(const PeerSetAvatarReq& avatar);
+    void receivedUserInfo(const PeerUserInfo& uinfo);
     void outputBufferEmptied();
 };
 

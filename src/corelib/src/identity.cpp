@@ -318,7 +318,13 @@ QString Identity::getName() const noexcept  {
 }
 
 void Identity::setName(const QString &name) {
-    updateIf("name", name, data_.name, this, &Identity::nameChanged);
+    if (updateIf("name", name, data_.name, this, &Identity::nameChanged)) {
+        forAllContacts([](const Contact::ptr_t& contact){
+            if (contact->isOnline()) {
+                contact->sendUserInfo();
+            }
+        });
+    }
 }
 
 QByteArray Identity::getAddress() const noexcept {
