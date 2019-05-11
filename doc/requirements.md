@@ -4,8 +4,11 @@
 
 Things not in the backlog are scheduled for Beta.
 
-## Operating systems
+## Operating systems / Platforms
 - [x] Ubuntu / Debian
+- [ ] Suse
+- [ ] Centos
+- [ ] Linux appimage
 - [x] Macos
 - [ ] Windows
 
@@ -16,7 +19,7 @@ Beta II
 ## Network
 
 **Tor**
-- [x] Use system's Tor server
+- [x] Use the system's Tor server
 - [ ] Use external Tor server via username / password
 - [x] Support legacy Tor addresses / keys
 - [ ] Make an option for what address-type we want in app-settings, and enforce that when we create Tor services.
@@ -171,4 +174,28 @@ Notifications are shown in the home tab, grouped on identity.
 - [ ] When new messages arrive, show the notification for the latest message
 - [ ] If enabled in app-settings, show notifications via system-notifications as well.
 
+## Messages
+- [ ] If a message is in sent state, but not confirmed, re-send it next time we are connected to that contact.
 
+## File Transfers p2p
+- [ ] Automatically retry transfers that was ongoing or queued when we are connected. The sender side sends a new offer, and the receiver automatically resumes the transfer.
+- [ ] Add context menu on failed files to re-try the transfer. If the sender executes a re-try, the file-state changes to queued, and a new offer is sent. If the receiver executes a re-try, the state is changes to offered, and a new ack is sent to start the transfer.
+- [ ] Only accept 16 file offers in the queue at any time from one contact (to stop DOS)
+- [ ] Time out stalled file transfers on both ends
+- [ ] Today we send large parts of large files to the network, nuch faster then the receiver can receive, efficiently preventing control messages to go trough. We need to slow down, may be by requireing ack's for each n block of data. 
+
+## Log and history
+- [ ] The log winows must show the logs in a readable format. 
+- [ ] Long-clicking on a line hives the information in a pop-up dialog
+- [ ] Show recent history (events) in a new window, sorted by time, grouped on identity.
+
+### Events
+- [ ] Message(s) received. Group on identity, contact, date.
+- [ ] File sent, received, rejected or failed
+- [ ] Contact request sent/received (including current status)
+- [ ] Contact added or deleted
+- [ ] Identity added or deleted
+- [ ] Contact changed nick-name (group on date, show the current)
+- [ ] Contact changed avatar (group on date)
+- [ ] Contact blocked/unblocked
+- [ ] Contact seen (for contacts that have been unavailable for more than a week)
