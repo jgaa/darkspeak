@@ -166,7 +166,7 @@ Backlog
 - [x] Accept an addmerequest in the UI and add the contact to the appropriate identity. 
 
 **Name**
-- [ ] The user can chose a name for the contact. That name is used if set.
+- [x] The user can chose a name for the contact. That name is used if set.
 - [x] If a contact changes his nickname (name of his identity), the new name is shown in the contact-list under 'Nick'. 
 
 
