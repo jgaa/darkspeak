@@ -137,8 +137,8 @@ public:
     Q_INVOKABLE void addContact(const QVariantMap& args);
     Q_INVOKABLE void startService();
     Q_INVOKABLE void stopService();
-
     Q_INVOKABLE void changeTransport();
+    Q_INVOKABLE void setNewTorService(const QString& address, int port, const QString privateKey);
 
     int getId() const noexcept;
     QString getName() const noexcept;

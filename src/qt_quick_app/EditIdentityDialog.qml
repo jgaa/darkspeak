@@ -46,7 +46,9 @@ Dialog {
                 Layout.fillWidth: true
                 placeholderText: qsTr("Anonymous Coward")
                 text: value.name
-                validator: IdentityNameValidator {}
+                validator: IdentityNameValidator {
+                    currentName: identity ? identity.name : null
+                }
                 textColor: acceptableInput ? "black" : "red";
             }
 

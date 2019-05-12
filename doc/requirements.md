@@ -74,9 +74,10 @@ Creates a new identify for a user of the application.
 - [x] Create a new Tor hidden service and replace it with the old one. If the old one was on-line, shut it down before deleting the key. 
 
 **Import a Tor hidden service**
-- [ ] Context menu
-- [ ] Ask the user to confirm.
-- [ ] Import the Tor hidden service via a dialog where the hidden service identifier (onion address), port and private key is provided. Initialize the port field with a valid, random port.
+- [x] Context menu
+- [x] Import the Tor hidden service via a dialog where the hidden service identifier (onion address), port and private key is provided. Initialize the port field with a valid, random port.
+
+Backlog
 - [ ] Allow the user to import a file created from the output of eschalot directly. Select a random port.
 
 **Copy identity as Base58 data.**
@@ -181,6 +182,8 @@ Notifications are shown in the home tab, grouped on identity.
 - [ ] When new messages arrive, show the notification for the latest message
 - [ ] If enabled in app-settings, show notifications via system-notifications as well.
 - [ ] If a contact changes his name, and we have defined a name for that contact, add a notifcation asking if we should change the name, or just automaticllaly use the contacts choosen nick.
+- [ ] If a contact changes his onion address, we get a notification with an option to update the onion address.
+- [ ] If a contact connects with an unknown onion address, we generate a notification and disallow the contact to connect to us until the matter is resolved.
 
 ## Messages
 - [ ] If a message is in sent state, but not confirmed, re-send it next time we are connected to that contact.

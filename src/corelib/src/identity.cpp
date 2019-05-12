@@ -9,6 +9,8 @@
 
 #include "logfault/logfault.h"
 
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTimer>
 
 namespace ds {
@@ -75,6 +77,66 @@ void Identity::changeTransport()
      DsEngine::instance().createNewTransport(
                  data_.name.toUtf8(),
                  data_.uuid);
+}
+
+void Identity::setNewTorService(const QString &address, int port, const QString privateKey)
+{
+    LFLOG_NOTICE << "Setting a new Tor service for " << getName();
+
+    QByteArray key, serviceId = address.toUtf8();
+    key.reserve(privateKey.size());
+
+    if (serviceId.size() > 16) {
+        serviceId.resize(16);
+    }
+
+    // Simple parser for RSA private keys, encoded as base64
+    bool start_of_line = true;
+    bool skip_line = false;
+    for(auto it = privateKey.cbegin(); it != privateKey.cend(); ++it) {
+        if (*it == ' ' || *it == '\t' || *it == '\r') {
+            continue;
+        }
+
+        if (*it == '\n') {
+            start_of_line = true;
+            skip_line = false;
+            continue;
+        }
+
+        // Skip ---- begin and ---- end lines
+        if (start_of_line && (*it == '-')) {
+            skip_line = true;
+        }
+
+        if (skip_line) {
+            continue;
+        }
+
+        // If we got here, we probably have to add the character...
+        key += *it;
+    }
+
+
+    const auto handle = serviceId + ":" + QString::number(port);
+
+    QJsonDocument json {
+        QJsonObject {
+            {"type", "Tor hidden service"},
+            {"key", QString{key}},
+            {"service_id", QString{serviceId}},
+            {"key_type", "RSA1024"},
+            {"port", port},
+            {"address", QString("onion:") + QString{handle}}
+        }
+    };
+
+    if (isOnline()) {
+        stopService();
+    }
+
+    setAddressData(json.toJson(QJsonDocument::Compact));
+    setAddress(handle.toUtf8());
 }
 
 ProtocolManager& Identity::getProtocolManager() {

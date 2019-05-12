@@ -177,6 +177,17 @@ Page {
                                               "identity" : currentIdentity});
             dlg.open()
         }
+
+        function importTorService() {
+            var component = Qt.createComponent("qrc:/ImportTorServiceDialog.qml")
+            var dlg = component.createObject(mainWindow, {"parent" : mainWindow,
+                                              "identity" : currentIdentity});
+            dlg.open()
+        }
+    }
+
+    ImportTorServiceDialog {
+        id: gakke
     }
 
     Component {
@@ -236,6 +247,12 @@ Page {
             icon.name: "document-new"
             onTriggered: confirmNewTransport.open()
             enabled: manager.online
+        }
+
+        MenuItem {
+            text: qsTr("Import Tor service")
+            icon.name: "document-open"
+            onTriggered: list.importTorService()
         }
 
         MenuItem {
