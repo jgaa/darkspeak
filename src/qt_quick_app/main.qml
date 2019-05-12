@@ -18,6 +18,17 @@ ApplicationWindow {
         property alias height: mainWindow.height
     }
 
+    Settings {
+        id: appSettings
+        property bool appAutoConnect : true
+    }
+
+    Component.onCompleted: {
+        if (appSettings.appAutoConnect) {
+            manager.goOnline()
+        }
+    }
+
     header: MainToolBar {
         id: mainToolBar
         height: 32

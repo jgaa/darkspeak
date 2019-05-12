@@ -35,7 +35,9 @@ Backlog
 
 Identities
 
-- [ ] Setting to determine if we go online automatically
+- [x] Setting to determine if we go online automatically
+
+Backlog
 - [ ] Setting to determine if we take identities online immediately, or by random delays, and if so, what the delay-ranges are
 
 ## Identities

@@ -48,5 +48,6 @@
         <file>MessageComponent.qml</file>
         <file>FileComponent.qml</file>
         <file>FormattedTime.qml</file>
+        <file>GeneralSettings.qml</file>
     </qresource>
 </RCC>

@@ -362,6 +362,10 @@ void DsEngine::initialize()
         LFLOG_DEBUG << "Settings are OK at version " << version;
     }
 
+    if (!settings_->contains("appAutoConnect")) {
+        settings_->setValue("appAutoConnect", true);
+    }
+
     if (settings_->value("dbpath", "").toString().isEmpty()) {
         QString dbpath = data_path;
 #ifdef QT_DEBUG

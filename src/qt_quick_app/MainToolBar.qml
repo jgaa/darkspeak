@@ -12,7 +12,7 @@ ToolBar {
         spacing: 6
 
         ToolButton {
-            text: qsTr("Connect")
+            text: (manager.onlineState === 0 || manager.onlineState === 4) ? qsTr("Connect") : qsTr("Disconnect")
             icon.source: manager.onlineStatusIcon
             height: parent.height
 
@@ -30,10 +30,8 @@ ToolBar {
                 console.log("Online status is " + manager.onlineState)
                 if (manager.onlineState === 0 || manager.onlineState === 4) {
                     manager.goOnline()
-                    text = qsTr("Disconnect")
                 } else {
                     manager.goOffline()
-                    text = qsTr("Connect")
                 }
             }
         }
