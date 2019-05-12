@@ -1,5 +1,4 @@
 
-#include <QStringLiteral>
 #include <chrono>
 
 #include "ds/errors.h"
@@ -17,7 +16,7 @@
 #include <QThreadPool>
 #include <QUrl>
 #include <QDesktopServices>
-#include <QStringLiteral>
+//#include <QStringLiteral>
 
 #include "logfault/logfault.h"
 

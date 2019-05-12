@@ -92,7 +92,7 @@ public:
         , file_{file}
     {
         assert(file->getDirection() == File::OUTGOING);
-        if (!io_.open(QIODevice::ReadOnly | QIODevice::ExistingOnly)) {
+        if (!io_.open(QIODevice::ReadOnly)) {
             LFLOG_ERROR << "Failed to open \"" << file->getPath()
                         << "\" for read: " << io_.errorString();
             throw Error("Failed to open file");
