@@ -41,6 +41,9 @@ public:
     void relayNewContactRequest(Identity *identity, const core::PeerAddmeReq &req);
     void disconnectAll();
 
+    // Check if a given name exists in the database
+    bool exists(const QString& name) const;
+
     // QAbstractItemModel interface
 public:
     int rowCount(const QModelIndex &parent) const override;

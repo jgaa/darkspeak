@@ -8,7 +8,8 @@ Dialog {
     id: root
     property Identity identity: null
     property QmlIdentityReq value: QmlIdentityReq {}
-    standardButtons: StandardButton.Ok | StandardButton.Cancel
+    standardButtons: name.acceptableInput ? (StandardButton.Ok | StandardButton.Cancel)
+                                          : StandardButton.Cancel
     property int dlg_width: mainWindow.width > 400 ? 400 : mainWindow.width
     property int dlg_height: mainWindow.height > 500 ? 370 : mainWindow.height
     width: dlg_width
@@ -45,6 +46,8 @@ Dialog {
                 Layout.fillWidth: true
                 placeholderText: qsTr("Anonymous Coward")
                 text: value.name
+                validator: IdentityNameValidator {}
+                textColor: acceptableInput ? "black" : "red";
             }
 
             Row {

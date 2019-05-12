@@ -160,6 +160,21 @@ void IdentityManager::disconnectAll()
     }
 }
 
+bool IdentityManager::exists(const QString &name) const
+{
+    QSqlQuery query;
+    query.prepare("SELECT COUNT(*) FROM identity WHERE name=:name");
+    query.bindValue(":name", name);
+
+    if(!query.exec()) {
+        throw Error(QStringLiteral("Failed to query: %1").arg(
+                        query.lastError().text()));
+    }
+
+    query.next();
+    return query.value(0) > 0;
+}
+
 void IdentityManager::tryMakeTransport(const QString &name, const QUuid& uuid)
 {
     TransportHandleReq req{name, uuid};

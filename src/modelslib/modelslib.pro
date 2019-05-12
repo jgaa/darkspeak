@@ -23,6 +23,7 @@ unix {
 SOURCES += \
     src/contactsmodel.cpp \
     src/conversationsmodel.cpp \
+    src/identitynamevalidator.cpp \
     src/manager.cpp \
     src/logmodel.cpp \
     src/notificationsmodel.cpp \
@@ -32,6 +33,7 @@ SOURCES += \
 
 HEADERS += \
     include/ds/contactsmodel.h \
+    include/ds/identitynamevalidator.h \
     include/ds/strategy.h \
     include/ds/model_util.h \
     include/ds/conversationsmodel.h \

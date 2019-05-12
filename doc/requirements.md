@@ -49,7 +49,7 @@ Creates a new identify for a user of the application.
 - [x] Creates a new private and public key.
 - [x] Creates a new hidden Tor service.
 - [x] Creates an entry in the local identities table in the Sqlite storage.
-- [ ] Deny creation of existing name
+- [x] Deny creation of existing name
 
 **Delete an identity**
 - [x] Context menu

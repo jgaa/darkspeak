@@ -18,6 +18,7 @@
 #include "ds/message.h"
 #include "ds/filesmodel.h"
 #include "ds/imageprovider.h"
+#include "ds/identitynamevalidator.h"
 
 #include "logfault/logfault.h"
 
@@ -112,6 +113,7 @@ int main(int argc, char *argv[])
 
 
     qmlRegisterType<ds::core::QmlIdentityReq>("com.jgaa.darkspeak", 1, 0, "QmlIdentityReq");
+    qmlRegisterType<ds::models::IdentityNameValidator>("com.jgaa.darkspeak", 1, 0, "IdentityNameValidator");
 
     QQmlApplicationEngine engine;
 
