@@ -53,14 +53,14 @@ The [original implementation](https://github.com/jgaa/darkspeak/tree/original-im
 - [ ] Encrypt messages locally and require password to read them
 
 
-Working towards a public Beta release for Desktop in April 2019.
+Working towards a public Beta release for Desktop in August 2019.
 
 # Planned post-beta features
 
-- [ ] Android version (Spring 2019)
-- [ ] IOS version (Spring 2019)
-- [ ] Group Chat (Summer 2019)
-- [ ] Multiple device support (Like Skype - you have DarkSpeak on your laptop, phone and tablet, and people can reach you on any one of them, while the messsage-history are available on all of them) (Fall 2019).
+- [ ] Android version (Fall 2019)
+- [ ] IOS version (Fall 2019)
+- [ ] Group Chat (Winter 2019)
+- [ ] Multiple device support (Like Skype - you have DarkSpeak on your laptop, phone and tablet, and people can reach you on any one of them, while the messsage-history are available on all of them) (Winter 2019).
 - [ ] Built in File Server (like running your own FTP server, just much more secure) (2020)
 - [ ] Feeds (like RSS subscriptions, but designed to be used for anything from Twitter-like short messages, to publishing newsletters).
 - [ ] Add I2P support as an alternative to the Tor transport (so you can be reached on one or both networks).
