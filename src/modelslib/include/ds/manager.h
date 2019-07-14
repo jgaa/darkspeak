@@ -84,6 +84,7 @@ public slots:
     QUrl getOnlineStatusIcon() const;
     void goOnline();
     void goOffline();
+    void onQuit();
 
 signals:
     void appStateChanged(const AppState state);

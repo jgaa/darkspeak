@@ -33,6 +33,10 @@ public:
         cache_.erase(std::find(cache_.begin(), cache_.end(), v));
     }
 
+    void clear() {
+        cache_.clear();
+    }
+
 private:
     std::list<T> cache_;
     size_t size_ = 32;

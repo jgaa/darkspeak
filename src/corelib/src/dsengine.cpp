@@ -248,6 +248,12 @@ void DsEngine::close()
     if (tor_mgr_) {
         identityManager_->disconnectAll();
         tor_mgr_->stop();
+
+        try {
+            tor_mgr_.reset();
+        } catch (const std::exception& ex) {
+            LFLOG_ERROR << "Error when shutting down Tor Manager: " << ex.what();
+        }
     }
 }
 

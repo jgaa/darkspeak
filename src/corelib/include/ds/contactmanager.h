@@ -20,6 +20,7 @@ class ContactManager : public QObject
     Q_OBJECT
 public:
     ContactManager(QObject& parent);
+    ~ContactManager() override;
 
     Contact::ptr_t getContact(const QUuid& uuid);
     Contact::ptr_t getContact(const int dbId);
@@ -39,7 +40,7 @@ private slots:
 
 private:
     Registry<QUuid, Contact> registry_;
-    LruCache<Contact::ptr_t> lru_cache_{3};
+    LruCache<Contact::ptr_t> lru_cache_{7};
 };
 
 }}

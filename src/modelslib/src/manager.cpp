@@ -187,6 +187,7 @@ Manager::Manager()
     instance_ = this;
 }
 
+
 Manager::AppState Manager::getAppState() const
 {
     return app_state_;
@@ -247,6 +248,16 @@ void Manager::goOnline()
 void Manager::goOffline()
 {
     engine_->close();
+}
+
+void Manager::onQuit()
+{
+    LFLOG_INFO << "Darkspeak is shutting down.";
+
+
+    if (engine_) {
+        engine_->close();
+    }
 }
 
 }} // namespaces

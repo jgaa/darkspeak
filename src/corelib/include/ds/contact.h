@@ -74,8 +74,7 @@ public:
     Q_ENUM(ContactState)
 
 
-    Contact(QObject& parent,
-            const int dbId, // -1 if the identity is new
+    Contact(const int dbId, // -1 if the identity is new
             const bool online,
             data_t data);
 
@@ -109,7 +108,7 @@ public:
     Q_INVOKABLE void disconnectFromContact(bool manual = false);
     Q_INVOKABLE Conversation *getDefaultConversation();
 
-    static Contact::ptr_t load(QObject& parent, const QUuid &uuid);
+    static Contact::ptr_t load(const QUuid &uuid);
 
     int getId() const noexcept;
     QString getName() const noexcept;

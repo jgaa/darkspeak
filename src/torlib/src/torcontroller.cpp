@@ -51,7 +51,11 @@ void TorController::stop()
 {
     LFLOG_DEBUG << "Closing the connection to the tor server.";
     setState(CtlState::STOPPING);
-    ctl_->close();
+    if (ctl_) {
+        ctl_->close();
+        ctl_.reset();
+    }
+    service_map_.clear();
 }
 
 void TorController::createService(const QUuid& serviceId)
@@ -63,6 +67,8 @@ void TorController::createService(const QUuid& serviceId)
     ServiceProperties sp;
     sp.uuid = serviceId;
     sp.service_port = distr(rnd_eng_);
+
+    assert(ctl_);
 
     ctl_->sendCommand(QStringLiteral("ADD_ONION NEW:BEST Port=%1").arg(sp.service_port).toLocal8Bit(),
                       [this, sp](const TorCtlReply& reply){
@@ -99,6 +105,8 @@ void TorController::createService(const QUuid& serviceId)
 
 void TorController::startService(const ServiceProperties &sp)
 {
+    assert(ctl_);
+
     LFLOG_DEBUG << "Starting hidden service for id "
                 << sp.uuid.toString()
                 << " as " << sp.service_id
@@ -135,6 +143,8 @@ void TorController::startService(const ServiceProperties &sp)
 
 void TorController::stopService(const QUuid& service)
 {
+    assert(ctl_);
+
     const auto service_id = service_map_.value(service);
     if (service_id.isEmpty()) {
         auto err = service.toString().toUtf8().toStdString();
@@ -158,6 +168,7 @@ void TorController::stopService(const QUuid& service)
 
 void TorController::startAuth()
 {
+    assert(ctl_);
     LFLOG_DEBUG << "Connected to Torctl. Initiating Authentication Procedure.";
 
     setState(CtlState::AUTHENTICATING);
@@ -183,6 +194,7 @@ void TorController::close()
         LFLOG_DEBUG << "Torctl Closing connection";
         ctl_->abort();
     }
+    ctl_.reset();
 }
 
 void TorController::clear()

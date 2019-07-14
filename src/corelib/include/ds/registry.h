@@ -52,6 +52,10 @@ public:
         return registry_.size();
     }
 
+    void clear() {
+        registry_.clear();
+    }
+
 private:
     mutable std::map<keyT, std::weak_ptr<valueT>> registry_;
 };

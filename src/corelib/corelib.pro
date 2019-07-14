@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += core sql network gui
+QT       += core sql network gui quick
 TARGET = corelib
 TEMPLATE = lib
 CONFIG += staticlib

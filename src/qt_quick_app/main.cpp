@@ -56,6 +56,7 @@ int main(int argc, char *argv[])
 #endif
 
     auto manager = make_unique<Manager>();
+    manager->connect(&app, &QGuiApplication::aboutToQuit, manager.get(), &Manager::onQuit);
 
     LFLOG_INFO << manager->getProgramNameAndVersion() << " is ready.";
 
@@ -126,14 +127,14 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("messages", manager->messagesModel());
     engine.rootContext()->setContextProperty("files", manager->filesModel());
 
-    ImageProvider tmpProvider{"temp", [&manager](const QString& id) {
+    auto tmpProvider = new ImageProvider{"temp", [&manager](const QString& id) {
             Q_UNUSED(id)
             return manager->getTmpImage();
         }};
 
-    engine.addImageProvider(tmpProvider.getName(), &tmpProvider);
+    engine.addImageProvider(tmpProvider->getName(), tmpProvider);
 
-    ImageProvider identityProvider{"identity", [](const QString& id) -> QImage {
+    auto identityProvider = new ImageProvider{"identity", [](const QString& id) -> QImage {
             if (auto identity = DsEngine::instance().getIdentityManager()->identityFromUuid({id})) {
                 return identity->getAvatar();
             }
@@ -141,9 +142,9 @@ int main(int argc, char *argv[])
             return {};
         }};
 
-    engine.addImageProvider(identityProvider.getName(), &identityProvider);
+    engine.addImageProvider(identityProvider->getName(), identityProvider);
 
-    ImageProvider contactProvider{"contact", [](const QString& id) -> QImage {
+    auto contactProvider = new ImageProvider{"contact", [](const QString& id) -> QImage {
             if (auto contact = DsEngine::instance().getContactManager()->getContact(QUuid{id})) {
                 return contact->getAvatar();
             }
@@ -151,7 +152,7 @@ int main(int argc, char *argv[])
             return {};
         }};
 
-    engine.addImageProvider(contactProvider.getName(), &contactProvider);
+    engine.addImageProvider(contactProvider->getName(), contactProvider);
 
 
     //QQuickStyle::setStyle("Fusion");

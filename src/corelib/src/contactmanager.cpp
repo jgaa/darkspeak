@@ -6,6 +6,8 @@
 #include "ds/contactmanager.h"
 #include "ds/dsengine.h"
 
+#include <QQmlEngine>
+
 #include "logfault/logfault.h"
 
 namespace ds {
@@ -20,12 +22,16 @@ ContactManager::ContactManager(QObject &parent)
             this, &ContactManager::onContactAddedLater);
 }
 
+ContactManager::~ContactManager()
+{
+}
+
 Contact::ptr_t ContactManager::getContact(const QUuid &uuid)
 {
     auto contact = registry_.fetch(uuid);
 
     if (!contact) {
-        contact = Contact::load(*this, uuid);
+        contact = Contact::load(uuid);
         registry_.add(uuid, contact);
     }
 
@@ -60,7 +66,8 @@ void ContactManager::deleteContact(const QUuid &uuid)
 
 Contact *ContactManager::addContact(Contact::data_t data)
 {
-    auto ptr = make_shared<Contact>(*this, -1, false, move(data));
+    auto ptr = make_shared<Contact>(-1, false, move(data));
+    QQmlEngine::setObjectOwnership(ptr.get(), QQmlEngine::CppOwnership);
     ptr->addToDb();
 
     // Add it to the registry and cache

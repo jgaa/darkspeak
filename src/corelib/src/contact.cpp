@@ -28,12 +28,10 @@ bool comparesEqual(const QByteArray& left, const QByteArray& right) {
 }
 }
 
-Contact::Contact(QObject &parent,
-                 const int dbId,
+Contact::Contact(const int dbId,
                  const bool online,
                  data_t data)
-    : QObject{&parent}
-    , id_{dbId}, online_{online}, data_{move(data)}
+    : id_{dbId}, online_{online}, data_{move(data)}
 {
     connect(this, &Contact::sendAddMeLater,
             this, &Contact::onSendAddMeLater,
@@ -379,7 +377,7 @@ void Contact::sendAvatar(const QImage &avatar)
     sentAvatarPendingAck_ = true;
 }
 
-Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
+Contact::ptr_t Contact::load(const QUuid &key)
 {
     QSqlQuery query;
 
@@ -422,8 +420,7 @@ Contact::ptr_t Contact::load(QObject& parent, const QUuid &key)
     data->downloadPath = query.value(download_path).toString();
     data->sentAvatar = query.value(sent_avatar).toBool();
 
-    return make_shared<Contact>(parent,
-                               query.value(id).toInt(),
+    return make_shared<Contact>(query.value(id).toInt(),
                                false, //Contacts that are connected are always in memory
                                move(data));
 }

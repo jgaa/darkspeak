@@ -203,6 +203,7 @@ void TorProtocolManager::start()
 
 void TorProtocolManager::stop()
 {
+    services_.clear();
     tor_->stop();
     setState(State::SHUTTINGDOWN);
 }
