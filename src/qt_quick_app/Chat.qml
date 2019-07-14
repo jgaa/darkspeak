@@ -10,7 +10,7 @@ Page {
 
     header: Header {
         whom: conversations.current ? conversations.current.participant : null
-        text: qsTr("Chat with ") + whom ? whom.name : ""
+        text: qsTr("Chat with ") + (conversations.current ? conversations.current.name : "")
     }
 
     // Background
