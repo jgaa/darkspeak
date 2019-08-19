@@ -210,3 +210,26 @@ Notifications are shown in the home tab, grouped on identity.
 - [ ] Contact changed avatar (group on date)
 - [ ] Contact blocked/unblocked
 - [ ] Contact seen (for contacts that have been unavailable for more than a week)
+
+### Tests
+- [ ] Add testing framework
+- [ ] Add mock framework
+- [ ] Create new unit tests for torlib
+- [ ] Create new unit tests for protlib
+- [ ] Create new unit tests for cryptolib
+- [ ] Create new unit tests for corelib
+- [ ] Create new unit tests for modelslib
+- [ ] Create new unit tests for UI
+- [ ] Create new functional tests for corelib
+- [ ] Create new functional tests for modelslib (All UI acessible methods)
+- [ ] Create new functional tests tests for QML UI
+
+### CI
+- [ ] Create CI pipeline for Ubuntu 18.04 LTS
+- [ ] Create CI pipeline for Debian 10
+- [ ] Create CI pipeline for Windows
+- [ ] Create CI pipeline for Macos
+- [ ] Create CI pipeline for appimage
+- [ ] Create CI pipeline for Android
+- [ ] Create CI pipeline for ios
+
