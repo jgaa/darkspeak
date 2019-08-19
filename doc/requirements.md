@@ -193,7 +193,7 @@ Notifications are shown in the home tab, grouped on identity.
 - [ ] Add context menu on failed files to re-try the transfer. If the sender executes a re-try, the file-state changes to queued, and a new offer is sent. If the receiver executes a re-try, the state is changes to offered, and a new ack is sent to start the transfer.
 - [ ] Only accept 16 file offers in the queue at any time from one contact (to stop DOS)
 - [ ] Time out stalled file transfers on both ends
-- [ ] Today we send large parts of large files to the network, nuch faster then the receiver can receive, efficiently preventing control messages to go trough. We need to slow down, may be by requireing ack's for each n block of data. 
+- [ ] Today we send large parts of large files to the network, much faster then the receiver can receive, efficiently preventing control messages to go trough. We need to slow down, may be by requireing ack's for each n block of data. 
 
 ## Log and history
 - [ ] The log winows must show the logs in a readable format. 
