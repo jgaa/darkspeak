@@ -213,6 +213,11 @@ Page {
                                               "contact" : currentItem.cco});
             dlg.open()
         }
+
+        function copy() {
+            manager.textToClipboard(currentItem.cco.name + ':'
+                    + currentItem.cco.b58identity)
+        }
     }
 
     Component {
@@ -248,6 +253,12 @@ Page {
             text: qsTr("Edit")
             icon.name: "insert-text"
             onTriggered: list.editCurrent()
+        }
+
+        MenuItem {
+            text: qsTr("Copy contact")
+            icon.name: "edit-copy"
+            onTriggered: list.copy()
         }
     }
 }

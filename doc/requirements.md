@@ -132,8 +132,8 @@ Backlog
 - [ ] Show a shortlist with a smaller avatar, name and blocked / unread messages icon
 
 **Copy contact**
-- [ ] Add context menu
-- [ ] Copy nickname:base58pubkey to the clipboard
+- [x] Add context menu
+- [x] Copy nickname:base58pubkey to the clipboard
 
 **Connect / disconnect**
 - [x] Add context menu
@@ -200,7 +200,7 @@ Notifications are shown in the home tab, grouped on identity.
 - [ ] Long-clicking on a line hives the information in a pop-up dialog
 - [ ] Show recent history (events) in a new window, sorted by time, grouped on identity.
 
-### Events
+## Events
 - [ ] Message(s) received. Group on identity, contact, date.
 - [ ] File sent, received, rejected or failed
 - [ ] Contact request sent/received (including current status)
@@ -211,7 +211,7 @@ Notifications are shown in the home tab, grouped on identity.
 - [ ] Contact blocked/unblocked
 - [ ] Contact seen (for contacts that have been unavailable for more than a week)
 
-### Tests
+## Tests
 - [ ] Add testing framework
 - [ ] Add mock framework
 - [ ] Create new unit tests for torlib
@@ -224,7 +224,7 @@ Notifications are shown in the home tab, grouped on identity.
 - [ ] Create new functional tests for modelslib (All UI acessible methods)
 - [ ] Create new functional tests tests for QML UI
 
-### CI
+## CI
 - [ ] Create CI pipeline for Ubuntu 18.04 LTS
 - [ ] Create CI pipeline for Debian 10
 - [ ] Create CI pipeline for Windows
