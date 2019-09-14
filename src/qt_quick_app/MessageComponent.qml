@@ -48,6 +48,18 @@ Item {
         value: cData.composedTime
     }
 
+    MouseArea {
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        anchors.fill: parent
+        onClicked: {
+            cList.currentIndex = index
+        }
+
+        onPressAndHold: {
+            cList.currentIndex = index
+        }
+    }
+
     TextEdit {
         id: textarea
         anchors.top: date.bottom
@@ -64,15 +76,4 @@ Item {
         clip: true
     }
 
-    MouseArea {
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
-        anchors.fill: parent
-        onClicked: {
-            cList.currentIndex = index
-        }
-
-        onPressAndHold: {
-            cList.currentIndex = index
-        }
-    }
 }
