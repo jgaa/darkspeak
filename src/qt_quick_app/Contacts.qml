@@ -13,8 +13,8 @@ Page {
     }
 
     property var states: [qsTr("Pending"), qsTr("Waiting"), qsTr("OK"), qsTr("Rejected"), qsTr("BLOCKED")]
-    property var stateColors: ["gray", "yellow", "lime", "red", "red"]
-    property var onlineColors: ["firebrick", "blue", "orange", "lime"]
+    property var stateColors: ["gray", "yellow", "lime", "red", "white"]
+    property var onlineColors: ["aquamarine", "blue", "orange", "lime"]
 
     Connections {
         target: contacts
@@ -62,13 +62,14 @@ Page {
                         width: 100
                         border.width: 2
                         border.color: cco
-                                      ? cco.online ? "lime" : "firebrick"
+                                      ? cco.blocked ? "firebrick"
+                                      : cco.online ? "lime" : "blue"
                                       : "grey"
                         color: "black"
 
                         Rectangle {
                             height: parent.width / 3
-                            color: cco ? root.onlineColors[cco.onlineStatus] : "grey"
+                            color: cco ? cco.blocked ? "firebrick" : root.onlineColors[cco.onlineStatus] : "grey"
                             width: height
                             anchors.right: parent.right
                             anchors.top: parent.top
@@ -147,6 +148,12 @@ Page {
                                 color: cco ? root.stateColors[cco.state] : "grey"
                                 font.pointSize: 8;
                                 text: cco ? root.states[cco.state] : ""
+                                Rectangle {
+                                    visible: cco && cco.state === Contact.BLOCKED
+                                    color: "firebrick"
+                                    z: -1
+                                    anchors.fill: parent
+                                }
                             }
 
                             Text {
@@ -166,6 +173,19 @@ Page {
                                 text: cco
                                       ? cco.autoConnect ? qsTr("Auto") : qsTr("Manual")
                                       : ""
+                            }
+
+                            Text {
+                                color: "white"
+                                font.pointSize: 8;
+                                text: cco
+                                      ? cco.iBlocked ? qsTr(" Blocked by me") : ""
+                                      : ""
+                                    Rectangle {
+                                        color: "firebrick"
+                                        z: -1
+                                        anchors.fill: parent
+                                    }
                             }
                         }
                     }
@@ -238,7 +258,7 @@ Page {
         MenuItem {
             icon.source: "qrc:///images/onion-bw.svg"
             onTriggered: list.toggleOnline()
-            enabled: manager.online
+            enabled: manager.online && list.currentItem && !list.currentItem.cco.iBlocked
             text: (list.currentItem && list.currentItem.cco.online) ? qsTr("Disconnect") : qsTr("Connect")
         }
 
@@ -262,3 +282,9 @@ Page {
         }
     }
 }
+
+/*##^##
+Designer {
+    D{i:0;autoSize:true;height:480;width:640}
+}
+##^##*/

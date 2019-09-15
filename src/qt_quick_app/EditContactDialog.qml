@@ -71,7 +71,7 @@ Dialog {
             }
         }
 
-        RowLayout {
+        ColumnLayout {
             spacing: 4
 
             CheckBox {
@@ -79,6 +79,21 @@ Dialog {
                 text: "AutoConnect"
                 checked: contact ? contact.autoConnect : true
 
+            }
+
+            CheckBox {
+                id: blocked
+                text: "Blocked"
+                checked: contact ? contact.blocked : false
+
+            }
+
+            CheckBox {
+                Layout.leftMargin: 10
+                id: notifyBlocked
+                enabled: blocked.checked
+                text: "Notify"
+                checked: contact ? contact.sendBlockNotice : true
             }
         }
 
@@ -101,6 +116,8 @@ Dialog {
             contact.addMeMessage = addmeMessage.text
             contact.autoConnect = autoConnect.checked
             contact.notes = notes.text
+            contact.blocked = blocked.checked
+            contact.sendBlockNotice = notifyBlocked.checked
         } else {
             const args = {
                 "identity" : identity.id,
@@ -110,6 +127,8 @@ Dialog {
                 "address" : address.text,
                 "addmeMessage" : addmeMessage.text,
                 "autoConnect" : autoConnect.checked,
+                "blocked" : blocked.checked,
+                "sendBlockNotice" : notifyBlocked.checked,
                 "notes" : notes.text
             }
 

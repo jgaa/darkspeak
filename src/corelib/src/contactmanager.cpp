@@ -91,7 +91,9 @@ void ContactManager::touch(const Contact::ptr_t &contact)
 
 void ContactManager::onContactAddedLater(const Contact::ptr_t& contact)
 {
-    if (contact->isAutoConnect() && contact->getIdentity()->isOnline()) {
+    if (contact->isAutoConnect()
+            && !contact->isBlocked()
+            && contact->getIdentity()->isOnline()) {
         contact->connectToContact();
     }
 }

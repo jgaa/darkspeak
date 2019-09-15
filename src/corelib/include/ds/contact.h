@@ -68,7 +68,7 @@ public:
         WAITING_FOR_ACCEPTANCE, // We have sent addme, Waiting for ack
         ACCEPTED, // We have experienced connectins in both directions, and received and / or sent ack
         REJECTED,
-        BLOCKED
+        BLOCKED // They blocked us
     };
 
     Q_ENUM(ContactState)
@@ -103,6 +103,10 @@ public:
     Q_PROPERTY(bool peerVerified READ isPeerVerified WRITE setPeerVerified NOTIFY peerVerifiedChanged)
     Q_PROPERTY(Identity * identity READ getIdentity CONSTANT)
     Q_PROPERTY(bool sentAvatar READ isAvatarSent WRITE setSentAvatar NOTIFY sentAvatarChanged)
+    Q_PROPERTY(bool blocked READ isBlocked WRITE setBlocked NOTIFY blockedChanged)
+    Q_PROPERTY(bool iBlocked READ iBlocked WRITE setBlocked NOTIFY blockedChanged)
+    Q_PROPERTY(bool theyBlocked READ theyBlocked WRITE setBlocked NOTIFY blockedChanged)
+    Q_PROPERTY(bool sendBlockNotice READ getSendBlockNotice WRITE setSendBlockNotice NOTIFY sendBlockNoticeChanged)
 
     Q_INVOKABLE void connectToContact();
     Q_INVOKABLE void disconnectFromContact(bool manual = false);
@@ -154,6 +158,12 @@ public:
     int getIdentityId() const noexcept;
     bool wasManuallyDisconnected() const noexcept;
     void setManuallyDisconnected(bool state);
+    bool isBlocked() const;
+    bool iBlocked() const;
+    bool theyBlocked() const;
+    void setBlocked(bool value);
+    bool getSendBlockNotice() const;
+    void setSendBlockNotice(bool value);
 
     void queueMessage(const Message::ptr_t& message);
     void queueFile(const std::shared_ptr<File>& file);
@@ -194,6 +204,8 @@ signals:
     void manuallyDisconnectedChanged();
     void sentAvatarChanged();
     void avatarUrlChanged();
+    void blockedChanged();
+    void sendBlockNoticeChanged();
 
 public slots:
     void onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer);
@@ -222,6 +234,7 @@ private:
     void prepareForNewConnection();
     void scheduleProcessOnlineLater();
     void processOnlineLater();
+    void sendBlockNotification();
 
     // Sends reject message if the conversation is not the default and don't exist.
     Conversation *getRequestedOrDefaultConversation(const QByteArray& hash,
@@ -311,6 +324,12 @@ struct ContactData {
     QString downloadPath;
 
     bool sentAvatar = false;
+
+    // We bloc the contact
+    bool isBlocked = false;
+
+    // Tell them they are blocked
+    bool sendBlockNotice = true;
 };
 
 

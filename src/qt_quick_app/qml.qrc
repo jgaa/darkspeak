@@ -50,5 +50,6 @@
         <file>FormattedTime.qml</file>
         <file>GeneralSettings.qml</file>
         <file>ImportTorServiceDialog.qml</file>
+        <file>images/blocked.svg</file>
     </qresource>
 </RCC>

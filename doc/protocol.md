@@ -108,7 +108,7 @@ Response:
 {
     "type" : "Ack",
     "what" : "AddMe",
-    "status": "Added" | "Pending" | "Rejected"
+    "status": "Added" | "Pending" | "Rejected" | "Blocked"
 }
 ```
 

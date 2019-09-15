@@ -219,6 +219,7 @@ void Identity::connectContacts()
             // This will fail if the contact was deleted while the timer was running...
             if (auto contact = DsEngine::instance().getContactManager()->getContact(uuid)) {
                 if (isOnline()
+                      && !contact->isBlocked()
                       && contact->isAutoConnect()
                       && !contact->wasManuallyDisconnected()
                       && (contact->getOnlineStatus() == Contact::DISCONNECTED)

@@ -141,13 +141,20 @@ Backlog
 
 **Autoconnect**
 - [x] If the autoconnect flag is set, connect to this client when we go online
+
+Backlog
 - [ ] Option in app-settings to determine if we connect immediately, or by random delays, and if so, what the delay-ranges are
 
 **Block contact**
-- [ ] Provide a button in the contact dialog to block the contact
-- [ ] If blocked, disallow the client to connect to us.
-- [ ] If blocked, disable the connect context menu and the autoconnect feature
-- [ ] Show a bloched icon where we usually show the online status in the contact listings
+- [x] Provide a button in the contact dialog to block the contact
+- [x] If blocked, disallow the client to connect to us.
+- [x] If blocked, disable the connect context menu and the autoconnect feature
+- [x] Show a bloched icon where we usually show the online status in the contact listings
+- [x] Provide a button to allow the contact to know he is blocked
+- [x] If allowed, notify the contact that he is blocked before disconnecting.
+
+**Edit contact dialog**
+- [ ] Make it resizable
 
 **Online status**
 - [ ] Show an overlay icon over the avatar with the online status: contacting, disconnected, offline, connecting, online, rejected

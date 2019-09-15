@@ -63,6 +63,13 @@ Contact::~Contact()
 
 void Contact::connectToContact()
 {
+    if (iBlocked()) {
+        LFLOG_DEBUG << "Will not connect to " << getName()
+                    << " at " << getAddress()
+                    << ": Contact is blocked!";
+        return;
+    }
+
     if (auto identity = getIdentity()) {
         disconnectFromContact();
 
@@ -274,7 +281,12 @@ Contact::ContactState Contact::getState() const noexcept
 
 void Contact::setState(const ContactState state)
 {
-    updateIf("state", state, data_->state, this, &Contact::stateChanged);
+    if (updateIf("state", state, data_->state, this, &Contact::stateChanged)) {
+
+        // Just to make sure the icons and states are updated in the UI
+        emit blockedChanged();
+        emit onlineChanged();
+    }
 }
 
 QString Contact::getAddMeMessage() const noexcept
@@ -299,6 +311,9 @@ void Contact::setPeerVerified(const bool verified)
 
 QString Contact::getOnlineIcon() const noexcept
 {
+    if (isBlocked()) {
+        return "qrc:///images/blocked.svg";
+    }
     return onlineIcon_;
 }
 
@@ -346,6 +361,52 @@ void Contact::setManuallyDisconnected(bool state)
              this, &Contact::manuallyDisconnectedChanged);
 }
 
+bool Contact::isBlocked() const
+{
+    return iBlocked() || theyBlocked();
+}
+
+bool Contact::iBlocked() const
+{
+    return data_->isBlocked;
+}
+
+bool Contact::theyBlocked() const
+{
+    return data_->state == ContactState::BLOCKED;
+}
+
+void Contact::setBlocked(bool value)
+{
+    if (updateIf("blocked", value, data_->isBlocked,
+             this, &Contact::blockedChanged)) {
+        if (isBlocked()) {
+            if (isOnline()) {
+                sendBlockNotification();
+                connection_->peer->close();
+            }
+        } else {
+            if (isAutoConnect()) {
+                connectToContact();
+            }
+        }
+
+        emit onlineIconChanged();
+    }
+}
+
+bool Contact::getSendBlockNotice() const
+{
+    return data_->sendBlockNotice;
+}
+
+void Contact::setSendBlockNotice(bool value)
+{
+    updateIf("notify_blocked", value, data_->sendBlockNotice,
+             this, &Contact::sendBlockNoticeChanged);
+    data_->sendBlockNotice = value;
+}
+
 void Contact::queueMessage(const Message::ptr_t &message)
 {
     loadMessageQueue();
@@ -382,11 +443,11 @@ Contact::ptr_t Contact::load(const QUuid &key)
     QSqlQuery query;
 
     enum Fields {
-        id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, sent_avatar
+        id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, sent_avatar, blocked, notify_blocked
     };
 
     query.prepare("SELECT "
-                  "id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, sent_avatar "
+                  "id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, sent_avatar, blocked, notify_blocked "
                   " from contact where uuid=:uuid");
     query.bindValue(":uuid", key);
     if(!query.exec()) {
@@ -419,6 +480,8 @@ Contact::ptr_t Contact::load(const QUuid &key)
     data->manuallyDisconnected = query.value(manually_disconnected).toBool();
     data->downloadPath = query.value(download_path).toString();
     data->sentAvatar = query.value(sent_avatar).toBool();
+    data->isBlocked = query.value(blocked).toBool();
+    data->sendBlockNotice = query.value(notify_blocked).toBool();
 
     return make_shared<Contact>(query.value(id).toInt(),
                                false, //Contacts that are connected are always in memory
@@ -430,9 +493,9 @@ void Contact::addToDb()
     QSqlQuery query;
 
     query.prepare("INSERT INTO contact ("
-                  "identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path "
+                  "identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, blocked, notify_blocked "
                   ") VALUES ("
-                  ":identity, :uuid, :name, :nickname, :cert, :address, :notes, :contact_group, :avatar, :created, :initiated_by, :last_seen, :state, :addme_message, :auto_connect, :hash, :peer_verified, :manually_disconnected, :download_path "
+                  ":identity, :uuid, :name, :nickname, :cert, :address, :notes, :contact_group, :avatar, :created, :initiated_by, :last_seen, :state, :addme_message, :auto_connect, :hash, :peer_verified, :manually_disconnected, :download_path, :blocked, :notify_blocked "
                   ")");
 
     if (data_->group.isEmpty()) {
@@ -466,6 +529,8 @@ void Contact::addToDb()
     query.bindValue(":peer_verified", data_->peerVerified);
     query.bindValue(":manually_disconnected", data_->manuallyDisconnected);
     query.bindValue(":download_path", data_->downloadPath);
+    query.bindValue(":blocked", data_->isBlocked);
+    query.bindValue(":notify_blocked", data_->sendBlockNotice);
 
     if(!query.exec()) {
         throw Error(QStringLiteral("Failed to add Contact: %1").arg(
@@ -502,6 +567,15 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
     setManuallyDisconnected(false); // No longer relevant
     sentAvatarPendingAck_ = false; // No longer relevant
 
+    if (getState() == ContactState::BLOCKED) {
+        LFLOG_DEBUG << "Peer " << getName() << " was BLOCKED.";
+        if (isPeerVerified()) {
+            setState(ContactState::ACCEPTED);
+        } else {
+            setState(ContactState::PENDING);
+        }
+    }
+
     if (!isPeerVerified()) {
         if (peer->getDirection() == PeerConnection::OUTGOING) {
             LFLOG_DEBUG << "Peer " << getName() << " is verified at handle " << getHandle();
@@ -531,9 +605,10 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
         LFLOG_DEBUG << "Peer " << getName() << " rejected us but is now connecting. Will he send an addme?";
         break;
     case BLOCKED:
-         LFLOG_DEBUG << "Peer " << getName() << " is BLOCKED. Disconnecting";
-         peer->close();
-         return;
+        // We should not get here...
+        LFLOG_DEBUG << "Peer " << getName() << " is BLOCKED. Disconnecting.";
+        peer->close();
+        return;
     }
 
     if (!connection_ || (connection_->peer != peer)) {
@@ -597,7 +672,7 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
 
 void Contact::onIncomingPeer(const std::shared_ptr<PeerConnection> &peer)
 {
-    if (getState() == BLOCKED) {
+    if (iBlocked() && !(getState() == ContactState::ACCEPTED && getSendBlockNotice())) {
         LFLOG_DEBUG << "Peer " << getName() << " is BLOCKED. Disconnecting";
         peer->authorize(false);
         return;
@@ -691,6 +766,16 @@ void Contact::processOnlineLater()
         return;
     }
 
+    if (iBlocked()) {
+        if (isOnline() && getSendBlockNotice()) {
+            sendBlockNotification();
+            connection_->peer->close();
+        } else {
+            disconnectFromContact();
+        }
+        return;
+    }
+
     if (getState() != ACCEPTED) {
         return;
     }
@@ -701,6 +786,11 @@ void Contact::processOnlineLater()
     loadMessageQueue();
     loadFileQueue();
     onOutputBufferEmptied();
+}
+
+void Contact::sendBlockNotification()
+{
+    sendAck("Hello", "Blocked");
 }
 
 void Contact::onReceivedAck(const PeerAck &ack)
@@ -714,7 +804,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
         return;
     }
 
-    if (getState() == BLOCKED) {
+    if (iBlocked()) {
         LFLOG_DEBUG << "Received Ack from blocked peer on connection "
                     << ack.connectionId.toString();
         ack.peer->close();
@@ -773,7 +863,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
             if (!conversation->haveParticipant(*this)) {
                 LFLOG_WARN << "Received ack for message #" << message->getId()
                            << " that belonds to another contacts conversation: "
-                           << conversation->getUuid().toString();;
+                           << conversation->getUuid().toString();
                 return;
             }
         } else {
@@ -883,6 +973,14 @@ void Contact::onReceivedAck(const PeerAck &ack)
             file->setState(File::FS_QUEUED);
             queueFile(file);
         }
+    } else if (ack.what == "Hello") {
+        if (ack.status == "Blocked") {
+            LFLOG_NOTICE << "Contact " << getName()
+                         << " has blocked us "
+                         << getIdentity()->getName();
+            setState(ContactState::BLOCKED);
+            disconnectFromContact();
+        }
     }
 }
 
@@ -986,10 +1084,10 @@ bool Contact::processFileBlocks()
 
 void Contact::onReceivedMessage(const PeerMessage &msg)
 {
-    if (getState() != ACCEPTED) {
+    if (iBlocked() || (getState() != ACCEPTED)) {
         LFLOG_WARN << "Rejecting message on connection "
                    << msg.peer->getConnectionId().toString()
-                   << ". Not in ACCEPTED state.";
+                   << ". Not in ACCEPTED state or blocked.";
 
         msg.peer->sendAck("Message", "Rejected", msg.data.messageId.toBase64());
         msg.peer->close();
@@ -1014,10 +1112,10 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
 
 void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
 {
-    if (getState() != ACCEPTED) {
+    if (iBlocked() || (getState() != ACCEPTED)) {
         LFLOG_WARN << "Rejecting user-info on connection "
                    << uinfo.peer->getConnectionId().toString()
-                   << ". Not in ACCEPTED state.";
+                   << ". Not in ACCEPTED state or blocked.";
 
         uinfo.peer->sendAck("UserInfo", "Rejected", "Not in ACCEPTED state");
         uinfo.peer->close();
@@ -1040,6 +1138,15 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
 
 void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
 {
+    if (iBlocked()) {
+        LFLOG_WARN << "Rejecting file on connection "
+                   << msg.peer->getConnectionId().toString()
+                   << ". Contact is blocked.";
+
+        msg.peer->sendAck("IncomingFile", "Rejected", msg.fileId.toBase64());
+        msg.peer->close();
+        return;
+    }
     if (getState() != ACCEPTED) {
         LFLOG_WARN << "Rejecting file on connection "
                    << msg.peer->getConnectionId().toString()
@@ -1292,9 +1399,10 @@ void Contact::onAddmeRequest(const PeerAddmeReq &req)
         }
     }
 
-    if (getState() == BLOCKED) {
+    if (iBlocked()) {
         if (connection_ && isOnline()) {
-            connection_->peer->sendAck("AddMe", "Rejected");
+            connection_->peer->sendAck("AddMe",
+                                       getSendBlockNotice() ? "Blocked" : "Rejected");
             connection_->peer->close();
             return;
         }
