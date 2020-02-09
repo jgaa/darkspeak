@@ -10,7 +10,7 @@ Install Tor and add yourself to the tor user-group
 
 ```sh
 sudo apt-get install tor
-sudo adduser YOUR-ID debian-tor
+sudo adduser $USER debian-tor
 ```
 
 Then edit torrc
