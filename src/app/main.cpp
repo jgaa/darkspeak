@@ -19,17 +19,19 @@
 #include "ds/filesmodel.h"
 #include "ds/imageprovider.h"
 #include "ds/identitynamevalidator.h"
+#include "ds/torprotocolmanager.h"
 
 #include "logfault/logfault.h"
 
 using namespace std;
 using namespace ds::models;
 using namespace ds::core;
+using namespace ds::prot;
 using namespace logfault;
 
 int main(int argc, char *argv[])
 {
-    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    //QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 
 #ifdef QT_DEBUG
     LogManager::Instance().AddHandler(
@@ -41,10 +43,17 @@ int main(int argc, char *argv[])
                 << QDir::currentPath()
                 << '\'';
 
+    ProtocolManager::addFactory(
+                ProtocolManager::Transport::TOR,
+                [](QSettings& settings) {
+        return make_shared<TorProtocolManager>(settings);
+    });
+
+
     QGuiApplication app(argc, argv);
 
-    QGuiApplication::setOrganizationName("TheLastViking");
-    QGuiApplication::setOrganizationDomain("lastviking.eu");
+    QGuiApplication::setOrganizationName("JgaasInternet");
+    QGuiApplication::setOrganizationDomain("jgaa.com");
 
     // Initialize crypto
     ds::crypto::Crypto crypto;
@@ -135,7 +144,7 @@ int main(int argc, char *argv[])
     engine.addImageProvider(tmpProvider->getName(), tmpProvider);
 
     auto identityProvider = new ImageProvider{"identity", [](const QString& id) -> QImage {
-            if (auto identity = DsEngine::instance().getIdentityManager()->identityFromUuid({id})) {
+            if (auto identity = DsEngine::instance().getIdentityManager()->identityFromUuid(QUuid{id})) {
                 return identity->getAvatar();
             }
 

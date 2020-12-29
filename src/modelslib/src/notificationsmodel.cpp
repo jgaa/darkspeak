@@ -120,8 +120,7 @@ void NotificationsModel::addNotification(Identity *identity, const core::PeerAdd
         return;
     }
 
-    QDateTime when = QDateTime::fromTime_t((QDateTime::currentDateTimeUtc().toTime_t() / 60) * 60);
-
+    QDateTime when = QDateTime::fromSecsSinceEpoch((QDateTime::currentSecsSinceEpoch() / 60) * 60 );
     QSqlQuery query{core::DsEngine::instance().getDb()};
 
     QVariantMap data;

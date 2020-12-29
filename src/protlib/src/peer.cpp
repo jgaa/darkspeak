@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <vector>
 #include <cassert>
+#include <regex>
+
 #include <sodium.h>
 
 #include <QJsonDocument>
@@ -339,8 +341,8 @@ void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
 
         QVariantMap params;
         for(const auto& key : json.object().keys()) {
-            static const QRegExp irrelevant{"what|status|type"};
-            if (key.count(irrelevant)) {
+            static const std::regex irrelevant{"what|status|type"};
+            if (std::regex_search(key.toStdString(), irrelevant)) {
                 continue;
             }
             params.insert(key, json.object().value(key).toString());

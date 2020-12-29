@@ -52,6 +52,7 @@ class ProtocolManager : public QObject
         Q_OBJECT
 public:
     using ptr_t = std::shared_ptr<ProtocolManager>;
+    using factory_t = std::function<ptr_t(QSettings&)>;
 
     enum State {
         // Not connected to anything
@@ -174,6 +175,8 @@ public slots:
 
 public:
     static ptr_t create(QSettings& settings, Transport transport);
+    static void addFactory(Transport transport, factory_t factory);
+    static std::map<Transport, factory_t> factories_;
 };
 
 }} // namepsace

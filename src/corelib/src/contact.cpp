@@ -241,7 +241,7 @@ void Contact::setLastSeen(const QDateTime &when)
 
 void Contact::touchLastSeen()
 {
-    const auto when = QDateTime::fromTime_t((QDateTime::currentDateTimeUtc().toTime_t() / 60) * 60);
+    const auto when = QDateTime::fromSecsSinceEpoch((QDateTime::currentSecsSinceEpoch() / 60) * 60 );
     setLastSeen(when);
 }
 
@@ -503,7 +503,7 @@ void Contact::addToDb()
     }
 
     if (!data_->created.isValid()) {
-        data_->created = QDateTime::fromTime_t((QDateTime::currentDateTimeUtc().toTime_t() / 60) * 60);
+        data_->created = QDateTime::fromSecsSinceEpoch((QDateTime::currentSecsSinceEpoch() / 60) * 60 );
     }
 
     if (data_->hash.isEmpty()) {

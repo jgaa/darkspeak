@@ -3,7 +3,6 @@
 
 #include <functional>
 #include <deque>
-//#include <map>
 #include <locale>
 #include <string.h>
 #include <algorithm>
@@ -20,7 +19,7 @@ QString toKey(const T& key) {
 
     std::locale loc;
     for(const auto ch : key) {
-        rval += std::toupper(ch);
+        rval += QChar::fromLatin1(std::toupper(ch));
     }
 
     return rval;

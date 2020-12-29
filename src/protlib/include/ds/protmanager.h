@@ -9,7 +9,7 @@ namespace proto {
 class ProtManager
 {
 public:
-    using ptr_t = shatred_ptr<ProtManager>;
+    using ptr_t = std::shared_ptr<ProtManager>;
 
     ProtManager();
 

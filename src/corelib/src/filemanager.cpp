@@ -1,4 +1,5 @@
 
+#include <regex>
 #include <QDir>
 #include <QSqlQuery>
 #include <QStandardPaths>
@@ -132,9 +133,8 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
 
     // Validate name
     // TODO: Add Windows forbidden device names
-    static const QRegExp forbidden{R"(\\|\/|\||\.\.)"};
-
-    if (offer.name.count(forbidden)) {
+    static const std::regex forbidden{R"(\\|\/|\||\.\.)"};
+    if (std::regex_search(offer.name.toStdString(), forbidden)) {
         LFLOG_WARN << "Rejecting file #" << offer.fileId.toBase64()
                    << " from peer " << conversation.getFirstParticipant()->getName()
                    << " on identity " << conversation.getIdentity()->getName()

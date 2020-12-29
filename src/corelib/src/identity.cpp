@@ -114,7 +114,7 @@ void Identity::setNewTorService(const QString &address, int port, const QString 
         }
 
         // If we got here, we probably have to add the character...
-        key += *it;
+        key += it->toLatin1();
     }
 
 

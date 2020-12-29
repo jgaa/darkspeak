@@ -172,7 +172,7 @@ bool IdentityManager::exists(const QString &name) const
     }
 
     query.next();
-    return query.value(0) > 0;
+    return query.value(0).isValid();
 }
 
 void IdentityManager::tryMakeTransport(const QString &name, const QUuid& uuid)
@@ -240,7 +240,7 @@ void IdentityManager::onOnline()
 
 Identity *IdentityManager::addIdentity(const IdentityData &data)
 {
-    const QDateTime when = QDateTime::fromTime_t((QDateTime::currentDateTimeUtc().toTime_t() / 60) * 60);
+    const QDateTime when = QDateTime::fromSecsSinceEpoch((QDateTime::currentSecsSinceEpoch() / 60) * 60 );
     auto identity = new Identity{
                 *this,
                 -1,

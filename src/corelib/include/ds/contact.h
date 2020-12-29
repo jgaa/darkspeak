@@ -101,7 +101,7 @@ public:
     Q_PROPERTY(ContactState state READ getState WRITE setState NOTIFY stateChanged)
     Q_PROPERTY(QString addMeMessage READ getAddMeMessage WRITE setAddMeMessage NOTIFY addMeMessageChanged)
     Q_PROPERTY(bool peerVerified READ isPeerVerified WRITE setPeerVerified NOTIFY peerVerifiedChanged)
-    Q_PROPERTY(Identity * identity READ getIdentity CONSTANT)
+    //Q_PROPERTY(Identity * identity READ getIdentity CONSTANT)
     Q_PROPERTY(bool sentAvatar READ isAvatarSent WRITE setSentAvatar NOTIFY sentAvatarChanged)
     Q_PROPERTY(bool blocked READ isBlocked WRITE setBlocked NOTIFY blockedChanged)
     Q_PROPERTY(bool iBlocked READ iBlocked WRITE setBlocked NOTIFY blockedChanged)
