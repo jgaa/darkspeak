@@ -2,6 +2,7 @@
 #define SAFEMEMORY_H
 
 #include <QByteArray>
+#include <QString>
 #include <stdexcept>
 #include <cassert>
 #include <string.h>
@@ -187,6 +188,11 @@ public:
     QByteArray toByteArray() const {
         return {reinterpret_cast<const char *>(data_),
                     static_cast<int>(len_)};
+    }
+
+    QString toString() const {
+        return QString::fromLatin1(reinterpret_cast<const char *>(data_),
+                                   static_cast<int>(len_));
     }
 
 private:

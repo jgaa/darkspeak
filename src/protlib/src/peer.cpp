@@ -326,6 +326,7 @@ void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
         throw Error("Not Json");
     }
 
+    LFLOG_TRACE << "Receinedc json to identity " << getIdentityId().toString() << ": " << json.toJson().toStdString();
     const auto type = json.object().value("type");
 
     if (type == "AddMe") {

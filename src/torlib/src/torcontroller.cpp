@@ -89,7 +89,7 @@ void TorController::createService(const QUuid& serviceId)
 
             assert(!service.uuid.isNull());
 
-            service_map_[service.uuid ] = service.service_id;
+            service_map_[service.uuid ] = service.service_id.toLatin1();
 
             LFLOG_DEBUG << "Created Tor hidden service: " << service.service_id
                      << " with id " << service.uuid.toString();
@@ -114,15 +114,15 @@ void TorController::startService(const ServiceProperties &sp)
                 << " forwarding to local port "
                 << sp.app_port;
 
-    auto cmd = QStringLiteral("ADD_ONION %1:%2 Port=%3,%4:%5")
-                .arg(QLatin1String{sp.key_type})
-                .arg(QLatin1String{sp.key})
+    const auto cmd = QStringLiteral("ADD_ONION %1:%2 Port=%3,%4:%5")
+                .arg(sp.key_type)
+                .arg(sp.key)
                 .arg(sp.service_port)
                 .arg(config_.app_host.toString())
                 .arg(sp.app_port)
                 .toLocal8Bit();
 
-    service_map_[sp.uuid] = sp.service_id;
+    service_map_[sp.uuid] = sp.service_id.toLatin1();
     const auto uuid = sp.uuid;
     const auto service_id = sp.service_id;
 

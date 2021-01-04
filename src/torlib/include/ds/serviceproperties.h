@@ -14,9 +14,9 @@ struct TorCtlReply;
 struct ServiceProperties {
     QUuid uuid;
     QString name;
-    QByteArray service_id; // Onion site, without the .onion postfix
-    QByteArray key_type; // Key type, currently RSA1024 or ED25519-V3
-    QByteArray key; // Tor service private key, in binary format.
+    QString service_id; // Onion site, without the .onion postfix
+    QString key_type; // Key type, currently RSA1024 or ED25519-V3
+    QString key; // Tor service private key, in binary format.
     uint16_t service_port = {}; // Service port on the Tor network
     uint16_t app_port = {}; // Local port for Tor to forward connections to
 };

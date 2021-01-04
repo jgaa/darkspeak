@@ -12,4 +12,4 @@ add_library(${PROJECT_NAME} STATIC
     )
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
 add_dependencies(${PROJECT_NAME} core)
-target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::Core Qt6::Network)
+target_link_libraries(${PROJECT_NAME} PRIVATE Qt5::Core Qt5::Network)

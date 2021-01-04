@@ -71,7 +71,7 @@ private:
     int col2Role(int col) const noexcept { return col + Qt::UserRole; }
     void refresh();
     void deleteRow(const int row);
-    bool isHashPresent(const QByteArray& hash) const ;
+    bool isHashPresent(const QString& hash) const ;
 
 };
 

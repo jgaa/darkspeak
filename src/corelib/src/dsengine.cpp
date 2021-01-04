@@ -211,8 +211,9 @@ void DsEngine::onTransportHandleReady(const TransportHandle &th)
         LFLOG_NOTICE << "Assigning new handle " << th.handle
                      << " to identity " << identity->getName();
         identity->setAddress(th.handle);
-        identity->setAddressData(toJson(th.data));
-
+        auto json = toJson(th.data);
+        LFLOG_TRACE << "Json data: " << json;
+        identity->setAddressData(json);
         if (getState() == RUNNING && isOnline() && identity->isAutoConnect()) {
             identity->startService();
         }

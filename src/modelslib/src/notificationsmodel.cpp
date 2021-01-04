@@ -38,7 +38,7 @@ void NotificationsModel::deleteRow(const int row)
     }
 }
 
-bool NotificationsModel::isHashPresent(const QByteArray &hash) const
+bool NotificationsModel::isHashPresent(const QString &hash) const
 {
     QSqlQuery query;
     query.prepare("SELECT count(0) FROM notification WHERE hash=:hash");
@@ -112,7 +112,7 @@ QHash<int, QByteArray> NotificationsModel::roleNames() const
 
 void NotificationsModel::addNotification(Identity *identity, const core::PeerAddmeReq &req)
 {  
-    QByteArray hash, identityId = QByteArray::number(identity->getId());
+    QString hash, identityId = QString::number(identity->getId());
     crypto::createHash(hash, {req.handle, req.address, identityId});
 
     if (isHashPresent(hash)) {
@@ -169,7 +169,11 @@ void NotificationsModel::acceptContact(const int row, bool accept)
         cr->cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(handle_str, 32, {249, 50}));
         cr->address = d.value("address").toByteArray();
 
-        DsEngine::instance().getContactManager()->addContact(move(cr));
+        try {
+            DsEngine::instance().getContactManager()->addContact(move(cr));
+        } catch(const std::exception& ex) {
+            LFLOG_ERROR << "Error adding contact: " << ex.what();
+        }
 
         deleteRow(row);
     } else {

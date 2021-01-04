@@ -294,7 +294,7 @@ void TorProtocolManager::onServiceCreated(const ServiceProperties &service)
 
     th.identityName = service.name;
     th.uuid = service.uuid;
-    th.handle = service.service_id + ':' + QByteArray::number(service.service_port);
+    th.handle = service.service_id.toLatin1() + ':' + QByteArray::number(service.service_port);
 
     th.data["type"] = QByteArray("Tor hidden service");
     th.data["key"] = service.key;

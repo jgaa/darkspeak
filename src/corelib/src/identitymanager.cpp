@@ -172,7 +172,7 @@ bool IdentityManager::exists(const QString &name) const
     }
 
     query.next();
-    return query.value(0).isValid();
+    return query.value(0).toInt() > 0;
 }
 
 void IdentityManager::tryMakeTransport(const QString &name, const QUuid& uuid)

@@ -114,7 +114,7 @@ void Identity::setNewTorService(const QString &address, int port, const QString 
         }
 
         // If we got here, we probably have to add the character...
-        key += it->toLatin1();
+        key += *it;
     }
 
 
@@ -146,7 +146,7 @@ ProtocolManager& Identity::getProtocolManager() {
 
 void Identity::onIncomingPeer(const std::shared_ptr<PeerConnection>& peer)
 {
-    if (auto contact = contactFromHash(peer->getPeerCert()->getHash().toByteArray())) {
+    if (auto contact = contactFromHash(peer->getPeerCert()->getHash().toString())) {
 
         LFLOG_DEBUG << "Passing incoming connection "
                     << peer->getConnectionId().toString()
@@ -294,15 +294,15 @@ std::deque<QUuid> Identity::getAllContacts() const
     return contacts;
 }
 
-Contact::ptr_t Identity::contactFromHandle(const QByteArray &handle)
+Contact::ptr_t Identity::contactFromHandle(const QString &handle)
 {
     auto cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(
                                                      handle.toStdString(), 32, {249, 50}));
 
-    return contactFromHash(cert->getHash().toByteArray());
+    return contactFromHash(cert->getHash().toString());
 }
 
-Contact::ptr_t Identity::contactFromHash(const QByteArray &hash)
+Contact::ptr_t Identity::contactFromHash(const QString &hash)
 {
     QSqlQuery query;
     query.prepare("SELECT uuid FROM contact WHERE identity=:id AND hash=:hash");

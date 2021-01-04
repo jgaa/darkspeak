@@ -47,8 +47,8 @@ struct PeerAddmeReq : public PeerReq
 
     QString nickName;
     QString message;
-    QByteArray address;
-    QByteArray handle;
+    QString address;
+    QString handle;
 };
 
 struct PeerSetAvatarReq : public PeerReq
@@ -70,13 +70,13 @@ struct PeerAck : public PeerReq
     PeerAck(const PeerAck&) = default;
 
     PeerAck(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal, quint64 requestIdVal,
-            QByteArray whatVal, QByteArray statusVal, QVariantMap dataVal)
+            QString whatVal, QString statusVal, QVariantMap dataVal)
         : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
         , what{std::move(whatVal)}, status{std::move(statusVal)}
         , data{std::move(dataVal)} {}
 
-    QByteArray what;
-    QByteArray status;
+    QString what;
+    QString status;
     QVariantMap data;
 };
 
