@@ -43,7 +43,7 @@ One known example is the so-called [“Salt Typhoon”](https://en.wikipedia.org
 
 There is also a constant push from *Democracies In Name Only*, like the UK, various EU countries, and the US, to install similar tap points in all online encrypted peer-to-peer communication. Similar efforts, often using *"protecting the children"* as an excuse, aim to mandate identifiable online identities across all kinds of social media. (We just have to look at Gaza, and the poverty in their own streets, to see how much those governments *really* care about children.)
 
-Free speech, including **anonymous free speech**, is an **absolute requirement for a functioning democracy**.
+Privacy and free speech, including **anonymous free speech**, is an **absolute requirement for a functioning democracy**.
 
 In 2020, I thought hard about this project. I was working intensely for a startup and had less time than I usually do for side projects. I was also fearful of being targeted by Europol (a police force that already has far too much power), or by some intelligence agency, simply for making an app that makes strong privacy even possible. We all know how easy it is for governments to make anyone’s life far from joyful.
 
