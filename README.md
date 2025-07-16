@@ -32,40 +32,19 @@ However, because the legacy Tor Chat client was bundling an obsolete Tor server,
 
 The [original implementation](https://github.com/jgaa/darkspeak/tree/original-impl-torchat-prot) is still available.
 
-
+---
 # Current status
 
-**Implementing**
+One thing that has always been important to me is privacy. It was a core value handed down to me by my father. In today’s society, there are very few opportunities to have private conversations using any kind of technology. All telecom protocols and most messaging providers are required by law (or pressured by governments) to give authorities full access to listen in on any conversations they care about.
 
-- [x] Builds on Linux (Ubuntu LTS)
-- [x] Builds on macos
-- [ ] Builds on Windows 10 (MSVC)
-- [x] Send and receive messages
-- [x] Send and receive files
-- [x] Multiple, independent Identities
-- [ ] Automated builds (Jenkins)
-- [ ] Automated tests
-- [x] Use an external Tor server
-- [ ] Use an embedded Tor server
-- [x] Legacy onion addresses
-- [ ] New onion addresses
-- [ ] Encrypt private keys and require password to use them
-- [ ] Encrypt messages locally and require password to read them
+Even for peer-to-peer encrypted apps, they still require access to metadata, like who is communicating with whom, and when. There are many problems with this, ranging from the philosophical *“Why is the government terrified of its citizens having private conversations?”*, to the technical, where hackers gain access to these tap points to eavesdrop and extract data.
 
+One known example is the so-called [“Salt Typhoon”](https://en.wikipedia.org/wiki/Salt_Typhoon) campaign, first detected in mid-2024, in which Chinese state-linked hackers apparently targeted the very network elements U.S. and allied governments use to conduct lawful intercepts (the “backdoors” mandated for wiretapping) across multiple telecom operators.
 
-Working towards a public Beta release for Desktop in August 2019.
+There is also a constant push from *Democracies In Name Only*, like the UK, various EU countries, and the US, to install similar tap points in all online encrypted peer-to-peer communication. Similar efforts, often using *"protecting the children"* as an excuse, aim to mandate identifiable online identities across all kinds of social media. (We just have to look at Gaza, and the poverty in their own streets, to see how much those governments *really* care about children.)
 
-# Planned post-beta features
+Free speech, including **anonymous free speech**, is an **absolute requirement for a functioning democracy**.
 
-- [ ] Android version (Fall 2019)
-- [ ] IOS version (Fall 2019)
-- [ ] Group Chat (Winter 2019)
-- [ ] Multiple device support (Like Skype - you have DarkSpeak on your laptop, phone and tablet, and people can reach you on any one of them, while the messsage-history are available on all of them) (Winter 2019).
-- [ ] Built in File Server (like running your own FTP server, just much more secure) (2020)
-- [ ] Feeds (like RSS subscriptions, but designed to be used for anything from Twitter-like short messages, to publishing newsletters).
-- [ ] Add I2P support as an alternative to the Tor transport (so you can be reached on one or both networks).
+In 2020, I thought hard about this project. I was working intensely for a startup and had less time than I usually do for side projects. I was also fearful of being targeted by Europol (a police force that already has far too much power), or by some intelligence agency, simply for making an app that makes strong privacy even possible. We all know how easy it is for governments to make anyone’s life far from joyful.
 
-# Links to related and relevant projects
- - [Ricochet, anonymous peer-to-peer instant messaging](https://github.com/ricochet-im/ricochet)
- - [saltpack, a modern crypto messaging format](https://saltpack.org/)
-
+**I decided to postpone further work on that project for now**. If and when I ever feel strong enough - and willing to lose everything - I will finish it.
