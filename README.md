@@ -47,4 +47,4 @@ Privacy and free speech, including **anonymous free speech**, is an **absolute r
 
 In 2020, I thought hard about this project. I was working intensely for a startup and had less time than I usually do for side projects. I was also fearful of being targeted by Europol (a police force that already has far too much power), or by some intelligence agency, simply for making an app that makes strong privacy even possible. We all know how easy it is for governments to make anyone’s life far from joyful.
 
-**I decided to postpone further work on this project for now**. If and when I ever feel strong enough - and willing to lose everything, once more - I will finish it.
+**I decided to postpone further work on this project for now**. If and when I ever feel strong enough - and willing to lose everything - I will finish it.
