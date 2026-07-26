@@ -220,8 +220,6 @@ private:
 
 }} // identities
 
-//Q_DECLARE_OPAQUE_POINTER(ds::core::Identity)
-Q_DECLARE_METATYPE(ds::core::Identity *)
 Q_DECLARE_METATYPE(ds::core::IdentityData)
 Q_DECLARE_METATYPE(ds::core::IdentityReq)
 Q_DECLARE_METATYPE(ds::core::IdentityError)

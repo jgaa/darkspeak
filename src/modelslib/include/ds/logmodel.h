@@ -17,7 +17,7 @@ class LogModelHandler : public QObject, public logfault::Handler {
 public:
     LogModelHandler(logfault::LogLevel level) : Handler(level) {}
 
-    void LogMessage(const logfault::Message& msg) override;
+    void LogMessage(const logfault::Message& msg) noexcept override;
 
 signals:
     void message(QString message, logfault::LogLevel level);
@@ -36,10 +36,12 @@ class LogModel : public QAbstractListModel
     };
 public:
     LogModel(QSettings& settings);
+    void installHandler(logfault::LogLevel level);
 
 // QAbstractItemModel interface
     QVariant data(const QModelIndex &index, int role) const override;
     int rowCount(const QModelIndex &parent) const override;
+    QHash<int, QByteArray> roleNames() const override;
 
 public slots:
     void log(QString text, logfault::LogLevel level);

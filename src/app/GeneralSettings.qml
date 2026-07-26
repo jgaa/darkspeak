@@ -1,10 +1,11 @@
-import QtQuick 2.2
-import QtQuick.Controls 2.5
-import QtQuick.Layouts 1.3
-import Qt.labs.settings 1.0
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtCore
 
 Item {
     id: root
+    implicitHeight: content.implicitHeight
 
     Settings {
         id: settings
@@ -16,7 +17,12 @@ Item {
     }
 
     ColumnLayout {
-        anchors.fill: parent
+        id: content
+        width: parent.width
+        height: implicitHeight
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
         spacing: 4
 
         CheckBox {

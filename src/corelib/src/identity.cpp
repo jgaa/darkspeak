@@ -6,12 +6,14 @@
 #include "ds/update_helper.h"
 #include "ds/dscert.h"
 #include "ds/base58.h"
+#include "ds/base32.h"
 
 #include "logfault/logfault.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTimer>
+#include <QRegularExpression>
 
 namespace ds {
 namespace core {
@@ -83,51 +85,28 @@ void Identity::setNewTorService(const QString &address, int port, const QString 
 {
     LFLOG_NOTICE << "Setting a new Tor service for " << getName();
 
-    QByteArray key, serviceId = address.toUtf8();
-    key.reserve(privateKey.size());
-
-    if (serviceId.size() > 16) {
-        serviceId.resize(16);
+    static const QRegularExpression addressPattern(
+        QStringLiteral("^(?:onion:)?([a-z2-7]{56})(?:\\.onion)?:([1-9][0-9]{0,4})$"),
+        QRegularExpression::CaseInsensitiveOption);
+    const auto match = addressPattern.match(address + ":" + QString::number(port));
+    if (!match.hasMatch()) {
+        throw std::invalid_argument("Invalid Tor v3 service address");
     }
-
-    // Simple parser for RSA private keys, encoded as base64
-    bool start_of_line = true;
-    bool skip_line = false;
-    for(auto it = privateKey.cbegin(); it != privateKey.cend(); ++it) {
-        if (*it == ' ' || *it == '\t' || *it == '\r') {
-            continue;
-        }
-
-        if (*it == '\n') {
-            start_of_line = true;
-            skip_line = false;
-            continue;
-        }
-
-        // Skip ---- begin and ---- end lines
-        if (start_of_line && (*it == '-')) {
-            skip_line = true;
-        }
-
-        if (skip_line) {
-            continue;
-        }
-
-        // If we got here, we probably have to add the character...
-        key += *it;
+    const auto serviceId = match.captured(1).toLower();
+    const auto servicePort = match.captured(2).toUShort();
+    if (servicePort == 0 || !crypto::onionv3isValid(serviceId.toUtf8())) {
+        throw std::invalid_argument("Invalid Tor v3 service address");
     }
-
-
-    const auto handle = serviceId + ":" + QString::number(port);
+    const auto key = privateKey.trimmed().toUtf8();
 
     QJsonDocument json {
         QJsonObject {
             {"type", "Tor hidden service"},
             {"key", QString{key}},
-            {"service_id", QString{serviceId}},
-            {"key_type", "RSA1024"},
-            {"port", port},
-            {"address", QString("onion:") + QString{handle}}
+            {"service_id", serviceId},
+            {"key_type", "ED25519-V3"},
+            {"port", servicePort},
+            {"address", serviceId + ".onion:" + QString::number(servicePort)}
         }
     };
 
@@ -136,7 +115,7 @@ void Identity::setNewTorService(const QString &address, int port, const QString 
     }
 
     setAddressData(json.toJson(QJsonDocument::Compact));
-    setAddress(handle.toUtf8());
+    setAddress((serviceId + ".onion:" + QString::number(servicePort)).toUtf8());
 }
 
 ProtocolManager& Identity::getProtocolManager() {

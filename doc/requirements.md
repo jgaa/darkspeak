@@ -21,13 +21,12 @@ Beta II
 **Tor**
 - [x] Use the system's Tor server
 - [ ] Use external Tor server via username / password
-- [x] Support legacy Tor addresses / keys
-- [ ] Make an option for what address-type we want in app-settings, and enforce that when we create Tor services.
+- [x] Support Tor v3 addresses / keys
+- [x] Enforce Tor v3 address type when importing and creating services.
 - [ ] Allow use of external tor binary under our control (Configure the server, start it and stop it)
 
 Backlog
 - [ ] See if we can embed Tor into the application as a library.
-- [ ] Support new Tor addresses/keys
 
 ## Application
 
@@ -239,4 +238,3 @@ Notifications are shown in the home tab, grouped on identity.
 - [ ] Create CI pipeline for appimage
 - [ ] Create CI pipeline for Android
 - [ ] Create CI pipeline for ios
-

@@ -90,7 +90,7 @@ If the server does not want to talk to the client (for example if the client is 
 {
     "type" : "AddMe",
     "name" : "jgaa",
-    "address" : [ "ds://33oa7kr63jpwpwp5:5432" ],
+    "address" : [ "ds://<56-character-v3-id>.onion:5432" ],
     "message" : "Please add me",
     "message-encoding" : "us-ascii" | "utf-8"
 }
@@ -347,4 +347,3 @@ TBD: Specify how several devices for one person synchronizes the contact-list an
 ## Isolation
 
 If a user have several identities in one client, they are totally isolated. No contacts or shared directories are shared among such identities. The idea is that a person should be able to be online with several identities without having anything that connects them to the same person.
-

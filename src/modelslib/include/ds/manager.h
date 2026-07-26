@@ -48,6 +48,7 @@ public:
     Q_PROPERTY(int appState READ getAppState NOTIFY appStateChanged)
     Q_PROPERTY(int onlineState READ getOnlineState NOTIFY onlineStateChanged)
     Q_PROPERTY(int online READ isOnline NOTIFY onlineChanged)
+    Q_PROPERTY(QString torVersion READ getTorVersion NOTIFY torVersionChanged)
     Q_PROPERTY(QUrl onlineStatusIcon READ getOnlineStatusIcon NOTIFY onlineStatusIconChanged)
 
     Q_INVOKABLE LogModel *logModel();
@@ -77,6 +78,7 @@ public slots:
     AppState getAppState() const;
     OnlineState getOnlineState() const;
     bool isOnline() const;
+    QString getTorVersion() const;
     QString getProgramName() const;
     QString getProgramNameAndVersion() const;
     int getCurrentPage();
@@ -92,6 +94,7 @@ signals:
     void currentPageChanged(int page);
     void onlineStatusIconChanged();
     void onlineChanged();
+    void torVersionChanged();
 
 private:
     static Manager *instance_;

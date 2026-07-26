@@ -1,15 +1,15 @@
-import QtQuick 2.2
-import QtQuick.Controls 1.1
-import QtQuick.Layouts 1.3
-import QtQuick.Dialogs 1.2
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Dialogs
 import com.jgaa.darkspeak 1.0
 
 Dialog {
     id: root
     property Contact contact : null
     property Identity identity: null
-    property var clip: null
-    standardButtons: StandardButton.Ok | StandardButton.Cancel
+    property var clipboardData: null
+    standardButtons: Dialog.Ok | Dialog.Cancel
 
 
     Component.onCompleted: {
@@ -21,10 +21,10 @@ Dialog {
             address.text = contact.address
             addmeMessage.text = contact.addMeMessage
             notes.text = contact.notes
-        } else if (clip) {
-            name.text = clip.nickName
-            handle.text = clip.handle
-            address.text = clip.address
+        } else if (clipboardData) {
+            name.text = clipboardData.nickName
+            handle.text = clipboardData.handle
+            address.text = clipboardData.address
         }
 
     }
@@ -45,7 +45,7 @@ Dialog {
 
             TextField {
                 id: name
-                placeholderText: clip ? clip.nickName : contact ? contact.nickName : qsTr("Anononymous Coward")
+                placeholderText: clipboardData ? clipboardData.nickName : contact ? contact.nickName : qsTr("Anononymous Coward")
                 Layout.fillWidth: true
             }
 
@@ -122,7 +122,7 @@ Dialog {
             const args = {
                 "identity" : identity.id,
                 "name" : name.text ? name.text : null,
-                "nickName" : clip ? clip.nickName : nullptr,
+                "nickName" : clipboardData ? clipboardData.nickName : null,
                 "handle" : handle.text,
                 "address" : address.text,
                 "addmeMessage" : addmeMessage.text,

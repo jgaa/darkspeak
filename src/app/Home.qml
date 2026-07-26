@@ -1,7 +1,7 @@
-import QtQuick 2.12
-import QtQuick.Controls 2.5
-import QtQuick.Layouts 1.3
-import QtQuick.Dialogs 1.3
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Dialogs
 import com.jgaa.darkspeak 1.0
 
 Page {
@@ -165,9 +165,11 @@ Page {
         property string message: ""
         title: qsTr("Accept Contact")
         text: qsTr("Do you accept this Contact Request?")
-        standardButtons: MessageDialog.Yes | MessageDialog.No | MessageDialog.Cancel
+        buttons: MessageDialog.Yes | MessageDialog.No | MessageDialog.Cancel
         detailedText: qsTr("Message from contact: ") + message
-        onYes: list.acceptContact(true)
-        onNo: list.acceptContact(false)
+        onButtonClicked: function(button) {
+            if (button === MessageDialog.Yes) list.acceptContact(true)
+            else if (button === MessageDialog.No) list.acceptContact(false)
+        }
     }
 }

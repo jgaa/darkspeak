@@ -1,108 +1,90 @@
-import QtQuick 2.2
-import QtQuick.Controls 1.1
-import QtQuick.Layouts 1.3
-import Qt.labs.settings 1.0
-import QtQuick.Dialogs 1.2
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtCore
+import QtQuick.Dialogs
 import com.jgaa.darkspeak 1.0
 
-Item {
+ScrollView {
     id: root
+    clip: true
 
     Settings {
         id: settings
-        property int logLevelFile: 0
         property string logPath: ""
-
+        property int logLevelFile: 0
+        property int logLevelStdout: 5
         property int logLevelApp: 4
-        property int logLevelStdout: 3
     }
 
     function commit() {
-        settings.logLevelFile = fileLog.currentIndex
         settings.logPath = logPath.text
-        settings.logLevelApp = appLog.currentIndex
-        settings.logLevelStdout = debugLog.currentIndex
+        settings.logLevelFile = fileLog.currentIndex
+        settings.logLevelStdout = stdoutLog.currentIndex
+        settings.logLevelApp = viewerLog.currentIndex
+        settings.sync()
     }
 
-    ColumnLayout {
-        anchors.fill: parent
-        spacing: 4
+    GridLayout {
+        id: fields
+        width: root.availableWidth
+        columns: width >= 480 ? 2 : 1
+        rowSpacing: 10
+        columnSpacing: 16
+        property var levels: [qsTr("Disabled"), qsTr("Error"), qsTr("Warning"),
+            qsTr("Notice"), qsTr("Info"), qsTr("Debug"), qsTr("Trace")]
 
-        GridLayout {
-            id: fields
+        Label { text: qsTr("Log file") }
+        RowLayout {
             Layout.fillWidth: true
-            rowSpacing: 4
-            rows: 4
-            flow: GridLayout.TopToBottom
-            property var levels: [qsTr("Disabled"), qsTr("ERROR"), qsTr("WARNINGS"), qsTr("NOTICE"), qsTr("INFO"), qsTr("DEBUGGING"), qsTr("TRACE")]
-
-            Label { font.pointSize: 9; text: qsTr("Log File")}
-            Label { font.pointSize: 9; text: qsTr("Log Path")}
-            Label { font.pointSize: 9; text: qsTr("App Log")}
-            Label { font.pointSize: 9; text: qsTr("Debug log")}
-
-            ComboBox {
-                id: fileLog
-                model: fields.levels
+            TextField {
+                id: logPath
                 Layout.fillWidth: true
-                currentIndex: settings.logLevelFile
+                text: settings.logPath
+                placeholderText: qsTr("Optional log file path")
             }
-
-//            TextField {
-//                id: logPath
-//                text: settings.logPath
-//                Layout.fillWidth: true
-//            }
-
-            Row {
-                height: logPath.height
-                Layout.fillWidth: true
-                TextField {
-                    id: logPath
-                    text: settings.logPath
-                    anchors.right: logPathBtn.left
-                    anchors.rightMargin: 6
-                    anchors.left: parent.left
-                    anchors.leftMargin: 0
-                }
-
-                Button {
-                    id: logPathBtn
-                    width: 45
-                    text: "...";
-                    anchors.right: parent.right
-                    anchors.rightMargin: 0
-
-                    onClicked: {
-                        logFileSelector.open()
-                    }
-                }
-
-                FileDialog {
-                    id: logFileSelector
-                    title: qsTr("Select Log File")
-                    folder: manager.pathToUrl(logPath.text)
-
-                    onAccepted: {
-                        logPath.text = manager.urlToPath(fileUrl)
-                    }
-                }
-            }
-
-
-            ComboBox {
-                id: appLog
-                model: fields.levels
-                Layout.fillWidth: true
-                currentIndex: settings.logLevelApp
-            }
-
-            ComboBox {
-                id: debugLog
-                model: fields.levels
-                Layout.fillWidth: true
-                currentIndex: settings.logLevelStdout
+            Button {
+                text: qsTr("Browse…")
+                onClicked: logFileSelector.open()
             }
         }
+
+        Label { text: qsTr("Stdout level") }
+        ComboBox {
+            id: stdoutLog
+            Layout.fillWidth: true
+            model: fields.levels
+            currentIndex: settings.logLevelStdout
+        }
+
+        Label { text: qsTr("Log file level") }
+        ComboBox {
+            id: fileLog
+            Layout.fillWidth: true
+            model: fields.levels
+            currentIndex: settings.logLevelFile
+        }
+
+        Label { text: qsTr("Log viewer level") }
+        ComboBox {
+            id: viewerLog
+            Layout.fillWidth: true
+            model: fields.levels
+            currentIndex: settings.logLevelApp
+        }
+
+        Label {
+            Layout.columnSpan: fields.columns
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            opacity: 0.7
+            text: qsTr("Logging settings are applied when DarkSpeak starts. The log viewer keeps the latest 1000 messages.")
+        }
+    }
+
+    FileDialog {
+        id: logFileSelector
+        title: qsTr("Select log file")
+        onAccepted: logPath.text = manager.urlToPath(selectedFile)
     }
 }

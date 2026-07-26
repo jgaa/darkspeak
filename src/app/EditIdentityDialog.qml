@@ -1,15 +1,16 @@
-import QtQuick 2.2
-import QtQuick.Controls 1.1
-import QtQuick.Dialogs 1.2
-import QtQuick.Layouts 1.3
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Dialogs
+import QtQuick.Layouts
 import com.jgaa.darkspeak 1.0
 
 Dialog {
     id: root
     property Identity identity: null
     property QmlIdentityReq value: QmlIdentityReq {}
-    standardButtons: name.acceptableInput ? (StandardButton.Ok | StandardButton.Cancel)
-                                          : StandardButton.Cancel
+    standardButtons: name.acceptableInput && (identity || manager.online)
+                     ? (Dialog.Ok | Dialog.Cancel)
+                     : Dialog.Cancel
     property int dlg_width: mainWindow.width > 400 ? 400 : mainWindow.width
     property int dlg_height: mainWindow.height > 500 ? 370 : mainWindow.height
     width: dlg_width
@@ -49,7 +50,7 @@ Dialog {
                 validator: IdentityNameValidator {
                     currentName: identity ? identity.name : null
                 }
-                textColor: acceptableInput ? "black" : "red";
+                color: acceptableInput ? "black" : "red";
             }
 
             Row {
@@ -87,12 +88,11 @@ Dialog {
                 FileDialog {
                     id: avatarSelector
                     title: qsTr("Avatar Image")
-                    selectExisting: true
-                    selectMultiple: false
+                    fileMode: FileDialog.OpenFile
 
                     nameFilters: ["Image files (*.jpg, *.jpeg, *.png)"]
                     onAccepted: {
-                        var url = fileUrl
+                        var url = selectedFile
                         manager.setTmpImageFromPath(url);
 
                         // Give it a unique url so it fetches the new image...
@@ -113,6 +113,14 @@ Dialog {
                 text: qsTr("Auto Connect")
                 checked: value.autoConnect
             }
+        }
+
+        Label {
+            visible: !identity && !manager.online
+            text: qsTr("Connect to Tor before creating an identity.")
+            color: "firebrick"
+            wrapMode: Text.WordWrap
+            Layout.fillWidth: true
         }
 
         Label { font.pointSize: 9; text: qsTr("Notes")}

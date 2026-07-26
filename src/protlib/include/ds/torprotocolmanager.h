@@ -28,6 +28,7 @@ private slots:
 
 public:
     State getState() const override;
+    QString getTorVersion() const override;
     static const QByteArray& getName(const State state);
 
 protected:

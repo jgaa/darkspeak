@@ -41,3 +41,13 @@ log out and log back in.
 
 Now you should be able to use the system's tor-server from darkspeak.
 
+DarkSpeak accepts Tor v3 services only. The canonical peer address is a
+56-character lowercase base32 identifier with the `.onion` suffix and an
+explicit port, for example
+`abcdefghijklmnopqrstuv234567abcdefghijklmnopqrstuv234567.onion:443` (the
+identifier must still pass Tor's v3 checksum validation). Legacy 16-character
+v2 addresses are rejected.
+
+The control endpoint and SOCKS endpoint are configured independently. The
+defaults are control `127.0.0.1:9051` and SOCKS `127.0.0.1:9050`; the local
+application listener host is configured separately.

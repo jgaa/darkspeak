@@ -1,7 +1,7 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
-import QtQuick.Layouts 1.12
-import QtQuick.Dialogs 1.2
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Dialogs
 import com.jgaa.darkspeak 1.0
 
 ToolBar {
@@ -41,6 +41,7 @@ ToolBar {
             icon.name: "document-new"
             height: parent.height
             visible: manager.currentPage === Manager.IDENTITIES
+            enabled: manager.online
 
             onClicked: {
                 manager.clearTmpImage();
@@ -72,7 +73,7 @@ ToolBar {
                 }
                 var dlg = component.createObject(mainWindow, {
                     "parent"   : mainWindow,
-                    "clip"     : clip,
+                    "clipboardData" : clip,
                     "identity" : identities.getCurrentIdentity()
                 });
                 dlg.open()

@@ -91,9 +91,14 @@ void DsServer::advance(const data_t& data)
 void DsServer::getHello(const data_t& data)
 {
 
+    if (data.size() != Hello::bytes + crypto_box_SEALBYTES) {
+        LFLOG_ERROR << "Invalid Hello size from " << connection_->getUuid().toString();
+        connection_->close();
+        return;
+    }
+
     // Data is encrypted with our pubkey. Decrypt it.
     Hello hello;
-    assert(hello.buffer.size() == data.size() - crypto_box_SEALBYTES);
 
     if (!connectionData_.identitysCert->decrypt(hello.buffer, data)) {
         LFLOG_ERROR << "Failed to decrypt hello payload from " << connection_->getUuid().toString();

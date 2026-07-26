@@ -41,8 +41,11 @@ public:
 
     template <typename Tciphertext, typename Tdata>
     void encrypt(Tciphertext& ciphertext, const Tdata& data) {
-        assert(static_cast<size_t>(ciphertext.size())
-               == (static_cast<size_t>(data.size()) + crypto_box_SEALBYTES));
+        if (getEncryptionPubKey().size() != crypto_box_PUBLICKEYBYTES
+                || static_cast<size_t>(ciphertext.size())
+                   != static_cast<size_t>(data.size()) + crypto_box_SEALBYTES) {
+            throw std::runtime_error("Invalid sealed-box input or output size");
+        }
         if (crypto_box_seal(
                     reinterpret_cast<unsigned char *>(ciphertext.data()),
                     reinterpret_cast<const unsigned char *>(data.data()),
@@ -54,8 +57,13 @@ public:
 
     template <typename Tciphertext, typename Tdata>
     bool decrypt(Tdata& data, const Tciphertext& ciphertext) {
-        assert(static_cast<size_t>(data.size())
-               == (static_cast<size_t>(ciphertext.size()) - crypto_box_SEALBYTES));
+        if (getEncryptionKey().size() != crypto_box_SECRETKEYBYTES
+                || getEncryptionPubKey().size() != crypto_box_PUBLICKEYBYTES
+                || static_cast<size_t>(ciphertext.size()) < crypto_box_SEALBYTES
+                || static_cast<size_t>(data.size())
+                   != static_cast<size_t>(ciphertext.size()) - crypto_box_SEALBYTES) {
+            return false;
+        }
         if (crypto_box_seal_open(
                     reinterpret_cast<unsigned char *>(data.data()),
                     reinterpret_cast<const unsigned char *>(ciphertext.data()),
@@ -77,8 +85,10 @@ public:
 
     template <typename Tsign, typename T>
     void sign(Tsign& signature, std::initializer_list<T> data) const {
-        Q_ASSERT(!getSigningKey().empty());
-        assert(signature.size() == crypto_sign_BYTES);
+        if (getSigningKey().size() != crypto_sign_SECRETKEYBYTES
+                || static_cast<size_t>(signature.size()) != crypto_sign_BYTES) {
+            throw std::runtime_error("Invalid signing key or signature size");
+        }
 
         crypto_sign_state state = {};
         crypto_sign_init(&state);
@@ -99,7 +109,10 @@ public:
 
     template <typename T, typename Tsign>
     bool verify(const Tsign& signature, std::initializer_list<T> data) const {
-        Q_ASSERT(!getSigningPubKey().empty());
+        if (getSigningPubKey().size() != crypto_sign_PUBLICKEYBYTES
+                || static_cast<size_t>(signature.size()) != crypto_sign_BYTES) {
+            return false;
+        }
         crypto_sign_state state = {};
         crypto_sign_init(&state);
         for(const auto& d : data) {

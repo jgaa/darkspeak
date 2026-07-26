@@ -14,6 +14,11 @@ TorMgr::TorMgr(const TorConfig& config)
 
 TorController *TorMgr::getController() { return ctl_.get(); }
 
+QString TorMgr::getTorVersion() const
+{
+    return ctl_ ? ctl_->getVersion() : QString{};
+}
+
 /* To start using a tor service, we need to connect over TCP to
  * the contol channel of a running server.
  * Then we need to get the authentication methods from the
@@ -160,4 +165,3 @@ void TorMgr::startUseSystemInstance()
 }
 
 }} // namespaces
-

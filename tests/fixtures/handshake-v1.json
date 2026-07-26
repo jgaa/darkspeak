@@ -1,0 +1,18 @@
+{
+  "format": "darkspeak-handshake",
+  "version": 1,
+  "roles": ["client", "server"],
+  "transport": "sealed-ed25519-secretstream",
+  "client_message": {
+    "fields": ["version", "secretstream_key", "secretstream_header", "signing_public_key", "signature"],
+    "encryption": "recipient_curve25519_public_key"
+  },
+  "server_message": {
+    "fields": ["version", "secretstream_key", "secretstream_header", "signature"],
+    "encryption": "recipient_curve25519_public_key"
+  },
+  "stream_frame": {
+    "fields": ["encrypted_length_u16_be", "encrypted_version_u8", "encrypted_channel_u32_be", "encrypted_request_id_u64_be", "encrypted_payload"],
+    "authentication": "crypto_secretstream_xchacha20poly1305"
+  }
+}

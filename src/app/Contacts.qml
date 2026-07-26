@@ -1,7 +1,7 @@
-import QtQuick 2.12
-import QtQuick.Controls 2.5
-import QtQuick.Layouts 1.3
-import QtQuick.Dialogs 1.3
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Dialogs
 import com.jgaa.darkspeak 1.0
 
 Page {
@@ -18,7 +18,7 @@ Page {
 
     Connections {
         target: contacts
-        onModelReset: {
+        function onModelReset() {
             console.log("onModelReset");
             if (contacts.rowCount() === 1) {
                 // Only one contact, so just select it as the current one

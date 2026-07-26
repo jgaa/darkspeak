@@ -1,5 +1,5 @@
-import QtQuick 2.0
-import QtGraphicalEffects 1.12
+import QtQuick
+import QtQuick.Effects
 
 Rectangle {
     id: root
@@ -22,7 +22,10 @@ Rectangle {
         source: root.source ? root.source : ""
         cache: false
         layer.enabled: root.rounded
-        layer.effect: OpacityMask {
+        layer.effect: MultiEffect {
+            maskEnabled: true
+            maskThresholdMin: 0.5
+            maskSpreadAtMin: 1.0
             maskSource: Item {
                 width: img.width
                 height: img.height

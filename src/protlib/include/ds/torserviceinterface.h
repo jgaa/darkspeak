@@ -12,6 +12,7 @@
 #include "ds/connectionsocket.h"
 #include "ds/dscert.h"
 #include "ds/peer.h"
+#include "ds/torconfig.h"
 
 namespace ds {
 namespace prot {
@@ -45,7 +46,10 @@ public:
 
     TorServiceInterface(crypto::DsCert::ptr_t cert,
                         const QByteArray& address,
-                        const QUuid& identityId);
+                        const QUuid& identityId,
+                        QHostAddress appHost = QHostAddress::LocalHost,
+                        QHostAddress socksHost = QHostAddress::LocalHost,
+                        quint16 socksPort = 9050);
     virtual ~TorServiceInterface() override = default;
 
     /*! Start a service.
@@ -88,13 +92,16 @@ private slots:
 
 
 private:
-    static QNetworkProxy& getTorProxy();
+    QNetworkProxy getTorProxy() const;
 
     crypto::DsCert::ptr_t cert_;
     std::shared_ptr<TorSocketListener> server_;
     std::map<QUuid, Peer::ptr_t> peers_;
     const QString address_;
     const QUuid identityId_;
+    const QHostAddress app_host_;
+    const QHostAddress socks_host_;
+    const quint16 socks_port_;
 };
 
 }} //namespaces

@@ -1,5 +1,5 @@
-import QtQuick 2.12
-import QtQuick.Controls 2.5
+import QtQuick
+import QtQuick.Controls
 import com.jgaa.darkspeak 1.0
 
 Page {
@@ -31,7 +31,7 @@ Page {
 
     Connections {
         target: messages
-        onModelReset: {
+        function onModelReset() {
             scrollToEnd()
         }
     }
@@ -143,4 +143,3 @@ Page {
         }
     }
 }
-

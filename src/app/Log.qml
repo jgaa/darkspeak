@@ -1,5 +1,6 @@
-import QtQuick 2.12
-import QtQuick.Controls 2.5
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
 import com.jgaa.darkspeak 1.0
 
 Page {
@@ -8,11 +9,29 @@ Page {
     height: 400
     title: qsTr("Log")
 
-    header: Label {
-        id: label
-        text: qsTr("Log")
-        font.pixelSize: Qt.application.font.pixelSize * 2
-        padding: 10
+    property bool follow: true
+
+    header: ToolBar {
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+
+            Label {
+                text: qsTr("Log")
+                font.pixelSize: Qt.application.font.pixelSize * 1.4
+                Layout.fillWidth: true
+            }
+
+            ToolButton {
+                text: qsTr("Follow")
+                checkable: true
+                checked: root.follow
+                onToggled: root.follow = checked
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Keep the latest message visible")
+            }
+        }
     }
 
     ListView {
@@ -20,8 +39,23 @@ Page {
         model: log
         clip: true
         anchors.fill: parent
+        spacing: 0
+
+        function scrollToLatest() {
+            if (root.follow) {
+                Qt.callLater(function() { listView.positionViewAtEnd() })
+            }
+        }
+
+        onCountChanged: scrollToLatest()
+
         delegate: Item {
             height: logText.height + 3
+            width: listView.width
+            Rectangle {
+                anchors.fill: parent
+                color: level === 1 ? "#fff3b0" : "transparent"
+            }
             Row {
                 id: row1
                 Text {
@@ -34,6 +68,11 @@ Page {
                     wrapMode: Text.WordWrap
                     anchors.verticalCenter: parent.verticalCenter
                     font.pointSize: 8
+                    color: level === 1 ? "#d32f2f"
+                           : level === 2 ? "#f57c00"
+                           : (level === 3 || level === 4) ? "#1976d2"
+                           : level === 5 ? "#00897b"
+                           : "#777777"
                 }
             }
         }

@@ -1,15 +1,15 @@
-import QtQuick 2.2
-import QtQuick.Controls 1.1
-import QtQuick.Layouts 1.3
-import QtQuick.Dialogs 1.2
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Dialogs
 import com.jgaa.darkspeak 1.0
 
 Dialog {
     id: root
     property Identity identity: null
     standardButtons: (port.acceptableInput && address.acceptableInput)
-                     ? (StandardButton.Ok | StandardButton.Cancel)
-                     : StandardButton.Cancel
+                     ? (Dialog.Ok | Dialog.Cancel)
+                     : Dialog.Cancel
     title: qsTr("Import service for") + " " + (identity ? identity.name : "")
 
 
@@ -29,10 +29,10 @@ Dialog {
             TextField {
                 id: address
                 Layout.fillWidth: true
-                validator: RegExpValidator {
-                    regExp: /[a-z2-7]{16}(\.onion)?/
+                validator: RegularExpressionValidator {
+                    regularExpression: /[a-z2-7]{56}(\.onion)?/
                 }
-                textColor: acceptableInput ? "black" : "red";
+                color: acceptableInput ? "black" : "red";
             }
 
             TextField {
@@ -42,7 +42,7 @@ Dialog {
                     bottom: 1024
                     top: 65535
                 }
-                textColor: acceptableInput ? "black" : "red";
+                color: acceptableInput ? "black" : "red";
             }
         }
 

@@ -85,6 +85,7 @@ public:
 
     virtual State getState() const = 0;
     virtual bool isOnline() const { return getState() == State::ONLINE; }
+    virtual QString getTorVersion() const { return {}; }
 
     virtual QByteArray getPeerHandle(const QUuid& service, const QUuid& connectionId) = 0;
 

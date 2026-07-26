@@ -4,10 +4,10 @@ add_executable(${PROJECT_NAME}
     main.cpp
     qml.qrc
     )
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/dependencies/logfault/include)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
-add_dependencies(${PROJECT_NAME} models prot tor core crypto)
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
 target_link_libraries(${PROJECT_NAME} PRIVATE
     models prot tor core crypto
-    Qt5::QuickControls2 Qt5::Quick Qt5::Widgets
-    Qt5::Core Qt5::Network Qt5::Sql Qt5::Svg
-    sodium)
+    Qt6::Core Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2
+    Qt6::Sql Qt6::Svg Qt6::Widgets)

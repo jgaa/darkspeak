@@ -125,6 +125,11 @@ void IdentityManager::setCurrentIdentity(int row)
 void IdentityManager::createIdentity(const QmlIdentityReq *req)
 {
     assert(req);
+    if (!DsEngine::instance().isOnline()) {
+        LFLOG_WARN << "Ignoring identity creation request while Tor is offline.";
+        return;
+    }
+
     IdentityData id;
     id.name = req->value.name;
     id.avatar = req->value.avatar;

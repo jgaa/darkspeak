@@ -13,11 +13,18 @@ namespace models {
 LogModel::LogModel(QSettings &settings)
     : settings_{settings}
 {
-    if (core::isEnabled(core::LogSystem::APPLICATION)) {
-        auto handler = make_unique<LogModelHandler>(core::getLogLevel(core::LogSystem::APPLICATION));
-        connect(handler.get(), &LogModelHandler::message, this, &LogModel::log);
-        logfault::LogManager::Instance().AddHandler(move(handler));
+    installHandler(core::getLogLevel(core::LogSystem::APPLICATION));
+}
+
+void LogModel::installHandler(logfault::LogLevel level)
+{
+    if (level == logfault::LogLevel::DISABLED) {
+        return;
     }
+
+    auto handler = make_unique<LogModelHandler>(level);
+    connect(handler.get(), &LogModelHandler::message, this, &LogModel::log);
+    logfault::LogManager::Instance().AddHandler(move(handler));
 }
 
 QVariant LogModel::data(const QModelIndex &index, int role) const
@@ -31,6 +38,11 @@ QVariant LogModel::data(const QModelIndex &index, int role) const
         return li->text;
     }
 
+    if (role == Qt::UserRole + 1) {
+        const auto& li = log_items_[static_cast<size_t>(index.row())];
+        return static_cast<int>(li->level);
+    }
+
     return {};
 }
 
@@ -39,11 +51,16 @@ int LogModel::rowCount(const QModelIndex &/*parent*/) const
     return static_cast<int>(log_items_.size());
 }
 
+QHash<int, QByteArray> LogModel::roleNames() const
+{
+    return {{Qt::DisplayRole, "display"}, {Qt::UserRole + 1, "level"}};
+}
+
 void LogModel::log(QString text, logfault::LogLevel level)
 {
     auto item = make_unique<Item>(text, level);
 
-    if (log_items_.size() > 100) {
+    while (log_items_.size() >= 1000) {
         beginRemoveRows({}, 0, 0);
         log_items_.erase(log_items_.begin());
         endRemoveRows();
@@ -55,7 +72,7 @@ void LogModel::log(QString text, logfault::LogLevel level)
     endInsertRows();
 }
 
-void LogModelHandler::LogMessage(const logfault::Message &msg)
+void LogModelHandler::LogMessage(const logfault::Message &msg) noexcept
 {
     std::ostringstream out;
     PrintMessage(out, msg);

@@ -335,6 +335,7 @@ struct ContactData {
 
 }} // namepsaces
 
+Q_DECLARE_OPAQUE_POINTER(ds::core::Identity *)
 Q_DECLARE_METATYPE(ds::core::Contact *)
 
 

@@ -96,7 +96,10 @@ void ConnectionSocket::processInput()
         QByteArray my_data;
         if (bytesWanted_ == static_cast<size_t>(inData.size())) {
             my_data.swap(inData);
-            assert(inData.isEmpty());
+            if (!inData.isEmpty()) {
+                close();
+                return;
+            }
         } else {
             my_data = inData.left(static_cast<int>(bytesWanted_));
             inData.remove(0, static_cast<int>(bytesWanted_));

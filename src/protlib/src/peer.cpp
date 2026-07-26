@@ -39,7 +39,9 @@ public:
         : io_{file->getDownloadPath()}
         , file_{file}
     {
-        assert(file->getDirection() == File::INCOMING);
+        if (file->getDirection() != File::INCOMING) {
+            throw Error("Invalid direction for incoming file channel");
+        }
         if (!io_.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
             LFLOG_ERROR << "Failed to open \"" << file->getDownloadPath()
                         << "\" for write: " << io_.errorString();
@@ -78,7 +80,7 @@ public:
 
     uint64_t onOutgoing(Peer &peer) override {
         Q_UNUSED(peer)
-        assert(false);
+        throw Error("Incoming file channel cannot send data");
         return {};
     }
 
@@ -93,7 +95,9 @@ public:
         : io_{file->getPath()}
         , file_{file}
     {
-        assert(file->getDirection() == File::OUTGOING);
+        if (file->getDirection() != File::OUTGOING) {
+            throw Error("Invalid direction for outgoing file channel");
+        }
         if (!io_.open(QIODevice::ReadOnly)) {
             LFLOG_ERROR << "Failed to open \"" << file->getPath()
                         << "\" for read: " << io_.errorString();
@@ -115,7 +119,7 @@ public:
         Q_UNUSED(id)
         Q_UNUSED(data)
         Q_UNUSED(final)
-        assert(false);
+        throw Error("Outgoing file channel cannot receive data");
     }
 
     uint64_t onOutgoing(Peer &peer) override {
@@ -219,7 +223,11 @@ uint64_t Peer::send(const void *data, const size_t bytes,
     // The length is encrypted individually to allow the peer to read it before
     // fetching the payload.
 
-    const size_t len = 1 + 4 + 8 + static_cast<size_t>(bytes);
+    if (static_cast<size_t>(bytes) > max_payload_bytes) {
+        throw runtime_error("Payload exceeds encrypted frame limit");
+    }
+
+    const size_t len = frame_header_bytes + static_cast<size_t>(bytes);
     vector<uint8_t> payload_len(2),
             buffer(len),
             cipherlen(2 + crypt_bytes),
@@ -229,10 +237,10 @@ uint64_t Peer::send(const void *data, const size_t bytes,
     mview_t id{channel.end(), 8};
     mview_t payload{id.end(), bytes};
 
-    assert(buffer.size() == (+ version.size()
-                             + channel.size()
-                             + id.size()
-                             + payload.size()));
+    if (buffer.size() != version.size() + channel.size()
+            + id.size() + payload.size()) {
+        throw runtime_error("Invalid outgoing encrypted frame layout");
+    }
 
     static_assert(sizeof(decltype(qToBigEndian(static_cast<quint16>(len)))) == sizeof(quint16),
                   "qToBigEndian() must return the correct type");
@@ -244,7 +252,9 @@ uint64_t Peer::send(const void *data, const size_t bytes,
     valueToBytes(qToBigEndian(static_cast<quint32>(ch)), channel);
     valueToBytes(qToBigEndian(static_cast<quint64>(++request_id_)), id);
 
-    assert(bytes == payload.size());
+    if (bytes != payload.size()) {
+        throw runtime_error("Invalid outgoing payload size");
+    }
     memcpy(payload.data(), data, payload.size());
 
     // encrypt length
@@ -415,7 +425,9 @@ void Peer::enableEncryptedStream()
         return;
     }
 
-    assert(inState_ == InState::DISABLED);
+    if (inState_ != InState::DISABLED) {
+        throw runtime_error("Encrypted stream is already enabled");
+    }
     wantChunkSize();
 }
 
@@ -436,6 +448,10 @@ void Peer::wantChunkData(const size_t bytes)
         return;
     }
 
+    if (bytes < frame_header_bytes || bytes > max_frame_bytes) {
+        throw runtime_error("Invalid encrypted frame length");
+    }
+
     LFLOG_TRACE << "Want " << bytes << " data-bytes on " << connection_->getUuid().toString();
     inState_ = InState::CHUNK_DATA;
     connection_->wantBytes(bytes + crypt_bytes);
@@ -453,11 +469,17 @@ void Peer::processStream(const Peer::data_t &ciphertext)
         array<uint8_t, 2> bytes = {};
         mview_t data{bytes};
         decrypt(data, ciphertext, final);
+        if (final) {
+            throw runtime_error("Unexpected final tag on encrypted frame length");
+        }
         wantChunkData(qFromBigEndian(bytesToValue<quint16>(bytes)));
     } else if (inState_ == InState::CHUNK_DATA){
 
         static const QByteArray binary = {"[binary]"};
-            assert(ciphertext.size() >= crypt_bytes + 5);
+        if (ciphertext.size() < crypt_bytes + frame_header_bytes
+                || ciphertext.size() > crypt_bytes + max_frame_bytes) {
+            throw runtime_error("Invalid encrypted frame size");
+        }
         std::vector<uint8_t> buffer(ciphertext.size() - crypt_bytes);
         mview_t buffer_view{buffer};
         mview_t version{buffer.data(), 1};
@@ -475,10 +497,10 @@ void Peer::processStream(const Peer::data_t &ciphertext)
 
         mview_t payload{id.end(), static_cast<size_t>(payload_size)};
 
-        assert(buffer.size() == (+ version.size()
-                                 + channel.size()
-                                 + id.size()
-                                 + payload.size()));
+        if (buffer.size() != version.size() + channel.size()
+                + id.size() + payload.size()) {
+            throw runtime_error("Invalid encrypted frame layout");
+        }
 
         decrypt(buffer_view, ciphertext, final);
 
@@ -538,7 +560,10 @@ void Peer::prepareDecryption(Peer::stream_state_t &state,
 
 void Peer::decrypt(Peer::mview_t &data, const Peer::mview_t &ciphertext,  bool& final)
 {
-    assert((data.size() + crypt_bytes) == ciphertext.size());
+    if (ciphertext.size() < crypt_bytes
+            || data.size() + crypt_bytes != ciphertext.size()) {
+        throw runtime_error("Invalid encrypted stream buffer size");
+    }
     unsigned char tag = {};
     if (crypto_secretstream_xchacha20poly1305_pull(&stateIn,
                                                    data.data(),
@@ -581,14 +606,17 @@ quint32 Peer::createChannel(const File &file)
     Channel::ptr_t ch;
     if (file.getDirection() == File::INCOMING) {
         ch = make_shared<IncomingFileChannel>(filePtr);
-        assert(inChannels_.find(nextInchannel_) == inChannels_.end());
+        if (inChannels_.find(nextInchannel_) != inChannels_.end()) {
+            throw Error("Incoming channel id collision");
+        }
         channelId = nextInchannel_;
         inChannels_[channelId] = ch;
         ++nextInchannel_;
     } else {
         channelId = file.getChannel();
-        assert(channelId > 0);
-        assert(outChannels_.find(channelId) == outChannels_.end());
+        if (channelId == 0 || outChannels_.find(channelId) != outChannels_.end()) {
+            throw Error("Invalid or duplicate outgoing channel id");
+        }
         ch = make_shared<OutgoingFileChannel>(filePtr);
         outChannels_[channelId] = ch;
     }
@@ -810,7 +838,9 @@ uint64_t Peer::startTransfer(File &file)
 
 uint64_t Peer::sendSome(File &file)
 {
-    assert(file.getState() == File::FS_TRANSFERRING);
+    if (file.getState() != File::FS_TRANSFERRING) {
+        throw Error("File is not in transferring state");
+    }
 
     auto it = outChannels_.find(file.getChannel());
     if (it == outChannels_.end()) {
@@ -835,4 +865,3 @@ void Peer::disableNotifications()
 
 
 }} // namespace
-

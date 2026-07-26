@@ -1,7 +1,7 @@
-import QtQuick 2.12
-import QtQuick.Controls 2.5
-import QtQuick.Layouts 1.3
-import QtQuick.Dialogs 1.3
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Dialogs
 import com.jgaa.darkspeak 1.0
 
 Page {
@@ -264,21 +264,23 @@ Page {
 
     MessageDialog {
         id: confirmDelete
-        icon: StandardIcon.Warning
         title: qsTr("Delete Identity")
         text: qsTr("Do you really want to delete this identity?")
-        standardButtons: MessageDialog.Yes | MessageDialog.Cancel
+        buttons: MessageDialog.Yes | MessageDialog.Cancel
         detailedText: qsTr("If you delete this identity, all its related contacts and messages will also be deleted.")
-        onYes: list.deleteCurrent()
+        onButtonClicked: function(button) {
+            if (button === MessageDialog.Yes) list.deleteCurrent()
+        }
     }
 
     MessageDialog {
         id: confirmNewTransport
-        icon: StandardIcon.Warning
         title: qsTr("New Transport")
         text: qsTr("Do you really want to change the Transport address?")
-        standardButtons: MessageDialog.Yes | MessageDialog.Cancel
+        buttons: MessageDialog.Yes | MessageDialog.Cancel
         detailedText: qsTr("If you change your transport address, none of your current contacts or anyone else will be able to contact you on your current address.")
-        onYes: list.createNewTransport();
+        onButtonClicked: function(button) {
+            if (button === MessageDialog.Yes) list.createNewTransport()
+        }
     }
 }

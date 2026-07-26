@@ -24,6 +24,69 @@ Each peer run it's own Tor Hidden Service. This means that DarkSpeak will work a
 
 The protocol used by DarkSpeak does not depend on Tor. It is designed so that it can be used by alternative networks in the future, or even directly over TCP (if no anonymity is required). At the moment however, only Tor is used.
 
+# Running DarkSpeak
+
+DarkSpeak uses a system Tor process by default. It connects to Tor's local
+control port at `127.0.0.1:9051` and uses the SOCKS proxy at
+`127.0.0.1:9050`. Installing Tor alone does not enable the control port.
+
+## Ubuntu/Debian Tor setup
+
+Install and start Tor:
+
+```sh
+sudo apt update
+sudo apt install tor
+sudo systemctl enable --now tor
+```
+
+Edit `/etc/tor/torrc` and enable cookie-authenticated control access:
+
+```ini
+ControlPort 9051
+CookieAuthentication 1
+CookieAuthFileGroupReadable 1
+```
+
+Restart Tor and allow the current user to read the control cookie:
+
+```sh
+sudo adduser "$USER" debian-tor
+sudo systemctl restart tor
+```
+
+Log out and back in (or run `newgrp debian-tor`) so the new group membership
+takes effect. Do not enable an unauthenticated control port.
+
+Verify that Tor is listening before starting DarkSpeak:
+
+```sh
+ss -ltn | grep -E ':(9050|9051)\b'
+```
+
+DarkSpeak should subsequently report `CONNECTED` and `ONLINE` in its log. If
+the control port is configured differently, change the Tor settings in the
+application accordingly. See [the detailed Tor configuration notes](doc/torconfig.md)
+for more information.
+
+## Isolated profiles and logging
+
+Use a separate profile directory when running multiple DarkSpeak instances on
+the same machine. Each profile gets its own settings, database, data, and
+download directory:
+
+```sh
+darkspeak --profile "$HOME/.local/share/darkspeak-test-1"
+darkspeak --profile "$HOME/.local/share/darkspeak-test-2"
+```
+
+The command-line logging options are:
+
+```text
+--log-file <path>
+--log-level <trace|debug|info|warn|error>
+```
+
 # History
 
 This project began in April 2016, when I wanted to chat with my friends without Facebook, Google, NSA or anyone else overseeing our conversations. The idea that private conversations are no longer possible, and that we just have to accept that, provokes me. So I used the, now dead, "Tor Chat" project as a starting-point for a protocol, and wrote my own client in C++, using QT and QML for GUI.

@@ -6,8 +6,9 @@
 namespace ds {
 namespace crypto {
 
-QByteArray onion16decode(const QByteArray& src);
-QByteArray onion16encode(const QByteArray& src);
+QByteArray onionv3decode(const QByteArray& src);
+QByteArray onionv3encode(const QByteArray& src);
+bool onionv3isValid(const QByteArray& src) noexcept;
 
 }} // namespaces
 

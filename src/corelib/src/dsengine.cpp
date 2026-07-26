@@ -126,6 +126,11 @@ bool DsEngine::isOnline() const
     return false;
 }
 
+QString DsEngine::getTorVersion() const
+{
+    return tor_mgr_ ? tor_mgr_->getTorVersion() : QString{};
+}
+
 QByteArray DsEngine::getIdentityHandle(const QByteArray &pubkey, const QByteArray &address)
 {
     QVariantMap map;
@@ -353,8 +358,14 @@ void DsEngine::initialize()
         qRegisterMetaType<ds::core::Conversation *>("FileData");
     }
 
-    auto data_path = QStandardPaths::writableLocation(
-                QStandardPaths::AppDataLocation);
+    QString data_path;
+    if (qEnvironmentVariableIsSet("DARKSPEAK_PROFILE_ROOT")) {
+        data_path = QDir(qEnvironmentVariable("DARKSPEAK_PROFILE_ROOT"))
+                .filePath("data");
+    } else {
+        data_path = QStandardPaths::writableLocation(
+                    QStandardPaths::AppDataLocation);
+    }
     if (!QDir(data_path).exists()) {
         LFLOG_DEBUG << "Creating path: " << data_path;
         QDir().mkpath(data_path);
@@ -384,7 +395,15 @@ void DsEngine::initialize()
     }
 
     if (settings_->value("downloadLocation", "").toString().isEmpty()) {
-        QDir path = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation) + "/darkspeak";
+        QString downloadPath;
+        if (qEnvironmentVariableIsSet("DARKSPEAK_PROFILE_ROOT")) {
+            downloadPath = QDir(qEnvironmentVariable("DARKSPEAK_PROFILE_ROOT"))
+                    .filePath("data/downloads");
+        } else {
+            downloadPath = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)
+                    + "/darkspeak";
+        }
+        QDir path = downloadPath;
         settings_->setValue("downloadLocation", path.path());
         if (!path.exists()) {
             LFLOG_NOTICE << "Creating download directory \"" << path.path() << "\".";
@@ -529,40 +548,37 @@ QByteArray DsEngine::imageToBytes(const QImage &img)
 QByteArray DsEngine::getIdentityAsBase58(const DsCert::ptr_t &cert, const QByteArray &address)
 {
     // Format:
-    //  1 byte version (1)
+    //  1 byte version (2)
     //  32 byte pubkey
-    //  10 bytes onion address
+    //  35 bytes Tor v3 address payload
     //  2 bytes port
 
     // B58 tag: {11, 176}
 
     QByteArray bytes;
 
-    bytes.append('\1'); // Version
+    bytes.append('\2'); // Version
     bytes += cert->getSigningPubKey().toByteArray();
 
     // Parse the address
     std::string onion, port;
-    static const regex legacy_pattern{R"(^(onion:)?([a-z2-7]{16})\:(\d{3,5})$)"};
+    static const regex v3_pattern{R"(^(onion:)?([a-z2-7]{56})(\.onion)?\:(\d{1,5})$)"};
 
     std::smatch m;
     std::string str = address.toStdString();
-    if (std::regex_match(str, m, legacy_pattern)) {
+    if (std::regex_match(str, m, v3_pattern)) {
         onion = m[2].str();
-        port = m[3].str();
+        port = m[4].str();
     } else {
         LFLOG_ERROR << "getIdentityAsBase58: Invalid address: " << address;
         return {};
     }
 
-    if (onion.size() == 16) {
-        // Legacy onion address
-        bytes += crypto::onion16decode({onion.c_str()});
-    } else {
-        // TODO: Implement
-        LFLOG_ERROR << "getIdentityAsBase58 NOT IMPLEMENTED for modern Tor addresses!";
-        return "Sorry, Not implemented";
+    if (onion.size() != 56) {
+        LFLOG_ERROR << "getIdentityAsBase58: legacy Tor address rejected";
+        return {};
     }
+    bytes += crypto::onionv3decode(QByteArray::fromStdString(onion));
 
     appendValueToBytes(qToBigEndian(static_cast<uint16_t>(atoi(port.c_str()))), bytes);
 

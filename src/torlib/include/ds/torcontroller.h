@@ -73,6 +73,7 @@ public:
 
     CtlState getCtlState() const;
     TorState getTorState() const;
+    QString getVersion() const { return version_; }
     bool isConnected() const {
         const auto state = getCtlState();
         return (state == CtlState::CONNECTED)
@@ -92,6 +93,7 @@ signals:
 
     // Emitted when we are authenticated and Tor is connected.
     void ready();
+    void versionChanged(const QString& version);
 
     // Emitted when the tor service has been shut down.
     void stopped();
@@ -149,6 +151,7 @@ protected:
 private:
     CtlState ctl_state_ = CtlState::DISCONNECTED;
     TorState tor_state_ = TorState::UNKNOWN;
+    QString version_;
     std::unique_ptr<TorCtlSocket> ctl_;
     TorConfig config_;
     QByteArray client_nonce_;

@@ -66,6 +66,7 @@ public:
     ProtocolManager& getProtocolMgr(ProtocolManager::Transport transport);
     static const QByteArray& getName(const State state);
     bool isOnline() const;
+    QString getTorVersion() const;
     static QByteArray getIdentityHandle(const QByteArray& pubkey, const QByteArray& address);
     static QByteArray toJson(const QVariantMap& data);
     static QVariantMap fromJson(const QByteArray& json);

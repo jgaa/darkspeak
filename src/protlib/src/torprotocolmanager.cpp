@@ -60,6 +60,11 @@ TorProtocolManager::State TorProtocolManager::getState() const
     return state_;
 }
 
+QString TorProtocolManager::getTorVersion() const
+{
+    return tor_ ? tor_->getTorVersion() : QString{};
+}
+
 const QByteArray& TorProtocolManager::getName(const ProtocolManager::State state)
 {
     static const std::array<QByteArray, 5> names = {{
@@ -120,6 +125,15 @@ TorConfig TorProtocolManager::getConfig() const
      config.ctl_passwd = settings_.value(
                  QStringLiteral("torCtlPasswd"),
                  config.ctl_passwd).toString();
+     config.socks_host = QHostAddress(
+                 settings_.value(QStringLiteral("torSocksHost"),
+                                 config.socks_host.toString()).toString());
+     if (config.socks_host.isNull()) {
+         config.socks_host = QHostAddress::LocalHost;
+     }
+     config.socks_port = static_cast<uint16_t>(
+                 settings_.value(QStringLiteral("torSocksPort"),
+                                 config.socks_port).toUInt());
      config.service_from_port = static_cast<uint16_t>(
                  settings_.value(QStringLiteral("torServiceFromPort"),
                                  config.service_from_port).toUInt());
@@ -224,12 +238,19 @@ void TorProtocolManager::startService(const QUuid& serviceId,
     sp.key_type = data["key_type"].toByteArray();
     sp.service_id = data["service_id"].toByteArray();
 
-    auto service = make_shared<TorServiceInterface>(cert, data["address"].toByteArray(), serviceId);
+    const auto address = TorAddress::parse(data["address"].toString());
+    const auto config = getConfig();
+    auto service = make_shared<TorServiceInterface>(cert, address.toString().toUtf8(), serviceId,
+                                                    config.app_host,
+                                                    config.socks_host,
+                                                    config.socks_port);
 
     // Add listening port
     auto properties = service->startService();
     sp.app_port = properties.port;
-    assert(properties.port);
+    if (!properties.port) {
+        throw runtime_error("Tor service did not provide an application port");
+    }
 
     auto it = services_.find(serviceId);
     if (it != services_.end()) {
@@ -275,16 +296,9 @@ void TorProtocolManager::stopService(const QUuid& uuid)
 
 core::PeerConnection::ptr_t TorProtocolManager::connectTo(core::ConnectData cd)
 {
-    // address may be "onion:hostname:port" or "hostname:port"
-    auto parts = cd.address.split(':');
-    if (parts.size() < 2 || parts.size() > 3) {
-        throw runtime_error("Expected: [onion:]address:port");
-    }
-
-    const auto port = static_cast<uint16_t>(parts.at(parts.size() -1).toUInt());
-    const auto host = parts.at(parts.size() - 2) + ".onion";
+    const auto address = TorAddress::parse(QString::fromUtf8(cd.address));
     auto service = cd.service;
-    return getService(service).connectToService(host, port, move(cd));
+    return getService(service).connectToService(address.host().toUtf8(), address.port, move(cd));
 }
 
 void TorProtocolManager::onServiceCreated(const ServiceProperties &service)
@@ -294,14 +308,16 @@ void TorProtocolManager::onServiceCreated(const ServiceProperties &service)
 
     th.identityName = service.name;
     th.uuid = service.uuid;
-    th.handle = service.service_id.toLatin1() + ':' + QByteArray::number(service.service_port);
+    const auto address = TorAddress{service.service_id,
+                                    service.service_port};
+    th.handle = address.toString().toUtf8();
 
     th.data["type"] = QByteArray("Tor hidden service");
     th.data["key"] = service.key;
     th.data["service_id"] = service.service_id;
     th.data["key_type"] = service.key_type;
     th.data["port"] = service.service_port;
-    th.data["address"] = QString("onion:") + th.handle;
+    th.data["address"] = address.toString();
 
     // Stop the service. We require explicit start request to make it available.
     try {
@@ -315,5 +331,3 @@ void TorProtocolManager::onServiceCreated(const ServiceProperties &service)
 }
 
 }} // namespaces
-
-

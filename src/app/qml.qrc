@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>main.qml</file>
+        <file>AboutDialog.qml</file>
         <file>Log.qml</file>
         <file>Home.qml</file>
         <file>qtquickcontrols2.conf</file>
@@ -51,5 +52,8 @@
         <file>GeneralSettings.qml</file>
         <file>ImportTorServiceDialog.qml</file>
         <file>images/blocked.svg</file>
+        <file alias="fonts/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf">../../fonts/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf</file>
+        <file alias="fonts/MaterialSymbolsOutlined[FILL,GRAD,opsz,wght].ttf">../../fonts/MaterialSymbolsOutlined[FILL,GRAD,opsz,wght].ttf</file>
+        <file alias="fonts/MaterialSymbolsSharp[FILL,GRAD,opsz,wght].ttf">../../fonts/MaterialSymbolsSharp[FILL,GRAD,opsz,wght].ttf</file>
     </qresource>
 </RCC>

@@ -1,7 +1,6 @@
 
 #include <QFile>
 #include <QFileInfo>
-#include <cassert>
 
 #include "include/ds/torcontroller.h"
 #include "ds/torctlsocket.h"
@@ -30,7 +29,9 @@ TorController::TorController(const TorConfig &config)
 
 void TorController::start()
 {
-    assert(!ctl_);
+    if (ctl_) {
+        throw IoError("Tor controller is already started");
+    }
 
     ctl_ = std::make_unique<TorCtlSocket>();
 
@@ -70,7 +71,11 @@ void TorController::createService(const QUuid& serviceId)
 
     assert(ctl_);
 
-    ctl_->sendCommand(QStringLiteral("ADD_ONION NEW:BEST Port=%1").arg(sp.service_port).toLocal8Bit(),
+    if (!ctl_ || serviceId.isNull()) {
+        throw IoError("Tor controller is not ready");
+    }
+
+    ctl_->sendCommand(QStringLiteral("ADD_ONION NEW:ED25519-V3 Port=%1").arg(sp.service_port).toLocal8Bit(),
                       [this, sp](const TorCtlReply& reply){
 
         if (reply.status == 250) {
@@ -82,12 +87,15 @@ void TorController::createService(const QUuid& serviceId)
             }
 
             auto service = sp;
-            service.service_id = map.value("SERVICEID").toByteArray();
+            service.service_id = map.value("SERVICEID").toString();
             service.key_type = list.front();
             service.key = list.back();
             service.uuid = sp.uuid;
 
-            assert(!service.uuid.isNull());
+            if (service.key_type != QStringLiteral("ED25519-V3")
+                    || !TorAddress::isValidServiceId(service.service_id)) {
+                throw ParseError("Tor returned a non-v3 onion service");
+            }
 
             service_map_[service.uuid ] = service.service_id.toLatin1();
 
@@ -105,7 +113,11 @@ void TorController::createService(const QUuid& serviceId)
 
 void TorController::startService(const ServiceProperties &sp)
 {
-    assert(ctl_);
+    if (!ctl_ || sp.uuid.isNull() || sp.key_type != QStringLiteral("ED25519-V3")
+            || !TorAddress::isValidServiceId(sp.service_id)
+            || sp.service_port == 0 || sp.app_port == 0) {
+        throw ParseError("Invalid Tor v3 service properties");
+    }
 
     LFLOG_DEBUG << "Starting hidden service for id "
                 << sp.uuid.toString()
@@ -143,7 +155,9 @@ void TorController::startService(const ServiceProperties &sp)
 
 void TorController::stopService(const QUuid& service)
 {
-    assert(ctl_);
+    if (!ctl_) {
+        throw IoError("Tor controller is not ready");
+    }
 
     const auto service_id = service_map_.value(service);
     if (service_id.isEmpty()) {
@@ -168,7 +182,9 @@ void TorController::stopService(const QUuid& service)
 
 void TorController::startAuth()
 {
-    assert(ctl_);
+    if (!ctl_) {
+        throw IoError("Tor control socket is missing");
+    }
     LFLOG_DEBUG << "Connected to Torctl. Initiating Authentication Procedure.";
 
     setState(CtlState::AUTHENTICATING);
@@ -238,7 +254,9 @@ void TorController::setState(TorController::TorState state,
 void TorController::DoAuthentcate(const TorCtlReply &reply)
 {
     // Decide what kind of autentication we will use
-    assert(reply.status == 250);
+    if (reply.status != 250) {
+        throw AuthError("Unexpected PROTOCOLINFO status");
+    }
     auto map = reply.parse();
     const auto auth_map = map.value("AUTH").toMap();
     QString methods_str = auth_map.value("METHODS").toString();
@@ -262,7 +280,9 @@ void TorController::DoAuthentcate(const TorCtlReply &reply)
             client_nonce_ += static_cast<char>(distr(rnd_eng_));
         }
 
-        assert(client_nonce_.size() == 32);
+        if (client_nonce_.size() != 32) {
+            throw SecurityError("Failed to generate SAFECOOKIE nonce");
+        }
 
         LFLOG_DEBUG << "Authenticating torctl with SAFECOOKIE";
 
@@ -313,6 +333,12 @@ void TorController::OnAuthReply(const TorCtlReply &reply)
     if (reply.status == 250) {
         setState(CtlState::CONNECTED);
         emit autenticated();
+        ctl_->sendCommand("GETINFO version", [this](const TorCtlReply& versionReply) {
+            if (versionReply.status == 250) {
+                version_ = versionReply.parse().value("version").toString();
+                emit versionChanged(version_);
+            }
+        });
         ctl_->sendCommand("SETEVENTS STATUS_CLIENT", {});
         ctl_->sendCommand("GETINFO status/bootstrap-phase", [this](const TorCtlReply& reply) {
             if (reply.status == 250) {
@@ -377,4 +403,3 @@ TorController::TorState TorController::getTorState() const
 }
 
 }}
-

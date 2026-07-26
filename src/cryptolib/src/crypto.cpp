@@ -1,4 +1,5 @@
 #include <cassert>
+#include <limits>
 #include <mutex>
 
 #include <QMetaType>
@@ -63,6 +64,9 @@ QByteArray Crypto::generateId()
 
 QByteArray Crypto::getRandomBytes(const size_t bytes)
 {
+    if (bytes > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        throw std::invalid_argument("Random byte request is too large");
+    }
     QByteArray buffer;
     buffer.resize(static_cast<int>(bytes));
     randombytes_buf(static_cast<void * const>(buffer.data()), bytes);

@@ -30,7 +30,7 @@ public:
 
 private:
     void CalculateHash();
-    void init();
+    void init(bool privateKeys = true);
     void deriveCryptoKeys(bool deriveKey);
 
     safe_array_t cert_;

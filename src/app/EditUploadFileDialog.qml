@@ -1,13 +1,13 @@
-import QtQuick 2.2
-import QtQuick.Controls 1.1
-import QtQuick.Layouts 1.3
-import QtQuick.Dialogs 1.2
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Dialogs
 import com.jgaa.darkspeak 1.0
 
 Dialog {
     id: root
     property Conversation conversation: null
-    standardButtons: path.text ? (StandardButton.Ok | StandardButton.Cancel) : StandardButton.Cancel
+    standardButtons: path.text ? (Dialog.Ok | Dialog.Cancel) : Dialog.Cancel
     width: mainWindow.width < 450 ? mainWindow.width : 450
 
     function updateInfo(fpath) {
@@ -72,10 +72,10 @@ Dialog {
         FileDialog {
             id: fileDialog
             title: qsTr("File to Send")
-            folder: shortcuts.home
+            fileMode: FileDialog.OpenFile
 
             onAccepted: {
-                path.text = fileDialog.fileUrl
+                path.text = fileDialog.selectedFile
             }
         }
     }

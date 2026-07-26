@@ -60,38 +60,38 @@ void Manager::textToClipboard(const QString& text)
 
 QVariantMap Manager::getIdenityFromClipboard() const
 {
-    // name : base58 for version, pubkey and legacy tor service and port
-    static const regex legacy_onion_pattern(R"(^(.+)\:([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{69})$)");
+    // name : base58 for v2 identity payload, pubkey, v3 address and port
+    static const regex identity_pattern(R"(^(.+)\:([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+)$)");
     std::smatch match;
 
     QVariantMap values;
 
     const auto text =  QGuiApplication::clipboard()->text().toStdString();
-    if (!text.empty() && regex_match(text, match, legacy_onion_pattern)) {
+    if (!text.empty() && regex_match(text, match, identity_pattern)) {
         if (match.size() == 3) {
             const auto nick = match[1].str();
             const auto blob = match[2].str();
             values["nickName"] = nick.c_str();
 
-            // See IdentitiesModel::getIdentityAsBase58 for data-format
-
-            // 16 bytes onion address
-            auto const assumed_len = 1 + 32 + 10 + 2;
-            auto data = b58tobin_check<QByteArray>(blob, assumed_len,  {11, 176});
-            assert(data.size() == assumed_len);
-            if (data.at(0) != 1) { // Version
+            constexpr auto payload_len = 1 + 32 + 35 + 2;
+            QByteArray data;
+            try {
+                data = b58tobin_check<QByteArray>(blob, payload_len, {11, 176});
+            } catch (const std::exception&) {
+                return {};
+            }
+            if (data.size() != payload_len || data.at(0) != 2) { // Version
                 LFLOG_NOTICE << "Unsupported version of identity payload: v="
                              << static_cast<int>(data.at(0));
                 return {};
             }
 
             const auto pubkey = data.mid(1, 32);
-            const auto host = data.mid(33, 10);
-            const auto port = data.mid(43,2);
-            const auto address = onion16encode(host);
+            const auto host = onionv3encode(data.mid(33, 35));
+            const auto port = data.mid(68, 2);
             const auto portVal = bytesToValue<uint16_t>(port);
 
-            values["address"] = QString("onion:") + address
+            values["address"] = QString("onion:") + host + ".onion"
                     + ":" + QString::number(qFromBigEndian(portVal));
 
             values["handle"] = b58check_enc<QByteArray>(pubkey, {249, 50});
@@ -171,6 +171,7 @@ Manager::Manager()
             LFLOG_DEBUG << "Manager: Online state changed to " << online_state_;
             emit onlineStateChanged(to);
             emit onlineStatusIconChanged();
+            emit torVersionChanged();
             if (was_online != isOnline()) {
                 emit onlineChanged();
             }
@@ -201,6 +202,11 @@ Manager::OnlineState Manager::getOnlineState() const
 bool Manager::isOnline() const
 {
     return online_state_ == ProtocolManager::State::ONLINE;
+}
+
+QString Manager::getTorVersion() const
+{
+    return engine_ ? engine_->getTorVersion() : QString{};
 }
 
 QString Manager::getProgramName() const

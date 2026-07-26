@@ -1,8 +1,5 @@
 
-#include <cassert>
-
 #include <sodium.h>
-#include <QDebug>
 
 #include "ds/crypto.h"
 #include "ds/cvar.h"
@@ -18,8 +15,10 @@ CertImpl::CertImpl()
     init();
 
     // Generate a private / public key pair
-    assert(signPubKey_.size() == crypto_sign_ed25519_PUBLICKEYBYTES);
-    assert(signKey_.size() == crypto_sign_ed25519_SECRETKEYBYTES);
+    if (signPubKey_.size() != crypto_sign_ed25519_PUBLICKEYBYTES
+            || signKey_.size() != crypto_sign_ed25519_SECRETKEYBYTES) {
+        throw runtime_error("Invalid certificate storage size");
+    }
     if (crypto_sign_ed25519_keypair(signPubKey_.data(), signKey_.data()) != 0) {
         throw runtime_error("Key-generation failed");
     }
@@ -42,8 +41,10 @@ CertImpl::CertImpl(const safe_array_t &cert, const What what)
             throw runtime_error("Invalid pubkey size");
         }
 
-        init();
-        assert(cert.size() == signPubKey_.size());
+        init(false);
+        if (cert.size() != signPubKey_.size()) {
+            throw runtime_error("Invalid public key storage size");
+        }
         memcpy(signPubKey_.data(), cert.cdata(), signPubKey_.size());
         deriveCryptoKeys(false);
     }
@@ -65,35 +66,48 @@ void CertImpl::CalculateHash()
                        signPubKey_.data(), signPubKey_.size(),
                        nullptr, 0);
 
-    assert(!hash_.empty());
+    if (hash_.empty()) {
+        throw runtime_error("Failed to calculate certificate fingerprint");
+    }
 }
 
-void CertImpl::init()
+void CertImpl::init(const bool privateKeys)
 {
     hash_.resize(crypto_generichash_BYTES);
-    cert_.resize(crypto_sign_SECRETKEYBYTES + crypto_sign_PUBLICKEYBYTES
-                 + crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES);
+    cert_.resize(privateKeys
+                 ? crypto_sign_SECRETKEYBYTES + crypto_sign_PUBLICKEYBYTES
+                   + crypto_box_SECRETKEYBYTES + crypto_box_PUBLICKEYBYTES
+                 : crypto_sign_PUBLICKEYBYTES + crypto_box_PUBLICKEYBYTES);
 
     // The cert is the combination of the key and pubkey
     // We share the memory in the certs buffer-space.
-    signKey_.assign(cert_.data(), crypto_sign_SECRETKEYBYTES);
-    signPubKey_.assign(signKey_.end(), crypto_sign_PUBLICKEYBYTES);
-    encrKey_.assign(signPubKey_.end(), crypto_box_SECRETKEYBYTES);
-    encrPubKey_.assign(encrKey_.end(), crypto_box_PUBLICKEYBYTES);
+    if (privateKeys) {
+        signKey_.assign(cert_.data(), crypto_sign_SECRETKEYBYTES);
+        signPubKey_.assign(signKey_.end(), crypto_sign_PUBLICKEYBYTES);
+        encrKey_.assign(signPubKey_.end(), crypto_box_SECRETKEYBYTES);
+        encrPubKey_.assign(encrKey_.end(), crypto_box_PUBLICKEYBYTES);
+    } else {
+        signPubKey_.assign(cert_.data(), crypto_sign_PUBLICKEYBYTES);
+        encrPubKey_.assign(signPubKey_.end(), crypto_box_PUBLICKEYBYTES);
+    }
 }
 
 void CertImpl::deriveCryptoKeys(bool deriveKey)
 {
     if (deriveKey) {
-        assert(encrKey_.size() == crypto_scalarmult_curve25519_BYTES);
-        assert(signKey_.size() == crypto_sign_ed25519_SECRETKEYBYTES);
+        if (encrKey_.size() != crypto_scalarmult_curve25519_BYTES
+                || signKey_.size() != crypto_sign_ed25519_SECRETKEYBYTES) {
+            throw runtime_error("Invalid private key storage size");
+        }
         if (crypto_sign_ed25519_sk_to_curve25519(encrKey_.data(), signKey_.cdata()) != 0) {
             throw runtime_error("Failed to derive crypto key");
         }
     }
 
-    assert(encrPubKey_.size() == crypto_scalarmult_curve25519_BYTES);
-    assert(signPubKey_.size() == crypto_sign_ed25519_PUBLICKEYBYTES);
+    if (encrPubKey_.size() != crypto_scalarmult_curve25519_BYTES
+            || signPubKey_.size() != crypto_sign_ed25519_PUBLICKEYBYTES) {
+        throw runtime_error("Invalid public key storage size");
+    }
     if (crypto_sign_ed25519_pk_to_curve25519(encrPubKey_.data(), signPubKey_.cdata()) != 0) {
         throw runtime_error("Failed to derive crypto pubkey");
     }
@@ -155,4 +169,3 @@ DsCert::ptr_t DsCert::createFromPubkey(const QByteArray& pubkey) {
 }
 
 }} // namespaces
-

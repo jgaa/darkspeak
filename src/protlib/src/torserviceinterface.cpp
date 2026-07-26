@@ -13,8 +13,12 @@ using namespace std;
 
 TorServiceInterface::TorServiceInterface(crypto::DsCert::ptr_t cert,
                                          const QByteArray& address,
-                                         const QUuid& identityId)
+                                         const QUuid& identityId,
+                                         QHostAddress appHost,
+                                         QHostAddress socksHost,
+                                         quint16 socksPort)
     : cert_{move(cert)}, address_{address}, identityId_{identityId}
+    , app_host_{move(appHost)}, socks_host_{move(socksHost)}, socks_port_{socksPort}
 {
 }
 
@@ -30,7 +34,7 @@ StartServiceResult TorServiceInterface::startService()
         onNewIncomingConnection(connection);
     });
 
-    if (!server_->listen(QHostAddress::LocalHost)) {
+    if (!server_->listen(app_host_)) {
         LFLOG_ERROR << "Failed to start listener: "
                     << server_->errorString();
         throw runtime_error("Failed to start listener");
@@ -134,14 +138,10 @@ void TorServiceInterface::autorizeConnection(const QUuid &connection, const bool
 }
 
 
-QNetworkProxy &TorServiceInterface::getTorProxy()
+QNetworkProxy TorServiceInterface::getTorProxy() const
 {
-    // TODO: Get the actual host/port used by our tor server,
-    //       preferably from the control connection.
-    static QNetworkProxy proxy{QNetworkProxy::Socks5Proxy,
-                "127.0.0.1", 9050};
-
-    return proxy;
+    return QNetworkProxy{QNetworkProxy::Socks5Proxy,
+                         socks_host_.toString(), socks_port_};
 }
 
 Peer::ptr_t TorServiceInterface::getPeer(const QUuid &uuid) const

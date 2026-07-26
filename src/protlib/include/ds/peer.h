@@ -2,7 +2,7 @@
 #define PEER_H
 
 #include <array>
-#include <cassert>
+#include <limits>
 
 #include "ds/protocolmanager.h"
 #include "ds/connectionsocket.h"
@@ -22,6 +22,9 @@ public:
     using data_t = crypto::MemoryView<uint8_t>;
     using stream_state_t = crypto_secretstream_xchacha20poly1305_state;
     static constexpr size_t crypt_bytes = crypto_secretstream_xchacha20poly1305_ABYTES;
+    static constexpr size_t frame_header_bytes = 1 + sizeof(quint32) + sizeof(quint64);
+    static constexpr size_t max_frame_bytes = std::numeric_limits<quint16>::max();
+    static constexpr size_t max_payload_bytes = max_frame_bytes - frame_header_bytes;
     enum class InState {
         DISABLED,
         CHUNK_SIZE,

@@ -1,12 +1,13 @@
-import QtQuick 2.2
-import QtQuick.Controls 1.1
-import QtQuick.Layouts 1.3
-import Qt.labs.settings 1.0
-import QtQuick.Dialogs 1.2
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtCore
+import QtQuick.Dialogs
 import com.jgaa.darkspeak 1.0
 
 Item {
     id: root
+    implicitHeight: content.implicitHeight
 
     Settings {
         id: settings
@@ -20,7 +21,12 @@ Item {
     }
 
     ColumnLayout {
-        anchors.fill: parent
+        id: content
+        width: parent.width
+        height: implicitHeight
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
         spacing: 4
 
         GridLayout {
@@ -60,10 +66,10 @@ Item {
                 FileDialog {
                     id: databaseSelector
                     title: qsTr("Select database")
-                    folder: manager.pathToUrl(database.text)
+                    currentFolder: manager.pathToUrl(database.text)
 
                     onAccepted: {
-                        database.text = manager.urlToPath(fileUrl)
+                        database.text = manager.urlToPath(selectedFile)
                     }
                 }
             }
@@ -92,14 +98,13 @@ Item {
                     }
                 }
 
-                FileDialog {
+                FolderDialog {
                     id: downloadSelector
                     title: qsTr("Download Home Path")
-                    folder: manager.pathToUrl(download.text)
-                    selectFolder: true
+                    currentFolder: manager.pathToUrl(download.text)
 
                     onAccepted: {
-                        download.text = manager.urlToPath(fileUrl)
+                        download.text = manager.urlToPath(selectedFolder)
                     }
                 }
             }

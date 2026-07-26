@@ -69,7 +69,9 @@ void DsClient::sayHello()
     // Copy our pubkey
     {
         const auto& our_pubkey = connectionData_.identitysCert->getSigningPubKey();
-        assert(hello.pubkey.size() == our_pubkey.size());
+        if (hello.pubkey.size() != our_pubkey.size()) {
+            throw runtime_error("Invalid local signing public key size");
+        }
         copy(our_pubkey.cbegin(), our_pubkey.cend(), hello.pubkey.begin());
     }
 
@@ -91,8 +93,13 @@ void DsClient::sayHello()
 
 void DsClient::getHelloReply(const Peer::data_t &data)
 {
+    if (data.size() != Olleh::bytes + crypto_box_SEALBYTES) {
+        LFLOG_ERROR << "Invalid Hello reply size from " << connection_->getUuid().toString();
+        connection_->close();
+        return;
+    }
+
     Olleh olleh;
-    assert(olleh.buffer.size() == (data.size() - crypto_box_SEALBYTES));
 
     if (!connectionData_.identitysCert->decrypt(olleh.buffer, data)) {
         LFLOG_ERROR << "Failed to decrypt Hello reply payload from " << connection_->getUuid().toString();

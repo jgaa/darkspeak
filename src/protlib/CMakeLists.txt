@@ -21,5 +21,7 @@ add_library(${PROJECT_NAME} STATIC
     include/ds/torserviceinterface.h
 )
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
-add_dependencies(${PROJECT_NAME} core crypto)
-target_link_libraries(${PROJECT_NAME} PRIVATE Qt5::Quick Qt5::Widgets Qt5::Core Qt5::Network Qt5::Sql Qt5::Svg)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_SOURCE_DIR}/dependencies/logfault/include)
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
+target_link_libraries(${PROJECT_NAME} PUBLIC core crypto tor Qt6::Core Qt6::Gui Qt6::Network Qt6::Quick Qt6::Sql Qt6::Svg Qt6::Widgets)

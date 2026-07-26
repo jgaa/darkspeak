@@ -28,6 +28,7 @@ public:
     explicit TorMgr(const TorConfig& config);
 
     TorController *getController();
+    QString getTorVersion() const;
 
 signals:
     // Connected to the Tor control channel

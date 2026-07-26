@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdexcept>
+
 #ifndef BASE58_H
 #define BASE58_H
 
