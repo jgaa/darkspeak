@@ -1,0 +1,85 @@
+name: Flatpak
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "src/**"
+      - "icons/**"
+      - "fonts/**"
+      - "dependencies/**"
+      - "flatpak/**"
+      - ".github/workflows/flatpak.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "src/**"
+      - "icons/**"
+      - "fonts/**"
+      - "dependencies/**"
+      - "flatpak/**"
+      - ".github/workflows/flatpak.yml"
+
+jobs:
+  flatpak:
+    name: Build GA Flatpak bundle
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read application version
+        id: version
+        run: |
+          set -euo pipefail
+          app_version="$(sed -n 's/^project *(ds VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt | head -n 1)"
+          test -n "${app_version}"
+          echo "app_version=${app_version}" >> "$GITHUB_OUTPUT"
+          echo "bundle_name=darkspeak-${app_version}.flatpak" >> "$GITHUB_OUTPUT"
+
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Add Flathub remote
+        run: |
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Install KDE Platform and SDK
+        run: |
+          flatpak install --user -y --noninteractive flathub \
+            org.kde.Platform//6.10 \
+            org.kde.Sdk//6.10
+
+      - name: Build Flatpak bundle
+        env:
+          BUNDLE_NAME: ${{ steps.version.outputs.bundle_name }}
+        run: |
+          set -euo pipefail
+          flatpak-builder \
+            --repo=repo \
+            --force-clean \
+            --default-branch=main \
+            --user \
+            builddir \
+            flatpak/org.darkspeak.DarkSpeak.yaml
+          flatpak build builddir test -f /app/share/metainfo/org.darkspeak.DarkSpeak.metainfo.xml
+          flatpak build builddir test -f /app/share/applications/org.darkspeak.DarkSpeak.desktop
+          flatpak build-bundle repo "${BUNDLE_NAME}" org.darkspeak.DarkSpeak main
+
+      - name: Upload Flatpak bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: darkspeak-flatpak-${{ steps.version.outputs.app_version }}
+          path: ${{ steps.version.outputs.bundle_name }}
+          retention-days: 14
