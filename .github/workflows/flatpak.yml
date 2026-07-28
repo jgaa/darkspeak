@@ -3,7 +3,7 @@ name: Flatpak
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - "CMakeLists.txt"
       - "cmake/**"
@@ -15,7 +15,7 @@ on:
       - ".github/workflows/flatpak.yml"
   pull_request:
     branches:
-      - main
+      - master
     paths:
       - "CMakeLists.txt"
       - "cmake/**"
