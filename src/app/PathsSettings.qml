@@ -2,8 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtCore
-import QtQuick.Dialogs
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 Item {
     id: root
@@ -59,17 +58,10 @@ Item {
                     anchors.rightMargin: 0
 
                     onClicked: {
-                        databaseSelector.open()
-                    }
-                }
-
-                FileDialog {
-                    id: databaseSelector
-                    title: qsTr("Select database")
-                    currentFolder: manager.pathToUrl(database.text)
-
-                    onAccepted: {
-                        database.text = manager.urlToPath(selectedFile)
+                        const selected = fileDialogs.openFile(
+                            qsTr("Select database"), database.text)
+                        if (selected)
+                            database.text = selected
                     }
                 }
             }
@@ -94,17 +86,10 @@ Item {
                     anchors.rightMargin: 0
 
                     onClicked: {
-                        downloadSelector.open()
-                    }
-                }
-
-                FolderDialog {
-                    id: downloadSelector
-                    title: qsTr("Download Home Path")
-                    currentFolder: manager.pathToUrl(download.text)
-
-                    onAccepted: {
-                        download.text = manager.urlToPath(selectedFolder)
+                        const selected = fileDialogs.openFolder(
+                            qsTr("Download Home Path"), download.text)
+                        if (selected)
+                            download.text = selected
                     }
                 }
             }

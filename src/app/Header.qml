@@ -26,7 +26,6 @@ Item {
         width: root.height -2
         border.width: 2
         border.color: (root.whom && root.whom.online) ? "lime" : "firebrick"
-        color: "black"
         anchors.left: label.right
         anchors.leftMargin: 6
         anchors.verticalCenter: parent.verticalCenter

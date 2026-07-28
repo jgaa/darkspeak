@@ -1,14 +1,29 @@
 
 #include <regex>
+#include <optional>
 
 #include <QClipboard>
+#include <QDir>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QFont>
+#include <QFontMetrics>
 #include <QGuiApplication>
+#include <QImage>
+#include <QPainter>
+#include <QRegularExpression>
+#include <QStandardPaths>
+#include <QSvgRenderer>
 #include <QtEndian>
+#include <iostream>
+
+#include <qrcodegen.hpp>
 
 #include "ds/manager.h"
 #include "ds/base58.h"
 #include "ds/base32.h"
 #include "ds/bytes.h"
+#include "ds/logutil.h"
 
 #include "logfault/logfault.h"
 
@@ -20,6 +35,157 @@ namespace ds {
 namespace models {
 
 Manager *Manager::instance_;
+
+namespace {
+
+QImage makeIdentityQrImage(const QString& payload, const QString& identityName)
+{
+    const auto utf8Payload = payload.toUtf8();
+    std::optional<qrcodegen::QrCode> qr;
+    try {
+        qr.emplace(qrcodegen::QrCode::encodeText(
+            utf8Payload.constData(), qrcodegen::QrCode::Ecc::HIGH));
+    } catch (const std::exception& error) {
+        LFLOG_ERROR << "Unable to create identity QR code: " << error.what();
+        return {};
+    }
+
+    constexpr int quietZoneModules = 4;
+    constexpr int pixelsPerModule = 8;
+    const auto moduleCount = qr->getSize();
+    const auto imageSize = (moduleCount + quietZoneModules * 2) * pixelsPerModule;
+    QImage image(imageSize, imageSize, QImage::Format_RGB32);
+    image.fill(Qt::white);
+
+    for (int y = 0; y < moduleCount; ++y) {
+        for (int x = 0; x < moduleCount; ++x) {
+            if (!qr->getModule(x, y)) {
+                continue;
+            }
+
+            const auto left = (x + quietZoneModules) * pixelsPerModule;
+            const auto top = (y + quietZoneModules) * pixelsPerModule;
+            for (int py = 0; py < pixelsPerModule; ++py) {
+                for (int px = 0; px < pixelsPerModule; ++px) {
+                    image.setPixel(left + px, top + py, qRgb(0, 0, 0));
+                }
+            }
+        }
+    }
+
+    // Overlay a small application mark.  The high error-correction level and
+    // the opaque white plate keep the logo from obscuring ambiguous modules.
+    QSvgRenderer logoRenderer(QStringLiteral(":/icons/darkspeak.svg"));
+    if (logoRenderer.isValid()) {
+        constexpr int logoMarginModules = 1;
+        const auto logoSize = imageSize / 8;
+        const auto plateSize = logoSize + logoMarginModules * 2 * pixelsPerModule;
+        const auto plateLeft = (imageSize - plateSize) / 2;
+        const auto plateTop = (imageSize - plateSize) / 2;
+
+        QPainter painter(&image);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(Qt::white);
+        painter.drawRect(plateLeft, plateTop, plateSize, plateSize);
+        logoRenderer.render(&painter,
+                            QRectF((imageSize - logoSize) / 2,
+                                   (imageSize - logoSize) / 2,
+                                   logoSize, logoSize));
+    }
+
+    QFont font;
+    font.setPixelSize(30);
+    font.setBold(true);
+    const QFontMetrics metrics(font);
+    const auto displayName = identityName.trimmed();
+    const auto oneLine = displayName + QStringLiteral(" / DarkSpeak");
+    const auto fitsOnOneLine = metrics.horizontalAdvance(oneLine) <= imageSize - 32;
+    const auto footerHeight = fitsOnOneLine ? 64 : 104;
+    QImage result(imageSize, imageSize + footerHeight, QImage::Format_RGB32);
+    result.fill(QColor(QStringLiteral("#e8e8e8")));
+
+    QPainter painter(&result);
+    painter.drawImage(0, 0, image);
+    painter.setPen(QColor(QStringLiteral("#001f5b")));
+    painter.setFont(font);
+    const QRect footerRect(16, imageSize, imageSize - 32, footerHeight);
+    if (fitsOnOneLine) {
+        painter.drawText(footerRect, Qt::AlignCenter, oneLine);
+    } else {
+        const auto nameLine = metrics.elidedText(displayName, Qt::ElideMiddle,
+                                                 footerRect.width());
+        const QRect nameRect = footerRect.adjusted(0, 0, 0, -footerHeight / 2);
+        const QRect productRect = footerRect.adjusted(0, footerHeight / 2, 0, 0);
+        painter.drawText(nameRect, Qt::AlignCenter, nameLine);
+        painter.drawText(productRect, Qt::AlignCenter, QStringLiteral("DarkSpeak"));
+    }
+    return result;
+}
+
+logfault::LogLevel levelFromName(const QString& name)
+{
+    if (name == QStringLiteral("trace")) return logfault::LogLevel::TRACE;
+    if (name == QStringLiteral("debug")) return logfault::LogLevel::DEBUGGING;
+    if (name == QStringLiteral("info")) return logfault::LogLevel::INFO;
+    if (name == QStringLiteral("warn")) return logfault::LogLevel::WARN;
+    if (name == QStringLiteral("error")) return logfault::LogLevel::ERROR;
+    return logfault::LogLevel::NOTICE;
+}
+
+void configureLogging(const QSettings& settings,
+                      const QString& logFile,
+                      const QString& logLevel,
+                      LogModel& logModel)
+{
+#ifdef QT_DEBUG
+    const auto defaultLevel = logfault::LogLevel::DEBUGGING;
+#else
+    const auto defaultLevel = logfault::LogLevel::NOTICE;
+#endif
+
+    auto& logManager = logfault::LogManager::Instance();
+    logManager.ClearHandlers();
+
+    const auto level = logLevel.isEmpty() ? defaultLevel : levelFromName(logLevel);
+    const auto appLevel = logLevel.isEmpty()
+            ? core::getLogLevel(settings, core::LogSystem::APPLICATION) : level;
+    const auto stdoutLevel = logLevel.isEmpty()
+            ? core::getLogLevel(settings, core::LogSystem::STDOUT) : level;
+
+    if (appLevel != logfault::LogLevel::DISABLED) {
+        logModel.installHandler(appLevel);
+    }
+    if (stdoutLevel != logfault::LogLevel::DISABLED) {
+        logManager.AddHandler(std::make_unique<logfault::StreamHandler>(
+                                  std::clog, stdoutLevel));
+        LFLOG_NOTICE << "Enabled logging to standard output at level "
+                     << logfault::Handler::LevelName(stdoutLevel);
+    }
+
+    if (!logFile.isEmpty()) {
+        const QFileInfo fileInfo(logFile);
+        QDir().mkpath(fileInfo.absolutePath());
+        logManager.AddHandler(std::make_unique<logfault::StreamHandler>(
+                                  logFile.toStdString(), level, true));
+        LFLOG_NOTICE << "Enabled logging to \""
+                     << logFile.toStdString()
+                     << "\" at level "
+                     << logfault::Handler::LevelName(level);
+    } else if (core::isEnabled(settings, core::LogSystem::LOGFILE)) {
+        const auto path = settings.value("logPath").toString();
+        const auto fileLevel = core::getLogLevel(settings, core::LogSystem::LOGFILE);
+        logManager.AddHandler(std::make_unique<logfault::StreamHandler>(
+                                  path.toStdString(),
+                                  fileLevel,
+                                  true));
+        LFLOG_NOTICE << "Enabled logging to \""
+                     << path.toStdString()
+                     << "\" at level "
+                     << logfault::Handler::LevelName(fileLevel);
+    }
+}
+
+}
 
 LogModel *Manager::logModel()
 {
@@ -58,6 +224,59 @@ void Manager::textToClipboard(const QString& text)
     cb->setText(text);
 }
 
+void Manager::createIdentityQrCode(const QString& identityName,
+                                   const QString& identity)
+{
+    const auto payload = identityName + QStringLiteral(":") + identity;
+    const auto image = makeIdentityQrImage(payload, identityName);
+    if (image.isNull()) {
+        setStatusMessage(tr("Unable to create identity QR code"), ERROR);
+        return;
+    }
+
+    QSettings settings;
+    auto directory = settings.value(QStringLiteral("identityQr/saveDirectory"))
+                             .toString();
+    if (directory.isEmpty()) {
+        directory = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+    }
+    if (directory.isEmpty()) {
+        directory = QDir::homePath();
+    }
+
+    auto safeName = identityName.trimmed();
+    safeName.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9._-]+")),
+                     QStringLiteral("_"));
+    if (safeName.isEmpty()) {
+        safeName = QStringLiteral("identity");
+    }
+
+    auto fileName = QFileDialog::getSaveFileName(
+        nullptr, QObject::tr("Save Identity QR Code"),
+        QDir(directory).filePath(safeName + QStringLiteral(".png")),
+        QObject::tr("PNG image (*.png)"));
+    if (fileName.isEmpty()) {
+        setStatusMessage(tr("Saving identity QR code was cancelled"), WARNING);
+        return;
+    }
+
+    if (QFileInfo(fileName).suffix().isEmpty()) {
+        fileName += QStringLiteral(".png");
+    }
+
+    if (!image.save(fileName, "PNG")) {
+        LFLOG_ERROR << "Unable to save identity QR code to "
+                    << fileName.toStdString();
+        setStatusMessage(tr("Unable to save identity QR code"), ERROR);
+        return;
+    }
+
+    settings.setValue(QStringLiteral("identityQr/saveDirectory"),
+                      QFileInfo(fileName).absolutePath());
+    settings.sync();
+    LFLOG_INFO << "Saved identity QR code to " << fileName.toStdString();
+}
+
 QVariantMap Manager::getIdenityFromClipboard() const
 {
     // name : base58 for v2 identity payload, pubkey, v3 address and port
@@ -72,6 +291,7 @@ QVariantMap Manager::getIdenityFromClipboard() const
             const auto nick = match[1].str();
             const auto blob = match[2].str();
             values["nickName"] = nick.c_str();
+            values["identity"] = blob.c_str();
 
             constexpr auto payload_len = 1 + 32 + 35 + 2;
             QByteArray data;
@@ -115,12 +335,14 @@ QString Manager::pathToUrl(const QString& path)
 
 void Manager::setTmpImageFromPath(const QString& path, const QSize &size)
 {
-    const QUrl location{path};
+    const QUrl location = QUrl::fromUserInput(path);
+    const auto localPath = location.isLocalFile() ? location.toLocalFile() : path;
 
     QImage image;
 
-    if (!image.load(location.toLocalFile())) {
-        LFLOG_ERROR << "Failed to load file: \"" << location.toLocalFile() << "\".";
+    if (!image.load(localPath)) {
+        LFLOG_ERROR << "Failed to load file: \"" << localPath << "\".";
+        setStatusMessage(tr("Failed to load image"), ERROR);
         return;
     }
 
@@ -151,9 +373,37 @@ QImage Manager::getTmpImage() const
     return {};
 }
 
-Manager::Manager()
+void Manager::deleteContact(const QUuid &uuid)
 {
+    try {
+        engine_->getContactManager()->deleteContact(uuid);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to delete contact: " << ex.what();
+        setStatusMessage(tr("Failed to delete contact: %1")
+                         .arg(QString::fromUtf8(ex.what())), ERROR);
+    }
+}
+
+void Manager::setStatusMessage(const QString& message, const StatusLevel level)
+{
+    status_message_ = message;
+    status_level_ = level;
+    emit statusMessageChanged();
+}
+
+Manager::Manager(const QString& logFile, const QString& logLevel)
+{
+    QSettings settings{};
+    log_ = make_unique<LogModel>(settings);
+    configureLogging(settings, logFile, logLevel, *log_);
+
     engine_ = make_unique<DsEngine>();
+
+    connect(engine_.get(), &ds::core::DsEngine::statusMessage,
+            this, [this](const QString& message,
+                         const ds::core::DsEngine::StatusLevel level) {
+        setStatusMessage(message, static_cast<StatusLevel>(level));
+    });
 
     connect(engine_.get(), &ds::core::DsEngine::stateChanged,
             [this] (const AppState /*from*/, const AppState to) {
@@ -178,7 +428,6 @@ Manager::Manager()
         }
     });
 
-    log_ = make_unique<LogModel>(engine_->settings());
     contacts_ = make_unique<ContactsModel>(*this);
     notifications_ = make_unique<NotificationsModel>(engine_->settings());
     conversationsModel_ = make_unique<ConversationsModel>(*this);
@@ -227,7 +476,6 @@ int Manager::getCurrentPage()
 void Manager::setCurrentPage(int page)
 {
     if (page != page_) {
-        LFLOG_TRACE << "Changing to page " << page;
         page_ = page;
         emit currentPageChanged(page);
     }
@@ -244,6 +492,16 @@ QUrl Manager::getOnlineStatusIcon() const
    };
 
     return icons.at(online_state_);
+}
+
+QString Manager::getStatusMessage() const
+{
+    return status_message_;
+}
+
+Manager::StatusLevel Manager::getStatusLevel() const
+{
+    return status_level_;
 }
 
 void Manager::goOnline()

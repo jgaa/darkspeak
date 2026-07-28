@@ -16,6 +16,7 @@
 #include <QThreadPool>
 #include <QUrl>
 #include <QDesktopServices>
+#include <QObject>
 //#include <QStringLiteral>
 
 #include "logfault/logfault.h"
@@ -42,6 +43,10 @@ void File::cancel()
     }
 
     if (getState() == FS_TRANSFERRING) {
+        if (getDirection() == INCOMING) {
+            QFile::remove(getDownloadPath());
+            QFile::remove(getDownloadPath() + QStringLiteral(".meta"));
+        }
         transferFailed("Cancelled");
         return;
     }
@@ -64,6 +69,15 @@ void File::accept()
     }
 
     if (getState() != FS_OFFERED) {
+        return;
+    }
+
+    QString reason;
+    auto fileManager = DsEngine::instance().getFileManager();
+    if (!fileManager->canAcceptIncoming(*this, reason)) {
+        DsEngine::instance().reportStatus(
+            QObject::tr("Cannot receive %1: %2").arg(getName(), reason),
+            DsEngine::StatusLevel::ERROR);
         return;
     }
 
@@ -483,16 +497,19 @@ void File::transferComplete()
     if (getDirection() == INCOMING) {
         QFile tmpFile{getDownloadPath()};
         if (!tmpFile.exists()) {
-            transferFailed(QStringLiteral("Temporary file dissapeared: ") + getDownloadPath());
+            transferFailed(QStringLiteral("Temporary file disappeared: ") + getDownloadPath(),
+                           FS_FAILED);
             return;
         }
 
         if (!tmpFile.rename(getPath())) {
             transferFailed(QStringLiteral("Failed to rename: ")
                            + getDownloadPath()
-                           + " to " + getPath());
+                           + " to " + getPath(),
+                           FS_FAILED);
             return;
         }
+        QFile::remove(getDownloadPath() + QStringLiteral(".meta"));
 
         LFLOG_INFO << "File #" << getId()
                    << " at path \"" << getPath()
@@ -537,6 +554,11 @@ void File::transferFailed(const QString &reason, const File::State state)
                    << " failed: " << reason;
     }
 
+    DsEngine::instance().reportStatus(
+        reason,
+        state == FS_CANCELLED ? DsEngine::StatusLevel::WARNING
+                              : DsEngine::StatusLevel::ERROR);
+
     // Make sure we don't go out of scope during the state change
     DsEngine::instance().getFileManager()->touch(
                 DsEngine::instance().getFileManager()->getFile(getId()));
@@ -579,7 +601,9 @@ void File::validateHash()
         if (hash.isEmpty()) {
             LFLOG_DEBUG << "Failed to hash file #" << getId() << ":  " << failReason;
             if (getState() == FS_HASHING) {
-                transferFailed(failReason);
+                QFile::remove(getDownloadPath());
+                QFile::remove(getDownloadPath() + QStringLiteral(".meta"));
+                transferFailed(failReason, FS_FAILED);
             }
         } else if (getState() == FS_HASHING) {
             // Binary compare hashes
@@ -588,7 +612,10 @@ void File::validateHash()
                                static_cast<size_t>(hash.size())) == 0)) {
                 transferComplete();
             } else {
-                transferFailed("Hash from peer and hash from received file mismatch");
+                QFile::remove(getDownloadPath());
+                QFile::remove(getDownloadPath() + QStringLiteral(".meta"));
+                transferFailed("Hash from peer and hash from received file mismatch",
+                               FS_FAILED);
             }
         }
     });
@@ -606,8 +633,8 @@ bool File::findUnusedName(const QString &path, QString& unusedPath)
         const auto tryTarget = QString{target.absolutePath()}
                     + "/"
                     + target.completeBaseName()
-                    + "(" + QString::number(i) + ")."
-                    + target.suffix();
+                    + "(" + QString::number(i) + ")"
+                    + (target.suffix().isEmpty() ? QString{} : "." + target.suffix());
 
         LFLOG_TRACE << "Trying alternative name: " << tryTarget;
         const QFileInfo alt{tryTarget};

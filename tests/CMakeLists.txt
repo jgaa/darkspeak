@@ -5,6 +5,13 @@ target_compile_features(crypto_handshake_test PRIVATE cxx_std_17)
 target_link_libraries(crypto_handshake_test PRIVATE crypto Qt6::Core Qt6::Test sodium)
 add_test(NAME crypto_handshake COMMAND crypto_handshake_test)
 
+add_executable(protocol_v2_test
+    protocol_v2_test.cpp
+)
+target_compile_features(protocol_v2_test PRIVATE cxx_std_17)
+target_link_libraries(protocol_v2_test PRIVATE prot Qt6::Core Qt6::Test)
+add_test(NAME protocol_v2 COMMAND protocol_v2_test)
+
 add_executable(tor_address_test tor_address_test.cpp)
 target_compile_features(tor_address_test PRIVATE cxx_std_17)
 target_link_libraries(tor_address_test PRIVATE tor crypto Qt6::Core Qt6::Test sodium)

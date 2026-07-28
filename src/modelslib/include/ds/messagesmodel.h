@@ -65,6 +65,7 @@ signals:
 
 
 private slots:
+    void onContactDeleted(const QUuid& uuid);
     void onMessageAdded(const core::Message::ptr_t& message);
     void onMessageDeleted(const core::Message::ptr_t& message);
     void onMessageReceivedDateChanged(const core::Message::ptr_t& message);

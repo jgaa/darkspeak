@@ -2,14 +2,14 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 Dialog {
     id: root
     property Contact contact : null
     property Identity identity: null
     property var clipboardData: null
-    standardButtons: Dialog.Ok | Dialog.Cancel
+    standardButtons: identityId.text.length > 0 ? Dialog.Ok | Dialog.Cancel : Dialog.Cancel
 
 
     Component.onCompleted: {
@@ -17,14 +17,12 @@ Dialog {
 
         if (contact) {
             name.text = contact.name
-            handle.text = contact.handle
-            address.text = contact.address
+            identityId.text = contact.b58identity
             addmeMessage.text = contact.addMeMessage
             notes.text = contact.notes
         } else if (clipboardData) {
             name.text = clipboardData.nickName
-            handle.text = clipboardData.handle
-            address.text = clipboardData.address
+            identityId.text = clipboardData.identity
         }
 
     }
@@ -35,12 +33,11 @@ Dialog {
         GridLayout {
             id: fields
             rowSpacing: 4
-            rows: 4
+            rows: 3
             flow: GridLayout.TopToBottom
 
-            Label { font.pointSize: 9; text: qsTr("Name")}
-            Label { font.pointSize: 9; text: qsTr("Handle")}
-            Label { font.pointSize: 9; text: qsTr("address")}
+            Label { font.pointSize: 9; text: qsTr("Name (optional)")}
+            Label { font.pointSize: 9; text: qsTr("Identity ID")}
             Label { font.pointSize: 9; text: qsTr("Message")}
 
             TextField {
@@ -50,16 +47,10 @@ Dialog {
             }
 
             TextField {
-                id: handle
+                id: identityId
                 Layout.fillWidth: true
-                text: root.handle
+                placeholderText: qsTr("Paste the identity ID")
                 enabled: contact === null
-            }
-
-            TextField {
-                id: address
-                Layout.fillWidth: true
-                text: root.address
             }
 
             TextField {
@@ -112,7 +103,6 @@ Dialog {
 
         if (contact) {
             contact.name = name.text
-            contact.address = address.text
             contact.addMeMessage = addmeMessage.text
             contact.autoConnect = autoConnect.checked
             contact.notes = notes.text
@@ -122,9 +112,7 @@ Dialog {
             const args = {
                 "identity" : identity.id,
                 "name" : name.text ? name.text : null,
-                "nickName" : clipboardData ? clipboardData.nickName : null,
-                "handle" : handle.text,
-                "address" : address.text,
+                "identityId" : identityId.text,
                 "addmeMessage" : addmeMessage.text,
                 "autoConnect" : autoConnect.checked,
                 "blocked" : blocked.checked,

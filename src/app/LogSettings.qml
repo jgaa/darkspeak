@@ -2,8 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtCore
-import QtQuick.Dialogs
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 ScrollView {
     id: root
@@ -45,7 +44,12 @@ ScrollView {
             }
             Button {
                 text: qsTr("Browse…")
-                onClicked: logFileSelector.open()
+                onClicked: {
+                    const selected = fileDialogs.openFile(
+                        qsTr("Select log file"), logPath.text)
+                    if (selected)
+                        logPath.text = selected
+                }
             }
         }
 
@@ -82,9 +86,4 @@ ScrollView {
         }
     }
 
-    FileDialog {
-        id: logFileSelector
-        title: qsTr("Select log file")
-        onAccepted: logPath.text = manager.urlToPath(selectedFile)
-    }
 }

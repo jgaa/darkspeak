@@ -34,6 +34,11 @@ private:
     void deriveCryptoKeys(bool deriveKey);
 
     safe_array_t cert_;
+    // Public certificates are serialized as their signing public key only.
+    // The encryption public key is derived from it and kept in cert_'s
+    // internal public-key storage.
+    safe_array_t serializedCert_;
+    bool privateKeys_{true};
     safe_view_t signKey_;
     safe_view_t signPubKey_;
     safe_view_t encrKey_;

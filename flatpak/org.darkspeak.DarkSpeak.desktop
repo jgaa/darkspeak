@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=DarkSpeak
+Comment=Secure peer-to-peer instant messenger over Tor
+Exec=darkspeak
+Icon=org.darkspeak.DarkSpeak
+Categories=Network;Chat;
+StartupNotify=true
+Terminal=false

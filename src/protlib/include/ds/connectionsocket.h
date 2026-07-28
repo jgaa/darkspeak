@@ -5,6 +5,7 @@
 
 #include <QTcpSocket>
 #include <QUuid>
+#include <stdexcept>
 
 #include "ds/memoryview.h"
 
@@ -30,9 +31,17 @@ public:
     void write(const T& data) {
         const char *p = reinterpret_cast<const char *>(data.data());
         const qint64 bytes = data.size();
+        if (bytes < 0 || static_cast<size_t>(outData.size()) > max_outgoing_bytes
+                || static_cast<size_t>(bytes) > max_outgoing_bytes
+                - static_cast<size_t>(outData.size())) {
+            throw std::runtime_error("Connection output queue limit exceeded");
+        }
         outData.append(p, bytes);
         sendMore();
     }
+
+    static constexpr size_t maxOutgoingBytes() noexcept { return max_outgoing_bytes; }
+    size_t queuedBytes() const noexcept { return static_cast<size_t>(outData.size()); }
 
     void wantBytes(size_t bytesRequested);
 
@@ -61,6 +70,7 @@ private:
     QByteArray inData;
     size_t bytesWanted_ = {};
     size_t maxInDataSize = 1024 * 265;
+    static constexpr size_t max_outgoing_bytes = 1024 * 256;
     const QByteArray host_;
     const quint16 port_;
 };

@@ -1,0 +1,59 @@
+app-id: org.darkspeak.DarkSpeak
+runtime: org.kde.Platform
+runtime-version: "6.10"
+sdk: org.kde.Sdk
+
+command: darkspeak
+
+finish-args:
+  # DarkSpeak uses the host Tor daemon for both its SOCKS and control
+  # connections, and Tor must be able to reach the app's local listener.
+  - --share=network
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # File transfers can use any location in the user's home directory.
+  - --filesystem=home
+  # Debian/Ubuntu Tor commonly exposes control.authcookie here.  Keep this
+  # read-only; the control port itself remains protected by Tor auth.
+  - --filesystem=/run/tor:ro
+  - --filesystem=/var/run/tor:ro
+
+modules:
+  - name: libsodium
+    buildsystem: autotools
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://github.com/jedisct1/libsodium/releases/download/1.0.22-RELEASE/libsodium-1.0.22.tar.gz
+        sha256: adbdd8f16149e81ac6078a03aca6fc03b592b89ef7b5ed83841c086191be3349
+
+  - name: darkspeak
+    buildsystem: simple
+    build-commands:
+      - |
+        cmake -S . -B _build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/app \
+          -DFETCHCONTENT_SOURCE_DIR_NAYUKI_QR_GENERATOR="$(pwd)/third_party/nayuki_qr_generator" \
+          -DBUILD_TESTING=OFF
+      - cmake --build _build --parallel
+      - install -Dm755 _build/bin/darkspeak /app/bin/darkspeak
+      - install -Dm644 flatpak/org.darkspeak.DarkSpeak.desktop /app/share/applications/org.darkspeak.DarkSpeak.desktop
+      - install -Dm644 icons/darkspeak-256.png /app/share/icons/hicolor/256x256/apps/org.darkspeak.DarkSpeak.png
+      - install -Dm644 icons/darkspeak-128.png /app/share/icons/hicolor/128x128/apps/org.darkspeak.DarkSpeak.png
+      - |
+        app_version="$(sed -n 's/^project *(ds VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt | head -n 1)"
+        test -n "${app_version}"
+        sed "s/@VERSION@/${app_version}/g" \
+          flatpak/org.darkspeak.DarkSpeak.metainfo.xml.in \
+          > org.darkspeak.DarkSpeak.metainfo.xml
+      - install -Dm644 org.darkspeak.DarkSpeak.metainfo.xml /app/share/metainfo/org.darkspeak.DarkSpeak.metainfo.xml
+    sources:
+      - type: dir
+        path: ..
+      - type: git
+        url: https://github.com/nayuki/QR-Code-generator.git
+        tag: v1.8.0
+        dest: third_party/nayuki_qr_generator

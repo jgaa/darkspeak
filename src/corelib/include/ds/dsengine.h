@@ -48,6 +48,14 @@ public:
         CLOSING,
         TERMINATED
     };
+    Q_ENUM(State)
+
+    enum StatusLevel {
+        INFO,
+        WARNING,
+        ERROR
+    };
+    Q_ENUM(StatusLevel)
 
     DsEngine();
     DsEngine(std::unique_ptr<QSettings> settings);
@@ -77,6 +85,7 @@ public:
 
     static QDateTime getSafeNow() noexcept;
     static QDateTime getSafeTime(const QDateTime& when) noexcept;
+    void reportStatus(const QString& message, StatusLevel level = INFO);
 
 public slots:
     void createNewTransport(const QByteArray& name, const QUuid& uuid);
@@ -102,6 +111,7 @@ signals:
     void serviceStarted(const QUuid& uuid, const bool newService);
     void serviceStopped(const QUuid& uuid);
     void incomingPeer(const std::shared_ptr<PeerConnection>& peer);
+    void statusMessage(const QString& message, StatusLevel level);
 
 protected:
     void initialize();

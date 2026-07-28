@@ -160,10 +160,11 @@ struct PeerUserInfo : public PeerReq
 {
     PeerUserInfo(const PeerUserInfo&) = default;
     PeerUserInfo(std::shared_ptr<PeerConnection> peer, QUuid connectionId, quint64 requestId,
-                 QString nickName)
+                 QString nickName, QByteArray avatarHash)
     : PeerReq{peer, std::move(connectionId), requestId}
     {
         userInfo.nickName = nickName;
+        userInfo.avatarHash = std::move(avatarHash);
     }
 
     UserInfo userInfo;
@@ -203,6 +204,8 @@ public:
     virtual uint64_t offerFile(const File& file) = 0;
     virtual uint64_t startTransfer(File& file) = 0;
     virtual uint64_t sendSome(File& file) = 0;
+    virtual void acknowledgeFile(const QByteArray& fileId, quint64 sequence,
+                                 qlonglong offset, bool final) = 0;
     virtual void disableNotifications() = 0;
 
 signals:

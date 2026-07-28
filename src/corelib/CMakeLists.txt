@@ -29,6 +29,8 @@ add_library(${PROJECT_NAME} STATIC
     include/ds/message.h
     include/ds/dsengine.h
     include/ds/userinfo.h
+    include/ds/avatarhash.h
+    include/ds/avatarutil.h
     include/ds/transporthandle.h
     include/ds/hashtask.h
     include/ds/peerconnection.h

@@ -1,8 +1,7 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Dialogs
 import QtQuick.Layouts
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 Dialog {
     id: root
@@ -81,26 +80,15 @@ Dialog {
                     anchors.left: avatar.right
                     anchors.leftMargin: 6
                     onClicked: {
-                        avatarSelector.open()
-                    }
-                }
-
-                FileDialog {
-                    id: avatarSelector
-                    title: qsTr("Avatar Image")
-                    fileMode: FileDialog.OpenFile
-
-                    nameFilters: ["Image files (*.jpg, *.jpeg, *.png)"]
-                    onAccepted: {
-                        var url = selectedFile
-                        manager.setTmpImageFromPath(url);
-
-                        // Give it a unique url so it fetches the new image...
-                        //var newUrl = "image://temp/image" + Math.floor(Math.random() * 100000000);
-                        //avatar.source = newUrl;
-                        avatar.source = "";
-                        avatar.source = "image://temp/image";
-                        value.avatar = manager.getTmpImage()
+                        const selected = fileDialogs.openFile(
+                            qsTr("Avatar Image"), "",
+                            [qsTr("Image files (*.jpg *.jpeg *.png)")])
+                        if (selected) {
+                            manager.setTmpImageFromPath(selected)
+                            avatar.source = ""
+                            avatar.source = "image://temp/image"
+                            value.avatar = manager.getTmpImage()
+                        }
                     }
                 }
             }

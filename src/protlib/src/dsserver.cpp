@@ -59,6 +59,7 @@ void DsServer::authorize(bool authorize)
     LFLOG_DEBUG << "The data-stream to " << connection_->getUuid().toString()
                 << " is fully switched to stream-encryption.";
     enableEncryptedStream();
+    sendCapabilities();
     emit connectedToPeer(shared_from_this());
 }
 

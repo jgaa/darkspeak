@@ -2,18 +2,24 @@
 
 #include "ds/dsengine.h"
 #include "ds/identity.h"
+#include "ds/avatarutil.h"
 #include "ds/errors.h"
 #include "ds/update_helper.h"
 #include "ds/dscert.h"
 #include "ds/base58.h"
 #include "ds/base32.h"
+#include "ds/bytes.h"
 
 #include "logfault/logfault.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSqlDatabase>
+#include <QSqlQuery>
+#include <QSqlError>
 #include <QTimer>
 #include <QRegularExpression>
+#include <QtEndian>
 
 namespace ds {
 namespace core {
@@ -42,16 +48,53 @@ void Identity::addContact(const QVariantMap &args)
 
     data->identity = args.value("identity").toInt();
     data->name = args.value("name").toString();
-    data->nickName = args.value("nickName").toString();
-    auto handle = args.value("handle").toByteArray();
-    data->cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(
-                                    handle.toStdString(), 32, {249, 50}));
+
+    auto identityId = args.value("identityId").toString().trimmed();
+    const auto separator = identityId.indexOf(':');
+    if (separator > 0)
+        identityId = identityId.mid(separator + 1);
+
+    constexpr auto payloadLength = 1 + 32 + 35 + 2;
+    QByteArray identityData;
+    try {
+        identityData = crypto::b58tobin_check<QByteArray>(
+            identityId.toStdString(), payloadLength, {11, 176});
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Invalid identity ID: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Invalid identity ID: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+        return;
+    }
+
+    if (identityData.size() != payloadLength || identityData.at(0) != 2) {
+        LFLOG_ERROR << "Invalid identity ID payload";
+        DsEngine::instance().reportStatus(tr("Invalid identity ID payload"),
+                                          DsEngine::StatusLevel::ERROR);
+        return;
+    }
+
+    data->cert = crypto::DsCert::createFromPubkey(identityData.mid(1, 32));
+    const auto host = crypto::onionv3encode(identityData.mid(33, 35));
+    auto portBytes = identityData.mid(68, 2);
+    const auto port = qFromBigEndian(bytesToValue<quint16>(portBytes));
+    data->address = (QString("onion:") + host + ".onion:"
+                     + QString::number(port)).toUtf8();
     data->addMeMessage = args.value("addmeMessage").toString();
-    data->address = args.value("address").toByteArray();
     data->autoConnect = args.value("autoConnect").toBool();
     data->notes = args.value("notes").toString();
 
-    DsEngine::instance().getContactManager()->addContact(move(data));
+    try {
+        DsEngine::instance().getContactManager()->addContact(move(data));
+    } catch (const std::exception& ex) {
+        // The database intentionally rejects duplicate contacts for the same
+        // identity.  This is user input, so it must not terminate the app.
+        LFLOG_WARN << "Failed to add contact " << args.value("name").toString()
+                   << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to add contact: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::WARNING);
+    }
 }
 
 void Identity::startService()
@@ -59,6 +102,9 @@ void Identity::startService()
     if (data_.addressData.isEmpty()) {
         LFLOG_ERROR << "The identity " << getName()
                     << " has no address. Cannot go online.";
+        DsEngine::instance().reportStatus(
+            tr("Cannot start identity %1: no address").arg(getName()),
+            DsEngine::StatusLevel::ERROR);
         return;
 
     }
@@ -125,7 +171,7 @@ ProtocolManager& Identity::getProtocolManager() {
 
 void Identity::onIncomingPeer(const std::shared_ptr<PeerConnection>& peer)
 {
-    if (auto contact = contactFromHash(peer->getPeerCert()->getHash().toString())) {
+    if (auto contact = contactFromHash(peer->getPeerCert()->getHash().toByteArray())) {
 
         LFLOG_DEBUG << "Passing incoming connection "
                     << peer->getConnectionId().toString()
@@ -278,10 +324,10 @@ Contact::ptr_t Identity::contactFromHandle(const QString &handle)
     auto cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(
                                                      handle.toStdString(), 32, {249, 50}));
 
-    return contactFromHash(cert->getHash().toString());
+    return contactFromHash(cert->getHash().toByteArray());
 }
 
-Contact::ptr_t Identity::contactFromHash(const QString &hash)
+Contact::ptr_t Identity::contactFromHash(const QByteArray &hash)
 {
     QSqlQuery query;
     query.prepare("SELECT uuid FROM contact WHERE identity=:id AND hash=:hash");
@@ -403,24 +449,23 @@ QString Identity::getAvatarUrl() const noexcept
         return "";
     }
 
-    if (data_.avatar.isNull()) {
-        return "qrc:///images/anonymous.svg";
-    }
-
-    return QStringLiteral("image://identity/%1").arg(data_.uuid.toString());
+    return QStringLiteral("image://identity/%1?v=%2")
+        .arg(data_.uuid.toString())
+        .arg(avatarVersion_);
 }
 
 void Identity::setAvatar(const QImage &avatar) {
-    if (updateIf("avatar", avatar, data_.avatar, this, &Identity::avatarChanged)) {
+    const auto normalized = normalizeAvatar(avatar);
+    if (updateIf("avatar", normalized, data_.avatar, this, &Identity::avatarChanged)) {
+        ++avatarVersion_;
         avatarUrlChanging_ = true;
         emit avatarUrlChanged();
         avatarUrlChanging_ = false;
         emit avatarUrlChanged();
 
-        forAllContacts([&avatar](const Contact::ptr_t& contact){
-            contact->setSentAvatar(false);
+        forAllContacts([&normalized](const Contact::ptr_t& contact){
             if (contact->isOnline()) {
-                contact->sendAvatar(avatar);
+                contact->sendAvatar(normalized);
             }
         });
     }
@@ -520,12 +565,67 @@ void Identity::addToDb() {
 
 void Identity::deleteFromDb() {
     if (id_ > 0) {
-        QSqlQuery query;
-        query.prepare("DELETE FROM identity WHERE id=:id");
-        query.bindValue(":id", id_);
-        if(!query.exec()) {
-            throw Error(QStringLiteral("SQL Failed to delete identity: %1").arg(
-                            query.lastError().text()));
+        auto db = QSqlDatabase::database();
+        if (!db.transaction()) {
+            throw Error(QStringLiteral("SQL Failed to start identity deletion: %1")
+                            .arg(db.lastError().text()));
+        }
+
+        try {
+            QSqlQuery query(db);
+
+            // Identity deletion is recursive, but the legacy schema does not
+            // declare cascading foreign keys for all identity-owned tables.
+            query.prepare("DELETE FROM file WHERE identity_id=:id");
+            query.bindValue(":id", id_);
+            if (!query.exec()) {
+                throw Error(QStringLiteral("SQL Failed to delete identity files: %1")
+                                .arg(query.lastError().text()));
+            }
+
+            query.prepare("DELETE FROM notification WHERE identity=:id");
+            query.bindValue(":id", id_);
+            if (!query.exec()) {
+                throw Error(QStringLiteral("SQL Failed to delete identity notifications: %1")
+                                .arg(query.lastError().text()));
+            }
+
+            query.prepare("DELETE FROM message WHERE conversation_id IN "
+                          "(SELECT id FROM conversation WHERE identity=:id)");
+            query.bindValue(":id", id_);
+            if (!query.exec()) {
+                throw Error(QStringLiteral("SQL Failed to delete identity messages: %1")
+                                .arg(query.lastError().text()));
+            }
+
+            query.prepare("DELETE FROM conversation WHERE identity=:id");
+            query.bindValue(":id", id_);
+            if (!query.exec()) {
+                throw Error(QStringLiteral("SQL Failed to delete identity conversations: %1")
+                                .arg(query.lastError().text()));
+            }
+
+            query.prepare("DELETE FROM contact WHERE identity=:id");
+            query.bindValue(":id", id_);
+            if (!query.exec()) {
+                throw Error(QStringLiteral("SQL Failed to delete identity contacts: %1")
+                                .arg(query.lastError().text()));
+            }
+
+            query.prepare("DELETE FROM identity WHERE id=:id");
+            query.bindValue(":id", id_);
+            if (!query.exec()) {
+                throw Error(QStringLiteral("SQL Failed to delete identity: %1")
+                                .arg(query.lastError().text()));
+            }
+
+            if (!db.commit()) {
+                throw Error(QStringLiteral("SQL Failed to commit identity deletion: %1")
+                                .arg(db.lastError().text()));
+            }
+        } catch (...) {
+            db.rollback();
+            throw;
         }
     }
 }

@@ -7,6 +7,7 @@
 #include "ds/dsengine.h"
 
 #include <QQmlEngine>
+#include <QSqlQuery>
 
 #include "logfault/logfault.h"
 
@@ -31,7 +32,21 @@ Contact::ptr_t ContactManager::getContact(const QUuid &uuid)
     auto contact = registry_.fetch(uuid);
 
     if (!contact) {
-        contact = Contact::load(uuid);
+        try {
+            contact = Contact::load(uuid);
+        } catch (const std::exception& ex) {
+            LFLOG_ERROR << "Failed to load contact " << uuid.toString()
+                        << ": " << ex.what()
+                        << ". Removing the invalid contact from the database.";
+
+            try {
+                Contact::deleteFromDb(uuid);
+            } catch (const std::exception& cleanup_ex) {
+                LFLOG_ERROR << "Failed to remove invalid contact "
+                            << uuid.toString() << ": " << cleanup_ex.what();
+            }
+            return {};
+        }
         registry_.add(uuid, contact);
     }
 
@@ -54,14 +69,27 @@ Contact::ptr_t ContactManager::getContact(const int dbId)
 
 void ContactManager::deleteContact(const QUuid &uuid)
 {
+    try {
+        Contact::deleteFromDb(uuid);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to delete contact " << uuid.toString()
+                    << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            QObject::tr("Failed to delete contact: %1")
+                .arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+        return;
+    }
+
     if (auto contact = registry_.fetch(uuid)) {
-
-        // Remove from model(s)
-        emit contactDeleted(uuid);
-
+        contact->disconnectFromContact(true);
         lru_cache_.remove(contact);
         registry_.remove(uuid);
     }
+
+    // The database deletion also removes conversations, messages, files and
+    // notifications.  Notify all models only after the transaction commits.
+    emit contactDeleted(uuid);
 }
 
 Contact *ContactManager::addContact(Contact::data_t data)
@@ -73,6 +101,12 @@ Contact *ContactManager::addContact(Contact::data_t data)
     // Add it to the registry and cache
     registry_.add(ptr->getUuid(), ptr);
     touch(ptr);
+
+    // Every contact has a default one-to-one conversation.  Keeping this
+    // conversation creation here makes the conversations model show newly
+    // added contacts immediately, without making the UI responsible for
+    // materializing conversations.
+    DsEngine::instance().getConversationManager()->getConversation(ptr.get());
 
     LFLOG_NOTICE << "Added Contact " << ptr->getName()
                  << " with handle " << ptr->getHandle()

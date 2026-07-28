@@ -30,6 +30,9 @@ public:
 
     File::ptr_t addFile(std::unique_ptr<FileData> data);
 
+    // Validate the local policy before an incoming file is started.
+    bool canAcceptIncoming(const File& file, QString& reason) const;
+
     void receivedFileOffer(Conversation& conversation, const PeerFileOffer& offer);
 
     void touch(const File::ptr_t& file);

@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 ToolBar {
     id: root
@@ -84,7 +84,7 @@ ToolBar {
             text: qsTr("Send File")
             icon.source: "qrc:/images/FileUpload.svg"
             height: parent.height
-            visible: ((manager.currentPage === Manager.CHAT) || (manager.currentPage === Manager.CONVERSATIONS))
+            visible: manager.currentPage === Manager.CONVERSATIONS
                      && conversations.current
 
             onClicked: {

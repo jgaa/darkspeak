@@ -1,6 +1,7 @@
 
 #include "ds/errors.h"
 #include "include/ds/imageutil.h"
+#include "ds/avatarutil.h"
 
 #include "logfault/logfault.h"
 
@@ -53,17 +54,28 @@ QImage toQimage(const QJsonObject &object)
         return {};
     }
 
-    if ((height <= 0) || (width <= 0) || (height > 128) || (width > 128)) {
+    if ((height <= 0) || (width <= 0)
+        || (height > core::MaxAvatarDimension)
+        || (width > core::MaxAvatarDimension)) {
         LFLOG_WARN << "Invalid image size: height=" << height
                    << ", width=" << width;
         throw Error("Invalid image size from json");
     }
 
-    const auto rd = QByteArray::fromBase64(object.value("r").toString().toUtf8());
-    const auto gd = QByteArray::fromBase64(object.value("g").toString().toUtf8());
-    const auto bd = QByteArray::fromBase64(object.value("b").toString().toUtf8());
-
     const auto bytes = width * height;
+
+    const auto maxEncodedBytes = ((bytes + 2) / 3) * 4 + 4;
+    const auto rEncoded = object.value("r").toString().toUtf8();
+    const auto gEncoded = object.value("g").toString().toUtf8();
+    const auto bEncoded = object.value("b").toString().toUtf8();
+    if (rEncoded.size() > maxEncodedBytes || gEncoded.size() > maxEncodedBytes
+        || bEncoded.size() > maxEncodedBytes) {
+        throw Error("Avatar channel data is too large");
+    }
+
+    const auto rd = QByteArray::fromBase64(rEncoded);
+    const auto gd = QByteArray::fromBase64(gEncoded);
+    const auto bd = QByteArray::fromBase64(bEncoded);
 
     if ((rd.size() != bytes) || (gd.size() != bytes) || (bd.size() != bytes)) {
         throw Error("Invalid rgb data from json");

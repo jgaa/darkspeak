@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Controls
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 Page {
     id: root

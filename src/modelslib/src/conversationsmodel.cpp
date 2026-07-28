@@ -39,6 +39,10 @@ ConversationsModel::ConversationsModel(QObject &parent)
             &ConversationManager::conversationTouched,
             this, &ConversationsModel::onConversationTouched);
 
+    connect(&contactManager_,
+            &ContactManager::contactDeleted,
+            this, &ConversationsModel::onContactDeleted);
+
 }
 
 void ConversationsModel::setIdentity(const QUuid &uuid)
@@ -176,6 +180,20 @@ void ConversationsModel::onConversationDeleted(const QUuid &uuid)
             return;
         }
     }
+}
+
+void ConversationsModel::onContactDeleted(const QUuid &uuid)
+{
+    if (contact_ && contact_->getUuid() == uuid) {
+        contact_ = nullptr;
+    }
+
+    setCurrentRow(-1);
+    beginResetModel();
+    rows_.clear();
+    queryRows(rows_);
+    endResetModel();
+    emit currentRowChanged();
 }
 
 

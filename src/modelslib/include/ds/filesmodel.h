@@ -50,6 +50,7 @@ public:
 
 
 private slots:
+    void onContactDeleted(const QUuid& uuid);
     void onFileAdded(const core::File::ptr_t& file);
     void onFileDeleted(const int dbId);
 

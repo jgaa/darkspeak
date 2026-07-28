@@ -157,6 +157,13 @@ void DsEngine::whenOnline(const std::function<void ()>& fn)
     }
 }
 
+void DsEngine::reportStatus(const QString& message, const StatusLevel level)
+{
+    if (!message.isEmpty()) {
+        emit statusMessage(message, level);
+    }
+}
+
 QDateTime DsEngine::getSafeNow() noexcept
 {
     return getSafeTime(QDateTime::currentDateTime());
@@ -188,6 +195,9 @@ void DsEngine::online()
 void DsEngine::onServiceFailed(const QUuid& serviceId, const QByteArray &reason)
 {
     emit serviceFailed(serviceId, reason);
+    reportStatus(QStringLiteral("%1: %2").arg(serviceId.toString(),
+                                               QString::fromUtf8(reason)),
+                 StatusLevel::ERROR);
 }
 
 void DsEngine::onServiceStarted(const QUuid& serviceId, const bool newService)
@@ -384,6 +394,19 @@ void DsEngine::initialize()
         settings_->setValue("appAutoConnect", true);
     }
 
+    if (!settings_->contains("autoAcceptIncomingFiles")) {
+        settings_->setValue("autoAcceptIncomingFiles", false);
+    }
+    if (!settings_->contains("includeConversationNameInDownloadPath")) {
+        settings_->setValue("includeConversationNameInDownloadPath", false);
+    }
+    if (!settings_->contains("maxIncomingFileSizeMb")) {
+        settings_->setValue("maxIncomingFileSizeMb", 1024);
+    }
+    if (!settings_->contains("minimumFreeSpacePercent")) {
+        settings_->setValue("minimumFreeSpacePercent", 10);
+    }
+
     if (settings_->value("dbpath", "").toString().isEmpty()) {
         QString dbpath = data_path;
 #ifdef QT_DEBUG
@@ -435,32 +458,6 @@ void DsEngine::initialize()
 #else
         settings_->setValue("logLevelApp", static_cast<int>(logfault::LogLevel::DISABLED));
 #endif
-    }
-
-    LogManager::Instance().ClearHandlers();
-
-    if (isEnabled(LogSystem::STDOUT)) {
-
-        const auto level = getLogLevel(LogSystem::STDOUT);
-        LogManager::Instance().AddHandler(
-                make_unique<StreamHandler>(
-                    clog, level));
-
-        LFLOG_NOTICE << "Enabled logging to standard output at level "
-                     << logfault::Handler::LevelName(level);
-    }
-
-    if (isEnabled(LogSystem::LOGFILE)) {
-        const auto level = getLogLevel(LogSystem::LOGFILE);
-        auto logPath = settings_->value("logPath", "").toString().toUtf8().toStdString();
-        LogManager::Instance().AddHandler(
-                make_unique<StreamHandler>(
-                    logPath, level, true));
-
-        LFLOG_NOTICE << "Enabled logging to \""
-                     << logPath
-                     << "\" at level "
-                     << logfault::Handler::LevelName(level);
     }
 
     database_ = std::make_unique<Database>(*settings_);

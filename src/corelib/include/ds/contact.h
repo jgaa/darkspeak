@@ -174,6 +174,7 @@ public:
 
     /*! Delete from the database */
     void deleteFromDb();
+    static void deleteFromDb(const QUuid& uuid);
 
     const char *getTableName() const noexcept { return "contact"; }
 
@@ -251,12 +252,16 @@ private:
     OnlineStatus onlineStatus_ = DISCONNECTED;
     bool sentAvatarPendingAck_ = false;
     bool avatarUrlChanging_ = false;
+    quint64 avatarVersion_ = 0;
 
     std::unique_ptr<Connection> connection_;
     std::deque<Message::ptr_t> messageQueue_;
     std::deque<Message::ptr_t> unconfirmedMessageQueue_; // Waiting for ack
     std::deque<std::shared_ptr<File>> fileQueue_;
     std::set<std::shared_ptr<File>> transferringFileQueue_; // Currently transferring, (we have slots)
+    std::weak_ptr<File> lastFileBlock_;
+
+    static constexpr size_t maxConcurrentTransfers_ = 2;
 };
 
 struct ContactData {

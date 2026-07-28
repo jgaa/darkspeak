@@ -1,7 +1,10 @@
 ﻿
 #include <memory>
+#include <iterator>
 
 #include <QTimer>
+#include <QSqlDatabase>
+#include <QSqlQuery>
 
 #include "ds/contact.h"
 #include "ds/dsengine.h"
@@ -10,6 +13,8 @@
 #include "ds/update_helper.h"
 #include "ds/errors.h"
 #include "ds/conversation.h"
+#include "ds/avatarhash.h"
+#include "ds/avatarutil.h"
 
 #include "logfault/logfault.h"
 
@@ -180,11 +185,9 @@ QString Contact::getAvatarUrl() const noexcept
         return "";
     }
 
-    if (data_->avatar.isNull()) {
-        return "qrc:///images/anonymous.svg";
-    }
-
-    return QStringLiteral("image://contact/%1").arg(data_->uuid.toString());
+    return QStringLiteral("image://contact/%1?v=%2")
+        .arg(data_->uuid.toString())
+        .arg(avatarVersion_);
 }
 
 bool Contact::isAvatarSent() const noexcept
@@ -198,7 +201,9 @@ void Contact::setSentAvatar(const bool value)
 }
 
 void Contact::setAvatar(const QImage &avatar) {
-    if (updateIf("avatar", avatar, data_->avatar, this, &Contact::avatarChanged)) {
+    const auto normalized = normalizeAvatar(avatar);
+    if (updateIf("avatar", normalized, data_->avatar, this, &Contact::avatarChanged)) {
+        ++avatarVersion_;
         avatarUrlChanging_ = true;
         emit avatarUrlChanged();
         avatarUrlChanging_ = false;
@@ -434,7 +439,7 @@ void Contact::sendAvatar(const QImage &avatar)
     }
 
     // TODO: Check if the connection is ready to receive data
-    connection_->peer->sendAvatar(avatar);
+    connection_->peer->sendAvatar(normalizeAvatar(avatar));
     sentAvatarPendingAck_ = true;
 }
 
@@ -467,7 +472,10 @@ Contact::ptr_t Contact::load(const QUuid &key)
     data->hash = query.value(hash).toByteArray();
     data->notes = query.value(notes).toString();
     data->group = query.value(contact_group).toString();
-    data->cert = DsCert::create(query.value(cert).toByteArray());
+    // Contacts store the public signing key only. The encryption public key
+    // is derived by createFromPubkey(). Identity certificates are the only
+    // records that contain private certificate material.
+    data->cert = DsCert::createFromPubkey(query.value(cert).toByteArray());
     data->address = query.value(address).toByteArray();
     data->avatar = QImage::fromData(query.value(avatar).toByteArray());
     data->created = query.value(created).toDateTime();
@@ -546,13 +554,71 @@ void Contact::addToDb()
 
 void Contact::deleteFromDb() {
     if (id_ > 0) {
-        QSqlQuery query;
-        query.prepare("DELETE FROM contact WHERE id=:id");
-        query.bindValue(":id", id_);
-        if(!query.exec()) {
-            throw Error(QStringLiteral("SQL Failed to delete identity: %1").arg(
-                            query.lastError().text()));
+        deleteFromDb(data_->uuid);
+    }
+}
+
+void Contact::deleteFromDb(const QUuid& uuid)
+{
+    auto db = QSqlDatabase::database();
+    if (!db.transaction()) {
+        throw Error(QStringLiteral("SQL Failed to start contact deletion: %1")
+                        .arg(db.lastError().text()));
+    }
+
+    try {
+        QSqlQuery query(db);
+
+        // Conversations currently store their participant UUIDs as text. A
+        // contact's conversations and messages therefore need explicit
+        // cleanup until participants are normalized into a join table.
+        query.prepare("DELETE FROM message WHERE conversation_id IN "
+                      "(SELECT id FROM conversation WHERE participants=:uuid)");
+        query.bindValue(":uuid", uuid.toString());
+        if (!query.exec()) {
+            throw Error(QStringLiteral("SQL Failed to delete contact messages: %1")
+                            .arg(query.lastError().text()));
         }
+
+        query.prepare("DELETE FROM file WHERE contact_id IN "
+                      "(SELECT id FROM contact WHERE uuid=:uuid) "
+                      "OR conversation_id IN "
+                      "(SELECT id FROM conversation WHERE participants=:uuid)");
+        query.bindValue(":uuid", uuid.toString());
+        if (!query.exec()) {
+            throw Error(QStringLiteral("SQL Failed to delete contact files: %1")
+                            .arg(query.lastError().text()));
+        }
+
+        query.prepare("DELETE FROM notification WHERE contact IN "
+                      "(SELECT id FROM contact WHERE uuid=:uuid)");
+        query.bindValue(":uuid", uuid);
+        if (!query.exec()) {
+            throw Error(QStringLiteral("SQL Failed to delete contact notifications: %1")
+                            .arg(query.lastError().text()));
+        }
+
+        query.prepare("DELETE FROM conversation WHERE participants=:uuid");
+        query.bindValue(":uuid", uuid.toString());
+        if (!query.exec()) {
+            throw Error(QStringLiteral("SQL Failed to delete contact conversations: %1")
+                            .arg(query.lastError().text()));
+        }
+
+        query.prepare("DELETE FROM contact WHERE uuid=:uuid");
+        query.bindValue(":uuid", uuid);
+        if (!query.exec()) {
+            throw Error(QStringLiteral("SQL Failed to delete contact: %1")
+                            .arg(query.lastError().text()));
+        }
+
+        if (!db.commit()) {
+            throw Error(QStringLiteral("SQL Failed to commit contact deletion: %1")
+                            .arg(db.lastError().text()));
+        }
+    } catch (...) {
+        db.rollback();
+        throw;
     }
 }
 
@@ -830,7 +896,9 @@ void Contact::onReceivedAck(const PeerAck &ack)
         }
     }if (ack.what == "SetAvatar") {
         sentAvatarPendingAck_ = false;
-        if (ack.status == "Accepted") {
+        if (ack.status == "Request") {
+            sendAvatar(getIdentity()->getAvatar());
+        } else if (ack.status == "Accepted") {
             LFLOG_TRACE << "Contact " << getName()
                         << " accepted the avatar sent from Identity "
                         << getIdentity()->getName();
@@ -897,7 +965,29 @@ void Contact::onReceivedAck(const PeerAck &ack)
             return;
         }
 
+        if (ack.status == "ChunkAck") {
+            bool sequenceOk = false;
+            bool offsetOk = false;
+            const auto sequence = ack.data.value("sequence").toString().toULongLong(&sequenceOk);
+            const auto offset = ack.data.value("offset").toString().toLongLong(&offsetOk);
+            const auto final = ack.data.value("final").toString() == "1";
+            auto outgoing = DsEngine::instance().getFileManager()->getFileFromId(
+                fileId, File::OUTGOING);
+            if (!sequenceOk || !offsetOk || !outgoing
+                    || outgoing->getContactId() != getId()) {
+                LFLOG_WARN << "Invalid file chunk acknowledgement from " << getName();
+                ack.peer->close();
+                return;
+            }
+            ack.peer->acknowledgeFile(fileId, sequence, offset, final);
+            return;
+        }
+
         auto file = DsEngine::instance().getFileManager()->getFileFromId(fileId, *this);
+        if (!file) {
+            LFLOG_WARN << "Received ack for non-existing file " << fileId.toHex();
+            return;
+        }
 
         if (file->getState() == File::FS_CANCELLED) {
             LFLOG_DEBUG << "Ignoring ack for cancelled file #" << file->getId();
@@ -941,8 +1031,6 @@ void Contact::onReceivedAck(const PeerAck &ack)
                 file->setState(File::FS_CANCELLED);
             }
         } else if (ack.status == "Proceed" || ack.status == "Resume") {
-            // TODO: Handle REST
-
             if (file->getDirection() != File::OUTGOING) {
                 LFLOG_WARN << "Received ack/go-on for file #" << file->getId()
                            << " but the file is not outbound! Failing.";
@@ -960,7 +1048,10 @@ void Contact::onReceivedAck(const PeerAck &ack)
                 return;
             }
 
-            const auto channel = static_cast<quint32>(ack.data.value("channel").toInt());
+            bool channelOk = false;
+            bool restOk = false;
+            const auto channel = ack.data.value("channel").toString().toUInt(&channelOk);
+            const auto rest = ack.data.value("rest").toString().toLongLong(&restOk);
             if (channel == 0) {
                 LFLOG_WARN << "Received ack for file #" << file->getId()
                            << " with invalid channel-id: "
@@ -969,7 +1060,15 @@ void Contact::onReceivedAck(const PeerAck &ack)
                 sendAck("IncomingFile", "Failed", file->getFileId().toBase64());
                 return;
             }
+            if (!channelOk || !restOk || rest < 0 || rest > file->getSize()
+                    || rest % (1024 * 8) != 0) {
+                LFLOG_WARN << "Received invalid resume offset for file #" << file->getId();
+                file->setState(File::FS_FAILED);
+                sendAck("IncomingFile", "Failed", file->getFileId().toBase64());
+                return;
+            }
             file->setChannel(channel);
+            file->setBytesTransferred(rest);
             file->setState(File::FS_QUEUED);
             queueFile(file);
         }
@@ -1015,6 +1114,11 @@ bool Contact::processFilesQueue()
         //       and file sizes.
         auto file = fileQueue_.front();
         try {
+            if (file->getState() == File::FS_QUEUED
+                    && transferringFileQueue_.size() >= maxConcurrentTransfers_) {
+                return false;
+            }
+
             if (file->getDirection() == File::OUTGOING) {
                 switch(file->getState()) {
                 case File::FS_WAITING:
@@ -1056,28 +1160,59 @@ bool Contact::processFilesQueue()
 
 bool Contact::processFileBlocks()
 {
-    for(auto& file : transferringFileQueue_) {
+    if (transferringFileQueue_.empty()) {
+        return false;
+    }
+
+    auto start = transferringFileQueue_.begin();
+    if (auto last = lastFileBlock_.lock()) {
+        start = transferringFileQueue_.upper_bound(last);
+        if (start == transferringFileQueue_.end()) {
+            start = transferringFileQueue_.begin();
+        }
+    }
+
+    auto current = start;
+    do {
+        auto file = *current;
         if (!isOnline()) {
             break;
         }
 
         if (file->getState() != File::FS_TRANSFERRING) {
-            transferringFileQueue_.erase(file);
-            return processFileBlocks(); // Try again
+            auto next = std::next(current);
+            transferringFileQueue_.erase(current);
+            if (next == transferringFileQueue_.end()) {
+                next = transferringFileQueue_.begin();
+            }
+            if (transferringFileQueue_.empty()) {
+                return false;
+            }
+            current = next;
+            continue;
         }
 
         if (file->getDirection() != File::OUTGOING) {
+            current = std::next(current);
+            if (current == transferringFileQueue_.end()) {
+                current = transferringFileQueue_.begin();
+            }
             continue;
         }
 
         if (connection_->peer->sendSome(*file) > 0) {
+            lastFileBlock_ = file;
             return true;
         }
 
         if (file->getState() == File::FS_TRANSFERRING) {
             break; // We could not send, and the file is not complete or failed
         }
-    }
+        current = std::next(current);
+        if (current == transferringFileQueue_.end()) {
+            current = transferringFileQueue_.begin();
+        }
+    } while (current != start);
 
     return false;
 }
@@ -1133,6 +1268,9 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
     }
 
     setNickName(uinfo.userInfo.nickName);
+    if (uinfo.userInfo.avatarHash != avatarHash(data_->avatar)) {
+        uinfo.peer->sendAck("SetAvatar", "Request");
+    }
     uinfo.peer->sendAck("UserInfo", "Accepted");
 }
 
@@ -1181,11 +1319,6 @@ void Contact::onOutputBufferEmptied()
 {
     if (isOnline()) {
         if (procesMessageQueue()) {
-            return;
-        }
-
-        if (!isAvatarSent() && !sentAvatarPendingAck_) {
-            sendAvatar(getIdentity()->getAvatar());
             return;
         }
 
@@ -1321,7 +1454,10 @@ void Contact::clearFileQueues()
 
     for(auto& file : tmpTransfers) {
         if (file->getState() == File::FS_TRANSFERRING) {
-            file->transferFailed("Broken connection", File::FS_FAILED);
+            // Preserve the verified prefix for the next offer/accept exchange.
+            // The sender will advertise the acknowledged offset again.
+            file->setState(file->getDirection() == File::OUTGOING
+                           ? File::FS_WAITING : File::FS_OFFERED);
         }
     }
 
@@ -1441,6 +1577,7 @@ void Contact::sendUserInfo()
 
         UserInfo ui;
         ui.nickName = getIdentity()->getName();
+        ui.avatarHash = avatarHash(normalizeAvatar(getIdentity()->getAvatar()));
 
         try {
             connection_->peer->sendUserInfo(ui);
@@ -1464,4 +1601,3 @@ Contact::Connection::~Connection()
 }
 
 }}
-

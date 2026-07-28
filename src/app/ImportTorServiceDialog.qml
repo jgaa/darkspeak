@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 Dialog {
     id: root

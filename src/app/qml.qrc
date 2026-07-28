@@ -1,5 +1,14 @@
 <RCC>
     <qresource prefix="/">
+        <file alias="icons/darkspeak.svg">../../icons/darkspeak.svg</file>
+        <file alias="icons/darkspeak-16.png">../../icons/darkspeak-16.png</file>
+        <file alias="icons/darkspeak-22.png">../../icons/darkspeak-22.png</file>
+        <file alias="icons/darkspeak-24.png">../../icons/darkspeak-24.png</file>
+        <file alias="icons/darkspeak-32.png">../../icons/darkspeak-32.png</file>
+        <file alias="icons/darkspeak-48.png">../../icons/darkspeak-48.png</file>
+        <file alias="icons/darkspeak-64.png">../../icons/darkspeak-64.png</file>
+        <file alias="icons/darkspeak-128.png">../../icons/darkspeak-128.png</file>
+        <file alias="icons/darkspeak-256.png">../../icons/darkspeak-256.png</file>
         <file>main.qml</file>
         <file>AboutDialog.qml</file>
         <file>Log.qml</file>
@@ -52,6 +61,7 @@
         <file>GeneralSettings.qml</file>
         <file>ImportTorServiceDialog.qml</file>
         <file>images/blocked.svg</file>
+        <file>images/qr-code.svg</file>
         <file alias="fonts/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf">../../fonts/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf</file>
         <file alias="fonts/MaterialSymbolsOutlined[FILL,GRAD,opsz,wght].ttf">../../fonts/MaterialSymbolsOutlined[FILL,GRAD,opsz,wght].ttf</file>
         <file alias="fonts/MaterialSymbolsSharp[FILL,GRAD,opsz,wght].ttf">../../fonts/MaterialSymbolsSharp[FILL,GRAD,opsz,wght].ttf</file>

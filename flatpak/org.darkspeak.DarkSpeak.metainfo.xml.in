@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.darkspeak.DarkSpeak</id>
+  <name>DarkSpeak</name>
+  <summary>Secure peer-to-peer instant messenger over Tor</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="org.darkspeak">
+    <name>JGAA</name>
+  </developer>
+  <launchable type="desktop-id">org.darkspeak.DarkSpeak.desktop</launchable>
+  <description>
+    <p>DarkSpeak is a secure peer-to-peer instant messenger using Tor hidden services.</p>
+    <p>Messages and file transfers are encrypted between the communicating peers.</p>
+  </description>
+  <categories>
+    <category>Network</category>
+    <category>Chat</category>
+  </categories>
+  <url type="homepage">https://github.com/jgaa/darkspeak</url>
+  <releases>
+    <release version="@VERSION@" date="2026-07-28"/>
+  </releases>
+</component>

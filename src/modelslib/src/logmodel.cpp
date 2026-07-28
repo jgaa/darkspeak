@@ -13,7 +13,7 @@ namespace models {
 LogModel::LogModel(QSettings &settings)
     : settings_{settings}
 {
-    installHandler(core::getLogLevel(core::LogSystem::APPLICATION));
+    installHandler(core::getLogLevel(settings, core::LogSystem::APPLICATION));
 }
 
 void LogModel::installHandler(logfault::LogLevel level)
@@ -24,7 +24,7 @@ void LogModel::installHandler(logfault::LogLevel level)
 
     auto handler = make_unique<LogModelHandler>(level);
     connect(handler.get(), &LogModelHandler::message, this, &LogModel::log);
-    logfault::LogManager::Instance().AddHandler(move(handler));
+    logfault::LogManager::Instance().AddHandler(std::move(handler));
 }
 
 QVariant LogModel::data(const QModelIndex &index, int role) const

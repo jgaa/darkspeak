@@ -6,13 +6,15 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
-#include <QGuiApplication>
+#include <QApplication>
+#include <QIcon>
 #include <QLockFile>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QStandardPaths>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QSize>
 #include <QSettings>
 
 #include "ds/manager.h"
@@ -29,6 +31,8 @@
 #include "ds/identitynamevalidator.h"
 #include "ds/torprotocolmanager.h"
 #include "ds/logutil.h"
+#include "ds/avatarutil.h"
+#include "filedialogmodel.h"
 
 #include "logfault/logfault.h"
 
@@ -42,6 +46,7 @@ namespace {
 
 bool earlyProfileArgument(int argc, char *argv[], QString &profile, QString &error)
 {
+    QStringView custom_profile;
     for (int i = 1; i < argc; ++i) {
         const QString argument = QString::fromLocal8Bit(argv[i]);
         if (argument == QStringLiteral("--profile")) {
@@ -90,49 +95,6 @@ LogLevel logLevelFromName(const QString &name, bool &ok)
     return LogLevel::NOTICE;
 }
 
-void configureLogging(const QString &logFile, const QString &logLevel, LogModel *logModel)
-{
-    if (logFile.isEmpty() && logLevel.isEmpty()) {
-        return;
-    }
-
-    bool valid = true;
-#ifdef QT_DEBUG
-    const auto defaultLevel = LogLevel::DEBUGGING;
-#else
-    const auto defaultLevel = LogLevel::NOTICE;
-#endif
-    const auto level = logLevel.isEmpty() ? defaultLevel
-                                          : logLevelFromName(logLevel, valid);
-    Q_ASSERT(valid);
-
-    auto &settings = DsEngine::instance().settings();
-    auto &logManager = LogManager::Instance();
-    logManager.ClearHandlers();
-
-    const auto appLevel = logLevel.isEmpty()
-            ? getLogLevel(LogSystem::APPLICATION) : level;
-    const auto stdoutLevel = logLevel.isEmpty()
-            ? getLogLevel(LogSystem::STDOUT) : level;
-    if (appLevel != LogLevel::DISABLED) {
-        logModel->installHandler(appLevel);
-    }
-    if (stdoutLevel != LogLevel::DISABLED) {
-        logManager.AddHandler(make_unique<StreamHandler>(clog, stdoutLevel));
-    }
-
-    if (!logFile.isEmpty()) {
-        const QFileInfo fileInfo(logFile);
-        QDir().mkpath(fileInfo.absolutePath());
-        logManager.AddHandler(make_unique<StreamHandler>(
-            logFile.toStdString(), logLevel.isEmpty() ? defaultLevel : level, true));
-    } else if (isEnabled(LogSystem::LOGFILE)) {
-        const auto path = settings.value("logPath").toString();
-        logManager.AddHandler(make_unique<StreamHandler>(
-            path.toStdString(), getLogLevel(LogSystem::LOGFILE), true));
-    }
-}
-
 }
 
 int main(int argc, char *argv[])
@@ -153,15 +115,28 @@ int main(int argc, char *argv[])
     });
 
 
-    QGuiApplication::setOrganizationName("JgaasInternet");
-    QGuiApplication::setOrganizationDomain("jgaa.com");
+    QGuiApplication::setOrganizationName("DarkSpeak");
+    QGuiApplication::setOrganizationDomain("darkspeak.org");
 #ifdef QT_DEBUG
     QGuiApplication::setApplicationName("DarkSpeak-debug");
 #else
     QGuiApplication::setApplicationName("DarkSpeak");
 #endif
 
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
+
+    // Desktop environments request small icon sizes repeatedly while laying
+    // out and repainting the window decoration.  Keep pre-rasterized sizes so
+    // the detailed SVG artwork does not get re-rasterized at subtly different
+    // sub-pixel alignments on every repaint.
+    QIcon applicationIcon;
+    for (const auto &iconSize : {16, 22, 24, 32, 48, 64, 128, 256}) {
+        applicationIcon.addFile(
+            QStringLiteral(":/icons/darkspeak-%1.png").arg(iconSize),
+            QSize(iconSize, iconSize));
+    }
+    applicationIcon.addFile(QStringLiteral(":/icons/darkspeak.svg"));
+    app.setWindowIcon(applicationIcon);
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("DarkSpeak"));
@@ -218,75 +193,85 @@ int main(int argc, char *argv[])
     // Initialize crypto
     ds::crypto::Crypto crypto;
 
-    auto manager = make_unique<Manager>();
+    auto manager = make_unique<Manager>(parser.value(QStringLiteral("log-file")),
+                                        requestedLogLevel);
     manager->connect(&app, &QGuiApplication::aboutToQuit, manager.get(), &Manager::onQuit);
 
-    configureLogging(parser.value(QStringLiteral("log-file")), requestedLogLevel, manager->logModel());
     LFLOG_DEBUG << "Darkspeak is starting up cwd='"
                 << QDir::currentPath()
                 << '\'';
 
     LFLOG_INFO << manager->getProgramNameAndVersion() << " is ready.";
 
-    qmlRegisterUncreatableType<ds::models::Manager>("com.jgaa.darkspeak", 1, 0,
+    if (!parsedProfile.isEmpty()) {
+        auto name = app.applicationDisplayName();
+        name = name + " [" + parsedProfile + "]";
+
+        LFLOG_DEBUG << "Changing display name to: " << name;
+        app.setApplicationDisplayName(name);
+    }
+
+    qmlRegisterUncreatableType<ds::models::Manager>("org.darkspeak", 1, 0,
                                                     "Manager",
                                                     "Manager is a global sigeleton.");
 
-    qmlRegisterUncreatableType<ds::models::LogModel>("com.jgaa.darkspeak", 1, 0,
+    qmlRegisterUncreatableType<ds::models::LogModel>("org.darkspeak", 1, 0,
                                                      "LogModel",
                                                      "LogModel is a global sigeleton.");
 
-    qmlRegisterUncreatableType<ds::models::ContactsModel>("com.jgaa.darkspeak", 1, 0,
+    qmlRegisterUncreatableType<ds::models::ContactsModel>("org.darkspeak", 1, 0,
                                                            "ContactsModel",
                                                            "Cannot create ContactsModel in QML");
 
-    qmlRegisterUncreatableType<ds::models::NotificationsModel>("com.jgaa.darkspeak", 1, 0,
+    qmlRegisterUncreatableType<ds::models::NotificationsModel>("org.darkspeak", 1, 0,
                                                            "ContactsModel",
                                                            "Cannot create NotificationsModel in QML");
 
-    qmlRegisterUncreatableType<ds::core::Identity>("com.jgaa.darkspeak", 1, 0,
+    qmlRegisterUncreatableType<ds::core::Identity>("org.darkspeak", 1, 0,
                                                    "Identity",
                                                    "Cannot create NotificationsModel in QML");
 
-    qmlRegisterUncreatableType<ds::core::IdentityManager>("com.jgaa.darkspeak", 1, 0,
+    qmlRegisterUncreatableType<ds::core::IdentityManager>("org.darkspeak", 1, 0,
                                                    "IdentityManager",
                                                    "Cannot create NotificationsModel in QML");
 
-    qmlRegisterUncreatableType<ds::core::Contact>("com.jgaa.darkspeak", 1, 0,
+    qmlRegisterUncreatableType<ds::core::Contact>("org.darkspeak", 1, 0,
                                                    "Contact",
                                                    "Cannot create Contact in QML");
 
-    qmlRegisterUncreatableType<ds::core::Conversation>("com.jgaa.darkspeak", 1, 0,
+    qmlRegisterUncreatableType<ds::core::Conversation>("org.darkspeak", 1, 0,
                                                    "Conversation",
                                                    "Cannot create Conversation in QML");
 
-    qmlRegisterUncreatableType<ds::models::ConversationsModel>("com.jgaa.darkspeak", 1, 0,
+    qmlRegisterUncreatableType<ds::models::ConversationsModel>("org.darkspeak", 1, 0,
                                                    "ConversationsModel",
                                                    "Cannot create Conversation in QML");
 
-    qmlRegisterUncreatableType<ds::core::Message>("com.jgaa.darkspeak", 1, 0,
+    qmlRegisterUncreatableType<ds::core::Message>("org.darkspeak", 1, 0,
                                                    "Message",
                                                    "Cannot create Message in QML");
 
-    qmlRegisterUncreatableType<ds::models::MessagesModel>("com.jgaa.darkspeak", 1, 0,
+    qmlRegisterUncreatableType<ds::models::MessagesModel>("org.darkspeak", 1, 0,
                                                    "MessagesModel",
                                                    "Cannot create Messages in QML");
 
-    qmlRegisterUncreatableType<ds::core::File>("com.jgaa.darkspeak", 1, 0,
+    qmlRegisterUncreatableType<ds::core::File>("org.darkspeak", 1, 0,
                                                    "File",
                                                    "Cannot create File in QML");
 
-    qmlRegisterUncreatableType<ds::models::FilesModel>("com.jgaa.darkspeak", 1, 0,
+    qmlRegisterUncreatableType<ds::models::FilesModel>("org.darkspeak", 1, 0,
                                                    "FilesModel",
                                                    "Cannot create FilesModel in QML");
 
 
-    qmlRegisterType<ds::core::QmlIdentityReq>("com.jgaa.darkspeak", 1, 0, "QmlIdentityReq");
-    qmlRegisterType<ds::models::IdentityNameValidator>("com.jgaa.darkspeak", 1, 0, "IdentityNameValidator");
+    qmlRegisterType<ds::core::QmlIdentityReq>("org.darkspeak", 1, 0, "QmlIdentityReq");
+    qmlRegisterType<ds::models::IdentityNameValidator>("org.darkspeak", 1, 0, "IdentityNameValidator");
 
     QQmlApplicationEngine engine;
+    FileDialogModel fileDialogs;
 
     engine.rootContext()->setContextProperty("manager", manager.get());
+    engine.rootContext()->setContextProperty("fileDialogs", &fileDialogs);
     engine.rootContext()->setContextProperty("log", manager->logModel());
     engine.rootContext()->setContextProperty("identities", DsEngine::instance().getIdentityManager());
     engine.rootContext()->setContextProperty("contacts", manager->contactsModel());
@@ -304,7 +289,7 @@ int main(int argc, char *argv[])
 
     auto identityProvider = new ImageProvider{"identity", [](const QString& id) -> QImage {
             if (auto identity = DsEngine::instance().getIdentityManager()->identityFromUuid(QUuid{id})) {
-                return identity->getAvatar();
+                return circularAvatar(identity->getAvatar());
             }
 
             return {};
@@ -314,7 +299,7 @@ int main(int argc, char *argv[])
 
     auto contactProvider = new ImageProvider{"contact", [](const QString& id) -> QImage {
             if (auto contact = DsEngine::instance().getContactManager()->getContact(QUuid{id})) {
-                return contact->getAvatar();
+                return circularAvatar(contact->getAvatar());
             }
 
             return {};
@@ -348,9 +333,6 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    LFLOG_INFO << "==================================================================";
-    LFLOG_INFO << "==================================================================";
-    LFLOG_INFO << "==================================================================";
     LFLOG_INFO << "DarkSpeak is ready";
 
     const auto rval = QGuiApplication::exec();

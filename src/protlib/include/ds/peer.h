@@ -3,6 +3,8 @@
 
 #include <array>
 #include <limits>
+#include <map>
+#include <QTimer>
 
 #include "ds/protocolmanager.h"
 #include "ds/connectionsocket.h"
@@ -25,6 +27,13 @@ public:
     static constexpr size_t frame_header_bytes = 1 + sizeof(quint32) + sizeof(quint64);
     static constexpr size_t max_frame_bytes = std::numeric_limits<quint16>::max();
     static constexpr size_t max_payload_bytes = max_frame_bytes - frame_header_bytes;
+    // The handshake version is independent from the encrypted application frame.
+    static constexpr quint8 frame_version = 2;
+    static constexpr quint8 control_version = 2;
+    static constexpr size_t file_chunk_header_bytes = sizeof(quint64) + sizeof(quint64);
+    static constexpr size_t file_chunk_bytes = 1024 * 8;
+    static constexpr size_t file_window_chunks = 8;
+    static constexpr int file_retry_limit = 5;
     enum class InState {
         DISABLED,
         CHUNK_SIZE,
@@ -89,6 +98,19 @@ public:
 
         // Return 0 on EOF
         virtual uint64_t onOutgoing(Peer& peer) = 0;
+        virtual void onAck(Peer& peer, quint64 sequence,
+                           qlonglong offset, bool final) {
+            Q_UNUSED(peer)
+            Q_UNUSED(sequence)
+            Q_UNUSED(offset)
+            Q_UNUSED(final)
+        }
+        virtual void onTimeout(Peer& peer) { Q_UNUSED(peer) }
+        virtual qlonglong resumeOffset() const noexcept { return 0; }
+        virtual void onTransferDone(Peer& peer, bool success) {
+            Q_UNUSED(peer)
+            Q_UNUSED(success)
+        }
     };
 
     Peer(ConnectionSocket::ptr_t connection,
@@ -135,6 +157,11 @@ protected:
     void onReceivedData(const quint32 channel, const quint64 id,
                         const mview_t& data, const bool final);
     void onReceivedJson(const quint64 id, const mview_t& data);
+    void sendCapabilities();
+    [[noreturn]] void protocolError(const QString& reason);
+    void resetIdleTimer();
+    void scheduleKeepAlive();
+    void sendKeepAlive();
     void enableEncryptedStream();
     void wantChunkSize();
     void wantChunkData(const size_t bytes);
@@ -154,10 +181,13 @@ protected:
     stream_state_t stateIn = {};
     stream_state_t stateOut = {};
     quint64 request_id_ = {}; // Counter for outgoing requests
+    quint64 last_received_request_id_ = {};
     quint32 nextInchannel_ = 1;
     std::map<quint32, Channel::ptr_t> outChannels_;
     std::map<quint32, Channel::ptr_t> inChannels_;
     bool notificationsDisabled_ = false;
+    bool capabilitiesReceived_ = false;
+    QTimer keepAliveTimer_;
 
     // PeerConnection interface
 public:
@@ -175,6 +205,8 @@ public:
     uint64_t offerFile(const core::File& file) override;
     uint64_t startTransfer(core::File& file) override;
     uint64_t sendSome(core::File& file) override;
+    void acknowledgeFile(const QByteArray& fileId, quint64 sequence,
+                         qlonglong offset, bool final) override;
     void disableNotifications() override;
 };
 

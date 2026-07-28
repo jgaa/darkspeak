@@ -1,6 +1,7 @@
 
 #include <QSqlQuery>
 #include <QUrl>
+#include <QFileInfo>
 #include <QSqlError>
 
 #include <cassert>
@@ -22,7 +23,22 @@ namespace models {
 FilesModel::FilesModel(QObject &parent)
     : QAbstractListModel(&parent)
 {
+    connect(DsEngine::instance().getContactManager(),
+            &ContactManager::contactDeleted,
+            this, &FilesModel::onContactDeleted);
+}
 
+void FilesModel::onContactDeleted(const QUuid &uuid)
+{
+    if (currentContact_ && currentContact_->getUuid() == uuid) {
+        currentConversation_.reset();
+        currentContact_.reset();
+    }
+
+    beginResetModel();
+    rows_.clear();
+    queryRows(rows_);
+    endResetModel();
 }
 
 void FilesModel::setConversation(Conversation *conversation)
@@ -54,17 +70,21 @@ void FilesModel::setIdentity(Identity *identity)
 
 qlonglong FilesModel::getFileLength(const QString &path) const
 {
-    QFile file(QUrl(path).toLocalFile());
-    if (file.exists()) {
-        return file.size();
+    const auto url = QUrl::fromUserInput(path);
+    const auto localPath = url.isLocalFile() ? url.toLocalFile() : path;
+    const QFileInfo fileInfo(localPath);
+    if (fileInfo.exists() && fileInfo.isFile()) {
+        return fileInfo.size();
     }
 
-    return {};
+    return -1;
 }
 
 QString FilesModel::getFileName(const QString &path) const
 {
-    return QUrl(path).fileName();
+    const auto url = QUrl::fromUserInput(path);
+    const auto localPath = url.isLocalFile() ? url.toLocalFile() : path;
+    return QFileInfo(localPath).fileName();
 }
 
 int FilesModel::rowCount(const QModelIndex &) const

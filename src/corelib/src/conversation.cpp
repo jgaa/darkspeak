@@ -8,6 +8,7 @@
 #include "logfault/logfault.h"
 
 #include <QStandardPaths>
+#include <QRegularExpression>
 #include <QUrl>
 
 namespace ds {
@@ -70,8 +71,16 @@ void Conversation::sendFile(const QVariantMap &args)
     auto data = make_unique<FileData>();
     data->name = args.value("name").toString();
 
-    // Convert from "file:///" to local path now
-    data->path = QUrl(path).toLocalFile();
+    // Accept both native paths from QFileDialog and file URLs from QML.
+    const auto url = QUrl::fromUserInput(path);
+    data->path = url.isLocalFile() ? url.toLocalFile() : path;
+
+    if (data->path.isEmpty()) {
+        DsEngine::instance().reportStatus(
+            tr("Failed to send file: invalid path"),
+            DsEngine::StatusLevel::ERROR);
+        return;
+    }
 
     if (data->name.isEmpty()) {
         QFileInfo fi{data->path};
@@ -205,7 +214,12 @@ Identity *Conversation::getIdentity() const
 
 bool Conversation::haveParticipant(const Contact &contact) const
 {
-    return getFirstParticipant()->getUuid() == contact.getUuid();
+    try {
+        return getFirstParticipant()->getUuid() == contact.getUuid();
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to check participant: " << ex.what();
+    }
+    return false;
 }
 
 QString Conversation::getFilesLocation() const
@@ -220,17 +234,27 @@ QString Conversation::getFilesLocation() const
         home += "/";
     }
 
-    QDir path(home
-              + getIdentity()->getUuid().toString()
-              + "/" + getUuid().toString());
+    // Keep the configured download directory user-facing and predictable.
+    // File-name collision handling is performed by Contact before a receive
+    // starts, so per-identity/conversation UUID directories are unnecessary.
+    QDir path(home);
+    if (DsEngine::instance().settings().value(
+                "includeConversationNameInDownloadPath", false).toBool()) {
+        auto folderName = getName().trimmed();
+        folderName.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9 _.-]")),
+                           QStringLiteral("_"));
+        folderName.replace(QStringLiteral(".."), QStringLiteral("_"));
+        folderName = folderName.trimmed();
+        if (folderName.isEmpty() || folderName == QStringLiteral(".")) {
+            folderName = QStringLiteral("conversation");
+        }
+        path = QDir(path.filePath(folderName));
+    }
 
     path.makeAbsolute();
     if (!path.exists()) {
         LFLOG_DEBUG << "Creating download directory \""
-                    << path.path()
-                    << "\" for conversation "
-                    << getName()
-                    << " at identity " << getIdentity()->getName();
+                    << path.path() << "\" for incoming files";
         path.mkpath(path.path());
     }
 
@@ -258,7 +282,9 @@ void Conversation::addToDb()
 
     if (hash_.isEmpty()) {
         if (getType() == PRIVATE_P2P) {
-            hash_ = getParticipant()->getHash();
+            if (const auto& p = getParticipant()) {
+                hash_ = p->getHash();
+            }
         } else {
             assert(false); // TODO: Implement
         }
@@ -269,11 +295,25 @@ void Conversation::addToDb()
     }
 
     if (name_.isEmpty()) {
-        if (getType() == PRIVATE_P2P) {
-            name_ = getParticipant()->getName();
-        } else {
-            name_ = "Group Conversation";
+        if (const auto& p = getParticipant()) {
+            if (getType() == PRIVATE_P2P) {
+                name_ = p->getName();
+                if (name_.isEmpty()) {
+                    name_ = p->getNickName();
+                }
+                if (name_.isEmpty()) {
+                    name_ = QStringLiteral("Unnamed contact");
+                }
+            } else {
+                name_ = "Group Conversation";
+            }
         }
+    }
+
+    // The database requires a non-null conversation name, even if a
+    // participant could not be resolved while creating the conversation.
+    if (name_.isEmpty()) {
+        name_ = QStringLiteral("Unnamed conversation");
     }
 
     // TODO: We better put multiple participants in a separate table
@@ -350,7 +390,8 @@ Contact::ptr_t Conversation::getParticipant() const
         }
     }
 
-    throw runtime_error("Not PRIVATE_P2P or participant not found");
+    LFLOG_ERROR << "Not PRIVATE_P2P or participant not found";
+    return {};
 }
 
 QByteArray Conversation::calculateHash(const Contact &contact)
@@ -411,4 +452,3 @@ Conversation::ptr_t Conversation::load(QObject &parent, const std::function<void
 
 
 }} // namespaces
-

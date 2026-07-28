@@ -47,12 +47,16 @@ private slots:
         const auto identity = DsCert::create();
         const auto restored = DsCert::create(identity->getCert());
         const auto publicOnly = DsCert::createFromPubkey(identity->getSigningPubKey().toByteArray());
+        const auto publicRestored = DsCert::createFromPubkey(publicOnly->getCert());
 
         QCOMPARE(restored->getSigningPubKey(), identity->getSigningPubKey());
         QCOMPARE(restored->getEncryptionPubKey(), identity->getEncryptionPubKey());
         QCOMPARE(restored->getHash(), identity->getHash());
         QCOMPARE(publicOnly->getSigningPubKey(), identity->getSigningPubKey());
         QCOMPARE(publicOnly->getEncryptionPubKey(), identity->getEncryptionPubKey());
+        QCOMPARE(publicOnly->getCert().size(), static_cast<size_t>(crypto_sign_PUBLICKEYBYTES));
+        QCOMPARE(publicRestored->getSigningPubKey(), publicOnly->getSigningPubKey());
+        QCOMPARE(publicRestored->getEncryptionPubKey(), publicOnly->getEncryptionPubKey());
         QVERIFY(publicOnly->getSigningKey().empty());
         QVERIFY(publicOnly->getEncryptionKey().empty());
     }
@@ -112,7 +116,7 @@ private slots:
                     &push, reinterpret_cast<unsigned char *>(header.data()),
                     reinterpret_cast<const unsigned char *>(key.constData())) == 0);
 
-        const QByteArray frame("v1|channel=0|request=1|payload=handshake-capture");
+        const QByteArray frame("v2|channel=0|frame-id=1|payload=handshake-capture");
         QByteArray ciphertext(frame.size() + crypto_secretstream_xchacha20poly1305_ABYTES,
                                Qt::Uninitialized);
         QVERIFY(crypto_secretstream_xchacha20poly1305_push(

@@ -133,6 +133,7 @@ void DsClient::getHelloReply(const Peer::data_t &data)
                 << " is fully switched to stream-encryption.";
 
     enableEncryptedStream();
+    sendCapabilities();
 
     emit connectedToPeer(shared_from_this());
 }

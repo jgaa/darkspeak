@@ -25,7 +25,7 @@ void HashTask::run() {
         crypto_hash_sha256_init(&state);
 
         std::array<uint8_t, 1024 * 8> buffer = {};
-        while(!file.isOpen()) {
+        while(file.isOpen()) {
             if (file_->getState() != File::FS_HASHING) {
                 LFLOG_WARN << "File #" << file_->getId()
                            << " changed state during hashing. Aborting!";

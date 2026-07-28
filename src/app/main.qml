@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtCore
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 ApplicationWindow {
     id: mainWindow
@@ -11,7 +11,7 @@ ApplicationWindow {
     height: 700
     minimumWidth: 760
     minimumHeight: 480
-    title: manager.programNameAndVersion
+    title: Qt.application.displayName
 
     FontLoader {
         id: materialIcons
@@ -97,27 +97,44 @@ ApplicationWindow {
                 anchors.fill: parent
                 clip: true
                 spacing: 4
-                currentIndex: manager.currentPage
+                currentIndex: {
+                    for (var i = 0; i < count; ++i) {
+                        if (model.get(i).page === manager.currentPage)
+                            return i
+                    }
+                    return -1
+                }
 
                 model: ListModel {
-                    ListElement { shortName: "Log"; iconName: "description"; page: 0 }
                     ListElement { shortName: "IDs"; iconName: "badge"; page: 1 }
-                    ListElement { shortName: "People"; iconName: "group"; page: 2 }
                     ListElement { shortName: "Home"; iconName: "home"; page: 3 }
-                    ListElement { shortName: "Threads"; iconName: "forum"; page: 4 }
-                    ListElement { shortName: "Chat"; iconName: "chat"; page: 5 }
+                    ListElement { shortName: "People"; iconName: "group"; page: 2 }
+                    ListElement { shortName: "Conversations"; iconName: "forum"; page: 4 }
+                    ListElement { shortName: "Log"; iconName: "description"; page: 0 }
                 }
 
                 onCurrentIndexChanged: {
-                    if (manager.currentPage !== currentIndex)
-                        manager.currentPage = currentIndex
+                    if (currentIndex >= 0) {
+                        var page = model.get(currentIndex).page
+                        if (manager.currentPage !== page)
+                            manager.currentPage = page
+                    }
                 }
 
                 delegate: ItemDelegate {
                     width: navigation.width
                     height: 58
                     highlighted: ListView.isCurrentItem
-                    onClicked: navigation.currentIndex = page
+                    hoverEnabled: true
+                    onClicked: manager.currentPage = page
+
+                    background: Rectangle {
+                        radius: 6
+                        color: parent.highlighted ? "#294d70"
+                               : parent.hovered ? "#24384b" : "transparent"
+                        border.color: parent.highlighted ? "#79c2f2" : "transparent"
+                        border.width: 1
+                    }
 
                     contentItem: RowLayout {
                         spacing: 14
@@ -127,6 +144,7 @@ ApplicationWindow {
                             font.family: materialIcons.name
                             font.pixelSize: 30
                             font.features: { "liga": 1 }
+                            color: parent.parent.highlighted ? "#e6f1fb" : "#334155"
                             Layout.preferredWidth: 34
                             horizontalAlignment: Text.AlignHCenter
                         }
@@ -134,6 +152,7 @@ ApplicationWindow {
                         Label {
                             text: qsTr(shortName)
                             font.pixelSize: 15
+                            color: parent.parent.highlighted ? "#ffffff" : "#243447"
                             Layout.fillWidth: true
                         }
                     }
@@ -152,7 +171,6 @@ ApplicationWindow {
             Contacts {}
             Home {}
             Conversations {}
-            Chat {}
         }
     }
 
@@ -191,8 +209,13 @@ ApplicationWindow {
             Item { Layout.fillWidth: true }
 
             Label {
-                text: qsTr("Page %1 of %2").arg(manager.currentPage + 1).arg(pages.count)
-                opacity: 0.7
+                text: manager.statusMessage
+                visible: text.length > 0
+                color: manager.statusLevel === Manager.ERROR ? "#b42318"
+                       : manager.statusLevel === Manager.WARNING ? "#9a6700"
+                       : "#334155"
+                elide: Text.ElideRight
+                Layout.maximumWidth: 560
             }
         }
     }

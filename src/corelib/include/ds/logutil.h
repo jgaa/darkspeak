@@ -1,6 +1,8 @@
 #ifndef UTIL_H
 #define UTIL_H
 
+#include <QSettings>
+
 #include "logfault/logfault.h"
 
 namespace ds {
@@ -12,8 +14,8 @@ enum class LogSystem {
     STDOUT
 };
 
-bool isEnabled(const LogSystem system);
-logfault::LogLevel getLogLevel(const LogSystem system);
+bool isEnabled(const QSettings& settings, const LogSystem system);
+logfault::LogLevel getLogLevel(const QSettings& settings, const LogSystem system);
 
 }} // namepaces
 

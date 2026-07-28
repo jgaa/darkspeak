@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 
 Rectangle {
     id: root
@@ -19,23 +18,25 @@ Rectangle {
         anchors.verticalCenterOffset: 0
         anchors.horizontalCenterOffset: 0
         fillMode: Image.PreserveAspectFit
-        source: root.source ? root.source : ""
+        // Assign the source explicitly from reloadImage(). This makes an
+        // avatar update observable even when the image-provider URL keeps the
+        // same logical contact id.
+        source: ""
         cache: false
-        layer.enabled: root.rounded
-        layer.effect: MultiEffect {
-            maskEnabled: true
-            maskThresholdMin: 0.5
-            maskSpreadAtMin: 1.0
-            maskSource: Item {
-                width: img.width
-                height: img.height
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: root.adapt ? img.width : Math.min(img.width, img.height)
-                    height: root.adapt ? img.height : width
-                    radius: Math.min(width, height)
-                }
-            }
+        asynchronous: false
+    }
+
+    function reloadImage() {
+        img.source = ""
+        img.source = root.source ? root.source : ""
+    }
+
+    Component.onCompleted: reloadImage()
+
+    Connections {
+        target: root
+        function onSourceChanged() {
+            root.reloadImage()
         }
     }
 }

@@ -54,6 +54,7 @@ public slots:
     void onConversationAdded(const core::Conversation::ptr_t& conversation);
     void onConversationTouched(const core::Conversation::ptr_t& conversation);
     void onConversationDeleted(const QUuid& uuid);
+    void onContactDeleted(const QUuid& uuid);
 
     // QAbstractItemModel interface
 public:

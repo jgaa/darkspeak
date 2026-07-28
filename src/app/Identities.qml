@@ -2,10 +2,17 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 Page {
+    id: root
     clip: true
+
+    property color primaryText: "#243447"
+    property color secondaryText: "#475569"
+    property color labelText: "#64748b"
+    property color selectedFill: "#294d70"
+    property color selectedBorder: "#79c2f2"
 
     header: Label {
         text: qsTr("Your Identities")
@@ -27,13 +34,15 @@ Page {
             identities.setCurrentIdentity(currentIndex)
 
             // This is where we synchronize the Contacts and conversations with the current selected identity
-            contacts.setIdentity(currentIdentity.uuid)
-            conversations.setIdentity(currentIdentity.uuid)
+            if (currentIdentity) {
+                contacts.setIdentity(currentIdentity.uuid)
+                conversations.setIdentity(currentIdentity.uuid)
+            }
         }
 
         delegate: Item {
             id: itemDelegate
-            width: parent.width
+            width: list.width
             height: 112
             property Identity cid : identity
 
@@ -87,7 +96,7 @@ Page {
                     spacing: 10
                     Text {
                         font.pointSize: 14
-                        color: "white"
+                        color: itemDelegate.ListView.isCurrentItem ? "#ffffff" : root.primaryText
                         text: cid.name
                         font.bold: itemDelegate.ListView.isCurrentItem
                     }
@@ -97,25 +106,25 @@ Page {
                         rows: 3
                         flow: GridLayout.TopToBottom
 
-                        Label { font.pointSize: 9; text: qsTr("Created")}
-                        Label { font.pointSize: 9; text: qsTr("handle")}
-                        Label { font.pointSize: 9; text: qsTr("Onion")}
+                        Label { font.pointSize: 9; color: root.labelText; text: qsTr("Created")}
+                        Label { font.pointSize: 9; color: root.labelText; text: qsTr("handle")}
+                        Label { font.pointSize: 9; color: root.labelText; text: qsTr("Onion")}
 
                         FormattedTime {
                             font.pointSize: 9;
-                            color: "skyblue"
+                            color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
                             value: cid.created
                         }
 
                         Text {
                             font.pointSize: 9;
-                            color: "skyblue"
+                            color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
                             text: cid.handle
                         }
 
                         Text {
                             font.pointSize: 9;
-                            color: "skyblue"
+                            color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
                             text: cid.address
                         }
                     }
@@ -125,7 +134,7 @@ Page {
             MouseArea {
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 anchors.fill: parent
-                onClicked: {
+                onClicked: function(mouse) {
                     list.currentIndex = index
                     if (mouse.button === Qt.RightButton) {
                         contextMenu.x = mouse.x;
@@ -134,7 +143,7 @@ Page {
                     }
                 }
 
-                onPressAndHold: {
+                onPressAndHold: function(mouse) {
                     list.currentIndex = index
                     contextMenu.x = mouse.x;
                     contextMenu.y = mouse.y;
@@ -167,6 +176,11 @@ Page {
             manager.textToClipboard(currentIdentity.name + ':' + currentIdentity.b58identity)
         }
 
+        function createIdentityQrCode() {
+            manager.createIdentityQrCode(currentIdentity.name,
+                                         currentIdentity.b58identity)
+        }
+
         function createNewTransport() {
             currentIdentity.changeTransport()
         }
@@ -194,9 +208,10 @@ Page {
          id: highlightBar
          Rectangle {
              radius: 5
+             opacity: 1
              y: list.currentItem.y;
-             color: "#19462a"
-             border.color: "lime"
+             color: root.selectedFill
+             border.color: root.selectedBorder
              Behavior on y { SpringAnimation { spring: 1; damping: 0.1 } }
          }
      }
@@ -222,6 +237,12 @@ Page {
             text: qsTr("Copy identity")
             icon.name: "edit-copy"
             onTriggered: list.copyIdentity();
+        }
+
+        MenuItem {
+            text: qsTr("Create QR Code")
+            icon.source: "qrc:///images/qr-code.svg"
+            onTriggered: list.createIdentityQrCode()
         }
 
         MenuItem {

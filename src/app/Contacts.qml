@@ -2,10 +2,16 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 Page {
     id: root
+
+    property color primaryText: "#243447"
+    property color secondaryText: "#475569"
+    property color labelText: "#64748b"
+    property color selectedFill: "#294d70"
+    property color selectedBorder: "#79c2f2"
 
     header: Header {
         whom: identities.current
@@ -13,8 +19,8 @@ Page {
     }
 
     property var states: [qsTr("Pending"), qsTr("Waiting"), qsTr("OK"), qsTr("Rejected"), qsTr("BLOCKED")]
-    property var stateColors: ["gray", "yellow", "lime", "red", "white"]
-    property var onlineColors: ["aquamarine", "blue", "orange", "lime"]
+    property var stateColors: ["#aebdca", "#f2c56b", "#72d6a0", "#f28b82", "#f3f6fa"]
+    property var onlineColors: ["#79d8c8", "#7aa7e8", "#e9ad63", "#72d6a0"]
 
     Connections {
         target: contacts
@@ -60,13 +66,11 @@ Page {
                         source: cco ? cco.avatarUrl : ""
                         height: 100
                         width: 100
-                        border.width: 2
+                        border.width: 8
                         border.color: cco
                                       ? cco.blocked ? "firebrick"
                                       : cco.online ? "lime" : "blue"
                                       : "grey"
-                        color: "black"
-
                         Rectangle {
                             height: parent.width / 3
                             color: cco ? cco.blocked ? "firebrick" : root.onlineColors[cco.onlineStatus] : "grey"
@@ -90,7 +94,7 @@ Page {
                     x: 116
                     Text {
                         font.pointSize: 14
-                        color: "white"
+                        color: itemDelegate.ListView.isCurrentItem ? "#ffffff" : root.primaryText
                         text: cco
                             ? cco.name ? cco.name : cco.nickName
                             : ""
@@ -101,33 +105,33 @@ Page {
                         rowSpacing: 0
                         rows: 5
                         flow: GridLayout.TopToBottom
-                        Label { font.pointSize: 9; text: qsTr("Nick")}
-                        Label { font.pointSize: 9; text: qsTr("Last seen")}
-                        Label { font.pointSize: 9; text: qsTr("Handle")}
-                        Label { font.pointSize: 9; text: qsTr("Address")}
-                        Label { font.pointSize: 9; text: qsTr("Status")}
+                        Label { font.pointSize: 9; color: root.labelText; text: qsTr("Nick")}
+                        Label { font.pointSize: 9; color: root.labelText; text: qsTr("Last seen")}
+                        Label { font.pointSize: 9; color: root.labelText; text: qsTr("Handle")}
+                        Label { font.pointSize: 9; color: root.labelText; text: qsTr("Address")}
+                        Label { font.pointSize: 9; color: root.labelText; text: qsTr("Status")}
 
                         Text {
                             font.pointSize: 9;
-                            color: "skyblue"
+                            color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
                             text: cco ? cco.nickName : ""
                         }
 
                         FormattedTime {
                             font.pointSize: 9;
-                            color: "skyblue"
+                            color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
                             value: cco ? cco.lastSeen : null
                         }
 
                         Text {
                             font.pointSize: 9;
-                            color: "skyblue"
+                            color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
                             text: cco ? cco.handle : null
                         }
 
                         Text {
                             font.pointSize: 9;
-                            color: "skyblue"
+                            color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
                             text: cco ? cco.address : ""
                         }
 
@@ -157,7 +161,7 @@ Page {
                             }
 
                             Text {
-                                color: "skyblue"
+                                color: root.secondaryText
                                 font.pointSize: 8;
                                 text: cco
                                       ? cco.whoInitiated === Contact.ME ? qsTr("AddedByMe") : ""
@@ -176,7 +180,7 @@ Page {
                             }
 
                             Text {
-                                color: "white"
+                                color: root.primaryText
                                 font.pointSize: 8;
                                 text: cco
                                       ? cco.iBlocked ? qsTr(" Blocked by me") : ""
@@ -195,7 +199,7 @@ Page {
             MouseArea {
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 anchors.fill: parent
-                onClicked: {
+                onClicked: function(mouse) {
                     list.currentIndex = index
                     if (mouse.button === Qt.RightButton) {
                         contextMenu.x = mouse.x;
@@ -204,7 +208,7 @@ Page {
                     }
                 }
 
-                onPressAndHold: {
+                onPressAndHold: function(mouse) {
                     list.currentIndex = index
                     contextMenu.x = mouse.x;
                     contextMenu.y = mouse.y;
@@ -224,7 +228,7 @@ Page {
         function sendMessage() {
             var cv = currentItem.cco.getDefaultConversation();
             conversations.setCurrent(cv);
-            manager.currentPage = Manager.CHAT
+            manager.currentPage = Manager.CONVERSATIONS
         }
 
         function editCurrent() {
@@ -238,15 +242,22 @@ Page {
             manager.textToClipboard(currentItem.cco.name + ':'
                     + currentItem.cco.b58identity)
         }
+
+        function deleteCurrent() {
+            if (currentItem && currentItem.cco) {
+                manager.deleteContact(currentItem.cco.uuid)
+            }
+        }
     }
 
     Component {
          id: highlightBar
          Rectangle {
              radius: 5
+             opacity: 1
              y: list.currentItem ? list.currentItem.y : 0;
-             color: "midnightblue"
-             border.color: "aquamarine"
+             color: root.selectedFill
+             border.color: root.selectedBorder
              Behavior on y { SpringAnimation { spring: 1; damping: 0.1 } }
              visible: list.currentItem
          }
@@ -279,6 +290,26 @@ Page {
             text: qsTr("Copy contact")
             icon.name: "edit-copy"
             onTriggered: list.copy()
+        }
+
+        MenuItem {
+            text: qsTr("Delete contact")
+            icon.name: "edit-delete"
+            enabled: list.currentItem && list.currentItem.cco
+            onTriggered: confirmDelete.open()
+        }
+    }
+
+    MessageDialog {
+        id: confirmDelete
+        title: qsTr("Delete contact")
+        text: qsTr("Do you really want to delete this contact?")
+        detailedText: qsTr("All conversations, messages, files and notifications for this contact will also be deleted.")
+        buttons: MessageDialog.Yes | MessageDialog.Cancel
+        onButtonClicked: function(button) {
+            if (button === MessageDialog.Yes) {
+                list.deleteCurrent()
+            }
         }
     }
 }

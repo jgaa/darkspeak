@@ -30,19 +30,26 @@ ContactsModel::ContactsModel(QObject& parent)
     , contactManager_{*DsEngine::instance().getContactManager()}
 {
 
-    // TODO: Connect to add / delete contact signals
-
     connect(DsEngine::instance().getContactManager(),
             &ContactManager::contactAdded,
             this, &ContactsModel::onContactAdded);
+
+    connect(DsEngine::instance().getContactManager(),
+            &ContactManager::contactDeleted,
+            this, &ContactsModel::onContactDeleted);
 }
 
 void ContactsModel::setIdentity(const QUuid &uuid)
 {
+    identity_ = identityManager_.identityFromUuid(uuid);
+    reload();
+}
+
+void ContactsModel::reload()
+{
     beginResetModel();
 
     rows_.clear();
-    identity_ = identityManager_.identityFromUuid(uuid);
 
     if (identity_ != nullptr) {
         queryRows(rows_);
@@ -88,15 +95,8 @@ void ContactsModel::onContactAdded(const Contact::ptr_t &contact)
 
 void ContactsModel::onContactDeleted(const QUuid &uuid)
 {
-    int rowid = 0;
-    for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
-        if (it->uuid == uuid) {
-            beginRemoveRows({}, rowid, rowid);
-            rows_.erase(it);
-            endRemoveRows();
-            break;
-        }
-    }
+    Q_UNUSED(uuid);
+    reload();
 }
 
 int ContactsModel::rowCount(const QModelIndex &parent) const
@@ -113,6 +113,10 @@ QVariant ContactsModel::data(const QModelIndex &ix, int role) const
         // Lazy loading
         if (!r.contact) {
             r.contact = contactManager_.getContact(r.uuid);
+        }
+
+        if (!r.contact) {
+            return {};
         }
 
         assert(identity_ != nullptr);
@@ -154,4 +158,3 @@ void ContactsModel::queryRows(rows_t &rows)
 }
 
 }} // namespaces
-

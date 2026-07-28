@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 Page {
     id: root
@@ -10,6 +10,11 @@ Page {
     title: qsTr("Log")
 
     property bool follow: true
+    property color primaryText: "#334155"
+
+    background: Rectangle {
+        color: "#f7f9fc"
+    }
 
     header: ToolBar {
         RowLayout {
@@ -40,6 +45,9 @@ Page {
         clip: true
         anchors.fill: parent
         spacing: 0
+        ScrollBar.vertical: ScrollBar {
+            policy: ScrollBar.AsNeeded
+        }
 
         function scrollToLatest() {
             if (root.follow) {
@@ -54,7 +62,11 @@ Page {
             width: listView.width
             Rectangle {
                 anchors.fill: parent
-                color: level === 1 ? "#fff3b0" : "transparent"
+                color: level === 1 ? "#fff1f0"
+                       : level === 2 ? "#fff7e6"
+                       : (level === 3 || level === 4) ? "#eef6ff"
+                       : level === 5 ? "#edf9f7"
+                       : (index % 2 === 0 ? "#f7f9fc" : "#eef2f7")
             }
             Row {
                 id: row1
@@ -68,11 +80,11 @@ Page {
                     wrapMode: Text.WordWrap
                     anchors.verticalCenter: parent.verticalCenter
                     font.pointSize: 8
-                    color: level === 1 ? "#d32f2f"
-                           : level === 2 ? "#f57c00"
-                           : (level === 3 || level === 4) ? "#1976d2"
-                           : level === 5 ? "#00897b"
-                           : "#777777"
+                    color: level === 1 ? "#b42318"
+                           : level === 2 ? "#9a6700"
+                           : (level === 3 || level === 4) ? "#175cd3"
+                           : level === 5 ? "#087f5b"
+                           : root.primaryText
                 }
             }
         }

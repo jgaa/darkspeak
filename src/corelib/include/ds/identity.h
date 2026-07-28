@@ -204,7 +204,7 @@ private:
     std::deque<QUuid> getAllContacts() const;
 
     Contact::ptr_t contactFromHandle(const QString& handle);
-    Contact::ptr_t contactFromHash(const QString& hash);
+    Contact::ptr_t contactFromHash(const QByteArray& hash);
     Contact::ptr_t contactFromUuid(const QUuid& uuid);
 
     int id_ = -1; // Database id
@@ -212,6 +212,7 @@ private:
     IdentityData data_;
     QDateTime created_;
     bool avatarUrlChanging_ = false;
+    quint64 avatarVersion_ = 0;
 
     // Active Connections in any direction
     // Keeps connected Contacts in memory

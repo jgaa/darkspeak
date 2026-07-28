@@ -1,21 +1,20 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Dialogs
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 Dialog {
     id: root
     property Conversation conversation: null
+    modal: true
+    closePolicy: Popup.NoAutoClose
     standardButtons: path.text ? (Dialog.Ok | Dialog.Cancel) : Dialog.Cancel
     width: mainWindow.width < 450 ? mainWindow.width : 450
 
     function updateInfo(fpath) {
         name.text = files.getFileName(fpath)
         var len = files.getFileLength(fpath)
-        if (len) {
-            size.text = len
-        }
+        size.text = len >= 0 ? len.toString() : ""
     }
 
     ColumnLayout {
@@ -52,7 +51,10 @@ Dialog {
                     text: "...";
 
                     onClicked: {
-                        fileDialog.open()
+                        const selected = fileDialogs.openFile(
+                            qsTr("File to Send"), path.text)
+                        if (selected)
+                            path.text = selected
                     }
                 }
             }
@@ -69,15 +71,6 @@ Dialog {
             }
         }
 
-        FileDialog {
-            id: fileDialog
-            title: qsTr("File to Send")
-            fileMode: FileDialog.OpenFile
-
-            onAccepted: {
-                path.text = fileDialog.selectedFile
-            }
-        }
     }
 
     onAccepted: {

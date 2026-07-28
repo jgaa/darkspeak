@@ -1,3 +1,3 @@
 import QtQuick
 import QtQuick.Dialogs
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0

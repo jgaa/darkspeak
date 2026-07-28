@@ -24,9 +24,8 @@ ConnectionSocket::ConnectionSocket(QByteArray host,
     connect(this, &ConnectionSocket::disconnected,
             this, &ConnectionSocket::onDisconnected);
 
-//    // error() is ambigous
-//    connect(this, SIGNAL(error(SocketError)),
-//            this, SLOT(onSocketFailed(SocketError)));
+    connect(this, &QAbstractSocket::errorOccurred,
+            this, &ConnectionSocket::onSocketFailed);
 
     connect(this, &ConnectionSocket::readyRead, this, [this]() {
         inData += readAll();
@@ -81,9 +80,10 @@ void ConnectionSocket::onDisconnected()
 
 void ConnectionSocket::onSocketFailed(SocketError socketError)
 {
-    LFLOG_DEBUG << "Socket on connection " << uuid.toString()
-                << " was failed with error: "
-                << socketError;
+    LFLOG_WARN << "Socket connection " << uuid.toString()
+               << " to " << host_ << ":" << port_
+               << " failed with error " << socketError
+               << ": " << errorString();
 
     emit socketFailed(uuid, socketError);
 }

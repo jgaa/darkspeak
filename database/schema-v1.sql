@@ -31,7 +31,7 @@ CREATE TABLE conversation (
 );
 CREATE TABLE message (
     id INTEGER PRIMARY KEY,
-    conversation_id INTEGER NOT NULL REFERENCES conversation(id),
+    conversation_id INTEGER NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
     message_id BLOB NOT NULL UNIQUE,
     direction INTEGER NOT NULL,
     state INTEGER NOT NULL,
@@ -43,7 +43,7 @@ CREATE TABLE file (
     id INTEGER PRIMARY KEY,
     file_id BLOB NOT NULL UNIQUE,
     identity_id INTEGER NOT NULL REFERENCES identity(id),
-    contact_id INTEGER NOT NULL REFERENCES contact(id),
+    contact_id INTEGER NOT NULL REFERENCES contact(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     path TEXT,
     size INTEGER NOT NULL CHECK (size >= 0),

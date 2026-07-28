@@ -55,6 +55,7 @@ public:
 
 private:
     void queryRows(rows_t& rows);
+    void reload();
 
     rows_t rows_;
     core::IdentityManager& identityManager_;

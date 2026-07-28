@@ -40,6 +40,23 @@ MessagesModel::MessagesModel(QObject &parent)
             this, &MessagesModel::onFileDeleted);
     connect(fmgr, &FileManager::fileStateChanged,
             this, &MessagesModel::onFileStateChanged);
+    connect(DsEngine::instance().getContactManager(),
+            &ContactManager::contactDeleted,
+            this, &MessagesModel::onContactDeleted);
+}
+
+void MessagesModel::onContactDeleted(const QUuid &uuid)
+{
+    beginResetModel();
+    rows_.clear();
+
+    if (conversation_ && conversation_->getFirstParticipant()
+            && conversation_->getFirstParticipant()->getUuid() == uuid) {
+        conversation_.reset();
+    }
+
+    queryRows(rows_);
+    endResetModel();
 }
 
 void MessagesModel::setConversation(Conversation *conversation)

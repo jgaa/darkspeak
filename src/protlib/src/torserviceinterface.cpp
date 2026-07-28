@@ -77,6 +77,7 @@ TorServiceInterface::connectToService(const QByteArray &host, const uint16_t por
     LFLOG_DEBUG << "Connecting to "
                 << host << ":" << port
                 << " with connection-id " << connection->getUuid().toString();
+    LFLOG_TRACE << "Using SOCKS5 proxy " << socks_host_ << ":" << socks_port_;
 
     auto client = make_shared<DsClient>(connection, move(cd));
 

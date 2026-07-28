@@ -1,12 +1,17 @@
 
 #include <regex>
 #include <QDir>
+#include <QFileInfo>
 #include <QSqlQuery>
+#include <QStorageInfo>
 #include <QStandardPaths>
 
 #include "include/ds/filemanager.h"
+#include "ds/dsengine.h"
 
 #include "logfault/logfault.h"
+
+#include <limits>
 
 using namespace std;
 
@@ -139,6 +144,9 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
                    << " from peer " << conversation.getFirstParticipant()->getName()
                    << " on identity " << conversation.getIdentity()->getName()
                    << ": Suspicious file name!";
+        DsEngine::instance().reportStatus(
+            QObject::tr("Rejected file with an unsafe name"),
+            DsEngine::StatusLevel::WARNING);
 
         offer.peer->sendAck("IncomingFile", "Rejected", offer.fileId.toBase64());
         return;
@@ -156,11 +164,75 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
     data->size = offer.size;
     data->hash = offer.sha512;
 
-    if (addFile(move(data))) {
+    auto file = addFile(move(data));
+    if (file) {
         offer.peer->sendAck("IncomingFile", "Received", offer.fileId.toBase64());
+
+        const auto message = QObject::tr("Incoming file: %1 (%2 bytes) — waiting for approval")
+                .arg(file->getName()).arg(file->getSize());
+        DsEngine::instance().reportStatus(message, DsEngine::StatusLevel::WARNING);
+
+        if (settings_.value("autoAcceptIncomingFiles", false).toBool()) {
+            QString reason;
+            if (canAcceptIncoming(*file, reason)) {
+                file->accept();
+                DsEngine::instance().reportStatus(
+                    QObject::tr("Accepted incoming file automatically: %1").arg(file->getName()));
+            } else {
+                DsEngine::instance().reportStatus(
+                    QObject::tr("Incoming file was not accepted: %1").arg(reason),
+                    DsEngine::StatusLevel::ERROR);
+            }
+        }
     } else {
+        DsEngine::instance().reportStatus(
+            QObject::tr("Failed to receive file"),
+            DsEngine::StatusLevel::ERROR);
         offer.peer->sendAck("IncomingFile", "Failed", offer.fileId.toBase64());
     }
+}
+
+bool FileManager::canAcceptIncoming(const File& file, QString& reason) const
+{
+    if (file.getDirection() != File::INCOMING) {
+        reason = QObject::tr("This is not an incoming file");
+        return false;
+    }
+
+    const qint64 size = file.getSize();
+    if (size < 0) {
+        reason = QObject::tr("The announced file size is invalid");
+        return false;
+    }
+
+    const qint64 maxMb = settings_.value("maxIncomingFileSizeMb", 1024).toLongLong();
+    const qint64 maxBytes = maxMb > 0 && maxMb <= (std::numeric_limits<qint64>::max() / (1024 * 1024))
+            ? maxMb * 1024 * 1024 : 0;
+    if (maxBytes <= 0 || size > maxBytes) {
+        reason = QObject::tr("File exceeds the configured receive limit (%1 MB)").arg(maxMb);
+        return false;
+    }
+
+    const QStorageInfo storage(QFileInfo(file.getPath()).absolutePath());
+    if (!storage.isValid() || !storage.isReady()) {
+        reason = QObject::tr("The download storage is unavailable");
+        return false;
+    }
+
+    const qint64 configuredPercent = settings_.value(
+        "minimumFreeSpacePercent", 10).toLongLong();
+    const qint64 minimumPercent = qBound<qint64>(qint64{0}, configuredPercent, qint64{100});
+    const qint64 available = storage.bytesAvailable();
+    const qint64 total = storage.bytesTotal();
+    const qint64 requiredReserve = total > 0
+            ? (total / 100) * minimumPercent + ((total % 100) * minimumPercent) / 100
+            : 0;
+    if (available < size || available - size < requiredReserve) {
+        reason = QObject::tr("There is not enough free space in the download location");
+        return false;
+    }
+
+    return true;
 }
 
 void FileManager::touch(const File::ptr_t &file)

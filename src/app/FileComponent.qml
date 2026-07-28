@@ -1,9 +1,37 @@
 import QtQuick
 import QtQuick.Controls
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 Item {
     property var fileColors: ["silver", "blue", "silver", "orange", "yellow", "yellowgreen", "lightgreen", "red", "red", "red"]
+
+    function chatDate(value) {
+        if (!value) {
+            return ""
+        }
+
+        var date = new Date(value)
+        if (isNaN(date.getTime())) {
+            return ""
+        }
+
+        var now = new Date()
+        var today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        var fileDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+        var days = Math.round((today.getTime() - fileDay.getTime()) / 86400000)
+
+        if (days === 0) {
+            return qsTr("today") + " " + Qt.formatDateTime(date, "hh:mm")
+        }
+        if (days === 1) {
+            return qsTr("yesterday") + " " + Qt.formatDateTime(date, "hh:mm")
+        }
+
+        var weekdays = [qsTr("sun"), qsTr("mon"), qsTr("tue"), qsTr("wed"),
+                        qsTr("thu"), qsTr("fri"), qsTr("sat")]
+        return weekdays[date.getDay()] + " " + Qt.formatDateTime(date, "yyyy-MM-dd hh:mm")
+    }
+
 
     function pickColor(file) {
         if (typeof file.state !== 'number') {
@@ -17,7 +45,11 @@ Item {
         var height = 48
 
         if (file.direction === File.INCOMING && file.state === File.FS_OFFERED) {
-            height += 32
+            height = 84
+        } else if (file.state === File.FS_QUEUED
+                   || file.state === File.FS_TRANSFERRING
+                   || file.state === File.FS_HASHING) {
+            height = 64
         }
 
         return height
@@ -59,7 +91,7 @@ Item {
         text: cData.stateName ? qsTr(cData.stateName) : ""
     }
 
-    FormattedTime {
+    Text {
         id: date
         anchors.right: background.right
         anchors.top: background.top
@@ -67,7 +99,7 @@ Item {
         font.pointSize: 8
         color: cData.direction === Message.INCOMING
             ? "darkblue" : "darkgreen"
-        value: cData.composedTime
+        text: chatDate(cData.composedTime)
     }
 
     Image {
@@ -111,6 +143,9 @@ Item {
         from: 0.0
         to: 1.0
         value: cFile.progress
+        visible: cFile.state === File.FS_QUEUED
+                 || cFile.state === File.FS_TRANSFERRING
+                 || cFile.state === File.FS_HASHING
     }
 
     MouseArea {
@@ -133,7 +168,7 @@ Item {
         id: accepptBtn
         height: 28
         text: qsTr("Accept")
-        anchors.top: fileName.bottom
+        anchors.top: pbar.visible ? pbar.bottom : fileName.bottom
         anchors.topMargin: 4
         anchors.left: fileName.left
         anchors.leftMargin: 0

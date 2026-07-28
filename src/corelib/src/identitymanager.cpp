@@ -259,6 +259,9 @@ Identity *IdentityManager::addIdentity(const IdentityData &data)
         LFLOG_ERROR << "Failed to add identity with name '"
                     << identity->getName()
                     << "' to the database: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to add identity: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
         delete identity;
         return nullptr;
     }
@@ -270,8 +273,18 @@ Identity *IdentityManager::addIdentity(const IdentityData &data)
 void IdentityManager::removeIdentity(const QUuid &uuid)
 {
     if (auto identity = identityFromUuid(uuid)) {
+        try {
+            identity->deleteFromDb();
+        } catch (const std::exception& ex) {
+            LFLOG_ERROR << "Failed to delete identity " << uuid.toString()
+                        << ": " << ex.what();
+            DsEngine::instance().reportStatus(
+                tr("Failed to delete identity: %1").arg(QString::fromUtf8(ex.what())),
+                DsEngine::StatusLevel::ERROR);
+            return;
+        }
+
         removeIndex(identity, true);
-        identity->deleteFromDb();
         delete identity;
         endRemoveRows();
     }

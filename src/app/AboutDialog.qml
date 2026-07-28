@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import com.jgaa.darkspeak 1.0
+import org.darkspeak 1.0
 
 Dialog {
     id: root
@@ -33,7 +33,7 @@ Dialog {
                 rowSpacing: 8
 
                 Label { text: qsTr("Application") }
-                Label { text: manager.programNameAndVersion }
+                Label { text: manager ? (manager.programNameAndVersion || "") : "" }
 
                 Label { text: qsTr("Qt version") }
                 Label { text: Qt.version }

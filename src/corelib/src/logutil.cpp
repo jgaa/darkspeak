@@ -18,12 +18,12 @@ namespace  {
 
 } // anonymous namespace
 
-bool isEnabled(const LogSystem system)
+bool isEnabled(const QSettings& settings, const LogSystem system)
 {
-    return getLogLevel(system) != logfault::LogLevel::DISABLED;
+    return getLogLevel(settings, system) != logfault::LogLevel::DISABLED;
 }
 
-logfault::LogLevel getLogLevel(const LogSystem system)
+logfault::LogLevel getLogLevel(const QSettings& settings, const LogSystem system)
 {
     static const std::array<logfault::LogLevel, 7> levels = { logfault::LogLevel::DISABLED,
                                                               logfault::LogLevel::ERROR,
@@ -33,7 +33,7 @@ logfault::LogLevel getLogLevel(const LogSystem system)
                                                               logfault::LogLevel::DEBUGGING,
                                                               logfault::LogLevel::TRACE };
 
-    const auto level = DsEngine::instance().settings().value(getLogKey(system), 0).toInt();
+    const auto level = settings.value(getLogKey(system), 0).toInt();
     return levels.at(static_cast<size_t>(level));
 }
 

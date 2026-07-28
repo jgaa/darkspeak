@@ -35,7 +35,9 @@ CertImpl::CertImpl(const safe_array_t &cert, const What what)
         }
 
         init();
-        cert_ = cert;
+        // Keep the views created by init() valid. Assigning cert_ here would
+        // replace its allocation and leave those views dangling.
+        memcpy(cert_.data(), cert.cdata(), cert.size());
     } else {
         if (cert.size() != crypto_sign_PUBLICKEYBYTES) {
             throw runtime_error("Invalid pubkey size");
@@ -46,6 +48,7 @@ CertImpl::CertImpl(const safe_array_t &cert, const What what)
             throw runtime_error("Invalid public key storage size");
         }
         memcpy(signPubKey_.data(), cert.cdata(), signPubKey_.size());
+        serializedCert_.assign(cert);
         deriveCryptoKeys(false);
     }
 
@@ -73,6 +76,7 @@ void CertImpl::CalculateHash()
 
 void CertImpl::init(const bool privateKeys)
 {
+    privateKeys_ = privateKeys;
     hash_.resize(crypto_generichash_BYTES);
     cert_.resize(privateKeys
                  ? crypto_sign_SECRETKEYBYTES + crypto_sign_PUBLICKEYBYTES
@@ -115,7 +119,7 @@ void CertImpl::deriveCryptoKeys(bool deriveKey)
 
 const DsCert::safe_array_t& CertImpl::getCert() const
 {
-    return cert_;
+    return privateKeys_ ? cert_ : serializedCert_;
 }
 
 const DsCert::safe_view_t &CertImpl::getSigningKey() const

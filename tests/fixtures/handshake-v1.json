@@ -12,7 +12,10 @@
     "encryption": "recipient_curve25519_public_key"
   },
   "stream_frame": {
-    "fields": ["encrypted_length_u16_be", "encrypted_version_u8", "encrypted_channel_u32_be", "encrypted_request_id_u64_be", "encrypted_payload"],
+    "fields": ["encrypted_length_u16_be", "encrypted_frame_version_u8", "encrypted_channel_u32_be", "encrypted_frame_id_u64_be", "encrypted_payload"],
+    "frame_version": 2,
+    "control_envelope": {"protocol": 2, "type": "..."},
+    "capabilities": ["frame-v2", "file-window-v1", "keepalive-v1"],
     "authentication": "crypto_secretstream_xchacha20poly1305"
   }
 }

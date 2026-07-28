@@ -30,6 +30,13 @@ public:
     using AppState = ds::core::DsEngine::State;
     using OnlineState = ds::core::ProtocolManager::State;
 
+    enum StatusLevel {
+        INFO = ds::core::DsEngine::INFO,
+        WARNING = ds::core::DsEngine::WARNING,
+        ERROR = ds::core::DsEngine::ERROR
+    };
+    Q_ENUM(StatusLevel)
+
     enum Pages {
         LOG,
         IDENTITIES,
@@ -50,6 +57,8 @@ public:
     Q_PROPERTY(int online READ isOnline NOTIFY onlineChanged)
     Q_PROPERTY(QString torVersion READ getTorVersion NOTIFY torVersionChanged)
     Q_PROPERTY(QUrl onlineStatusIcon READ getOnlineStatusIcon NOTIFY onlineStatusIconChanged)
+    Q_PROPERTY(QString statusMessage READ getStatusMessage NOTIFY statusMessageChanged)
+    Q_PROPERTY(StatusLevel statusLevel READ getStatusLevel NOTIFY statusMessageChanged)
 
     Q_INVOKABLE LogModel *logModel();
     Q_INVOKABLE ContactsModel *contactsModel();
@@ -58,6 +67,8 @@ public:
     Q_INVOKABLE MessagesModel *messagesModel();
     Q_INVOKABLE FilesModel *filesModel();
     Q_INVOKABLE void textToClipboard(const QString& text);
+    Q_INVOKABLE void createIdentityQrCode(const QString& identityName,
+                                          const QString& identity);
     Q_INVOKABLE QVariantMap getIdenityFromClipboard() const;
     Q_INVOKABLE static QString urlToPath(const QString& url);
     Q_INVOKABLE static QString pathToUrl(const QString& path);
@@ -66,8 +77,11 @@ public:
     Q_INVOKABLE void setTmpImageFromImage(QImage& image);
     Q_INVOKABLE void clearTmpImage();
     Q_INVOKABLE QImage getTmpImage() const;
+    Q_INVOKABLE void deleteContact(const QUuid& uuid);
+    Q_INVOKABLE void setStatusMessage(const QString& message,
+                                      StatusLevel level = INFO);
 
-    Manager();
+    explicit Manager(const QString& logFile = {}, const QString& logLevel = {});
 
     static Manager& instance() noexcept {
         assert(instance_);
@@ -84,6 +98,8 @@ public slots:
     int getCurrentPage();
     void setCurrentPage(int page);
     QUrl getOnlineStatusIcon() const;
+    QString getStatusMessage() const;
+    StatusLevel getStatusLevel() const;
     void goOnline();
     void goOffline();
     void onQuit();
@@ -95,6 +111,7 @@ signals:
     void onlineStatusIconChanged();
     void onlineChanged();
     void torVersionChanged();
+    void statusMessageChanged();
 
 private:
     static Manager *instance_;
@@ -109,6 +126,8 @@ private:
     std::unique_ptr<FilesModel> filesModel_;
     int page_ = 3; // Home
     std::unique_ptr<QImage> tmpImage_;
+    QString status_message_;
+    StatusLevel status_level_ = INFO;
 };
 
 }} // namespaces

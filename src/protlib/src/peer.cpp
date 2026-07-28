@@ -1,13 +1,20 @@
 #include <array>
 #include <algorithm>
 #include <vector>
+#include <map>
+#include <chrono>
 #include <cassert>
 #include <regex>
 
 #include <sodium.h>
 
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
+#include <QFile>
+#include <QSaveFile>
+#include <QFileInfo>
+#include <QRandomGenerator>
 #include <QtEndian>
 
 #include "ds/peer.h"
@@ -42,13 +49,44 @@ public:
         if (file->getDirection() != File::INCOMING) {
             throw Error("Invalid direction for incoming file channel");
         }
-        if (!io_.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            LFLOG_ERROR << "Failed to open \"" << file->getDownloadPath()
-                        << "\" for write: " << io_.errorString();
-            throw Error("Failed to open file");
+        const auto partialPath = file->getDownloadPath();
+        const auto metadataPath = partialPath + QStringLiteral(".meta");
+        QFileInfo partialInfo{partialPath};
+        const auto metadata = readMetadata(metadataPath);
+        bool resume = false;
+        quint64 savedOffset = {};
+        if (!metadata.isEmpty()
+                && metadata.value("fileId").toString()
+                    == QString::fromLatin1(file->getFileId().toBase64())
+                && metadata.value("size").toString() == QString::number(file->getSize())
+                && metadata.value("hash").toString()
+                    == QString::fromLatin1(file->getHash().toBase64())) {
+            bool ok = false;
+            savedOffset = metadata.value("offset").toString().toULongLong(&ok);
+            const auto prefixHash = metadata.value("prefixHash").toString().toLatin1();
+            resume = ok && savedOffset > 0 && savedOffset <= static_cast<quint64>(file->getSize())
+                    && savedOffset % buffer_bytes == 0
+                    && partialInfo.exists() && partialInfo.size() == static_cast<qint64>(savedOffset)
+                    && prefixHash == hashPrefix(partialPath).toBase64();
         }
 
-        file->setBytesTransferred(0);
+        if (resume) {
+            if (!io_.open(QIODevice::WriteOnly | QIODevice::Append)) {
+                throw Error("Failed to resume file");
+            }
+            nextOffset_ = savedOffset;
+            nextSequence_ = savedOffset / buffer_bytes;
+        } else {
+            QFile::remove(partialPath);
+            QFile::remove(metadataPath);
+            if (!io_.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                throw Error("Failed to open file");
+            }
+        }
+
+        initializePrefixHash();
+        file->setBytesTransferred(static_cast<qlonglong>(nextOffset_));
+        saveMetadata();
 
         LFLOG_DEBUG << "Opened file #" << file->getId()
                     << " with path \"" << file->getDownloadPath()
@@ -60,21 +98,83 @@ public:
     void onIncoming(Peer &peer, const quint64 id,
                     const Peer::mview_t& data,
                     const bool final) override {
-        Q_UNUSED(peer);
-        if (io_.write(reinterpret_cast<const char *>(data.cdata()),
-                      static_cast<qint64>(data.size())) != static_cast<qint64>(data.size())) {
+        if (data.size() < Peer::file_chunk_header_bytes) {
+            throw Error("File chunk is smaller than its header");
+        }
+
+        quint64 sequence = {};
+        quint64 offset = {};
+        memcpy(&sequence, data.cdata(), sizeof(sequence));
+        memcpy(&offset, data.cdata() + sizeof(sequence), sizeof(offset));
+        sequence = qFromBigEndian(sequence);
+        offset = qFromBigEndian(offset);
+
+        if (sequence < nextSequence_) {
+            if (finalReceived_ && file_->getState() == File::FS_HASHING) {
+                return;
+            }
+            sendAck(peer, nextSequence_ - 1, nextOffset_, finalReceived_);
+            return;
+        }
+        if (sequence != nextSequence_ || offset != nextOffset_) {
+            throw Error("File chunk is outside the receive window");
+        }
+
+        const auto payloadSize = data.size() - Peer::file_chunk_header_bytes;
+        if (payloadSize > Peer::file_chunk_bytes) {
+            throw Error("File chunk exceeds the negotiated chunk size");
+        }
+        const auto fileSize = static_cast<quint64>(file_->getSize());
+        if (nextOffset_ > fileSize
+                || payloadSize > fileSize - nextOffset_) {
+            throw Error("File chunk exceeds the announced file size");
+        }
+        if (payloadSize == 0 && (!final || nextOffset_ != fileSize)) {
+            throw Error("Empty non-final file chunk");
+        }
+        if (final && nextOffset_ + payloadSize != fileSize) {
+            throw Error("Final file chunk has an invalid size");
+        }
+        const auto payload = reinterpret_cast<const char *>(
+            data.cdata() + Peer::file_chunk_header_bytes);
+        if (io_.write(payload, static_cast<qint64>(payloadSize))
+                != static_cast<qint64>(payloadSize)) {
             LFLOG_ERROR << "Failed to write chunk "
                         << id << " to \"" << file_->getDownloadPath()
                         << "\" for write: " << io_.errorString();
-            throw Error("Failed to write to file");
+            file_->transferFailed(QStringLiteral("Failed to write received file: ")
+                                  + io_.errorString(), File::FS_FAILED);
+            return;
         }
 
-        file_->addBytesTransferred(data.size());
+        ++nextSequence_;
+        nextOffset_ += static_cast<quint64>(payloadSize);
+        crypto_hash_sha256_update(&prefixState_,
+                                  reinterpret_cast<const unsigned char *>(payload),
+                                  static_cast<size_t>(payloadSize));
+        file_->setBytesTransferred(static_cast<qlonglong>(nextOffset_));
+        try {
+            saveMetadata();
+        } catch (const std::exception& ex) {
+            file_->transferFailed(QStringLiteral("Failed to save received file state: ")
+                                  + ex.what(), File::FS_FAILED);
+            return;
+        }
+        finalReceived_ = final;
 
         if (final) {
-            io_.flush();
+            if (!io_.flush()) {
+                file_->transferFailed(QStringLiteral("Failed to flush received file: ")
+                                      + io_.errorString(), File::FS_FAILED);
+                return;
+            }
             io_.close();
+            pendingFinal_ = true;
+            finalSequence_ = sequence;
+            finalOffset_ = nextOffset_;
             file_->validateHash();
+        } else {
+            sendAck(peer, sequence, nextOffset_, false);
         }
     }
 
@@ -84,9 +184,121 @@ public:
         return {};
     }
 
+    qlonglong resumeOffset() const noexcept override
+    {
+        return static_cast<qlonglong>(nextOffset_);
+    }
+
+    void onTransferDone(Peer& peer, bool success) override
+    {
+        if (!success || !pendingFinal_) {
+            return;
+        }
+        try {
+            sendAck(peer, finalSequence_, finalOffset_, true);
+        } catch (const std::exception& ex) {
+            LFLOG_WARN << "Failed to send final file acknowledgement: " << ex.what();
+        }
+        pendingFinal_ = false;
+    }
+
 private:
+    static constexpr quint64 buffer_bytes = Peer::file_chunk_bytes;
+
+    static QJsonObject readMetadata(const QString& path)
+    {
+        QFile metadataFile{path};
+        if (!metadataFile.open(QIODevice::ReadOnly)) {
+            return {};
+        }
+        const auto document = QJsonDocument::fromJson(metadataFile.readAll());
+        return document.isObject() ? document.object() : QJsonObject{};
+    }
+
+    static QByteArray hashPrefix(const QString& path)
+    {
+        QFile input{path};
+        if (!input.open(QIODevice::ReadOnly)) {
+            return {};
+        }
+        crypto_hash_sha256_state state{};
+        crypto_hash_sha256_init(&state);
+        std::array<unsigned char, buffer_bytes> buffer{};
+        while (!input.atEnd()) {
+            const auto bytes = input.read(reinterpret_cast<char *>(buffer.data()), buffer.size());
+            if (bytes < 0) {
+                return {};
+            }
+            crypto_hash_sha256_update(&state, buffer.data(), static_cast<size_t>(bytes));
+        }
+        QByteArray hash(crypto_hash_sha256_BYTES, Qt::Uninitialized);
+        crypto_hash_sha256_final(&state, reinterpret_cast<unsigned char *>(hash.data()));
+        return hash;
+    }
+
+    void initializePrefixHash()
+    {
+        crypto_hash_sha256_init(&prefixState_);
+        QFile input{file_->getDownloadPath()};
+        if (!input.open(QIODevice::ReadOnly)) {
+            throw Error("Failed to open partial file for hashing");
+        }
+        std::array<unsigned char, buffer_bytes> buffer{};
+        while (!input.atEnd()) {
+            const auto bytes = input.read(reinterpret_cast<char *>(buffer.data()), buffer.size());
+            if (bytes < 0) {
+                throw Error("Failed to read partial file for hashing");
+            }
+            crypto_hash_sha256_update(&prefixState_, buffer.data(), static_cast<size_t>(bytes));
+        }
+    }
+
+    QByteArray currentPrefixHash() const
+    {
+        auto state = prefixState_;
+        QByteArray hash(crypto_hash_sha256_BYTES, Qt::Uninitialized);
+        crypto_hash_sha256_final(&state, reinterpret_cast<unsigned char *>(hash.data()));
+        return hash;
+    }
+
+    void saveMetadata()
+    {
+        QSaveFile metadataFile{file_->getDownloadPath() + QStringLiteral(".meta")};
+        if (!metadataFile.open(QIODevice::WriteOnly)) {
+            throw Error("Failed to save transfer metadata");
+        }
+        const QJsonObject metadata{
+            {"fileId", QString::fromLatin1(file_->getFileId().toBase64())},
+            {"size", QString::number(file_->getSize())},
+            {"hash", QString::fromLatin1(file_->getHash().toBase64())},
+            {"offset", QString::number(nextOffset_)},
+            {"prefixHash", QString::fromLatin1(currentPrefixHash().toBase64())}
+        };
+        metadataFile.write(QJsonDocument{metadata}.toJson(QJsonDocument::Compact));
+        if (!metadataFile.commit()) {
+            throw Error("Failed to commit transfer metadata");
+        }
+    }
+
+    void sendAck(Peer& peer, quint64 sequence, quint64 offset, bool final)
+    {
+        peer.sendAck("IncomingFile", "ChunkAck", QVariantMap{
+            {"data", file_->getFileId().toBase64()},
+            {"sequence", QString::number(sequence)},
+            {"offset", QString::number(offset)},
+            {"final", final ? QStringLiteral("1") : QStringLiteral("0")}
+        });
+    }
+
     QFile io_;
     File::ptr_t file_;
+    crypto_hash_sha256_state prefixState_{};
+    quint64 nextSequence_ = {};
+    quint64 nextOffset_ = {};
+    bool finalReceived_ = false;
+    bool pendingFinal_ = false;
+    quint64 finalSequence_ = {};
+    quint64 finalOffset_ = {};
 };
 
 class OutgoingFileChannel : public Peer::Channel {
@@ -104,7 +316,16 @@ public:
             throw Error("Failed to open file");
         }
 
-        file->setBytesTransferred(0);
+        const auto resumeOffset = file->getBytesTransferred();
+        if (resumeOffset < 0 || resumeOffset > file->getSize()
+                || resumeOffset % static_cast<qlonglong>(buffer_.size()) != 0
+                || !io_.seek(resumeOffset)) {
+            throw Error("Invalid file resume offset");
+        }
+        nextOffset_ = static_cast<quint64>(resumeOffset);
+        nextSequence_ = nextOffset_ / buffer_.size();
+
+        file->setBytesTransferred(resumeOffset);
 
         LFLOG_DEBUG << "Opened file #" << file->getId()
                     << " with path \"" << file->getPath()
@@ -123,34 +344,140 @@ public:
     }
 
     uint64_t onOutgoing(Peer &peer) override {
+        uint64_t lastFrame = {};
+        while (inFlight_.size() < Peer::file_window_chunks && !endQueued_) {
+            const auto bytesRead = io_.read(buffer_.data(), static_cast<int>(buffer_.size()));
+            if (bytesRead < 0) {
+                file_->transferFailed("Disk Read Error", File::FS_FAILED);
+                return {};
+            }
 
-        auto bytesRead = io_.read(buffer_.data(), static_cast<int>(buffer_.size()));
-        if (bytesRead < 0) {
-            LFLOG_ERROR << "Failed to read chunk from file \"" << file_->getPath()
-                        << "\": " << io_.errorString();
-            file_->transferFailed("Disk Read Error");
-            return {};
+            const bool finished = io_.atEnd();
+            QByteArray payload;
+            payload.resize(static_cast<int>(Peer::file_chunk_header_bytes + bytesRead));
+            const auto sequence = nextSequence_++;
+            const auto offset = nextOffset_;
+            const auto wireSequence = qToBigEndian(sequence);
+            const auto wireOffset = qToBigEndian(offset);
+            memcpy(payload.data(), &wireSequence, sizeof(wireSequence));
+            memcpy(payload.data() + sizeof(wireSequence), &wireOffset, sizeof(wireOffset));
+            memcpy(payload.data() + Peer::file_chunk_header_bytes,
+                   buffer_.data(), static_cast<size_t>(bytesRead));
+
+            try {
+                lastFrame = peer.send(payload.constData(), static_cast<size_t>(payload.size()),
+                                      file_->getChannel(), finished);
+            } catch (const std::exception& ex) {
+                file_->transferFailed(QStringLiteral("Failed to send file chunk: ")
+                                      + ex.what(), File::FS_FAILED);
+                return {};
+            }
+
+            inFlight_.emplace(sequence, PendingChunk{
+                payload, finished, 0, std::chrono::steady_clock::now(),
+                offset, nextOffset_ + static_cast<quint64>(bytesRead)});
+            nextOffset_ += static_cast<quint64>(bytesRead);
+            endQueued_ = finished;
+        }
+        return lastFrame;
+    }
+
+    void onAck(Peer& peer, quint64 sequence, qlonglong offset, bool final) override
+    {
+        Q_UNUSED(peer)
+        if (file_->getState() == File::FS_DONE) {
+            return;
+        }
+        if (file_->getState() != File::FS_TRANSFERRING) {
+            throw Error("Acknowledgement for inactive file transfer");
+        }
+        if (sequence >= nextSequence_ || offset < 0
+                || static_cast<quint64>(offset) > static_cast<quint64>(file_->getSize())) {
+            throw Error("Invalid file acknowledgement");
         }
 
-        const bool finished = io_.atEnd();
+        // Cumulative ACKs may be repeated. They must describe exactly the
+        // same contiguous prefix and may not move the sender's offset.
+        if (haveAcknowledgement_ && sequence <= acknowledgedSequence_) {
+            if (offset != acknowledgedOffset_ || final) {
+                throw Error("Inconsistent duplicate file acknowledgement");
+            }
+            return;
+        }
 
-        auto rval = peer.send(buffer_.data(),
-                  static_cast<size_t>(bytesRead),
-                  file_->getChannel(), finished);
+        const auto pending = inFlight_.find(sequence);
+        if (pending == inFlight_.end()
+                || offset != static_cast<qlonglong>(pending->second.endOffset)) {
+            throw Error("File acknowledgement does not match the chunk");
+        }
 
-        file_->addBytesTransferred(static_cast<size_t>(bytesRead));
+        auto it = inFlight_.begin();
+        while (it != inFlight_.end() && it->first <= sequence) {
+            it = inFlight_.erase(it);
+        }
 
-        if (finished) {
+        const auto acknowledged = static_cast<qlonglong>(offset);
+        acknowledgedSequence_ = sequence;
+        acknowledgedOffset_ = acknowledged;
+        haveAcknowledgement_ = true;
+        if (acknowledged > file_->getBytesTransferred()) {
+            file_->setBytesTransferred(acknowledged);
+        }
+
+        if (final) {
+            if (!endQueued_ || sequence + 1 != nextSequence_ || !inFlight_.empty()
+                    || acknowledged != file_->getSize()) {
+                throw Error("Invalid final file acknowledgement");
+            }
             file_->transferComplete();
         }
+    }
 
-        return rval;
+    void onTimeout(Peer& peer) override
+    {
+        const auto now = std::chrono::steady_clock::now();
+        for (auto &[sequence, pending] : inFlight_) {
+            Q_UNUSED(sequence)
+            if (now - pending.sent < std::chrono::seconds(2)) {
+                continue;
+            }
+            if (pending.retries >= Peer::file_retry_limit) {
+                file_->transferFailed("File transfer acknowledgement timeout", File::FS_FAILED);
+                return;
+            }
+            try {
+                peer.send(pending.payload.constData(), static_cast<size_t>(pending.payload.size()),
+                          file_->getChannel(), pending.final);
+            } catch (const std::exception& ex) {
+                file_->transferFailed(QStringLiteral("Failed to retransmit file chunk: ")
+                                      + ex.what(), File::FS_FAILED);
+                return;
+            }
+            pending.sent = now;
+            ++pending.retries;
+        }
     }
 
 private:
+    struct PendingChunk {
+        QByteArray payload;
+        bool final = false;
+        int retries = {};
+        std::chrono::steady_clock::time_point sent;
+        quint64 offset = {};
+        quint64 endOffset = {};
+    };
+
     QFile io_;
     File::ptr_t file_;
-    std::array<char, 1024 * 8> buffer_ = {};
+    std::array<char, Peer::file_chunk_bytes> buffer_ = {};
+    std::map<quint64, PendingChunk> inFlight_;
+    quint64 nextSequence_ = {};
+    quint64 nextOffset_ = {};
+    bool endQueued_ = false;
+    bool haveAcknowledgement_ = false;
+    quint64 acknowledgedSequence_ = {};
+    qlonglong acknowledgedOffset_ = {};
 };
 
 
@@ -170,6 +497,18 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
     , uuid_{connection_->getUuid()}
 {
     useConnection(connection.get());
+    keepAliveTimer_.setSingleShot(true);
+    connect(&keepAliveTimer_, &QTimer::timeout,
+            this, &Peer::sendKeepAlive);
+    auto *transferTimer = new QTimer(this);
+    transferTimer->setInterval(1000);
+    connect(transferTimer, &QTimer::timeout, this, [this]() {
+        for (const auto& [channel, instance] : outChannels_) {
+            Q_UNUSED(channel)
+            instance->onTimeout(*this);
+        }
+    });
+    transferTimer->start();
     connect(this, &Peer::closeLater,
             this, &Peer::onCloseLater,
             Qt::QueuedConnection);
@@ -193,8 +532,15 @@ uint64_t Peer::send(const QJsonDocument &json)
     if (!connection_->isOpen()) {
         throw runtime_error("Connection is closed");
     }
+    resetIdleTimer();
 
-    auto jsonData = json.toJson(QJsonDocument::Compact);
+    if (!json.isObject()) {
+        throw Error("Control packet must be a JSON object");
+    }
+
+    auto object = json.object();
+    object.insert("protocol", control_version);
+    auto jsonData = QJsonDocument{object}.toJson(QJsonDocument::Compact);
 
     LFLOG_TRACE << "Sending json to "
                 << connection_->getUuid().toString()
@@ -216,6 +562,7 @@ uint64_t Peer::send(const void *data, const size_t bytes,
     if (!connection_->isOpen()) {
         throw runtime_error("Connection is closed");
     }
+    resetIdleTimer();
 
     // Data format:
     // Two bytes length | one byte version | four bytes channel | 8 bytes id | data
@@ -232,6 +579,12 @@ uint64_t Peer::send(const void *data, const size_t bytes,
             buffer(len),
             cipherlen(2 + crypt_bytes),
             ciphertext(len + crypt_bytes);
+    const auto wireBytes = cipherlen.size() + ciphertext.size();
+    if (connection_->queuedBytes() > ConnectionSocket::maxOutgoingBytes()
+            || wireBytes > ConnectionSocket::maxOutgoingBytes()
+            - connection_->queuedBytes()) {
+        throw runtime_error("Connection output queue limit exceeded");
+    }
     mview_t version{buffer.data(), 1};
     mview_t channel{version.end(), 4};
     mview_t id{channel.end(), 8};
@@ -247,7 +600,7 @@ uint64_t Peer::send(const void *data, const size_t bytes,
 
     valueToBytes(qToBigEndian(static_cast<quint16>(len)), payload_len);
 
-    version.at(0) = '\1';
+    version.at(0) = static_cast<char>(frame_version);
 
     valueToBytes(qToBigEndian(static_cast<quint32>(ch)), channel);
     valueToBytes(qToBigEndian(static_cast<quint64>(++request_id_)), id);
@@ -267,8 +620,6 @@ uint64_t Peer::send(const void *data, const size_t bytes,
         throw runtime_error("Stream encryption failed");
     }
 
-    connection_->write(cipherlen);
-
     LFLOG_TRACE << "Sending chunk #"
                 << request_id_
                 << " with payload of "
@@ -285,23 +636,39 @@ uint64_t Peer::send(const void *data, const size_t bytes,
         throw runtime_error("Stream encryption failed");
     }
 
-    connection_->write(ciphertext);
+    // Queue the two wire parts atomically. If the bounded socket queue cannot
+    // accept the complete frame, neither its length nor its body is queued.
+    QByteArray wireFrame;
+    wireFrame.reserve(cipherlen.size() + ciphertext.size());
+    wireFrame.append(reinterpret_cast<const char *>(cipherlen.data()),
+                     static_cast<qsizetype>(cipherlen.size()));
+    wireFrame.append(reinterpret_cast<const char *>(ciphertext.data()),
+                     static_cast<qsizetype>(ciphertext.size()));
+    connection_->write(wireFrame);
     return request_id_;
 }
 
 void Peer::onReceivedData(const quint32 channel, const quint64 id,
                           const Peer::mview_t& data, const bool final)
 {
+    if (id == 0 || id <= last_received_request_id_) {
+        protocolError(QStringLiteral("Non-monotonic frame id"));
+    }
+    last_received_request_id_ = id;
+    resetIdleTimer();
+
     if (channel == 0) {
-        onReceivedJson(channel, data);
+        if (final) {
+            protocolError(QStringLiteral("Control frame cannot be final"));
+        }
+        onReceivedJson(id, data);
     } else {
         auto it = inChannels_.find(channel);
         if (it == inChannels_.end()) {
             LFLOG_WARN << "Data to unknown channel #" << channel
                        << " on connection " << getConnectionId().toString();
 
-            // TODO: What do we do about it?
-            return;
+            protocolError(QStringLiteral("Unknown channel"));
         }
 
         Channel::ptr_t channelInstance;
@@ -327,32 +694,67 @@ void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
         return;
     }
 
-    // Control channel. Data is supposed to be Json.
-    QJsonDocument json = QJsonDocument::fromJson(data.toByteArray());
-    if (json.isNull()) {
+    QJsonParseError parseError;
+    const QJsonDocument json = QJsonDocument::fromJson(data.toByteArray(), &parseError);
+    if (json.isNull() || !json.isObject()) {
         LFLOG_ERROR << "Incoming data on " << getConnectionId().toString()
                     << " with id=" << id
                     << " is supposed to be in Json format, but it is not.";
-        throw Error("Not Json");
+        protocolError(QStringLiteral("Control packet is not a JSON object"));
     }
 
-    LFLOG_TRACE << "Receinedc json to identity " << getIdentityId().toString() << ": " << json.toJson().toStdString();
-    const auto type = json.object().value("type");
+    const auto object = json.object();
+    if (object.value("protocol").toInt(-1) != control_version) {
+        protocolError(QStringLiteral("Unsupported control protocol version"));
+    }
 
-    if (type == "AddMe") {
+    const auto type = object.value("type").toString();
+    if (type.isEmpty()) {
+        protocolError(QStringLiteral("Control packet has no type"));
+    }
+    if (!capabilitiesReceived_ && type != QStringLiteral("Capabilities")) {
+        protocolError(QStringLiteral("Control packet received before capabilities"));
+    }
+
+    if (type == QStringLiteral("Capabilities")) {
+        if (capabilitiesReceived_) {
+            protocolError(QStringLiteral("Duplicate capabilities packet"));
+        }
+        const auto capabilities = object.value("capabilities");
+        if (!capabilities.isArray()
+                || !capabilities.toArray().contains(QJsonValue(QStringLiteral("frame-v2")))
+                || !capabilities.toArray().contains(QJsonValue(QStringLiteral("file-window-v1")))
+                || !capabilities.toArray().contains(QJsonValue(QStringLiteral("keepalive-v1")))
+                || object.value("max-frame").toInt(-1) != static_cast<int>(max_frame_bytes)) {
+            protocolError(QStringLiteral("Invalid capabilities packet"));
+        }
+        capabilitiesReceived_ = true;
+        return;
+    }
+
+    if (type == QStringLiteral("KeepAlive")) {
+        const auto nonce = QByteArray::fromBase64(
+            object.value("nonce").toString().toUtf8());
+        const auto padding = QByteArray::fromBase64(
+            object.value("padding").toString().toUtf8());
+        if (nonce.size() != 16 || padding.size() > 256) {
+            protocolError(QStringLiteral("Invalid keepalive packet"));
+        }
+        return;
+    } else if (type == QStringLiteral("AddMe")) {
         PeerAddmeReq req{shared_from_this(), getConnectionId(), id,
-                    json.object().value("nick").toString(),
-                    json.object().value("message").toString(),
-                    json.object().value("address").toString().toUtf8(),
+                    object.value("nick").toString(),
+                    object.value("message").toString(),
+                    object.value("address").toString().toUtf8(),
                     getPeerCert()->getB58PubKey()};
 
         LFLOG_TRACE << "Emitting addmeRequest";
         emit addmeRequest(req);
-    } else if (type == "Ack") {
+    } else if (type == QStringLiteral("Ack")) {
 
         QVariantMap params;
         for(const auto& key : json.object().keys()) {
-            static const std::regex irrelevant{"what|status|type"};
+            static const std::regex irrelevant{"what|status|type|protocol"};
             if (std::regex_search(key.toStdString(), irrelevant)) {
                 continue;
             }
@@ -360,52 +762,93 @@ void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
         }
 
         PeerAck ack{shared_from_this(), getConnectionId(), id,
-                    json.object().value("what").toString().toUtf8(),
-                    json.object().value("status").toString().toUtf8(),
+                    object.value("what").toString().toUtf8(),
+                    object.value("status").toString().toUtf8(),
                     params};
+
+        if (ack.what.isEmpty() || ack.status.isEmpty()) {
+            protocolError(QStringLiteral("Invalid acknowledgement packet"));
+        }
 
         LFLOG_TRACE << "Emitting Ack";
         emit receivedAck(ack);
-    } else if (type == "Message") {
+    } else if (type == QStringLiteral("Message")) {
         PeerMessage msg{shared_from_this(), getConnectionId(), id,
-                    QByteArray::fromBase64(json.object().value("conversation").toString().toUtf8()),
-                    QByteArray::fromBase64(json.object().value("message-id").toString().toUtf8()),
-                    QDateTime::fromString(json.object().value("date").toString(), Qt::ISODate),
-                    json.object().value("content").toString(),
-                    QByteArray::fromBase64(json.object().value("from").toString().toUtf8()),
-                    toEncoding(json.object().value("encoding").toString()),
-                    QByteArray::fromBase64(json.object().value("signature").toString().toUtf8())};
+                    QByteArray::fromBase64(object.value("conversation").toString().toUtf8()),
+                    QByteArray::fromBase64(object.value("message-id").toString().toUtf8()),
+                    QDateTime::fromString(object.value("date").toString(), Qt::ISODate),
+                    object.value("content").toString(),
+                    QByteArray::fromBase64(object.value("from").toString().toUtf8()),
+                    toEncoding(object.value("encoding").toString()),
+                    QByteArray::fromBase64(object.value("signature").toString().toUtf8())};
+
+        if (msg.data.conversation.isEmpty() || msg.data.messageId.isEmpty()) {
+            protocolError(QStringLiteral("Invalid message packet"));
+        }
 
         LFLOG_TRACE << "Emitting PeerMessage";
         emit receivedMessage(msg);
-    } else if (type == "IncomingFile") {
+    } else if (type == QStringLiteral("IncomingFile")) {
+        bool sizeOk = false;
+        bool restOk = false;
+        const auto size = object.value("size").toString().toLongLong(&sizeOk);
+        const auto rest = object.value("rest").toString().toLongLong(&restOk);
         PeerFileOffer msg{shared_from_this(), getConnectionId(), id,
-                    QByteArray::fromBase64(json.object().value("conversation").toString().toUtf8()),
-                    QByteArray::fromBase64(json.object().value("file-id").toString().toUtf8()),
-                    json.object().value("name").toString(),
-                    json.object().value("size").toString().toLongLong(),
-                    json.object().value("rest").toString().toLongLong(),
-                    json.object().value("file-type").toString(),
-                    QByteArray::fromBase64(json.object().value("sha256").toString().toUtf8())};
+                    QByteArray::fromBase64(object.value("conversation").toString().toUtf8()),
+                    QByteArray::fromBase64(object.value("file-id").toString().toUtf8()),
+                    object.value("name").toString(),
+                    size,
+                    rest,
+                    object.value("file-type").toString(),
+                    QByteArray::fromBase64(object.value("sha256").toString().toUtf8())};
+
+        if (msg.conversation.isEmpty() || msg.fileId.isEmpty()
+                || msg.name.isEmpty() || msg.name.size() > 4096
+                || !sizeOk || !restOk || msg.size < 0 || msg.rest < 0
+                || msg.rest > msg.size || msg.sha512.size() != crypto_hash_sha256_BYTES) {
+            protocolError(QStringLiteral("Invalid file offer packet"));
+        }
 
         LFLOG_TRACE << "Emitting PeerFileOffer";
         emit receivedFileOffer(msg);
-    } else if (type == "SetAvatar") {
+    } else if (type == QStringLiteral("SetAvatar")) {
         PeerSetAvatarReq avatar{shared_from_this(), getConnectionId(), id,
-                    toQimage(json.object())};
+                    toQimage(object)};
 
         LFLOG_TRACE << "Emitting PeerSetAvatarReq";
         emit receivedAvatar(avatar);
-    } else if (type == "UserInfo") {
+    } else if (type == QStringLiteral("UserInfo")) {
         PeerUserInfo uinfo{shared_from_this(), getConnectionId(), id,
-                    json.object().value("nick-name").toString()};
+                    object.value("nick-name").toString(),
+                    QByteArray::fromBase64(object.value("avatar-hash")
+                                           .toString().toUtf8())};
 
         LFLOG_TRACE << "Emitting PeerUserInfo";
         emit receivedUserInfo(uinfo);
     } else {
-        LFLOG_WARN << "Unrecognized request from peer at connection "
-                   << getConnectionId().toString();
+        protocolError(QStringLiteral("Unknown control packet type"));
     }
+}
+
+void Peer::sendCapabilities()
+{
+    QJsonArray capabilities;
+    capabilities.append(QStringLiteral("frame-v2"));
+    capabilities.append(QStringLiteral("file-window-v1"));
+    capabilities.append(QStringLiteral("keepalive-v1"));
+    send(QJsonDocument{QJsonObject{
+        {"type", "Capabilities"},
+        {"capabilities", capabilities},
+        {"max-frame", static_cast<int>(max_frame_bytes)}
+    }});
+}
+
+[[noreturn]] void Peer::protocolError(const QString& reason)
+{
+    LFLOG_ERROR << "Protocol error on connection " << getConnectionId().toString()
+                << ": " << reason;
+    close();
+    throw Error(reason);
 }
 
 void Peer::onCloseLater()
@@ -428,7 +871,58 @@ void Peer::enableEncryptedStream()
     if (inState_ != InState::DISABLED) {
         throw runtime_error("Encrypted stream is already enabled");
     }
+    resetIdleTimer();
+    scheduleKeepAlive();
     wantChunkSize();
+}
+
+void Peer::resetIdleTimer()
+{
+    // Keepalive scheduling is independent of ordinary traffic so its
+    // interval remains randomized.
+}
+
+void Peer::scheduleKeepAlive()
+{
+    if (inState_ != InState::CLOSING && inState_ != InState::DISABLED) {
+        constexpr int minimumDelayMs = 90 * 1000;
+        constexpr int maximumDelayMs = 240 * 1000;
+        keepAliveTimer_.start(QRandomGenerator::system()->bounded(
+            minimumDelayMs, maximumDelayMs + 1));
+    }
+}
+
+void Peer::sendKeepAlive()
+{
+    if (inState_ == InState::CLOSING || !connection_->isOpen()) {
+        return;
+    }
+
+    auto *random = QRandomGenerator::system();
+    QByteArray nonce(16, Qt::Uninitialized);
+    for (qsizetype offset = 0; offset < nonce.size(); offset += 4) {
+        const auto value = random->generate();
+        memcpy(nonce.data() + offset, &value,
+               static_cast<size_t>(std::min<qsizetype>(4, nonce.size() - offset)));
+    }
+    const auto paddingSize = random->bounded(0, 257);
+    QByteArray padding(paddingSize, Qt::Uninitialized);
+    for (qsizetype offset = 0; offset < padding.size(); offset += 4) {
+        const auto value = random->generate();
+        memcpy(padding.data() + offset, &value,
+               static_cast<size_t>(std::min<qsizetype>(4, padding.size() - offset)));
+    }
+
+    try {
+        send(QJsonDocument{QJsonObject{
+            {"type", "KeepAlive"},
+            {"nonce", QString::fromLatin1(nonce.toBase64())},
+            {"padding", QString::fromLatin1(padding.toBase64())}
+        }});
+    } catch (const std::exception& ex) {
+        LFLOG_WARN << "Failed to send keepalive: " << ex.what();
+    }
+    scheduleKeepAlive();
 }
 
 void Peer::wantChunkSize()
@@ -504,7 +998,7 @@ void Peer::processStream(const Peer::data_t &ciphertext)
 
         decrypt(buffer_view, ciphertext, final);
 
-        if (version.at(0) != '\1') {
+        if (version.at(0) != static_cast<char>(frame_version)) {
             LFLOG_WARN << "Unknown chunk version" << static_cast<unsigned int>(version.at(0));
             throw runtime_error("Unknown chunk version");
         }
@@ -626,8 +1120,20 @@ quint32 Peer::createChannel(const File &file)
     connect(fileCPtr, &File::stateChanged,
             this, [this, channelId, direction, fileCPtr]() {
 
-        if (fileCPtr->getState() != File::FS_TRANSFERRING) {
+        if (fileCPtr->getState() != File::FS_TRANSFERRING
+                && !(direction == File::INCOMING
+                     && fileCPtr->getState() == File::FS_HASHING)) {
             emit removeTransfer(direction, channelId);
+            }
+    });
+    connect(fileCPtr, &File::transferDone,
+            this, [this, channelId, direction](File *, bool success) {
+        if (direction != File::INCOMING) {
+            return;
+        }
+        const auto it = inChannels_.find(channelId);
+        if (it != inChannels_.end()) {
+            it->second->onTransferDone(*this, success);
         }
     });
 
@@ -637,6 +1143,7 @@ quint32 Peer::createChannel(const File &file)
 uint64_t Peer::startReceive(File &file)
 {
     auto channelId = createChannel(file);
+    const auto resumeOffset = inChannels_.at(channelId)->resumeOffset();
 
     LFLOG_DEBUG << "Preparing to start receiving file #" << file.getId()
                 << " \"" << file.getName()
@@ -649,7 +1156,7 @@ uint64_t Peer::startReceive(File &file)
                 << channelId;
 
     const auto params = QVariantMap {
-            {"rest", QString::number(0)},
+            {"rest", QString::number(resumeOffset)},
             {"data", QString{file.getFileId().toBase64()}},
             {"channel", channelId}
     };
@@ -659,7 +1166,7 @@ uint64_t Peer::startReceive(File &file)
                 << " over connection " << getConnectionId().toString();
 
     const auto rval = sendAck("IncomingFile", "Proceed", params);
-    file.clearBytesTransferred();
+    file.setBytesTransferred(resumeOffset);
     file.setState(File::FS_TRANSFERRING);
     file.setChannel(channelId);
     return rval;
@@ -668,7 +1175,6 @@ uint64_t Peer::startReceive(File &file)
 uint64_t Peer::startSend(File &file)
 {
     auto channelId = createChannel(file);
-    file.clearBytesTransferred();
     file.setState(File::FS_TRANSFERRING);
     return outChannels_.at(channelId)->onOutgoing(*this);
 }
@@ -762,7 +1268,8 @@ uint64_t Peer::sendUserInfo(const UserInfo &userInfo)
     auto json = QJsonDocument{
         QJsonObject{
             {"type", "UserInfo"},
-            {"nick-name", userInfo.nickName}
+            {"nick-name", userInfo.nickName},
+            {"avatar-hash", QString{userInfo.avatarHash.toBase64()}}
         }
     };
 
@@ -814,7 +1321,7 @@ uint64_t Peer::offerFile(const File &file)
             {"name", file.getName()},
             {"size", QString::number(file.getSize())},
             {"file-type", "binary"},
-            {"rest", QString::number(0)},
+            {"rest", QString::number(file.getBytesTransferred())},
             {"file-id", QString{file.getFileId().toBase64()}},
             {"conversation", QString{file.getConversation()->getHash().toBase64()}},
         }
@@ -856,6 +1363,23 @@ uint64_t Peer::sendSome(File &file)
 
     auto instance = it->second;
     return instance->onOutgoing(*this);
+}
+
+void Peer::acknowledgeFile(const QByteArray& fileId, quint64 sequence,
+                           qlonglong offset, bool final)
+{
+    const auto file = DsEngine::instance().getFileManager()->getFileFromId(
+        fileId, File::OUTGOING);
+    if (file) {
+        const auto it = outChannels_.find(file->getChannel());
+        if (it != outChannels_.end()) {
+            it->second->onAck(*this, sequence, offset, final);
+            emit outputBufferEmptied();
+            return;
+        }
+    }
+
+    protocolError(QStringLiteral("Acknowledgement for unknown file transfer"));
 }
 
 void Peer::disableNotifications()
