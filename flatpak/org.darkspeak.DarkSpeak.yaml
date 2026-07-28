@@ -54,6 +54,10 @@ modules:
       - type: dir
         path: ..
       - type: git
+        url: https://github.com/jgaa/logfault.git
+        commit: 7417a50c0a6662dce8fef0382cc2afd24e793501
+        dest: dependencies/logfault
+      - type: git
         url: https://github.com/nayuki/QR-Code-generator.git
         tag: v1.8.0
         dest: third_party/nayuki_qr_generator
