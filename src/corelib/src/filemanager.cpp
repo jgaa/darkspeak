@@ -249,21 +249,21 @@ void FileManager::hashIt(const File::ptr_t &file)
 {
     file->asynchCalculateHash([file](const QByteArray& hash, const QString& failReason){
         if (hash.isEmpty()) {
-            LFLOG_DEBUG << "Failed to hash file #" << file->getId() << " " << file->getPath()
+            LFLOG_DEBUG << "Failed to hash file #" << file->getId()
                         << ": " << failReason;
             file->setState(File::FS_FAILED);
         } else {
             if (file->getState() == File::FS_HASHING) {
-                LFLOG_DEBUG << "Calculted hash for file #" << file->getId() << " " << file->getPath();
+                LFLOG_DEBUG << "Calculated hash for file #" << file->getId();
                 file->setHash(hash);
                 file->setState(File::FS_WAITING);
                 if (auto contact = file->getContact()) {
                     contact->queueFile(file);
                 } else {
-                    LFLOG_WARN << "Failed to obtain contact for file " << file->getId() << " " << file->getPath();
+                    LFLOG_WARN << "Failed to obtain contact for file " << file->getId();
                 }
             } else {
-                LFLOG_WARN << "Calculted hash for file #" << file->getId() << " " << file->getPath()
+                LFLOG_WARN << "Calculated hash for file #" << file->getId()
                            << " but the state was not FS_HASHING but " << file->getState();
             }
         }

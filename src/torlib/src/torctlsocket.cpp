@@ -28,7 +28,8 @@ TorCtlSocket::TorCtlSocket()
 void TorCtlSocket::sendCommand(QByteArray command,
                                const TorCtlSocket::handler_t& handler)
 {
-    LFLOG_DEBUG << "Sending Tor command: " << command.toStdString();
+    const auto commandName = command.left(command.indexOf(' '));
+    LFLOG_DEBUG << "Sending Tor control command " << commandName.toStdString();
 
     if (!command.endsWith("\r\n")) {
         command += "\r\n";
@@ -110,26 +111,23 @@ void TorCtlSocket::processIn()
         if (current_reply_.status >= 600 && current_reply_.status < 700) {
 
             // Asynchronous response.
-            LFLOG_DEBUG << "Torctl received event: "
-                     << current_reply_.status << ' '
-                     << current_reply_.lines.front().c_str();
+            LFLOG_DEBUG << "Torctl received asynchronous event status="
+                     << current_reply_.status;
             emit torEvent(current_reply_);
             state_ = State::READY;
             continue;
         }
 
         if (pending_.empty()) {
-            LFLOG_WARN << "Received orphan response from tor: "
-                       << current_reply_.status << ' '
-                       << current_reply_.lines.front().c_str();
+            LFLOG_WARN << "Received orphan Tor response status="
+                       << current_reply_.status;
             continue;
         }
 
         const auto handler = pending_.takeFirst();
         try {
-            LFLOG_DEBUG << "Torctl received reply: "
-                     << current_reply_.status << ' '
-                     << current_reply_.lines.front().c_str();
+            LFLOG_DEBUG << "Torctl received reply status="
+                     << current_reply_.status;
             if (handler) {
                 handler(current_reply_);
             }

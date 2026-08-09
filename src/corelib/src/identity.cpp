@@ -19,6 +19,8 @@
 #include <QSqlError>
 #include <QTimer>
 #include <QRegularExpression>
+#include <QFile>
+#include <QStringList>
 #include <QtEndian>
 
 namespace ds {
@@ -108,9 +110,9 @@ void Identity::startService()
         return;
 
     }
-    getProtocolManager().startService(data_.uuid,
-                                      data_.cert,
-                                      DsEngine::fromJson(data_.addressData));
+    auto serviceData = DsEngine::fromJson(data_.addressData);
+    serviceData.insert("key", DsEngine::instance().secretStore().torServiceKey(data_.uuid));
+    getProtocolManager().startService(data_.uuid, data_.cert, serviceData);
 }
 
 void Identity::stopService()
@@ -144,11 +146,15 @@ void Identity::setNewTorService(const QString &address, int port, const QString 
         throw std::invalid_argument("Invalid Tor v3 service address");
     }
     const auto key = privateKey.trimmed().toUtf8();
+    if (key.isEmpty()) {
+        throw std::invalid_argument("Tor hidden service private key is required");
+    }
+
+    DsEngine::instance().secretStore().storeTorServiceKey(data_.uuid, key);
 
     QJsonDocument json {
         QJsonObject {
             {"type", "Tor hidden service"},
-            {"key", QString{key}},
             {"service_id", serviceId},
             {"key_type", "ED25519-V3"},
             {"port", servicePort},
@@ -542,7 +548,7 @@ void Identity::addToDb() {
     query.bindValue(":uuid", data_.uuid);
     query.bindValue(":hash", data_.hash);
     query.bindValue(":name", data_.name);
-    query.bindValue(":cert", data_.cert->getCert().toByteArray());
+    query.bindValue(":cert", data_.cert->getSigningPubKey().toByteArray());
     query.bindValue(":address", data_.address);
     query.bindValue(":address_data", data_.addressData);
     query.bindValue(":notes", data_.notes);
@@ -573,6 +579,17 @@ void Identity::deleteFromDb() {
 
         try {
             QSqlQuery query(db);
+            QStringList filesToRemove;
+
+            query.prepare("SELECT path FROM file WHERE identity_id=:id");
+            query.bindValue(":id", id_);
+            if (!query.exec()) {
+                throw Error(QStringLiteral("SQL Failed to enumerate identity files: %1")
+                                .arg(query.lastError().text()));
+            }
+            while (query.next()) {
+                filesToRemove.append(query.value(0).toString());
+            }
 
             // Identity deletion is recursive, but the legacy schema does not
             // declare cascading foreign keys for all identity-owned tables.
@@ -619,9 +636,23 @@ void Identity::deleteFromDb() {
                                 .arg(query.lastError().text()));
             }
 
+            DsEngine::instance().secretStore().removeIdentityCertificate(data_.uuid);
+            try {
+                DsEngine::instance().secretStore().removeTorServiceKey(data_.uuid);
+            } catch (const std::exception&) {
+                // A service key may not exist for identities that never had a
+                // transport.
+            }
+
             if (!db.commit()) {
                 throw Error(QStringLiteral("SQL Failed to commit identity deletion: %1")
                                 .arg(db.lastError().text()));
+            }
+
+            for (const auto& path : filesToRemove) {
+                (void)QFile::remove(path);
+                (void)QFile::remove(path + QStringLiteral(".part"));
+                (void)QFile::remove(path + QStringLiteral(".part.meta"));
             }
         } catch (...) {
             db.rollback();

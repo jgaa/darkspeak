@@ -311,8 +311,7 @@ public:
             throw Error("Invalid direction for outgoing file channel");
         }
         if (!io_.open(QIODevice::ReadOnly)) {
-            LFLOG_ERROR << "Failed to open \"" << file->getPath()
-                        << "\" for read: " << io_.errorString();
+            LFLOG_ERROR << "Failed to open outgoing file for read: " << io_.errorString();
             throw Error("Failed to open file");
         }
 
@@ -542,10 +541,8 @@ uint64_t Peer::send(const QJsonDocument &json)
     object.insert("protocol", control_version);
     auto jsonData = QJsonDocument{object}.toJson(QJsonDocument::Compact);
 
-    LFLOG_TRACE << "Sending json to "
-                << connection_->getUuid().toString()
-                << ": "
-                << jsonData;
+    LFLOG_TRACE << "Sending control packet of " << jsonData.size()
+                << " bytes over connection " << connection_->getUuid().toString();
 
     return send(jsonData.constData(),
                 static_cast<size_t>(jsonData.size()),
@@ -1011,7 +1008,7 @@ void Peer::processStream(const Peer::data_t &ciphertext)
                     << ", size=" << payload.size()
                     << ", channel=" << channel_id
                     << ", id=" << chunk_id
-                    << ", payload=" << (channel_id ? binary : safePayload(payload));
+                    << ", payload=" << (channel_id ? binary : "[control]");
 
         try {
             onReceivedData(channel_id, chunk_id, payload, final);

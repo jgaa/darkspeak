@@ -223,7 +223,7 @@ void TorController::clear()
 
 void TorController::torEvent(const TorCtlReply &reply)
 {
-    LFLOG_DEBUG << "Received tor event: " << reply.lines.front().c_str();
+    LFLOG_DEBUG << "Received Tor event status=" << reply.status;
 }
 
 void TorController::setState(TorController::CtlState state)

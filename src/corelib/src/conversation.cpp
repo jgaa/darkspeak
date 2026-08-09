@@ -37,7 +37,7 @@ void Conversation::incrementUnread()
 
 void Conversation::sendMessage(const QString &text)
 {
-    LFLOG_DEBUG << "Sending message with content: " << text;
+    LFLOG_DEBUG << "Sending message text payload of " << text.size() << " characters";
 
     const auto random = crypto::Crypto::getRandomBytes(8);
     const auto identity = getIdentity();

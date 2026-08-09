@@ -41,16 +41,23 @@ void IdentityManager::load()
     }
 
     while(query.next()) {
-        auto cert_ptr = DsCert::create(query.value(cert).toByteArray());
+        const auto identityUuid = query.value(Fields::uuid).toUuid();
+        const auto publicKey = query.value(cert).toByteArray();
+        const auto privateCertificate = DsEngine::instance().secretStore()
+                                            .identityCertificate(identityUuid);
+        auto cert = DsCert::create(privateCertificate);
+        if (cert->getSigningPubKey().toByteArray() != publicKey) {
+            throw Error("Identity certificate in the OS vault does not match the database");
+        }
         IdentityData data {
-            query.value(uuid).toUuid(),
+            identityUuid,
             query.value(name).toString(),
             query.value(hash).toByteArray(),
             query.value(address).toByteArray(),
             query.value(address_data).toByteArray(),
             query.value(notes).toString(),
             QImage::fromData(query.value(avatar).toByteArray(), "PNG"),
-            DsCert::create(query.value(cert).toByteArray()),
+            cert,
             query.value(auto_connect).toBool()
         };
 
@@ -139,7 +146,9 @@ void IdentityManager::createIdentity(const QmlIdentityReq *req)
     id.cert = DsCert::create();
     id.hash = id.cert->getHash().toByteArray();
 
-    addIdentity(id);
+    if (!addIdentity(id)) {
+        return;
+    }
 
     auto name = id.name;
     auto uuid = id.uuid;
@@ -254,8 +263,16 @@ Identity *IdentityManager::addIdentity(const IdentityData &data)
                 data};
 
     try {
+        DsEngine::instance().secretStore().storeIdentityCertificate(
+            data.uuid, data.cert->getCert().toByteArray());
         identity->addToDb();
     } catch (const std::exception& ex) {
+        try {
+            DsEngine::instance().secretStore().removeIdentityCertificate(data.uuid);
+        } catch (const std::exception&) {
+            // Preserve the original database error; startup will fail closed
+            // if an orphaned secret is ever encountered.
+        }
         LFLOG_ERROR << "Failed to add identity with name '"
                     << identity->getName()
                     << "' to the database: " << ex.what();

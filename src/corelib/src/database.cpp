@@ -1,4 +1,5 @@
 
+#include <QFile>
 #include <QFileInfo>
 
 #include "ds/database.h"
@@ -29,6 +30,10 @@ Database::Database(QSettings& settings)
     if (!db_.open()) {
         LFLOG_WARN << "Failed to open database: " << dbpath;
         throw Error("Failed to open database");
+    }
+    if (dbpath != ":memory:") {
+        QFile::setPermissions(dbpath,
+                              QFileDevice::ReadOwner | QFileDevice::WriteOwner);
     }
 
     if (new_database) {

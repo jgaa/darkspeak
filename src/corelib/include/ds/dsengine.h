@@ -20,6 +20,7 @@
 #include "ds/conversationmanager.h"
 #include "ds/messagemanager.h"
 #include "ds/filemanager.h"
+#include "ds/secretstore.h"
 
 class QSqlDatabase;
 
@@ -64,6 +65,7 @@ public:
     static DsEngine& instance();
     State getState() const;
     QSqlDatabase& getDb();
+    SecretStore& secretStore();
     IdentityManager *getIdentityManager();
     ContactManager *getContactManager();
     ConversationManager *getConversationManager();
@@ -120,6 +122,7 @@ protected:
 
     std::unique_ptr<QSettings> settings_;
     std::unique_ptr<Database> database_;
+    std::unique_ptr<SecretStore> secretStore_;
     static DsEngine *instance_;
     ProtocolManager::ptr_t tor_mgr_;
     State state_ = State::INITIALIZING;

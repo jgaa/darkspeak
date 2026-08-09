@@ -53,7 +53,7 @@ void File::cancel()
 
     setState(FS_CANCELLED);
 
-    LFLOG_DEBUG << "Cancelled file #" << getId() << " " << getPath();
+    LFLOG_DEBUG << "Cancelled file #" << getId();
 
     if (auto contact = getContact()) {
         if (contact->isOnline()) {
@@ -81,7 +81,7 @@ void File::accept()
         return;
     }
 
-    LFLOG_DEBUG << "Accepted file #" << getId() << " " << getPath();
+    LFLOG_DEBUG << "Accepted file #" << getId();
 
     queueForTransfer();
     getConversation()->touchLastActivity();
@@ -95,7 +95,7 @@ void File::reject()
 
     setState(FS_REJECTED);
 
-    LFLOG_DEBUG << "Rejected file #" << getId() << " " << getPath();
+    LFLOG_DEBUG << "Rejected file #" << getId();
 
     if (auto contact = getContact()) {
         if (contact->isOnline()) {

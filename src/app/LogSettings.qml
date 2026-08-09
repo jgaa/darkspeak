@@ -12,8 +12,8 @@ ScrollView {
         id: settings
         property string logPath: ""
         property int logLevelFile: 0
-        property int logLevelStdout: 5
-        property int logLevelApp: 4
+        property int logLevelStdout: 0
+        property int logLevelApp: 0
     }
 
     function commit() {

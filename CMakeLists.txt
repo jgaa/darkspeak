@@ -4,6 +4,17 @@ project (ds VERSION 0.2.0 LANGUAGES CXX)
 include(cmake/FindSodium.cmake)
 include(FetchContent)
 
+# Secret material is kept out of the DarkSpeak database.  SafeKeeping is
+# fetched by CMake so release builds do not depend on a manually installed
+# copy, while the exact revision remains pinned for reproducibility.
+FetchContent_Declare(safekeeping
+    GIT_REPOSITORY https://github.com/jgaa/SafeKeeping.git
+    GIT_TAG c53b3f5ad5ec150058e0313a856aa3ad2c68f9e1
+    GIT_SHALLOW TRUE)
+set(SAFEKEEPING_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SAFEKEEPING_ENABLE_KWALLET OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(safekeeping)
+
 # Nayuki's generator is fetched at configure time.  Keep the source outside
 # the repository and build only the small C++ implementation used by the app.
 FetchContent_Declare(nayuki_qr_generator

@@ -13,6 +13,7 @@
 #include <QPainter>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QFile>
 #include <QSvgRenderer>
 #include <QtEndian>
 #include <iostream>
@@ -137,6 +138,17 @@ void configureLogging(const QSettings& settings,
                       const QString& logLevel,
                       LogModel& logModel)
 {
+    const auto makePrivate = [](const QString& path) {
+        const QFileInfo info(path);
+        QDir().mkpath(info.absolutePath());
+        QFile::setPermissions(info.absolutePath(),
+                              QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                              | QFileDevice::ExeOwner);
+        if (QFile::exists(path)) {
+            QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+        }
+    };
+
 #ifdef QT_DEBUG
     const auto defaultLevel = logfault::LogLevel::DEBUGGING;
 #else
@@ -163,21 +175,23 @@ void configureLogging(const QSettings& settings,
     }
 
     if (!logFile.isEmpty()) {
-        const QFileInfo fileInfo(logFile);
-        QDir().mkpath(fileInfo.absolutePath());
+        makePrivate(logFile);
         logManager.AddHandler(std::make_unique<logfault::StreamHandler>(
                                   logFile.toStdString(), level, true));
+        QFile::setPermissions(logFile, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
         LFLOG_NOTICE << "Enabled logging to \""
                      << logFile.toStdString()
                      << "\" at level "
                      << logfault::Handler::LevelName(level);
     } else if (core::isEnabled(settings, core::LogSystem::LOGFILE)) {
         const auto path = settings.value("logPath").toString();
+        makePrivate(path);
         const auto fileLevel = core::getLogLevel(settings, core::LogSystem::LOGFILE);
         logManager.AddHandler(std::make_unique<logfault::StreamHandler>(
                                   path.toStdString(),
                                   fileLevel,
                                   true));
+        QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
         LFLOG_NOTICE << "Enabled logging to \""
                      << path.toStdString()
                      << "\" at level "

@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
+#include <QFile>
 #include <QApplication>
 #include <QIcon>
 #include <QLockFile>
@@ -69,6 +70,9 @@ bool earlyProfileArgument(int argc, char *argv[], QString &profile, QString &err
         error = QStringLiteral("Unable to create profile directory: ") + profile;
         return false;
     }
+    QFile::setPermissions(profile,
+                          QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                          | QFileDevice::ExeOwner);
 
     const auto setProfilePath = [&profile](const QString &name, const char *variable) {
         qputenv(variable, QDir(profile).filePath(name).toUtf8());

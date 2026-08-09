@@ -19,6 +19,7 @@
 #include <QString>
 #include <QDebug>
 #include <QDir>
+#include <QFile>
 #include <QUuid>
 #include <QStandardPaths>
 #include <QTimer>
@@ -52,6 +53,9 @@ DsEngine::DsEngine(std::unique_ptr<QSettings> settings)
 
 DsEngine::~DsEngine()
 {
+    if (secretStore_) {
+        secretStore_->lock();
+    }
     assert(instance_ == this);
     instance_ = {};
 }
@@ -71,6 +75,12 @@ QSqlDatabase& DsEngine::getDb()
 {
     assert(database_);
     return database_->getDb();
+}
+
+SecretStore& DsEngine::secretStore()
+{
+    assert(secretStore_);
+    return *secretStore_;
 }
 
 IdentityManager *DsEngine::getIdentityManager()
@@ -227,7 +237,12 @@ void DsEngine::onTransportHandleReady(const TransportHandle &th)
                      << " to identity " << identity->getName();
         identity->setAddress(th.handle);
         auto json = toJson(th.data);
-        LFLOG_TRACE << "Json data: " << json;
+        if (const auto key = th.data.value("key").toByteArray(); !key.isEmpty()) {
+            secretStore().storeTorServiceKey(th.uuid, key);
+            auto publicData = th.data;
+            publicData.remove("key");
+            json = toJson(publicData);
+        }
         identity->setAddressData(json);
         if (getState() == RUNNING && isOnline() && identity->isAutoConnect()) {
             identity->startService();
@@ -380,6 +395,9 @@ void DsEngine::initialize()
         LFLOG_DEBUG << "Creating path: " << data_path;
         QDir().mkpath(data_path);
     }
+    QFile::setPermissions(data_path,
+                          QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                          | QFileDevice::ExeOwner);
 
     switch(auto version = settings_->value("version").toInt()) {
         case 0: { // First use
@@ -432,6 +450,9 @@ void DsEngine::initialize()
             LFLOG_NOTICE << "Creating download directory \"" << path.path() << "\".";
             path.mkpath(path.path());
         }
+        QFile::setPermissions(path.path(),
+                              QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                              | QFileDevice::ExeOwner);
     }
 
     if (settings_->value("logPath", "").toString().isEmpty()) {
@@ -445,7 +466,7 @@ void DsEngine::initialize()
     }
 
     if (!settings_->contains("logLevelApp")) {
-        settings_->setValue("logLevelApp", static_cast<int>(logfault::LogLevel::NOTICE));
+        settings_->setValue("logLevelApp", static_cast<int>(logfault::LogLevel::DISABLED));
     }
 
     if (!settings_->contains("logLevelFile")) {
@@ -453,13 +474,11 @@ void DsEngine::initialize()
     }
 
     if (!settings_->contains("logLevelStdout")) {
-#ifdef QT_DEBUG
-        settings_->setValue("logLevelStdout", static_cast<int>(logfault::LogLevel::DEBUGGING));
-#else
         settings_->setValue("logLevelApp", static_cast<int>(logfault::LogLevel::DISABLED));
-#endif
+        settings_->setValue("logLevelStdout", static_cast<int>(logfault::LogLevel::DISABLED));
     }
 
+    secretStore_ = std::make_unique<SecretStore>(settings_->value("dbpath").toString());
     database_ = std::make_unique<Database>(*settings_);
 
     identityManager_ = new IdentityManager(*this);
