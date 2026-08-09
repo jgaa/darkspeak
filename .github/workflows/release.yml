@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Create release
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Prepare release metadata
+        id: prep
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git fetch --force --tags origin master
+
+          app_version="$(sed -n 's/^project *(ds VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt | head -n 1)"
+          if [ -z "${app_version}" ]; then
+            echo "Failed to read VERSION from CMakeLists.txt" >&2
+            exit 1
+          fi
+
+          tag="v${app_version}"
+          if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
+            echo "Tag ${tag} already exists" >&2
+            exit 1
+          fi
+
+          previous_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name' 2>/dev/null || true)"
+          artifact_name="darkspeak-flatpak-${app_version}"
+          bundle_name="darkspeak-${app_version}.flatpak"
+          main_sha="$(git rev-parse HEAD)"
+
+          {
+            echo "app_version=${app_version}"
+            echo "tag=${tag}"
+            echo "previous_tag=${previous_tag}"
+            echo "artifact_name=${artifact_name}"
+            echo "bundle_name=${bundle_name}"
+            echo "main_sha=${main_sha}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build release notes
+        id: notes
+        env:
+          PREVIOUS_TAG: ${{ steps.prep.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+
+          notes_file="$(mktemp)"
+          {
+            echo "## Changes"
+            echo
+            if [ -n "${PREVIOUS_TAG}" ] && git rev-parse --verify --quiet "refs/tags/${PREVIOUS_TAG}" >/dev/null; then
+              git log --reverse --format='- %s' "${PREVIOUS_TAG}..HEAD"
+            else
+              git log --reverse --max-count=20 --format='- %s'
+            fi
+          } > "${notes_file}"
+
+          echo "notes_file=${notes_file}" >> "$GITHUB_OUTPUT"
+
+      - name: Find matching Flatpak artifact
+        id: artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_NAME: ${{ steps.prep.outputs.artifact_name }}
+        run: |
+          set -euo pipefail
+
+          run_id=""
+          while IFS= read -r candidate_run_id; do
+            candidate_artifact_id="$(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${candidate_run_id}/artifacts" \
+                --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\") | .id" \
+                | head -n 1
+            )"
+            if [ -n "${candidate_artifact_id}" ]; then
+              run_id="${candidate_run_id}"
+              break
+            fi
+          done < <(
+            gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/flatpak.yml/runs?branch=master&event=push&status=completed&per_page=100" \
+              --jq '.workflow_runs[] | select(.conclusion == "success") | .id'
+          )
+
+          if [ -z "${run_id}" ]; then
+            echo "No successful Flatpak build found for artifact ${ARTIFACT_NAME}" >&2
+            exit 1
+          fi
+
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Download Flatpak artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.artifact.outputs.run_id }}
+          ARTIFACT_NAME: ${{ steps.prep.outputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifact
+          gh run download "${RUN_ID}" --name "${ARTIFACT_NAME}" --dir release-artifact
+
+      - name: Create tag
+        env:
+          TAG: ${{ steps.prep.outputs.tag }}
+          MAIN_SHA: ${{ steps.prep.outputs.main_sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${TAG}" "${MAIN_SHA}"
+          git push origin "${TAG}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.prep.outputs.tag }}
+          BUNDLE_NAME: ${{ steps.prep.outputs.bundle_name }}
+          NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
+        run: |
+          set -euo pipefail
+
+          asset_path="release-artifact/${BUNDLE_NAME}"
+          if [ ! -f "${asset_path}" ]; then
+            echo "Expected asset ${asset_path} was not downloaded" >&2
+            exit 1
+          fi
+
+          gh release create "${TAG}" "${asset_path}" \
+            --title "${TAG}" \
+            --notes-file "${NOTES_FILE}"
