@@ -62,6 +62,7 @@ modules:
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=/app \
           -DDARKSPEAK_FLATPAK_BUILD=ON \
+          -DFETCHCONTENT_SOURCE_DIR_SAFEKEEPING="$(pwd)/third_party/safekeeping" \
           -DFETCHCONTENT_SOURCE_DIR_NAYUKI_QR_GENERATOR="$(pwd)/third_party/nayuki_qr_generator" \
           -DBUILD_TESTING=OFF
       - cmake --build _build --parallel
@@ -93,3 +94,7 @@ modules:
         url: https://github.com/nayuki/QR-Code-generator.git
         tag: v1.8.0
         dest: third_party/nayuki_qr_generator
+      - type: git
+        url: https://github.com/jgaa/SafeKeeping.git
+        commit: c53b3f5ad5ec150058e0313a856aa3ad2c68f9e1
+        dest: third_party/safekeeping
