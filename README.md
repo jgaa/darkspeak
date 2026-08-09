@@ -4,7 +4,7 @@ Secure Peer to Peer Instant Messenger, using the Tor network for anonymity and b
 
 Screenshots
 
-![contact](screenshots/ds_chat.jpeg) ![chat](screenshots/ds_contact.jpeg)
+![screenshots](screenshots/darkspeak_banner_small.png)
 
 # Mission Statement
 
@@ -26,19 +26,22 @@ The protocol used by DarkSpeak does not depend on Tor. It is designed so that it
 
 # Running DarkSpeak
 
-DarkSpeak uses a system Tor process by default. It connects to Tor's local
-control port at `127.0.0.1:9051` and uses the SOCKS proxy at
-`127.0.0.1:9050`. Installing Tor alone does not enable the control port.
+DarkSpeak uses a system Tor process by default. Under Linux, it expect tor to be installed. It can use the system's instance, or 
+run it's own tor process with it's own configuration. This is the simpler option if you *just want it to work*.
 
 ## Ubuntu/Debian Tor setup
 
 Install and start Tor:
+
+You only need to enabel it if you want DarkSpeak to use the systems instance. If you want to use the "embedded" mode, it just need the tor binart to be available. 
 
 ```sh
 sudo apt update
 sudo apt install tor
 sudo systemctl enable --now tor
 ```
+
+### To use the systems tor instance
 
 Edit `/etc/tor/torrc` and enable cookie-authenticated control access:
 
@@ -70,6 +73,8 @@ application accordingly. See [the detailed Tor configuration notes](doc/torconfi
 for more information.
 
 ## Isolated profiles and logging
+
+*This is mainly for testing. You can have several identities using the default instance.*
 
 Use a separate profile directory when running multiple DarkSpeak instances on
 the same machine. Each profile gets its own settings, database, data, and
@@ -112,3 +117,6 @@ In 2020, I thought hard about this project. I was working intensely for a startu
 
 **July 2026**: Resumed working on the project.
 
+# Links
+
+- [DarkSpeak official website](https://darkspeak.org/)
