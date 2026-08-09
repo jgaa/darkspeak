@@ -413,6 +413,10 @@ void DsEngine::initialize()
         settings_->setValue("appAutoConnect", true);
     }
 
+    if (!settings_->contains("useDarkSpeakFolder")) {
+        settings_->setValue("useDarkSpeakFolder", false);
+    }
+
     if (!settings_->contains("torMode")) {
         settings_->setValue("torMode", 1); // Embedded Tor
     }

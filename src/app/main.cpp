@@ -209,6 +209,12 @@ int main(int argc, char *argv[])
     // Initialize crypto
     ds::crypto::Crypto crypto;
 
+    DesktopIntegration desktopIntegration(&app);
+    if (!desktopIntegration.initializeDarkSpeakFolder()) {
+        std::cerr << "Unable to prepare the DarkSpeak folder in the home directory.\n";
+        return 2;
+    }
+
     auto manager = make_unique<Manager>(parser.value(QStringLiteral("log-file")),
                                         requestedLogLevel);
     manager->connect(&app, &QGuiApplication::aboutToQuit, manager.get(), &Manager::onQuit);
@@ -284,7 +290,6 @@ int main(int argc, char *argv[])
     qmlRegisterType<ds::models::IdentityNameValidator>("org.darkspeak", 1, 0, "IdentityNameValidator");
 
     QQmlApplicationEngine engine;
-    DesktopIntegration desktopIntegration(&app);
     engine.rootContext()->setContextProperty("desktopIntegration", &desktopIntegration);
     FileDialogModel fileDialogs;
 

@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QLoggingCategory>
+#include <QSettings>
 #include <QStandardPaths>
 
 namespace {
@@ -21,6 +22,31 @@ const QString iconPath()
         .filePath(QStringLiteral("darkspeak/icons/org.darkspeak.DarkSpeak.svg"));
 }
 
+const QString darkSpeakFolderPath()
+{
+    return QDir(QDir::homePath()).filePath(QStringLiteral("DarkSpeak"));
+}
+
+const QString darkSpeakDownloadsPath()
+{
+    return QDir(darkSpeakFolderPath()).filePath(QStringLiteral("Downloads"));
+}
+
+const QString darkSpeakLogPath()
+{
+    return QDir(darkSpeakFolderPath()).filePath(QStringLiteral("Log/darkspeak.log"));
+}
+
+bool createPrivateDirectory(const QString &path)
+{
+    if (!QDir().mkpath(path)) {
+        return false;
+    }
+    return QFile::setPermissions(
+        path,
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+}
+
 QString desktopExecArgument(QString value)
 {
     value.replace(QStringLiteral("\\"), QStringLiteral("\\\\"));
@@ -33,6 +59,68 @@ QString desktopExecArgument(QString value)
 DesktopIntegration::DesktopIntegration(QObject *parent)
     : QObject(parent)
 {
+}
+
+bool DesktopIntegration::darkSpeakFolderForced() const
+{
+#ifdef DARKSPEAK_FLATPAK_BUILD
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool DesktopIntegration::initializeDarkSpeakFolder()
+{
+    QSettings settings;
+    const auto enabled = darkSpeakFolderForced()
+        || settings.value(QStringLiteral("useDarkSpeakFolder"), false).toBool();
+    if (!enabled) {
+        return true;
+    }
+
+    if (!updateDarkSpeakFolder(false)) {
+        return false;
+    }
+    settings.setValue(QStringLiteral("useDarkSpeakFolder"), true);
+    settings.sync();
+    return settings.status() == QSettings::NoError;
+}
+
+bool DesktopIntegration::setDarkSpeakFolderEnabled(bool enabled)
+{
+    if (darkSpeakFolderForced()) {
+        return initializeDarkSpeakFolder();
+    }
+
+    QSettings settings;
+    if (enabled && !updateDarkSpeakFolder(true)) {
+        return false;
+    }
+    settings.setValue(QStringLiteral("useDarkSpeakFolder"), enabled);
+    settings.sync();
+    return settings.status() == QSettings::NoError;
+}
+
+bool DesktopIntegration::updateDarkSpeakFolder(bool forcePaths) const
+{
+    if (QDir::homePath().isEmpty()
+        || !createPrivateDirectory(darkSpeakFolderPath())
+        || !createPrivateDirectory(darkSpeakDownloadsPath())
+        || !createPrivateDirectory(QFileInfo(darkSpeakLogPath()).absolutePath())) {
+        qWarning() << "Unable to create the DarkSpeak folder at" << darkSpeakFolderPath();
+        return false;
+    }
+
+    QSettings settings;
+    if (forcePaths || settings.value(QStringLiteral("downloadLocation")).toString().isEmpty()) {
+        settings.setValue(QStringLiteral("downloadLocation"), darkSpeakDownloadsPath());
+    }
+    if (forcePaths || settings.value(QStringLiteral("logPath")).toString().isEmpty()) {
+        settings.setValue(QStringLiteral("logPath"), darkSpeakLogPath());
+    }
+    settings.sync();
+    return settings.status() == QSettings::NoError;
 }
 
 bool DesktopIntegration::initializeAutostart(bool enabled)

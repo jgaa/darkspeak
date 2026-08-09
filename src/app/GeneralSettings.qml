@@ -11,6 +11,7 @@ Item {
         id: settings
         property bool appAutoConnect : true
         property bool autostart : false
+        property bool useDarkSpeakFolder : false
         property bool autoAcceptIncomingFiles : false
         property bool includeConversationNameInDownloadPath : false
         property int maxIncomingFileSizeMb : 1024
@@ -19,6 +20,13 @@ Item {
 
     function commit() {
         settings.appAutoConnect = autoConnect.checked
+        if (useDarkSpeakFolder.checked !== settings.useDarkSpeakFolder) {
+            if (desktopIntegration.setDarkSpeakFolderEnabled(useDarkSpeakFolder.checked)) {
+                settings.useDarkSpeakFolder = useDarkSpeakFolder.checked
+            } else {
+                useDarkSpeakFolder.checked = settings.useDarkSpeakFolder
+            }
+        }
         if (desktopIntegration.setAutostartEnabled(autostart.checked)) {
             settings.autostart = autostart.checked
         } else {
@@ -53,6 +61,15 @@ Item {
             ToolTip.text: qsTr("Start DarkSpeak minimized to the taskbar when you log in")
             ToolTip.visible: hovered
             checked: settings.autostart
+        }
+
+        CheckBox {
+            id: useDarkSpeakFolder
+            text: qsTr("Use DarkSpeak folder in home")
+            ToolTip.text: qsTr("Store downloads and logs in ~/DarkSpeak")
+            ToolTip.visible: hovered
+            enabled: !desktopIntegration.darkSpeakFolderForced
+            checked: settings.useDarkSpeakFolder || desktopIntegration.darkSpeakFolderForced
         }
 
         CheckBox {

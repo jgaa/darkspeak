@@ -14,7 +14,7 @@ finish-args:
   - --talk-name=org.kde.StatusNotifierWatcher
   - --socket=wayland
   - --socket=fallback-x11
-  # File transfers can use any location in the user's home directory.
+  # Includes ~/DarkSpeak/Downloads and ~/DarkSpeak/Log.
   - --filesystem=home
 
 modules:
