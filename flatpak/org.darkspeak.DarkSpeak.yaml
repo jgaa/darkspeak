@@ -10,6 +10,8 @@ finish-args:
   # loopback connections from it.
   - --share=network
   - --share=ipc
+  # QSystemTrayIcon registers its KDE StatusNotifier item through this bus name.
+  - --talk-name=org.kde.StatusNotifierWatcher
   - --socket=wayland
   - --socket=fallback-x11
   # File transfers can use any location in the user's home directory.
