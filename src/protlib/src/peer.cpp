@@ -52,6 +52,11 @@ public:
         const auto partialPath = file->getDownloadPath();
         const auto metadataPath = partialPath + QStringLiteral(".meta");
         QFileInfo partialInfo{partialPath};
+        const QFileInfo metadataInfo{metadataPath};
+        const QFileInfo parentInfo{partialInfo.absolutePath()};
+        if (partialInfo.isSymLink() || metadataInfo.isSymLink() || parentInfo.isSymLink()) {
+            throw Error("Refusing to use a symlink for an incoming transfer path");
+        }
         const auto metadata = readMetadata(metadataPath);
         bool resume = false;
         quint64 savedOffset = {};
@@ -77,10 +82,16 @@ public:
             nextOffset_ = savedOffset;
             nextSequence_ = savedOffset / buffer_bytes;
         } else {
-            QFile::remove(partialPath);
+            if (partialInfo.exists() && !QFile::remove(partialPath)) {
+                throw Error("Failed to remove stale partial file");
+            }
             QFile::remove(metadataPath);
-            if (!io_.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            if (!io_.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
                 throw Error("Failed to open file");
+            }
+            if (QFileInfo(partialPath).isSymLink()) {
+                io_.close();
+                throw Error("Incoming partial file became a symlink");
             }
         }
 
@@ -211,7 +222,11 @@ private:
         if (!metadataFile.open(QIODevice::ReadOnly)) {
             return {};
         }
-        const auto document = QJsonDocument::fromJson(metadataFile.readAll());
+        const auto bytes = metadataFile.read(4097);
+        if (bytes.size() > 4096) {
+            return {};
+        }
+        const auto document = QJsonDocument::fromJson(bytes);
         return document.isObject() ? document.object() : QJsonObject{};
     }
 
@@ -526,6 +541,18 @@ Peer::Peer(ConnectionSocket::ptr_t connection,
     }, Qt::QueuedConnection);
 }
 
+Peer::~Peer()
+{
+    // QTcpSocket may emit disconnected while it is being destroyed.  The
+    // socket is a member of Peer, so with the implicit destructor it would be
+    // destroyed after Peer's destructor had started, leaving Qt callbacks
+    // targeting a partially destructed Peer.
+    if (connection_) {
+        QObject::disconnect(connection_.get(), nullptr, this, nullptr);
+        connection_.reset();
+    }
+}
+
 uint64_t Peer::send(const QJsonDocument &json)
 {
     if (!connection_->isOpen()) {
@@ -799,8 +826,8 @@ void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
                     object.value("file-type").toString(),
                     QByteArray::fromBase64(object.value("sha256").toString().toUtf8())};
 
-        if (msg.conversation.isEmpty() || msg.fileId.isEmpty()
-                || msg.name.isEmpty() || msg.name.size() > 4096
+        if (msg.conversation.isEmpty() || msg.fileId.size() != 32
+                || msg.name.isEmpty() || msg.name.toUtf8().size() > 255
                 || !sizeOk || !restOk || msg.size < 0 || msg.rest < 0
                 || msg.rest > msg.size || msg.sha512.size() != crypto_hash_sha256_BYTES) {
             protocolError(QStringLiteral("Invalid file offer packet"));

@@ -502,7 +502,10 @@ void File::transferComplete()
             return;
         }
 
-        if (!tmpFile.rename(getPath())) {
+        const QFileInfo destination{getPath()};
+        const QFileInfo destinationParent{destination.absolutePath()};
+        if (destination.isSymLink() || destinationParent.isSymLink()
+                || destination.exists() || !tmpFile.rename(getPath())) {
             transferFailed(QStringLiteral("Failed to rename: ")
                            + getDownloadPath()
                            + " to " + getPath(),

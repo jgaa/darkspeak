@@ -18,6 +18,12 @@ target_link_libraries(tor_address_test PRIVATE tor crypto Qt6::Core Qt6::Test so
 add_test(NAME tor_address COMMAND tor_address_test)
 set_tests_properties(tor_address PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+add_executable(tor_config_test tor_config_test.cpp)
+target_compile_features(tor_config_test PRIVATE cxx_std_17)
+target_link_libraries(tor_config_test PRIVATE tor Qt6::Core Qt6::Test)
+add_test(NAME tor_config COMMAND tor_config_test)
+set_tests_properties(tor_config PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 add_test(NAME qml_smoke COMMAND ${CMAKE_COMMAND} -E env
     QT_QPA_PLATFORM=offscreen
     QT_QUICK_CONTROLS_STYLE=Fusion

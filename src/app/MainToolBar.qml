@@ -13,18 +13,7 @@ ToolBar {
 
         ToolButton {
             text: (manager.onlineState === 0 || manager.onlineState === 4) ? qsTr("Connect") : qsTr("Disconnect")
-            icon.source: manager.onlineStatusIcon
             height: parent.height
-
-            icon.color: {
-                switch(manager.onlineState) {
-                case 0: return "white"
-                case 1: return "skyblue"
-                case 2: return "yellow"
-                case 3: return "lightgreen"
-                case 4: return "pink"
-                }
-            }
 
             onClicked: {
                 console.log("Online status is " + manager.onlineState)

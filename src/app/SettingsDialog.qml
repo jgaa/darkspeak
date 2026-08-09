@@ -8,12 +8,11 @@ Dialog {
     standardButtons: Dialog.Save | Dialog.Cancel
     title: qsTr("Settings")
     anchors.centerIn: parent
-    width: Math.min(Math.max(mainWindow.width - 80, 720), 900)
-    height: Math.min(Math.max(mainWindow.height - 80, 620), 760)
+    width: Math.min(Math.max(mainWindow.width - 80, 480), 900)
+    height: Math.min(Math.max(mainWindow.height - 80, 360), 760)
+    padding: 16
 
     contentItem: ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: 16
         spacing: 12
 
         TabBar {

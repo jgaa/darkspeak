@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <random>
+#include <QMap>
 
 #include "ds/torconfig.h"
 #include "ds/torctlsocket.h"
@@ -101,6 +102,7 @@ signals:
 public slots:
     void start(); // Connect to Tor server
     void stop(); // Disconnect from Tor server
+    void shutdown(); // Ask the Tor process to shut down
 
     /*! Create a hidden service
      *

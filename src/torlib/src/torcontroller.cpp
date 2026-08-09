@@ -1,6 +1,8 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
+#include <QTimer>
 
 #include "include/ds/torcontroller.h"
 #include "ds/torctlsocket.h"
@@ -37,15 +39,21 @@ void TorController::start()
 
     connect(ctl_.get(), &TorCtlSocket::connected, this, &TorController::startAuth);
     connect(ctl_.get(), &TorCtlSocket::disconnected, this, &TorController::clear);
+    connect(ctl_.get(), &TorCtlSocket::error, this,
+            [this](const QString&) {
+        QTimer::singleShot(0, this, &TorController::close);
+    });
     connect(ctl_.get(), &TorCtlSocket::torEvent, this, &TorController::torEvent);
 
-    LFLOG_DEBUG << "Connecting to Torctl on "
-             << config_.ctl_host
-             << " port " << config_.ctl_port;
-
     setState(CtlState::CONNECTING);
-
-    ctl_->connectToHost(config_.ctl_host, config_.ctl_port);
+    if (!config_.ctl_socket.isEmpty()) {
+        LFLOG_DEBUG << "Connecting to Tor control Unix socket";
+        ctl_->connectToServer(config_.ctl_socket);
+    } else {
+        LFLOG_DEBUG << "Connecting to Tor control endpoint "
+                    << config_.ctl_host << ":" << config_.ctl_port;
+        ctl_->connectToHost(config_.ctl_host, config_.ctl_port);
+    }
 }
 
 void TorController::stop()
@@ -57,6 +65,19 @@ void TorController::stop()
         ctl_.reset();
     }
     service_map_.clear();
+}
+
+void TorController::shutdown()
+{
+    if (!ctl_ || !isConnected()) {
+        throw IoError("Tor controller is not ready");
+    }
+
+    ctl_->sendCommand("SIGNAL SHUTDOWN", [](const TorCtlReply& reply) {
+        if (reply.status != 250) {
+            throw TorError("Tor rejected shutdown request");
+        }
+    });
 }
 
 void TorController::createService(const QUuid& serviceId)
@@ -224,6 +245,28 @@ void TorController::clear()
 void TorController::torEvent(const TorCtlReply &reply)
 {
     LFLOG_DEBUG << "Received Tor event status=" << reply.status;
+
+    // STATUS_CLIENT BOOTSTRAP events are asynchronous 650 replies. The
+    // initial GETINFO query may observe Tor before bootstrap is complete, so
+    // these events are the authoritative path to ONLINE.
+    static const QRegularExpression bootstrapPattern(
+        QStringLiteral(R"REGEX(^STATUS_CLIENT\s+\S+\s+BOOTSTRAP\s+PROGRESS=(\d+)(?:\s+TAG=\S+)?(?:\s+SUMMARY="([^"]*)")?.*$)REGEX"));
+
+    for (const auto& line : reply.lines) {
+        const auto match = bootstrapPattern.match(QString::fromStdString(line));
+        if (!match.hasMatch()) {
+            continue;
+        }
+
+        const auto progress = match.captured(1).toInt();
+        const auto summary = match.captured(2);
+        setState(progress >= 100 ? TorState::READY : TorState::INITIALIZING,
+                 progress, summary);
+        if (progress >= 100 && getCtlState() != CtlState::ONLINE) {
+            setState(CtlState::ONLINE);
+            emit ready();
+        }
+    }
 }
 
 void TorController::setState(TorController::CtlState state)

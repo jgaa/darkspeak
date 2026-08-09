@@ -11,6 +11,15 @@ DsServer::DsServer(ds::prot::ConnectionSocket::ptr_t
                              connection, ds::core::ConnectData connectionData)
     : Peer{move(connection), move(connectionData)}
 {
+    handshakeTimer_.setSingleShot(true);
+    connect(&handshakeTimer_, &QTimer::timeout, this, [this]() {
+        if (state_ == State::CONNECTED || state_ == State::WAITING_FOR_AUTHORIZATION) {
+            LFLOG_WARN << "Peer handshake or authorization timed out";
+            state_ = State::FAILED;
+            close();
+        }
+    });
+    handshakeTimer_.start(handshakeTimeoutMilliseconds);
 
     connect(getConnectionPtr().get(), &ConnectionSocket::haveBytes,
             this, [this](const auto& data) {
@@ -24,11 +33,15 @@ DsServer::DsServer(ds::prot::ConnectionSocket::ptr_t
     // Get exactely the hello payload.
     connection_->wantBytes(Hello::bytes + crypto_box_SEALBYTES);
 
-    // TODO: Set up a timer so we time out if things don't progress
 }
 
 void DsServer::authorize(bool authorize)
 {
+    if (state_ != State::WAITING_FOR_AUTHORIZATION) {
+        return;
+    }
+
+    handshakeTimer_.stop();
     if (!authorize) {
         LFLOG_DEBUG << "Connection " << connection_->getUuid().toString()
                     << " was not authorized to proceed. Closing.";
@@ -135,6 +148,7 @@ void DsServer::getHello(const data_t& data)
     // Stall further IO until we get authorization to proceed
     connection_->wantBytes(0);
     state_ = State::WAITING_FOR_AUTHORIZATION;
+    handshakeTimer_.start(authorizationTimeoutMilliseconds);
 
     LFLOG_DEBUG << "We are ready to proceed with connection from "
                 << client_cert->getB58PubKey()

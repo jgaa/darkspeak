@@ -37,4 +37,21 @@ logfault::LogLevel getLogLevel(const QSettings& settings, const LogSystem system
     return levels.at(static_cast<size_t>(level));
 }
 
+void ensureLogSettings(QSettings& settings)
+{
+    if (!settings.contains(QStringLiteral("logLevelApp"))) {
+        settings.setValue(QStringLiteral("logLevelApp"),
+                          static_cast<int>(logfault::LogLevel::DISABLED));
+    }
+    if (!settings.contains(QStringLiteral("logLevelFile"))) {
+        settings.setValue(QStringLiteral("logLevelFile"),
+                          static_cast<int>(logfault::LogLevel::DISABLED));
+    }
+    if (!settings.contains(QStringLiteral("logLevelStdout"))) {
+        settings.setValue(QStringLiteral("logLevelStdout"),
+                          static_cast<int>(logfault::LogLevel::DISABLED));
+    }
+    settings.sync();
+}
+
 }}

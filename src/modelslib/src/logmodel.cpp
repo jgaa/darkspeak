@@ -10,12 +10,6 @@ using namespace  std;
 namespace ds {
 namespace models {
 
-LogModel::LogModel(QSettings &settings)
-    : settings_{settings}
-{
-    installHandler(core::getLogLevel(settings, core::LogSystem::APPLICATION));
-}
-
 void LogModel::installHandler(logfault::LogLevel level)
 {
     if (level == logfault::LogLevel::DISABLED) {

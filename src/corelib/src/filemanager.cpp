@@ -5,6 +5,8 @@
 #include <QSqlQuery>
 #include <QStorageInfo>
 #include <QStandardPaths>
+#include <QChar>
+#include <QSet>
 
 #include "include/ds/filemanager.h"
 #include "ds/dsengine.h"
@@ -17,6 +19,44 @@ using namespace std;
 
 namespace ds {
 namespace core {
+
+namespace {
+
+qint64 configuredMaxIncomingBytes(const QSettings& settings)
+{
+    const auto maxMb = settings.value("maxIncomingFileSizeMb", 1024).toLongLong();
+    if (maxMb <= 0 || maxMb > (std::numeric_limits<qint64>::max() / (1024 * 1024))) {
+        return 0;
+    }
+    return maxMb * 1024 * 1024;
+}
+
+bool safeFileName(const QString& name)
+{
+    if (name.isEmpty() || name.toUtf8().size() > 255 || name == "." || name == "..") {
+        return false;
+    }
+    for (const auto character : name) {
+        if (character.category() == QChar::Other_Control) {
+            return false;
+        }
+    }
+    if (name.endsWith(' ') || name.endsWith('.')) {
+        return false;
+    }
+    const auto device = name.section('.', 0, 0).toUpper();
+    static const QSet<QString> reservedDevices{
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5",
+        "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4",
+        "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"};
+    if (reservedDevices.contains(device)) {
+        return false;
+    }
+    static const std::regex forbidden{R"(\\|/|\||\.\.)"};
+    return !std::regex_search(name.toStdString(), forbidden);
+}
+
+} // namespace
 
 FileManager::FileManager(QObject &parent, QSettings &settings)
     : QObject{&parent}, settings_{settings}
@@ -136,18 +176,39 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
 
     auto data = make_unique<FileData>();
 
-    // Validate name
-    // TODO: Add Windows forbidden device names
-    static const std::regex forbidden{R"(\\|\/|\||\.\.)"};
-    if (std::regex_search(offer.name.toStdString(), forbidden)) {
-        LFLOG_WARN << "Rejecting file #" << offer.fileId.toBase64()
-                   << " from peer " << conversation.getFirstParticipant()->getName()
-                   << " on identity " << conversation.getIdentity()->getName()
-                   << ": Suspicious file name!";
+    const auto maxBytes = configuredMaxIncomingBytes(settings_);
+    if (offer.fileId.size() != 32 || offer.size < 0 || !safeFileName(offer.name)
+            || maxBytes == 0 || offer.size > maxBytes) {
+        LFLOG_WARN << "Rejecting file offer: violates local safety policy";
         DsEngine::instance().reportStatus(
-            QObject::tr("Rejected file with an unsafe name"),
+            QObject::tr("Rejected file offer due to local safety limits"),
             DsEngine::StatusLevel::WARNING);
 
+        offer.peer->sendAck("IncomingFile", "Rejected", offer.fileId.toBase64());
+        return;
+    }
+
+    QSqlQuery pending;
+    pending.prepare("SELECT COUNT(*), COALESCE(SUM(size), 0) FROM file "
+                    "WHERE contact_id=:contact AND direction=:direction "
+                    "AND state IN (:offered, :queued, :transferring, :hashing)");
+    pending.bindValue(":contact", conversation.getFirstParticipant()->getId());
+    pending.bindValue(":direction", static_cast<int>(File::INCOMING));
+    pending.bindValue(":offered", static_cast<int>(File::FS_OFFERED));
+    pending.bindValue(":queued", static_cast<int>(File::FS_QUEUED));
+    pending.bindValue(":transferring", static_cast<int>(File::FS_TRANSFERRING));
+    pending.bindValue(":hashing", static_cast<int>(File::FS_HASHING));
+    if (!pending.exec() || !pending.next()) {
+        throw Error("Failed to check pending incoming file quota");
+    }
+    const auto pendingCount = pending.value(0).toLongLong();
+    const auto pendingBytes = pending.value(1).toLongLong();
+    const auto maxPendingCount = settings_.value("maxPendingIncomingFiles", 32).toLongLong();
+    const auto maxPendingBytes = settings_.value(
+        "maxPendingIncomingFileBytes", 4LL * 1024 * 1024 * 1024).toLongLong();
+    if (pendingCount >= maxPendingCount
+            || offer.size > maxPendingBytes
+            || pendingBytes > maxPendingBytes - offer.size) {
         offer.peer->sendAck("IncomingFile", "Rejected", offer.fileId.toBase64());
         return;
     }
@@ -206,8 +267,7 @@ bool FileManager::canAcceptIncoming(const File& file, QString& reason) const
     }
 
     const qint64 maxMb = settings_.value("maxIncomingFileSizeMb", 1024).toLongLong();
-    const qint64 maxBytes = maxMb > 0 && maxMb <= (std::numeric_limits<qint64>::max() / (1024 * 1024))
-            ? maxMb * 1024 * 1024 : 0;
+    const qint64 maxBytes = configuredMaxIncomingBytes(settings_);
     if (maxBytes <= 0 || size > maxBytes) {
         reason = QObject::tr("File exceeds the configured receive limit (%1 MB)").arg(maxMb);
         return false;

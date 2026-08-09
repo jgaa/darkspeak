@@ -113,6 +113,11 @@ TorConfig TorProtocolManager::getConfig() const
 {
      TorConfig config;
 
+     const auto mode = settings_.value(QStringLiteral("torMode"), 1).toInt();
+     config.mode = mode == 1 ? TorConfig::Mode::PRIVATE : TorConfig::Mode::SYSTEM;
+     config.tor_command = settings_.value(QStringLiteral("torCmd"),
+                                           config.tor_command).toString();
+
      config.ctl_host = QHostAddress(
                  settings_.value(QStringLiteral("torCtlHost"),
                                  config.ctl_host.toString()).toString());
@@ -239,7 +244,11 @@ void TorProtocolManager::startService(const QUuid& serviceId,
     sp.service_id = data["service_id"].toByteArray();
 
     const auto address = TorAddress::parse(data["address"].toString());
-    const auto config = getConfig();
+    auto config = getConfig();
+    if (config.mode == TorConfig::Mode::PRIVATE) {
+        config.socks_host = tor_->socksHost();
+        config.socks_port = tor_->socksPort();
+    }
     auto service = make_shared<TorServiceInterface>(cert, address.toString().toUtf8(), serviceId,
                                                     config.app_host,
                                                     config.socks_host,
@@ -291,7 +300,15 @@ void TorProtocolManager::startService(const QUuid& serviceId,
 
 void TorProtocolManager::stopService(const QUuid& uuid)
 {
-    tor_->stopService(uuid);
+    try {
+        tor_->stopService(uuid);
+    } catch (const TorMgr::OfflineError&) {
+        // Tor may have gone offline before application shutdown reached the
+        // identity cleanup pass.  The service cannot be removed from Tor in
+        // that state, but there is no shutdown work left to perform here.
+        LFLOG_DEBUG << "Tor is already offline; skipping stop request for service "
+                    << uuid.toString();
+    }
 }
 
 core::PeerConnection::ptr_t TorProtocolManager::connectTo(core::ConnectData cd)

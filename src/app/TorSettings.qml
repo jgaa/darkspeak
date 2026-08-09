@@ -9,7 +9,7 @@ Item {
 
     Settings {
         id: settings
-        property int torMode: 0
+        property int torMode: 1
         property string torCmd: "tor"
         property string torCtlHost
         property int torCtlPort: 9051

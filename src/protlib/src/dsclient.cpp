@@ -16,6 +16,13 @@ DsClient::DsClient(ConnectionSocket::ptr_t connection,
                    core::ConnectData connectionData)
     : Peer{move(connection), move(connectionData)}
 {
+    handshakeTimer_.setSingleShot(true);
+    connect(&handshakeTimer_, &QTimer::timeout, this, [this]() {
+        if (state_ != State::ENCRYPTED_STREAM) {
+            LFLOG_WARN << "Outgoing peer handshake timed out";
+            close();
+        }
+    });
     initConnections();
     startConnectRetryTimer();
 }
@@ -87,6 +94,7 @@ void DsClient::sayHello()
     // Send the message to the server.
     connection_->write(ciphertext);
     state_ = State::GET_OLLEH;
+    handshakeTimer_.start(handshakeTimeoutMilliseconds);
     connection_->wantBytes(Olleh::bytes + crypto_box_SEALBYTES);
     LFLOG_DEBUG << "Said hello to " << connection_->getUuid().toString();
 }
@@ -129,6 +137,7 @@ void DsClient::getHelloReply(const Peer::data_t &data)
     // At this point, any further outbound data must be encrypted
     prepareDecryption(stateIn, olleh.header, olleh.key);
     state_ = State::ENCRYPTED_STREAM;
+    handshakeTimer_.stop();
     LFLOG_DEBUG << "The data-stream to " << connection_->getUuid().toString()
                 << " is fully switched to stream-encryption.";
 

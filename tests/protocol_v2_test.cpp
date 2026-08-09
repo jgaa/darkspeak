@@ -2,6 +2,8 @@
 
 #include "ds/connectionsocket.h"
 #include "ds/peer.h"
+#include "ds/dsclient.h"
+#include "ds/dsserver.h"
 
 class ProtocolV2Test final : public QObject
 {
@@ -30,6 +32,15 @@ private slots:
         QCOMPARE(socket.queuedBytes(),
                  ds::prot::ConnectionSocket::maxOutgoingBytes());
         QVERIFY_EXCEPTION_THROWN(socket.write(QByteArray(1, '\0')), std::runtime_error);
+    }
+
+    void handshakeTimeoutsAreBounded()
+    {
+        QVERIFY(ds::prot::DsClient::handshakeTimeoutMilliseconds > 0);
+        QVERIFY(ds::prot::DsClient::handshakeTimeoutMilliseconds <= 30'000);
+        QVERIFY(ds::prot::DsServer::handshakeTimeoutMilliseconds > 0);
+        QVERIFY(ds::prot::DsServer::authorizationTimeoutMilliseconds
+                > ds::prot::DsServer::handshakeTimeoutMilliseconds);
     }
 };
 

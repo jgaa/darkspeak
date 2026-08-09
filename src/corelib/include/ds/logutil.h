@@ -16,6 +16,7 @@ enum class LogSystem {
 
 bool isEnabled(const QSettings& settings, const LogSystem system);
 logfault::LogLevel getLogLevel(const QSettings& settings, const LogSystem system);
+void ensureLogSettings(QSettings& settings);
 
 }} // namepaces
 

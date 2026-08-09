@@ -2,6 +2,7 @@
 #define DSSERVER_H
 
 #include "ds/peer.h"
+#include <QTimer>
 
 
 namespace ds {
@@ -11,6 +12,9 @@ class DsServer : public Peer
 {
     Q_OBJECT
 public:
+    static constexpr int handshakeTimeoutMilliseconds = 15'000;
+    static constexpr int authorizationTimeoutMilliseconds = 30'000;
+
     enum class State {
         CONNECTED,
         WAITING_FOR_AUTHORIZATION,
@@ -31,6 +35,7 @@ private:
     void getHello(const data_t& data);
 
     State state_ = State::CONNECTED;
+    QTimer handshakeTimer_;
 
     // PeerConnection interface
 public:

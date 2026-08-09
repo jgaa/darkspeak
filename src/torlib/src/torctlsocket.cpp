@@ -4,6 +4,8 @@
 #include <locale>
 
 #include <QString>
+#include <QLocalSocket>
+#include <QTcpSocket>
 
 #include "logfault/logfault.h"
 #include "ds/torctlsocket.h"
@@ -21,8 +23,61 @@ TorCtlSocket::TorCtlSocket()
         qRegisterMetaType<ds::tor::TorCtlReply>("::ds::tor::TorCtlReply");
     }
 
-    connect(this, SIGNAL(readyRead()), this, SLOT(processIn()));
-    connect(this, SIGNAL(disconnected()), this, SLOT(clear()));
+}
+
+void TorCtlSocket::connectToHost(const QHostAddress& host, quint16 port)
+{
+    auto socket = std::make_unique<QTcpSocket>();
+    connect(socket.get(), &QTcpSocket::connected, this, &TorCtlSocket::connected);
+    connect(socket.get(), &QTcpSocket::disconnected, this, &TorCtlSocket::disconnected);
+    connect(socket.get(), &QTcpSocket::errorOccurred, this,
+            [this](QAbstractSocket::SocketError) {
+        setError(QStringLiteral("Tor control TCP connection failed"));
+    });
+    socket_ = std::move(socket);
+    connect(socket_.get(), &QIODevice::readyRead, this, &TorCtlSocket::processIn);
+    connect(this, &TorCtlSocket::disconnected, this, &TorCtlSocket::clear,
+            Qt::UniqueConnection);
+    static_cast<QTcpSocket*>(socket_.get())->connectToHost(host, port);
+}
+
+void TorCtlSocket::connectToServer(const QString& name)
+{
+    auto socket = std::make_unique<QLocalSocket>();
+    connect(socket.get(), &QLocalSocket::connected, this, &TorCtlSocket::connected);
+    connect(socket.get(), &QLocalSocket::disconnected, this, &TorCtlSocket::disconnected);
+    connect(socket.get(), &QLocalSocket::errorOccurred, this,
+            [this](QLocalSocket::LocalSocketError) {
+        setError(QStringLiteral("Tor control Unix socket connection failed"));
+    });
+    socket_ = std::move(socket);
+    connect(socket_.get(), &QIODevice::readyRead, this, &TorCtlSocket::processIn);
+    connect(this, &TorCtlSocket::disconnected, this, &TorCtlSocket::clear,
+            Qt::UniqueConnection);
+    static_cast<QLocalSocket*>(socket_.get())->connectToServer(name);
+}
+
+bool TorCtlSocket::isOpen() const
+{
+    return socket_ && socket_->isOpen();
+}
+
+void TorCtlSocket::close()
+{
+    if (auto *socket = qobject_cast<QAbstractSocket*>(socket_.get())) {
+        socket->close();
+    } else if (auto *socket = qobject_cast<QLocalSocket*>(socket_.get())) {
+        socket->close();
+    }
+}
+
+void TorCtlSocket::abort()
+{
+    if (auto *socket = qobject_cast<QAbstractSocket*>(socket_.get())) {
+        socket->abort();
+    } else if (auto *socket = qobject_cast<QLocalSocket*>(socket_.get())) {
+        socket->abort();
+    }
 }
 
 void TorCtlSocket::sendCommand(QByteArray command,

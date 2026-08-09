@@ -8,7 +8,8 @@
 #include <algorithm>
 #include <QQueue>
 #include <QObject>
-#include <QTcpSocket>
+#include <QIODevice>
+#include <QHostAddress>
 
 namespace ds {
 namespace tor {
@@ -56,7 +57,7 @@ struct TorCtlReply {
 };
 
 
-class TorCtlSocket : public QTcpSocket
+class TorCtlSocket : public QObject
 {
     Q_OBJECT
 
@@ -76,6 +77,12 @@ public:
 
     explicit TorCtlSocket();
 
+    void connectToHost(const QHostAddress& host, quint16 port);
+    void connectToServer(const QString& name);
+    bool isOpen() const;
+    void close();
+    void abort();
+
     /*! Send a command to the TOR server
      *
      * \param command Command to send. Does not have to be terminated with CRLF
@@ -85,6 +92,8 @@ public:
     void sendCommand(QByteArray command, const handler_t& handler);
 
 signals:
+    void connected();
+    void disconnected();
     // If triggered, the connection is dead
     void error(const QString &message);
     void torReply(const TorCtlReply& reply);
@@ -95,14 +104,15 @@ protected slots:
     void clear();
 
 protected:
-    virtual bool canReadLine_() const { return canReadLine(); }
-    virtual qint64 write_(const QByteArray& data) { return write(data); }
-    virtual QByteArray readLine_(qint64 maxLen) {return readLine(maxLen); }
+    bool canReadLine_() const { return socket_ && socket_->canReadLine(); }
+    qint64 write_(const QByteArray& data) { return socket_ ? socket_->write(data) : -1; }
+    QByteArray readLine_(qint64 maxLen) { return socket_ ? socket_->readLine(maxLen) : QByteArray{}; }
 
 private:
     void setError(const QString& error);
 
     QQueue<handler_t> pending_;
+    std::unique_ptr<QIODevice> socket_;
     constexpr static size_t max_buffer_len_ = 1024 * 5;
     constexpr static size_t max_reply_lines_ = 32;
     constexpr static int max_data_in_one_reply_line_ = 1024 * 16;

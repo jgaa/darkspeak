@@ -10,6 +10,7 @@ Item {
     Settings {
         id: settings
         property bool appAutoConnect : true
+        property bool autostart : false
         property bool autoAcceptIncomingFiles : false
         property bool includeConversationNameInDownloadPath : false
         property int maxIncomingFileSizeMb : 1024
@@ -18,6 +19,11 @@ Item {
 
     function commit() {
         settings.appAutoConnect = autoConnect.checked
+        if (desktopIntegration.setAutostartEnabled(autostart.checked)) {
+            settings.autostart = autostart.checked
+        } else {
+            autostart.checked = settings.autostart
+        }
         settings.autoAcceptIncomingFiles = autoAccept.checked
         settings.includeConversationNameInDownloadPath = includeConversationName.checked
         settings.maxIncomingFileSizeMb = maxIncomingSize.value
@@ -39,6 +45,14 @@ Item {
             ToolTip.text: qsTr("Connect automatically when the application is started")
             ToolTip.visible: hovered
             checked: settings.appAutoConnect
+        }
+
+        CheckBox {
+            id: autostart
+            text: qsTr("Start automatically")
+            ToolTip.text: qsTr("Start DarkSpeak minimized to the taskbar when you log in")
+            ToolTip.visible: hovered
+            checked: settings.autostart
         }
 
         CheckBox {

@@ -2,8 +2,12 @@ project(darkspeak LANGUAGES CXX)
 
 add_executable(${PROJECT_NAME}
     main.cpp
+    desktop_integration.cpp
+    desktop_integration.h
     filedialogmodel.cpp
     filedialogmodel.h
+    tray_controller.cpp
+    tray_controller.h
     qml.qrc
     )
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/dependencies/logfault/include)

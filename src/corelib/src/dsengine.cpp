@@ -360,6 +360,7 @@ void DsEngine::initialize()
 {
     assert(!instance_);
     instance_ = this;
+    ensureLogSettings(*settings_);
     LFLOG_DEBUG << "Settings are in " << settings_->fileName();
 
     static bool initialized = false;
@@ -412,6 +413,13 @@ void DsEngine::initialize()
         settings_->setValue("appAutoConnect", true);
     }
 
+    if (!settings_->contains("torMode")) {
+        settings_->setValue("torMode", 1); // Embedded Tor
+    }
+    if (!settings_->contains("torCmd")) {
+        settings_->setValue("torCmd", "tor");
+    }
+
     if (!settings_->contains("autoAcceptIncomingFiles")) {
         settings_->setValue("autoAcceptIncomingFiles", false);
     }
@@ -423,6 +431,12 @@ void DsEngine::initialize()
     }
     if (!settings_->contains("minimumFreeSpacePercent")) {
         settings_->setValue("minimumFreeSpacePercent", 10);
+    }
+    if (!settings_->contains("maxPendingIncomingFiles")) {
+        settings_->setValue("maxPendingIncomingFiles", 32);
+    }
+    if (!settings_->contains("maxPendingIncomingFileBytes")) {
+        settings_->setValue("maxPendingIncomingFileBytes", 4LL * 1024 * 1024 * 1024);
     }
 
     if (settings_->value("dbpath", "").toString().isEmpty()) {
@@ -463,19 +477,6 @@ void DsEngine::initialize()
         logpath += "/darkspeak.log";
 #endif
         settings_->setValue("logPath", logpath);
-    }
-
-    if (!settings_->contains("logLevelApp")) {
-        settings_->setValue("logLevelApp", static_cast<int>(logfault::LogLevel::DISABLED));
-    }
-
-    if (!settings_->contains("logLevelFile")) {
-        settings_->setValue("logLevelFile", static_cast<int>(logfault::LogLevel::DISABLED));
-    }
-
-    if (!settings_->contains("logLevelStdout")) {
-        settings_->setValue("logLevelApp", static_cast<int>(logfault::LogLevel::DISABLED));
-        settings_->setValue("logLevelStdout", static_cast<int>(logfault::LogLevel::DISABLED));
     }
 
     secretStore_ = std::make_unique<SecretStore>(settings_->value("dbpath").toString());

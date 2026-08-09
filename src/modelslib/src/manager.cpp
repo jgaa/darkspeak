@@ -156,13 +156,12 @@ void configureLogging(const QSettings& settings,
 #endif
 
     auto& logManager = logfault::LogManager::Instance();
-    logManager.ClearHandlers();
 
     const auto level = logLevel.isEmpty() ? defaultLevel : levelFromName(logLevel);
-    const auto appLevel = logLevel.isEmpty()
-            ? core::getLogLevel(settings, core::LogSystem::APPLICATION) : level;
-    const auto stdoutLevel = logLevel.isEmpty()
-            ? core::getLogLevel(settings, core::LogSystem::STDOUT) : level;
+    const auto appLevel = core::getLogLevel(settings, core::LogSystem::APPLICATION);
+    const auto stdoutLevel = core::getLogLevel(settings, core::LogSystem::STDOUT);
+    const auto fileLevel = logLevel.isEmpty()
+            ? core::getLogLevel(settings, core::LogSystem::LOGFILE) : level;
 
     if (appLevel != logfault::LogLevel::DISABLED) {
         logModel.installHandler(appLevel);
@@ -177,16 +176,15 @@ void configureLogging(const QSettings& settings,
     if (!logFile.isEmpty()) {
         makePrivate(logFile);
         logManager.AddHandler(std::make_unique<logfault::StreamHandler>(
-                                  logFile.toStdString(), level, true));
+                                  logFile.toStdString(), fileLevel, true));
         QFile::setPermissions(logFile, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
         LFLOG_NOTICE << "Enabled logging to \""
                      << logFile.toStdString()
                      << "\" at level "
-                     << logfault::Handler::LevelName(level);
+                     << logfault::Handler::LevelName(fileLevel);
     } else if (core::isEnabled(settings, core::LogSystem::LOGFILE)) {
         const auto path = settings.value("logPath").toString();
         makePrivate(path);
-        const auto fileLevel = core::getLogLevel(settings, core::LogSystem::LOGFILE);
         logManager.AddHandler(std::make_unique<logfault::StreamHandler>(
                                   path.toStdString(),
                                   fileLevel,
@@ -408,7 +406,8 @@ void Manager::setStatusMessage(const QString& message, const StatusLevel level)
 Manager::Manager(const QString& logFile, const QString& logLevel)
 {
     QSettings settings{};
-    log_ = make_unique<LogModel>(settings);
+    core::ensureLogSettings(settings);
+    log_ = make_unique<LogModel>();
     configureLogging(settings, logFile, logLevel, *log_);
 
     engine_ = make_unique<DsEngine>();
@@ -500,7 +499,7 @@ QUrl Manager::getOnlineStatusIcon() const
     static const std::array<QUrl, 5> icons = {
        QUrl("qrc:/images/network_offline.svg"),
        QUrl("qrc:/images/network_connecting.svg"),
-       QUrl("qrc:/network_connected.svg"),
+       QUrl("qrc:/images/network_connected.svg"),
        QUrl("qrc:/images/network_online.svg"),
        QUrl("qrc:/images/network_offline.svg"),
    };

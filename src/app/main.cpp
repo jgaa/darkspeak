@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QFile>
 #include <QApplication>
+#include <QMessageBox>
 #include <QIcon>
 #include <QLockFile>
 #include <QQmlApplicationEngine>
@@ -17,6 +18,7 @@
 #include <QQuickStyle>
 #include <QSize>
 #include <QSettings>
+#include <QWindow>
 
 #include "ds/manager.h"
 #include "ds/logmodel.h"
@@ -34,6 +36,8 @@
 #include "ds/logutil.h"
 #include "ds/avatarutil.h"
 #include "filedialogmodel.h"
+#include "desktop_integration.h"
+#include "tray_controller.h"
 
 #include "logfault/logfault.h"
 
@@ -157,6 +161,8 @@ int main(int argc, char *argv[])
                       QStringLiteral("level")});
     parser.addOption({QStringLiteral("qml-smoke-test"),
                       QStringLiteral("Load and validate all bundled QML files, then exit.")});
+    parser.addOption({QStringLiteral("autostart"),
+                      QStringLiteral("Start minimized to the taskbar.")});
 
     if (!parser.parse(app.arguments())) {
         std::cerr << parser.errorText().toStdString() << '\n';
@@ -185,13 +191,19 @@ int main(int argc, char *argv[])
         return 2;
     }
 
-    unique_ptr<QLockFile> profileLock;
-    if (!profile.isEmpty()) {
-        profileLock = make_unique<QLockFile>(QDir(profile).filePath("instance.lock"));
-        if (!profileLock->tryLock(0)) {
-            std::cerr << "The profile is already in use: " << profile.toStdString() << '\n';
-            return 2;
-        }
+    const auto lockRoot = profile.isEmpty()
+            ? QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)
+            : profile;
+    if (lockRoot.isEmpty() || !QDir().mkpath(lockRoot)) {
+        std::cerr << "Unable to create the application lock directory.\n";
+        return 2;
+    }
+
+    auto instanceLock = make_unique<QLockFile>(QDir(lockRoot).filePath("instance.lock"));
+    if (!instanceLock->tryLock(0)) {
+        QMessageBox::critical(nullptr, QObject::tr("DarkSpeak is already running"),
+                              QObject::tr("Another DarkSpeak instance is already using this profile."));
+        return 2;
     }
 
     // Initialize crypto
@@ -272,6 +284,8 @@ int main(int argc, char *argv[])
     qmlRegisterType<ds::models::IdentityNameValidator>("org.darkspeak", 1, 0, "IdentityNameValidator");
 
     QQmlApplicationEngine engine;
+    DesktopIntegration desktopIntegration(&app);
+    engine.rootContext()->setContextProperty("desktopIntegration", &desktopIntegration);
     FileDialogModel fileDialogs;
 
     engine.rootContext()->setContextProperty("manager", manager.get());
@@ -318,6 +332,19 @@ int main(int argc, char *argv[])
     if (engine.rootObjects().isEmpty()) {
         LFLOG_ERROR << "No root object after loading main.qml. Aborting mission.";
         return -1;
+    }
+
+    QSettings generalSettings;
+    const bool autostart = generalSettings.value(QStringLiteral("autostart"), false).toBool();
+    desktopIntegration.initializeAutostart(autostart);
+
+    auto *window = qobject_cast<QWindow *>(engine.rootObjects().constFirst());
+    std::unique_ptr<TrayController> tray;
+    if (window != nullptr) {
+        tray = std::make_unique<TrayController>(window,
+                                                parser.isSet(QStringLiteral("autostart")),
+                                                &app);
+        app.setQuitOnLastWindowClosed(!tray->available());
     }
 
     if (parser.isSet(QStringLiteral("qml-smoke-test"))) {

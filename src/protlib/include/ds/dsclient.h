@@ -2,6 +2,7 @@
 #define DSCLIENT_H
 
 #include "ds/peer.h"
+#include <QTimer>
 
 namespace ds {
 namespace prot {
@@ -13,6 +14,8 @@ class DsClient : public Peer
 {
     Q_OBJECT
 public:
+    static constexpr int handshakeTimeoutMilliseconds = 15'000;
+
     using ptr_t = std::shared_ptr<DsClient>;
 
     enum class State {
@@ -38,6 +41,7 @@ private:
     size_t maxReconnects_ = 20;
     size_t numReconnects_ = {};
     size_t reconnectDelayMilliseconds_ = 20000;
+    QTimer handshakeTimer_;
 
     // PeerConnection interface
 public:

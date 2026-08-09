@@ -115,7 +115,7 @@ public:
 
     Peer(ConnectionSocket::ptr_t connection,
          core::ConnectData connectionData);
-    ~Peer() override = default;
+    ~Peer() override;
 
     ConnectionSocket& getConnection() {
         if (!connection_) {

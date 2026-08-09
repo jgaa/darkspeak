@@ -4,6 +4,8 @@
 #include <memory>
 
 #include <QObject>
+#include <QProcess>
+#include <QTcpServer>
 
 #include "ds/torconfig.h"
 #include "ds/torcontroller.h"
@@ -29,6 +31,8 @@ public:
 
     TorController *getController();
     QString getTorVersion() const;
+    QHostAddress socksHost() const { return config_.socks_host; }
+    quint16 socksPort() const { return config_.socks_port; }
 
 signals:
     // Connected to the Tor control channel
@@ -52,6 +56,7 @@ signals:
     void serviceStopped(const QUuid& service);
     void torStateUpdate(TorController::TorState state, int progress, const QString& summary);
     void stateUpdate(TorController::CtlState state);
+    void error(const QString& message);
 
 public slots:
     /*! Start / connect to the Tor service */
@@ -106,9 +111,27 @@ private slots:
 
 private:
     void startUseSystemInstance();
+    void startPrivateInstance();
+    void startControlConnection();
+    void createController();
+    void launchPrivateInstance();
+    void stopExistingInstance();
+    void waitForExistingInstance(int attempt = 0);
+    bool torDataDirectoryLocked() const;
+    void onProcessOutput();
+    void onProcessFinished(int exitCode, QProcess::ExitStatus status);
+    bool preparePrivateInstance();
 
     TorConfig config_;
     std::shared_ptr<TorController> ctl_;
+    QProcess process_;
+    QTcpServer socks_reservation_;
+    bool stopping_ = false;
+    QString tor_data_dir_;
+    QString tor_runtime_dir_;
+    std::shared_ptr<TorController> existing_ctl_;
+    bool waiting_for_existing_tor_ = false;
+    bool existing_shutdown_requested_ = false;
 };
 
 }} // namespaces

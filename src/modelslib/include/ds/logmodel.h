@@ -3,7 +3,6 @@
 
 #include <deque>
 
-#include <QSettings>
 #include <QAbstractListModel>
 #include <QImage>
 
@@ -35,7 +34,7 @@ class LogModel : public QAbstractListModel
         logfault::LogLevel level;
     };
 public:
-    LogModel(QSettings& settings);
+    LogModel() = default;
     void installHandler(logfault::LogLevel level);
 
 // QAbstractItemModel interface
@@ -47,7 +46,6 @@ public slots:
     void log(QString text, logfault::LogLevel level);
 
 private:
-    QSettings& settings_;
     std::deque<std::unique_ptr<Item>> log_items_;
 };
 
