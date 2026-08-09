@@ -17,7 +17,7 @@
     <category>Network</category>
     <category>Chat</category>
   </categories>
-  <url type="homepage">https://github.com/jgaa/darkspeak</url>
+  <url type="homepage">https://darkspeak.org</url>
   <releases>
     <release version="@VERSION@" date="2026-07-28"/>
   </releases>

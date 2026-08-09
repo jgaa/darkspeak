@@ -61,6 +61,14 @@ jobs:
             org.kde.Platform//6.10 \
             org.kde.Sdk//6.10
 
+      - name: Cache Flatpak builder state
+        uses: actions/cache@v4
+        with:
+          path: .flatpak-builder
+          key: flatpak-builder-${{ hashFiles('flatpak/org.darkspeak.DarkSpeak.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            flatpak-builder-${{ hashFiles('flatpak/org.darkspeak.DarkSpeak.yaml') }}-
+
       - name: Build Flatpak bundle
         env:
           BUNDLE_NAME: ${{ steps.version.outputs.bundle_name }}
@@ -75,6 +83,7 @@ jobs:
             flatpak/org.darkspeak.DarkSpeak.yaml
           flatpak build builddir test -f /app/share/metainfo/org.darkspeak.DarkSpeak.metainfo.xml
           flatpak build builddir test -f /app/share/applications/org.darkspeak.DarkSpeak.desktop
+          flatpak build builddir /app/bin/tor --version
           flatpak build-bundle repo "${BUNDLE_NAME}" org.darkspeak.DarkSpeak main
 
       - name: Upload Flatpak bundle

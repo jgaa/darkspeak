@@ -4,6 +4,8 @@
 
 #include <QJsonObject>
 #include <QJsonDocument>
+#include <QCoreApplication>
+#include <QDir>
 
 #include "ds/torprotocolmanager.h"
 #include "ds/errors.h"
@@ -117,6 +119,12 @@ TorConfig TorProtocolManager::getConfig() const
      config.mode = mode == 1 ? TorConfig::Mode::PRIVATE : TorConfig::Mode::SYSTEM;
      config.tor_command = settings_.value(QStringLiteral("torCmd"),
                                            config.tor_command).toString();
+#ifdef DARKSPEAK_FLATPAK_BUILD
+     if (config.mode == TorConfig::Mode::PRIVATE) {
+         config.tor_command = QDir(QCoreApplication::applicationDirPath())
+                                  .filePath(QStringLiteral("tor"));
+     }
+#endif
 
      config.ctl_host = QHostAddress(
                  settings_.value(QStringLiteral("torCtlHost"),

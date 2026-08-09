@@ -6,18 +6,14 @@ sdk: org.kde.Sdk
 command: darkspeak
 
 finish-args:
-  # DarkSpeak uses the host Tor daemon for both its SOCKS and control
-  # connections, and Tor must be able to reach the app's local listener.
+  # The embedded Tor process needs network access and the app needs to accept
+  # loopback connections from it.
   - --share=network
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
   # File transfers can use any location in the user's home directory.
   - --filesystem=home
-  # Debian/Ubuntu Tor commonly exposes control.authcookie here.  Keep this
-  # read-only; the control port itself remains protected by Tor auth.
-  - --filesystem=/run/tor:ro
-  - --filesystem=/var/run/tor:ro
 
 modules:
   - name: libsodium
@@ -29,6 +25,35 @@ modules:
         url: https://github.com/jedisct1/libsodium/releases/download/1.0.22-RELEASE/libsodium-1.0.22.tar.gz
         sha256: adbdd8f16149e81ac6078a03aca6fc03b592b89ef7b5ed83841c086191be3349
 
+  - name: libevent
+    buildsystem: autotools
+    config-opts:
+      - --disable-static
+      - --disable-openssl
+      - --disable-libevent-regress
+      - --disable-samples
+    sources:
+      - type: archive
+        url: https://github.com/libevent/libevent/releases/download/release-2.1.12-stable/libevent-2.1.12-stable.tar.gz
+        sha256: 92e6de1be9ec176428fd2367677e61ceffc2ee1cb119035037a27d346b0403bb
+
+  - name: tor
+    buildsystem: autotools
+    config-opts:
+      - --disable-asciidoc
+      - --disable-html-manual
+      - --disable-manpage
+      - --disable-unittests
+      - --disable-systemd
+      - --disable-module-relay
+      - --disable-lzma
+      - --disable-zstd
+      - --with-libevent-dir=/app
+    sources:
+      - type: archive
+        url: https://dist.torproject.org/tor-0.4.9.11.tar.gz
+        sha256: 2e6c1720118c812acf0079fd47cf91b6bfaba5d766c321c4d3d2a28d6a11a8ed
+
   - name: darkspeak
     buildsystem: simple
     build-commands:
@@ -36,13 +61,20 @@ modules:
         cmake -S . -B _build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=/app \
+          -DDARKSPEAK_FLATPAK_BUILD=ON \
           -DFETCHCONTENT_SOURCE_DIR_NAYUKI_QR_GENERATOR="$(pwd)/third_party/nayuki_qr_generator" \
           -DBUILD_TESTING=OFF
       - cmake --build _build --parallel
       - install -Dm755 _build/bin/darkspeak /app/bin/darkspeak
       - install -Dm644 flatpak/org.darkspeak.DarkSpeak.desktop /app/share/applications/org.darkspeak.DarkSpeak.desktop
-      - install -Dm644 icons/darkspeak-256.png /app/share/icons/hicolor/256x256/apps/org.darkspeak.DarkSpeak.png
+      - install -Dm644 icons/darkspeak-16.png /app/share/icons/hicolor/16x16/apps/org.darkspeak.DarkSpeak.png
+      - install -Dm644 icons/darkspeak-22.png /app/share/icons/hicolor/22x22/apps/org.darkspeak.DarkSpeak.png
+      - install -Dm644 icons/darkspeak-24.png /app/share/icons/hicolor/24x24/apps/org.darkspeak.DarkSpeak.png
+      - install -Dm644 icons/darkspeak-32.png /app/share/icons/hicolor/32x32/apps/org.darkspeak.DarkSpeak.png
+      - install -Dm644 icons/darkspeak-48.png /app/share/icons/hicolor/48x48/apps/org.darkspeak.DarkSpeak.png
+      - install -Dm644 icons/darkspeak-64.png /app/share/icons/hicolor/64x64/apps/org.darkspeak.DarkSpeak.png
       - install -Dm644 icons/darkspeak-128.png /app/share/icons/hicolor/128x128/apps/org.darkspeak.DarkSpeak.png
+      - install -Dm644 icons/darkspeak-256.png /app/share/icons/hicolor/256x256/apps/org.darkspeak.DarkSpeak.png
       - |
         app_version="$(sed -n 's/^project *(ds VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt | head -n 1)"
         test -n "${app_version}"

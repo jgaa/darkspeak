@@ -1,7 +1,7 @@
 #ifndef REGISTRY_H
 #define REGISTRY_H
 
-// See https://lastviking.eu/singleton_objects.html
+// Weak-reference registry used for process-local object lookup.
 
 #include <map>
 #include <memory>

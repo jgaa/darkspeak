@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project (ds VERSION 0.2.0 LANGUAGES CXX)
 
+option(DARKSPEAK_FLATPAK_BUILD "Build the Flatpak package" OFF)
+
 include(cmake/FindSodium.cmake)
 include(FetchContent)
 
