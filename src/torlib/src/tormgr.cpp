@@ -44,7 +44,8 @@ TorController *TorMgr::getController() { return ctl_.get(); }
 
 QString TorMgr::getTorVersion() const
 {
-    return ctl_ ? ctl_->getVersion() : QString{};
+    const auto controller = ctl_ ? ctl_ : existing_ctl_;
+    return controller ? controller->getVersion() : QString{};
 }
 
 /* To start using a tor service, we need to connect over TCP to
@@ -334,6 +335,8 @@ void TorMgr::stopExistingInstance()
     auto existingConfig = config_;
     existingConfig.mode = TorConfig::Mode::SYSTEM;
     existing_ctl_ = std::make_shared<TorController>(existingConfig);
+    connect(existing_ctl_.get(), &TorController::versionChanged,
+            this, &TorMgr::torVersionChanged);
     connect(existing_ctl_.get(), &TorController::autenticated, this, [this]() {
         existing_shutdown_requested_ = true;
         try {
@@ -422,6 +425,8 @@ void TorMgr::startControlConnection()
 void TorMgr::createController()
 {
     ctl_ = std::make_shared<TorController>(config_);
+    connect(ctl_.get(), &TorController::versionChanged,
+            this, &TorMgr::torVersionChanged);
 
     connect(ctl_.get(), &TorController::stateUpdate,
             this, &TorMgr::onStateUpdate);

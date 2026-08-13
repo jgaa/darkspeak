@@ -56,6 +56,9 @@ public:
     Q_PROPERTY(int onlineState READ getOnlineState NOTIFY onlineStateChanged)
     Q_PROPERTY(int online READ isOnline NOTIFY onlineChanged)
     Q_PROPERTY(QString torVersion READ getTorVersion NOTIFY torVersionChanged)
+    Q_PROPERTY(QString qtVersion READ getQtVersion CONSTANT)
+    Q_PROPERTY(QString compiler READ getCompiler CONSTANT)
+    Q_PROPERTY(QString buildDate READ getBuildDate CONSTANT)
     Q_PROPERTY(QUrl onlineStatusIcon READ getOnlineStatusIcon NOTIFY onlineStatusIconChanged)
     Q_PROPERTY(QString statusMessage READ getStatusMessage NOTIFY statusMessageChanged)
     Q_PROPERTY(StatusLevel statusLevel READ getStatusLevel NOTIFY statusMessageChanged)
@@ -93,6 +96,9 @@ public slots:
     OnlineState getOnlineState() const;
     bool isOnline() const;
     QString getTorVersion() const;
+    QString getQtVersion() const;
+    QString getCompiler() const;
+    QString getBuildDate() const;
     QString getProgramName() const;
     QString getProgramNameAndVersion() const;
     int getCurrentPage();

@@ -35,6 +35,7 @@ public:
     quint16 socksPort() const { return config_.socks_port; }
 
 signals:
+    void torVersionChanged();
     // Connected to the Tor control channel
     void started();
 

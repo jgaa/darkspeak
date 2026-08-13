@@ -36,10 +36,30 @@ Dialog {
                 Label { text: manager ? (manager.programNameAndVersion || "") : "" }
 
                 Label { text: qsTr("Qt version") }
-                Label { text: Qt.version }
+                Label { text: manager.qtVersion }
 
                 Label { text: qsTr("Tor version") }
                 Label { text: manager.torVersion || qsTr("Not connected") }
+
+                Label { text: qsTr("Compiler") }
+                Label { text: manager.compiler }
+
+                Label { text: qsTr("Compiled") }
+                Label { text: manager.buildDate }
+            }
+
+            Label {
+                width: parent.width
+                text: qsTr("Web page: <a href=\"https://darkspeak.org/\">https://darkspeak.org/</a>")
+                textFormat: Text.RichText
+                onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+            }
+
+            Label {
+                width: parent.width
+                text: qsTr("GitHub: <a href=\"https://github.com/jgaa/darkspeak\">https://github.com/jgaa/darkspeak</a>")
+                textFormat: Text.RichText
+                onLinkActivated: function(link) { Qt.openUrlExternally(link) }
             }
         }
     }

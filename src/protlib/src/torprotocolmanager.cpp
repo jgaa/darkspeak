@@ -24,6 +24,9 @@ TorProtocolManager::TorProtocolManager(QSettings &settings)
 {
     tor_ = make_unique<TorMgr>(getConfig());
 
+    connect(tor_.get(), &TorMgr::torVersionChanged,
+            this, &TorProtocolManager::torVersionChanged);
+
     connect(tor_.get(), &TorMgr::serviceCreated, this, &TorProtocolManager::onServiceCreated);
 
     connect(tor_.get(), &TorMgr::serviceStarted, this, [this](const QUuid& service, const bool newService) {

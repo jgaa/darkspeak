@@ -109,6 +109,7 @@ signals:
     void closing();
     void stateChanged(const State from, const State to);
     void onlineStateChanged(const ProtocolManager::State old, const ProtocolManager::State current);
+    void torVersionChanged();
     void serviceFailed(const QUuid& uuid, const QByteArray& reason);
     void serviceStarted(const QUuid& uuid, const bool newService);
     void serviceStopped(const QUuid& uuid);

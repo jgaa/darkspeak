@@ -294,6 +294,8 @@ void DsEngine::start()
     tor_mgr_ = ProtocolManager::create(*settings_, ProtocolManager::Transport::TOR);
 
     connect(tor_mgr_.get(), &ProtocolManager::stateChanged, this, &DsEngine::onStateChanged);
+    connect(tor_mgr_.get(), &ProtocolManager::torVersionChanged,
+            this, &DsEngine::torVersionChanged);
 
     connect(tor_mgr_.get(), &ProtocolManager::transportHandleReady,
             this, &DsEngine::onTransportHandleReady);

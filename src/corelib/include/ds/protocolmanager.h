@@ -119,6 +119,7 @@ signals:
     void serviceFailed(const QUuid& service, const QByteArray& reason);
     void serviceStarted(const QUuid& service, const bool newService);
     void serviceStopped(const QUuid& service);
+    void torVersionChanged();
 
     void incomingPeer(const std::shared_ptr<PeerConnection>& peer);
 

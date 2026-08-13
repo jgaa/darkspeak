@@ -441,6 +441,9 @@ Manager::Manager(const QString& logFile, const QString& logLevel)
         }
     });
 
+    connect(engine_.get(), &ds::core::DsEngine::torVersionChanged,
+            this, &Manager::torVersionChanged);
+
     contacts_ = make_unique<ContactsModel>(*this);
     notifications_ = make_unique<NotificationsModel>(engine_->settings());
     conversationsModel_ = make_unique<ConversationsModel>(*this);
@@ -469,6 +472,21 @@ bool Manager::isOnline() const
 QString Manager::getTorVersion() const
 {
     return engine_ ? engine_->getTorVersion() : QString{};
+}
+
+QString Manager::getQtVersion() const
+{
+    return QString::fromLatin1(qVersion());
+}
+
+QString Manager::getCompiler() const
+{
+    return QStringLiteral(DARKSPEAK_COMPILER);
+}
+
+QString Manager::getBuildDate() const
+{
+    return QStringLiteral(DARKSPEAK_BUILD_DATE);
 }
 
 QString Manager::getProgramName() const

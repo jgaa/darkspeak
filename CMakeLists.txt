@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project (ds VERSION 0.2.1 LANGUAGES CXX)
 
+string(TIMESTAMP DARKSPEAK_BUILD_DATE "%Y-%m-%d %H:%M:%S UTC" UTC)
+set(DARKSPEAK_COMPILER "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+
 option(DARKSPEAK_FLATPAK_BUILD "Build the Flatpak package" OFF)
 
 include(cmake/FindSodium.cmake)

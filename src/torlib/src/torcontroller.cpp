@@ -378,7 +378,13 @@ void TorController::OnAuthReply(const TorCtlReply &reply)
         emit autenticated();
         ctl_->sendCommand("GETINFO version", [this](const TorCtlReply& versionReply) {
             if (versionReply.status == 250) {
-                version_ = versionReply.parse().value("version").toString();
+                for (const auto& line : versionReply.lines) {
+                    constexpr char prefix[] = "version=";
+                    if (line.compare(0, sizeof(prefix) - 1, prefix) == 0) {
+                        version_ = QString::fromStdString(line.substr(sizeof(prefix) - 1));
+                        break;
+                    }
+                }
                 emit versionChanged(version_);
             }
         });
