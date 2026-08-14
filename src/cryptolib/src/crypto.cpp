@@ -48,12 +48,7 @@ QByteArray Crypto::getHmacSha256(const QByteArray& key,
 
 QByteArray Crypto::getSha256(const QByteArray &data)
 {
-    QByteArray hash;
-    hash.fill(0, crypto_hash_sha256_BYTES);
-    crypto_hash_sha256(reinterpret_cast<unsigned char *>(hash.data()),
-                       reinterpret_cast<const unsigned char *>(data.data()),
-                       static_cast<size_t>(data.size()));
-    return hash;
+    return sha256(data);
 }
 
 QByteArray Crypto::generateId()

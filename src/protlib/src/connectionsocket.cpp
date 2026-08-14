@@ -1,5 +1,6 @@
 
 #include "include/ds/connectionsocket.h"
+#include "ds/handshake.h"
 #include "logfault/logfault.h"
 
 using namespace std;
@@ -112,9 +113,12 @@ void ConnectionSocket::processInput()
 
     // This should never happen, but just in case...
     if (static_cast<size_t>(inData.size()) > maxInDataSize) {
-        LFLOG_ERROR << "To much data ("
-                   << inData.size()
-                   << ") in incoming buffer on " << getUuid().toString();
+        if (const auto count = handshake::recordFloodEvent()) {
+            LFLOG_WARN << "Input flood protection closed " << *count
+                       << " over-limit input buffers in the last interval";
+        }
+        LFLOG_DEBUG << "Input buffer exceeded its limit (" << inData.size()
+                    << " bytes) on " << getUuid().toString();
         close();
     }
 }

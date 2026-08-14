@@ -64,20 +64,121 @@ struct PeerSetAvatarReq : public PeerReq
     QImage avatar;
 };
 
-struct PeerAck : public PeerReq
+enum class ConnectionResponseStatus {
+    Pending,
+    Accepted,
+    Rejected,
+    Blocked
+};
+
+enum class FileOfferResponseStatus {
+    Accepted,
+    Rejected
+};
+
+enum class FileCancelReason {
+    SourceChanged,
+    UserAction
+};
+
+struct PeerConnectionResponse : public PeerReq
 {
-    PeerAck() = default;
-    PeerAck(const PeerAck&) = default;
+    PeerConnectionResponse() = default;
 
-    PeerAck(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal, quint64 requestIdVal,
-            QString whatVal, QString statusVal, QVariantMap dataVal)
+    PeerConnectionResponse(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal,
+                           quint64 requestIdVal, ConnectionResponseStatus statusVal,
+                           QString messageVal)
         : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
-        , what{std::move(whatVal)}, status{std::move(statusVal)}
-        , data{std::move(dataVal)} {}
+        , status{statusVal}, message{std::move(messageVal)} {}
 
-    QString what;
-    QString status;
-    QVariantMap data;
+    ConnectionResponseStatus status = ConnectionResponseStatus::Rejected;
+    QString message;
+};
+
+struct PeerMessageReceipt : public PeerReq
+{
+    PeerMessageReceipt(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal,
+                       quint64 requestIdVal, QByteArray messageIdVal)
+        : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
+        , messageId{std::move(messageIdVal)} {}
+
+    QByteArray messageId;
+};
+
+struct PeerFileOfferResponse : public PeerReq
+{
+    PeerFileOfferResponse(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal,
+                          quint64 requestIdVal, QByteArray fileIdVal,
+                          FileOfferResponseStatus statusVal)
+        : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
+        , fileId{std::move(fileIdVal)}, status{statusVal} {}
+
+    QByteArray fileId;
+    FileOfferResponseStatus status = FileOfferResponseStatus::Rejected;
+};
+
+struct PeerFileAck : public PeerReq
+{
+    PeerFileAck(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal,
+                quint64 requestIdVal, QByteArray fileIdVal, quint64 nextSequenceVal,
+                quint64 nextOffsetVal, bool finalVal)
+        : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
+        , fileId{std::move(fileIdVal)}, nextSequence{nextSequenceVal}
+        , nextOffset{nextOffsetVal}, final{finalVal} {}
+
+    QByteArray fileId;
+    quint64 nextSequence = 0;
+    quint64 nextOffset = 0;
+    bool final = false;
+};
+
+struct PeerFileCancel : public PeerReq
+{
+    PeerFileCancel(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal,
+                   quint64 requestIdVal, QByteArray fileIdVal,
+                   FileCancelReason reasonVal)
+        : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
+        , fileId{std::move(fileIdVal)}, reason{reasonVal} {}
+
+    QByteArray fileId;
+    FileCancelReason reason = FileCancelReason::UserAction;
+};
+
+struct PeerFileResume : public PeerReq
+{
+    PeerFileResume(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal,
+                   quint64 requestIdVal, QByteArray fileIdVal, quint64 nextOffsetVal,
+                   QByteArray sha256Val, quint64 fileSizeVal)
+        : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
+        , fileId{std::move(fileIdVal)}, nextOffset{nextOffsetVal}
+        , sha256{std::move(sha256Val)}, fileSize{fileSizeVal} {}
+
+    QByteArray fileId;
+    quint64 nextOffset = 0;
+    QByteArray sha256;
+    quint64 fileSize = 0;
+};
+
+enum class FileResumeStatus {
+    Accepted,
+    Rejected,
+    Cancelled
+};
+
+struct PeerFileResumeResult : public PeerReq
+{
+    PeerFileResumeResult(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal,
+                         quint64 requestIdVal, QByteArray fileIdVal,
+                         FileResumeStatus statusVal, quint64 nextOffsetVal,
+                         FileCancelReason errorVal)
+        : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
+        , fileId{std::move(fileIdVal)}, status{statusVal}
+        , nextOffset{nextOffsetVal}, error{errorVal} {}
+
+    QByteArray fileId;
+    FileResumeStatus status = FileResumeStatus::Rejected;
+    quint64 nextOffset = 0;
+    FileCancelReason error = FileCancelReason::UserAction;
 };
 
 struct PeerMessage : public PeerReq
@@ -113,7 +214,6 @@ struct PeerFileOffer : public PeerReq
                 QByteArray fileId,
                 QString name,
                 qlonglong size,
-                qlonglong rest,
                 QString type,
                 QByteArray sha512)
     : PeerReq{peer, std::move(connectionId), requestId}
@@ -122,7 +222,6 @@ struct PeerFileOffer : public PeerReq
         this->fileId = std::move(fileId);
         this->name = std::move(name);
         this->size = size;
-        this->rest = rest;
         this->type = type;
         this->sha512 = std::move(sha512);
     }
@@ -131,40 +230,18 @@ struct PeerFileOffer : public PeerReq
     QByteArray fileId;
     QString name;
     qlonglong size;
-    qlonglong rest;
     QString type;
     QByteArray sha512;
-};
-
-struct PeerSendFile : public PeerReq
-{
-    PeerSendFile(const PeerSendFile&) = default;
-
-    PeerSendFile(std::shared_ptr<PeerConnection> peer, QUuid connectionId, quint64 requestId,
-                 QByteArray fileId,
-                 qlonglong rest,
-                 int channel)
-    : PeerReq{peer, std::move(connectionId), requestId}
-    {
-        this->fileId = std::move(fileId);
-        this->rest = rest;
-        this->channel = channel;
-    }
-
-    QByteArray fileId;
-    qlonglong rest = {};
-    int channel = {};
 };
 
 struct PeerUserInfo : public PeerReq
 {
     PeerUserInfo(const PeerUserInfo&) = default;
     PeerUserInfo(std::shared_ptr<PeerConnection> peer, QUuid connectionId, quint64 requestId,
-                 QString nickName, QByteArray avatarHash)
+                 UserInfo userInfoVal)
     : PeerReq{peer, std::move(connectionId), requestId}
     {
-        userInfo.nickName = nickName;
-        userInfo.avatarHash = std::move(avatarHash);
+        userInfo = std::move(userInfoVal);
     }
 
     UserInfo userInfo;
@@ -195,8 +272,23 @@ public:
     virtual crypto::DsCert::ptr_t getPeerCert() const noexcept = 0;
     virtual QUuid getIdentityId() const noexcept = 0;
     virtual void close() = 0;
-    virtual uint64_t sendAck(const QString& what, const QString& status, const QString& data = {}) = 0;
-    virtual uint64_t sendAck(const QString& what, const QString& status, const QVariantMap& params) = 0;
+    virtual uint64_t sendConnectionResponse(quint64 requestId,
+                                            ConnectionResponseStatus status,
+                                            const QString& message = {}) = 0;
+    virtual uint64_t sendMessageReceipt(const QByteArray& messageId) = 0;
+    virtual uint64_t sendFileOfferResponse(const QByteArray& fileId,
+                                           FileOfferResponseStatus status) = 0;
+    virtual uint64_t sendFileAck(const QByteArray& fileId, quint64 nextSequence,
+                                 quint64 nextOffset, bool final) = 0;
+    virtual uint64_t sendFileCancel(const QByteArray& fileId,
+                                    FileCancelReason reason) = 0;
+    virtual uint64_t sendFileResume(const QByteArray& fileId, quint64 nextOffset,
+                                    const QByteArray& sha256, quint64 fileSize) = 0;
+    virtual uint64_t sendFileResumeResult(quint64 responseToRequestId,
+                                          const QByteArray& fileId,
+                                          FileResumeStatus status,
+                                          quint64 nextOffset,
+                                          FileCancelReason error) = 0;
     virtual bool isConnected() const noexcept = 0;
     virtual uint64_t sendUserInfo(const core::UserInfo &userInfo) = 0;
     virtual uint64_t sendMessage(const Message& message) = 0;
@@ -204,15 +296,19 @@ public:
     virtual uint64_t offerFile(const File& file) = 0;
     virtual uint64_t startTransfer(File& file) = 0;
     virtual uint64_t sendSome(File& file) = 0;
-    virtual void acknowledgeFile(const QByteArray& fileId, quint64 sequence,
-                                 qlonglong offset, bool final) = 0;
     virtual void disableNotifications() = 0;
 
 signals:
     void connectedToPeer(const std::shared_ptr<PeerConnection>& peer);
     void disconnectedFromPeer(const std::shared_ptr<PeerConnection>& peer);
     void addmeRequest(const PeerAddmeReq& req);
-    void receivedAck(const PeerAck& ack);
+    void receivedConnectionResponse(const PeerConnectionResponse& response);
+    void receivedMessageReceipt(const PeerMessageReceipt& receipt);
+    void receivedFileOfferResponse(const PeerFileOfferResponse& response);
+    void receivedFileAck(const PeerFileAck& ack);
+    void receivedFileCancel(const PeerFileCancel& cancel);
+    void receivedFileResume(const PeerFileResume& resume);
+    void receivedFileResumeResult(const PeerFileResumeResult& result);
     void receivedMessage(const PeerMessage& msg);
     void receivedFileOffer(const PeerFileOffer& msg);
     void receivedAvatar(const PeerSetAvatarReq& avatar);
@@ -227,6 +323,12 @@ Q_DECLARE_METATYPE(ds::core::PeerConnection *)
 //Q_DECLARE_METATYPE(ds::core::PeerConnection::ptr_t)
 Q_DECLARE_METATYPE(ds::core::PeerReq)
 Q_DECLARE_METATYPE(ds::core::PeerAddmeReq)
-Q_DECLARE_METATYPE(ds::core::PeerAck)
+Q_DECLARE_METATYPE(ds::core::PeerConnectionResponse)
+Q_DECLARE_METATYPE(ds::core::PeerMessageReceipt)
+Q_DECLARE_METATYPE(ds::core::PeerFileOfferResponse)
+Q_DECLARE_METATYPE(ds::core::PeerFileAck)
+Q_DECLARE_METATYPE(ds::core::PeerFileCancel)
+Q_DECLARE_METATYPE(ds::core::PeerFileResume)
+Q_DECLARE_METATYPE(ds::core::PeerFileResumeResult)
 
 #endif // PEERCONNECTION_H

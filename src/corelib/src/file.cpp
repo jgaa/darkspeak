@@ -1,5 +1,6 @@
 
 #include <chrono>
+#include <array>
 
 #include "ds/errors.h"
 #include "ds/dsengine.h"
@@ -16,6 +17,10 @@
 #include <QThreadPool>
 #include <QUrl>
 #include <QDesktopServices>
+#include <QMimeDatabase>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QObject>
 //#include <QStringLiteral>
 
@@ -57,7 +62,7 @@ void File::cancel()
 
     if (auto contact = getContact()) {
         if (contact->isOnline()) {
-            contact->sendAck("IncomingFile", "Abort", getFileId().toBase64());
+            contact->sendFileCancel(getFileId(), FileCancelReason::UserAction);
         }
     }
 }
@@ -99,9 +104,40 @@ void File::reject()
 
     if (auto contact = getContact()) {
         if (contact->isOnline()) {
-            contact->sendAck("IncomingFile", "Rejected", getFileId().toBase64());
+            contact->sendFileOfferResponse(getFileId(), FileOfferResponseStatus::Rejected);
         }
     }
+}
+
+void File::resume()
+{
+    if (getState() != FS_FAILED) {
+        return;
+    }
+
+    auto contact = getContact();
+    if (!contact || !contact->isOnline() || contact->getState() != Contact::ACCEPTED) {
+        return;
+    }
+
+    if (getDirection() == OUTGOING) {
+        // Manual outbound retry re-offers the existing transfer. The receiver
+        // validates its durable partial before creating a new channel.
+        setState(FS_WAITING);
+        contact->queueFile(DsEngine::instance().getFileManager()->getFile(getId()));
+        return;
+    }
+
+    quint64 offset = {};
+    QString reason;
+    if (!rebuildDurableResumeState(offset, reason)) {
+        DsEngine::instance().reportStatus(
+            QObject::tr("Cannot resume %1: %2").arg(getName(), reason),
+            DsEngine::StatusLevel::ERROR);
+        return;
+    }
+    setBytesTransferred(static_cast<qlonglong>(offset));
+    contact->resumeFile(*this);
 }
 
 void File::openInDefaultApplication()
@@ -147,6 +183,13 @@ File::Direction File::getDirection() const noexcept
 QString File::getName() const noexcept
 {
     return data_->name;
+}
+
+QString File::getMimeType() const
+{
+    const auto type = QMimeDatabase{}.mimeTypeForFile(
+        getPath(), QMimeDatabase::MatchContent).name();
+    return type.isEmpty() ? QStringLiteral("application/octet-stream") : type;
 }
 
 void File::setName(const QString &name)
@@ -308,6 +351,135 @@ float File::getProgress() const noexcept
     return status;
 }
 
+bool File::rebuildDurableResumeState(quint64& offset, QString& reason) const
+{
+    offset = {};
+    if (getDirection() != INCOMING || getHash().size() != crypto_hash_sha256_BYTES
+            || getSize() < 0) {
+        reason = QObject::tr("Invalid incoming transfer metadata");
+        return false;
+    }
+
+    const QString partialPath = getDownloadPath();
+    const QString metadataPath = partialPath + QStringLiteral(".meta");
+    const QFileInfo partialInfo{partialPath};
+    const QFileInfo metadataInfo{metadataPath};
+    const QFileInfo parentInfo{partialInfo.absolutePath()};
+    if (partialInfo.isSymLink() || metadataInfo.isSymLink() || parentInfo.isSymLink()) {
+        reason = QObject::tr("Refusing to resume through a symbolic link");
+        return false;
+    }
+    if (!partialInfo.exists()) {
+        if (metadataInfo.exists()) {
+            reason = QObject::tr("Resume metadata has no matching partial file");
+            return false;
+        }
+        return true;
+    }
+    if (!partialInfo.isFile() || partialInfo.size() < 0
+            || partialInfo.size() > getSize()
+            || partialInfo.size() % static_cast<qint64>(8 * 1024) != 0) {
+        reason = QObject::tr("The durable partial file is invalid");
+        return false;
+    }
+
+    QFile metadataFile{metadataPath};
+    if (!metadataFile.open(QIODevice::ReadOnly)) {
+        reason = QObject::tr("Unable to read resume metadata");
+        return false;
+    }
+    QJsonParseError parseError;
+    const auto metadata = QJsonDocument::fromJson(metadataFile.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !metadata.isObject()) {
+        reason = QObject::tr("Resume metadata is invalid");
+        return false;
+    }
+    const auto object = metadata.object();
+    bool offsetOk = false;
+    const auto savedOffset = object.value(QStringLiteral("offset")).toString()
+            .toULongLong(&offsetOk);
+    if (!offsetOk || savedOffset != static_cast<quint64>(partialInfo.size())
+            || object.value(QStringLiteral("fileId")).toString()
+                != QString::fromLatin1(getFileId().toBase64())
+            || object.value(QStringLiteral("size")).toString()
+                != QString::number(getSize())
+            || object.value(QStringLiteral("hash")).toString()
+                != QString::fromLatin1(getHash().toBase64())) {
+        reason = QObject::tr("Resume metadata does not match the transfer");
+        return false;
+    }
+
+    QFile partial{partialPath};
+    if (!partial.open(QIODevice::ReadOnly)) {
+        reason = QObject::tr("Unable to read the durable partial file");
+        return false;
+    }
+    crypto_hash_sha256_state state;
+    crypto_hash_sha256_init(&state);
+    std::array<unsigned char, 8 * 1024> buffer{};
+    while (!partial.atEnd()) {
+        const auto count = partial.read(reinterpret_cast<char *>(buffer.data()),
+                                        static_cast<qint64>(buffer.size()));
+        if (count <= 0) {
+            reason = QObject::tr("Unable to rebuild the durable SHA-256 prefix");
+            return false;
+        }
+        crypto_hash_sha256_update(&state, buffer.data(),
+                                  static_cast<unsigned long long>(count));
+    }
+    QByteArray prefixHash(static_cast<int>(crypto_hash_sha256_BYTES), Qt::Uninitialized);
+    crypto_hash_sha256_final(&state,
+                             reinterpret_cast<unsigned char *>(prefixHash.data()));
+    if (object.value(QStringLiteral("prefixHash")).toString()
+            != QString::fromLatin1(prefixHash.toBase64())) {
+        reason = QObject::tr("The durable SHA-256 prefix does not match metadata");
+        return false;
+    }
+    offset = savedOffset;
+    return true;
+}
+
+bool File::validateSourceSnapshot(QString& reason) const
+{
+    if (getDirection() != OUTGOING || getSize() < 0
+            || getHash().size() != crypto_hash_sha256_BYTES) {
+        reason = QObject::tr("Invalid outgoing transfer metadata");
+        return false;
+    }
+    const QFileInfo info{getPath()};
+    if (!info.exists() || !info.isFile() || info.isSymLink()
+            || info.size() != getSize() || info.lastModified() != getFileTime()) {
+        reason = QObject::tr("The source file changed or is unavailable");
+        return false;
+    }
+    QFile source{getPath()};
+    if (!source.open(QIODevice::ReadOnly)) {
+        reason = QObject::tr("The source file cannot be opened");
+        return false;
+    }
+    crypto_hash_sha256_state state;
+    crypto_hash_sha256_init(&state);
+    std::array<unsigned char, 8 * 1024> buffer{};
+    while (!source.atEnd()) {
+        const auto count = source.read(reinterpret_cast<char *>(buffer.data()),
+                                       static_cast<qint64>(buffer.size()));
+        if (count <= 0) {
+            reason = QObject::tr("The source file cannot be read");
+            return false;
+        }
+        crypto_hash_sha256_update(&state, buffer.data(),
+                                  static_cast<unsigned long long>(count));
+    }
+    QByteArray hash(static_cast<int>(crypto_hash_sha256_BYTES), Qt::Uninitialized);
+    crypto_hash_sha256_final(&state,
+                             reinterpret_cast<unsigned char *>(hash.data()));
+    if (hash != getHash()) {
+        reason = QObject::tr("The source file contents changed");
+        return false;
+    }
+    return true;
+}
+
 Contact *File::getContact() const
 {
     return DsEngine::instance().getContactManager()->getContact(getContactId()).get();
@@ -339,7 +511,7 @@ void File::addToDb()
     }
 
     if (data_->fileId.isEmpty()) {
-         data_->fileId = crypto::Crypto::generateId();
+         data_->fileId = crypto::Crypto::getRandomBytes(16);
     }
 
     query.bindValue(":state", static_cast<int>(data_->state));
@@ -466,6 +638,21 @@ File::ptr_t File::load(QObject &parent, const std::function<void (QSqlQuery &)> 
     ptr->data_->ackTime = query.value(ack_time).toDateTime();
     ptr->data_->bytesTransferred = query.value(bytes_transferred).toLongLong();
 
+    // A live channel cannot survive a process restart. Preserve the durable
+    // prefix and expose the transfer as manually resumable instead of leaving
+    // a stale TRANSFERRING/HASHING state in the UI and database.
+    if (ptr->data_->state == FS_TRANSFERRING || ptr->data_->state == FS_HASHING) {
+        ptr->data_->state = FS_FAILED;
+        QSqlQuery recovery;
+        recovery.prepare("UPDATE file SET state=:state WHERE id=:id");
+        recovery.bindValue(":state", static_cast<int>(FS_FAILED));
+        recovery.bindValue(":id", ptr->id_);
+        if (!recovery.exec()) {
+            throw Error(QStringLiteral("Failed to recover interrupted file: %1")
+                        .arg(recovery.lastError().text()));
+        }
+    }
+
     return ptr;
 }
 
@@ -571,18 +758,16 @@ void File::transferFailed(const QString &reason, const File::State state)
     // Tell the other side that we failed
     if (auto contact = getContact()) {
         if (contact->isOnline()) {
-            QString ackStatus;
             switch(state) {
             case FS_REJECTED:
-                ackStatus = QStringLiteral("Rejected");
+                contact->sendFileOfferResponse(getFileId(), FileOfferResponseStatus::Rejected);
                 break;
             case FS_CANCELLED:
-                ackStatus = QStringLiteral("Abort");
+                contact->sendFileCancel(getFileId(), FileCancelReason::UserAction);
                 break;
             default:
-                ackStatus = QStringLiteral("Failed");
+                break;
             }
-            contact->sendAck("IncomingFile", ackStatus, getFileId().toBase64());
         }
     }
 

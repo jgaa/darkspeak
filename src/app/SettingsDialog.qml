@@ -25,6 +25,7 @@ Dialog {
             TabButton { text: qsTr("Tor") }
             TabButton { text: qsTr("Paths") }
             TabButton { text: qsTr("Logging") }
+            TabButton { text: qsTr("Limits") }
         }
 
         ScrollView {
@@ -51,7 +52,7 @@ Dialog {
         pageLoader.sourceComponent = pageComponents[index]
     }
 
-    property var pageComponents: [generalPage, torPage, pathsPage, loggingPage]
+    property var pageComponents: [generalPage, torPage, pathsPage, loggingPage, limitsPage]
 
     Component {
         id: generalPage
@@ -71,6 +72,11 @@ Dialog {
     Component {
         id: loggingPage
         LogSettings {}
+    }
+
+    Component {
+        id: limitsPage
+        ResourceLimitsSettings {}
     }
 
     Component.onCompleted: loadPage(tabs.currentIndex)

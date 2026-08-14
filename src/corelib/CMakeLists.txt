@@ -44,6 +44,7 @@ add_library(${PROJECT_NAME} STATIC
     include/ds/errors.h
     include/ds/lru_cache.h
     include/ds/secretstore.h
+    include/ds/resourcelimits.h
     )
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include

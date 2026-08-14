@@ -1,6 +1,9 @@
 #include <QtTest>
 
 #include <sodium.h>
+#include <array>
+#include <span>
+#include <string_view>
 
 #include "ds/certimpl.h"
 #include "ds/crypto.h"
@@ -103,6 +106,25 @@ private slots:
 
         QByteArray opened(1, Qt::Uninitialized);
         QVERIFY(!identity->decrypt(opened, QByteArray(crypto_box_SEALBYTES - 1, '\0')));
+    }
+
+    void sha256AcceptsByteContainersAndTextViews()
+    {
+        ds::crypto::Crypto crypto;
+        const QByteArray prefix{"DarkSpeak message id v3"};
+        const QByteArray userId{"user-id"};
+        const std::array<std::byte, 2> random{
+            std::byte{0x01}, std::byte{0x02}};
+
+        const auto expected = ds::crypto::Crypto::getSha256(
+            prefix + userId + QByteArray{"\x01\x02", 2});
+        const auto actual = ds::crypto::Crypto::getSha256(
+            std::string_view{"DarkSpeak message id v3"},
+            QByteArrayView{userId}, std::span{random});
+        QCOMPARE(actual, expected);
+
+        QCOMPARE(ds::crypto::Crypto::getSha256(QStringView{u"dark"}),
+                 ds::crypto::Crypto::getSha256(QByteArrayLiteral("dark")));
     }
 
     void secretStreamCaptureRoundTrip()

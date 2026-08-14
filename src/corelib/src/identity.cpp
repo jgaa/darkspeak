@@ -36,6 +36,15 @@ Identity::Identity(QObject& parent,
     : QObject{&parent}
     , id_{dbId}, online_{online}, data_{std::move(data)}, created_{move(created)}
 {
+    const auto prefix = QStringLiteral("identity/%1/").arg(
+        data_.uuid.toString(QUuid::WithoutBraces));
+    auto& settings = DsEngine::instance().settings();
+    settings.setValue(prefix + QStringLiteral("allowUtf8"), data_.allowUtf8);
+    settings.setValue(prefix + QStringLiteral("allowFiles"), data_.allowFiles);
+    settings.setValue(prefix + QStringLiteral("allowMimeTypes"), data_.allowMimeTypes);
+    settings.setValue(prefix + QStringLiteral("allowReactions"), data_.allowReactions);
+    settings.setValue(prefix + QStringLiteral("publicBio"), data_.publicBio);
+    settings.setValue(prefix + QStringLiteral("publicAvatar"), data_.publicAvatar);
 
     connect(this, &Identity::processOnlineLater,
             this, &Identity::onProcessOnlineLater,
@@ -530,6 +539,67 @@ void Identity::setAutoConnect(bool value)
     updateIf("auto_connect", value, data_.autoConnect, this, &Identity::autoConnectChanged);
 }
 
+void Identity::setAllowUtf8(bool value)
+{
+    if (value == data_.allowUtf8) return;
+    data_.allowUtf8 = value;
+    DsEngine::instance().settings().setValue(
+        QStringLiteral("identity/%1/allowUtf8").arg(data_.uuid.toString(QUuid::WithoutBraces)), value);
+    emit securityPreferencesChanged();
+    forAllContacts([](const Contact::ptr_t& contact) { if (contact->isOnline()) contact->sendUserInfo(); });
+}
+
+void Identity::setAllowFiles(bool value)
+{
+    if (value == data_.allowFiles) return;
+    data_.allowFiles = value;
+    DsEngine::instance().settings().setValue(
+        QStringLiteral("identity/%1/allowFiles").arg(data_.uuid.toString(QUuid::WithoutBraces)), value);
+    emit securityPreferencesChanged();
+    forAllContacts([](const Contact::ptr_t& contact) { if (contact->isOnline()) contact->sendUserInfo(); });
+}
+
+void Identity::setAllowMimeTypes(QStringList value)
+{
+    if (value == data_.allowMimeTypes) return;
+    data_.allowMimeTypes = std::move(value);
+    DsEngine::instance().settings().setValue(
+        QStringLiteral("identity/%1/allowMimeTypes").arg(data_.uuid.toString(QUuid::WithoutBraces)),
+        data_.allowMimeTypes);
+    emit securityPreferencesChanged();
+    forAllContacts([](const Contact::ptr_t& contact) { if (contact->isOnline()) contact->sendUserInfo(); });
+}
+
+void Identity::setAllowReactions(bool value)
+{
+    if (value == data_.allowReactions) return;
+    data_.allowReactions = value;
+    DsEngine::instance().settings().setValue(
+        QStringLiteral("identity/%1/allowReactions").arg(data_.uuid.toString(QUuid::WithoutBraces)), value);
+    emit securityPreferencesChanged();
+    forAllContacts([](const Contact::ptr_t& contact) { if (contact->isOnline()) contact->sendUserInfo(); });
+}
+
+void Identity::setPublicBio(bool value)
+{
+    if (value == data_.publicBio) return;
+    data_.publicBio = value;
+    DsEngine::instance().settings().setValue(
+        QStringLiteral("identity/%1/publicBio").arg(data_.uuid.toString(QUuid::WithoutBraces)), value);
+    emit securityPreferencesChanged();
+    forAllContacts([](const Contact::ptr_t& contact) { if (contact->isOnline()) contact->sendUserInfo(); });
+}
+
+void Identity::setPublicAvatar(bool value)
+{
+    if (value == data_.publicAvatar) return;
+    data_.publicAvatar = value;
+    DsEngine::instance().settings().setValue(
+        QStringLiteral("identity/%1/publicAvatar").arg(data_.uuid.toString(QUuid::WithoutBraces)), value);
+    emit securityPreferencesChanged();
+    forAllContacts([](const Contact::ptr_t& contact) { if (contact->isOnline()) contact->sendUserInfo(); });
+}
+
 void Identity::addToDb() {
     QSqlQuery query;
 
@@ -638,11 +708,13 @@ void Identity::deleteFromDb() {
 
             DsEngine::instance().secretStore().removeIdentityCertificate(data_.uuid);
             try {
-                DsEngine::instance().secretStore().removeTorServiceKey(data_.uuid);
+            DsEngine::instance().secretStore().removeTorServiceKey(data_.uuid);
             } catch (const std::exception&) {
                 // A service key may not exist for identities that never had a
                 // transport.
             }
+            DsEngine::instance().settings().remove(
+                QStringLiteral("identity/%1").arg(data_.uuid.toString(QUuid::WithoutBraces)));
 
             if (!db.commit()) {
                 throw Error(QStringLiteral("SQL Failed to commit identity deletion: %1")

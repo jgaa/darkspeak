@@ -2,6 +2,8 @@
 #include "ds/dsengine.h"
 #include "ds/database.h"
 
+#include <QSqlError>
+
 #include "logfault/logfault.h"
 
 namespace ds {
@@ -72,6 +74,9 @@ Message::ptr_t MessageManager::sendMessage(Conversation &conversation, MessageDa
 
     auto cert = conversation.getIdentity()->getCert();
     message->sign(*cert);
+    if (!message->validate(*cert)) {
+        throw Error("Invalid v3 outgoing message");
+    }
     message->addToDb();
     registry_.add(message->getId(), message);
     touch(message);
@@ -100,8 +105,28 @@ Message::ptr_t MessageManager::receivedMessage(Conversation &conversation, Messa
         return {};
     }
 
-    // See if we already have received this message
-    if (auto existing = getMessage(data.messageId, conversation.getId())) {
+    // MessageId is globally scoped. Exact retransmission is idempotent, but
+    // reusing an id for different signed contents is an authenticity error.
+    QSqlQuery existingQuery;
+    existingQuery.prepare("SELECT id FROM message WHERE message_id=:mid");
+    existingQuery.bindValue(":mid", data.messageId);
+    if (!existingQuery.exec()) {
+        throw Error(QStringLiteral("Failed to query duplicate message: %1")
+                    .arg(existingQuery.lastError().text()));
+    }
+    if (existingQuery.next()) {
+        auto existing = getMessage(existingQuery.value(0).toInt());
+        const auto& old = existing->getData();
+        const auto same = old.conversation == data.conversation
+                && old.messageId == data.messageId
+                && old.composedTime.toUTC().toSecsSinceEpoch() / 60
+                    == data.composedTime.toUTC().toSecsSinceEpoch() / 60
+                && old.content == data.content
+                && old.sender == data.sender
+                && old.encoding == data.encoding;
+        if (!same) {
+            throw Error("MessageId was reused with different signed contents");
+        }
         return existing;
     }
 
@@ -111,6 +136,25 @@ Message::ptr_t MessageManager::receivedMessage(Conversation &conversation, Messa
 
     emit messageAdded(message);
     return message;
+}
+
+bool MessageManager::hasConflictingMessage(const MessageData& data)
+{
+    QSqlQuery query;
+    query.prepare("SELECT id FROM message WHERE message_id=:mid");
+    query.bindValue(":mid", data.messageId);
+    if (!query.exec() || !query.next()) {
+        return query.lastError().type() != QSqlError::NoError;
+    }
+
+    const auto existing = Message::load(*this, query.value(0).toInt());
+    const auto& old = existing->getData();
+    return old.conversation != data.conversation
+            || old.composedTime.toUTC().toSecsSinceEpoch() / 60
+                != data.composedTime.toUTC().toSecsSinceEpoch() / 60
+            || old.content != data.content
+            || old.sender != data.sender
+            || old.encoding != data.encoding;
 }
 
 void MessageManager::touch(const Message::ptr_t &message)
@@ -133,4 +177,3 @@ void MessageManager::onMessageStateChanged(const Message::ptr_t &message)
 
 
 }} // Namespaces
-

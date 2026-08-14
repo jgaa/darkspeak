@@ -1,16 +1,17 @@
 add_executable(crypto_handshake_test
     crypto_handshake_test.cpp
 )
-target_compile_features(crypto_handshake_test PRIVATE cxx_std_17)
+target_compile_features(crypto_handshake_test PRIVATE cxx_std_20)
 target_link_libraries(crypto_handshake_test PRIVATE crypto Qt6::Core Qt6::Test sodium)
 add_test(NAME crypto_handshake COMMAND crypto_handshake_test)
 
-add_executable(protocol_v2_test
-    protocol_v2_test.cpp
+add_executable(protocol_v3_test
+    protocol_v3_test.cpp
 )
-target_compile_features(protocol_v2_test PRIVATE cxx_std_17)
-target_link_libraries(protocol_v2_test PRIVATE prot Qt6::Core Qt6::Test)
-add_test(NAME protocol_v2 COMMAND protocol_v2_test)
+target_compile_features(protocol_v3_test PRIVATE cxx_std_17)
+target_link_libraries(protocol_v3_test PRIVATE prot core Qt6::Core Qt6::Test)
+add_test(NAME protocol_v3 COMMAND protocol_v3_test)
+set_tests_properties(protocol_v3 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 add_executable(tor_address_test tor_address_test.cpp)
 target_compile_features(tor_address_test PRIVATE cxx_std_17)

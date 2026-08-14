@@ -78,6 +78,7 @@ public:
     Q_INVOKABLE void cancel();
     Q_INVOKABLE void accept();
     Q_INVOKABLE void reject();
+    Q_INVOKABLE void resume();
 
     Q_INVOKABLE void openInDefaultApplication();
     Q_INVOKABLE void openFolder();
@@ -88,6 +89,7 @@ public:
     void setState(const State state);
     Direction getDirection() const noexcept;
     QString getName() const noexcept;
+    QString getMimeType() const;
     void setName(const QString& name);
     QString getPath() const noexcept;
     QString getDownloadPath() const noexcept;
@@ -115,6 +117,8 @@ public:
     quint32 getChannel() const noexcept;
     void setChannel(quint32 channel);
     float getProgress() const noexcept;
+    bool rebuildDurableResumeState(quint64& offset, QString& reason) const;
+    bool validateSourceSnapshot(QString& reason) const;
 
     /*! Add the new File to the database. */
     void addToDb();

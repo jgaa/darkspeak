@@ -5,11 +5,14 @@
 #include <QSqlQuery>
 #include <QStorageInfo>
 #include <QStandardPaths>
+#include <QMimeDatabase>
+#include <QRegularExpression>
 #include <QChar>
 #include <QSet>
 
 #include "include/ds/filemanager.h"
 #include "ds/dsengine.h"
+#include "ds/resourcelimits.h"
 
 #include "logfault/logfault.h"
 
@@ -21,15 +24,6 @@ namespace ds {
 namespace core {
 
 namespace {
-
-qint64 configuredMaxIncomingBytes(const QSettings& settings)
-{
-    const auto maxMb = settings.value("maxIncomingFileSizeMb", 1024).toLongLong();
-    if (maxMb <= 0 || maxMb > (std::numeric_limits<qint64>::max() / (1024 * 1024))) {
-        return 0;
-    }
-    return maxMb * 1024 * 1024;
-}
 
 bool safeFileName(const QString& name)
 {
@@ -54,6 +48,13 @@ bool safeFileName(const QString& name)
     }
     static const std::regex forbidden{R"(\\|/|\||\.\.)"};
     return !std::regex_search(name.toStdString(), forbidden);
+}
+
+QString preferredExtension(const QString& mimeType)
+{
+    const auto suffix = QMimeDatabase{}.mimeTypeForName(mimeType).preferredSuffix();
+    static const QRegularExpression validSuffix{QStringLiteral("^[a-z0-9]{1,16}$")};
+    return validSuffix.match(suffix).hasMatch() ? suffix : QString{};
 }
 
 } // namespace
@@ -158,13 +159,11 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
     try {
         if (auto file = getFileFromId(offer.fileId, conversation)) {
             if (file->getState() == File::FS_REJECTED) {
-                offer.peer->sendAck("IncomingFile", "Rejected", offer.fileId.toBase64());
+                offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
             } else if (file->getState() == File::FS_DONE) {
-                offer.peer->sendAck("IncomingFile", "Completed", offer.fileId.toBase64());
             } else if (file->getState() == File::FS_QUEUED) {
                 file->queueForTransfer();
             } else {
-                offer.peer->sendAck("IncomingFile", "Received", offer.fileId.toBase64());
                 file->setState(File::FS_OFFERED);
             }
 
@@ -176,15 +175,16 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
 
     auto data = make_unique<FileData>();
 
-    const auto maxBytes = configuredMaxIncomingBytes(settings_);
-    if (offer.fileId.size() != 32 || offer.size < 0 || !safeFileName(offer.name)
+    const auto limits = ResourceLimits::fromSettings(settings_);
+    const auto maxBytes = static_cast<qint64>(limits.acceptedFileBytes);
+    if (offer.fileId.size() != 16 || offer.size < 0 || !safeFileName(offer.name)
             || maxBytes == 0 || offer.size > maxBytes) {
         LFLOG_WARN << "Rejecting file offer: violates local safety policy";
         DsEngine::instance().reportStatus(
             QObject::tr("Rejected file offer due to local safety limits"),
             DsEngine::StatusLevel::WARNING);
 
-        offer.peer->sendAck("IncomingFile", "Rejected", offer.fileId.toBase64());
+        offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
         return;
     }
 
@@ -203,19 +203,22 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
     }
     const auto pendingCount = pending.value(0).toLongLong();
     const auto pendingBytes = pending.value(1).toLongLong();
-    const auto maxPendingCount = settings_.value("maxPendingIncomingFiles", 32).toLongLong();
-    const auto maxPendingBytes = settings_.value(
-        "maxPendingIncomingFileBytes", 4LL * 1024 * 1024 * 1024).toLongLong();
+    const auto maxPendingCount = static_cast<qint64>(limits.queuedFileOffers);
+    const auto maxPendingBytes = static_cast<qint64>(limits.unfinishedIncomingBytes);
     if (pendingCount >= maxPendingCount
             || offer.size > maxPendingBytes
             || pendingBytes > maxPendingBytes - offer.size) {
-        offer.peer->sendAck("IncomingFile", "Rejected", offer.fileId.toBase64());
+        offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
         return;
     }
 
     data->state = File::FS_OFFERED;
     data->name = offer.name;
-    data->path = conversation.getFilesLocation() + "/" + offer.name;
+    // The advertised name is display metadata. Keep storage independent of
+    // it; derive only a safe local suffix from the validated MIME type.
+    const auto suffix = preferredExtension(offer.type);
+    data->path = conversation.getFilesLocation() + "/" + offer.fileId.toHex()
+            + (suffix.isEmpty() ? QString{} : QStringLiteral(".") + suffix);
     data->direction = File::INCOMING;
     data->conversation = conversation.getId();
     data->identity = conversation.getIdentityId();
@@ -227,7 +230,6 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
 
     auto file = addFile(move(data));
     if (file) {
-        offer.peer->sendAck("IncomingFile", "Received", offer.fileId.toBase64());
 
         const auto message = QObject::tr("Incoming file: %1 (%2 bytes) — waiting for approval")
                 .arg(file->getName()).arg(file->getSize());
@@ -249,7 +251,6 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
         DsEngine::instance().reportStatus(
             QObject::tr("Failed to receive file"),
             DsEngine::StatusLevel::ERROR);
-        offer.peer->sendAck("IncomingFile", "Failed", offer.fileId.toBase64());
     }
 }
 
@@ -266,10 +267,52 @@ bool FileManager::canAcceptIncoming(const File& file, QString& reason) const
         return false;
     }
 
-    const qint64 maxMb = settings_.value("maxIncomingFileSizeMb", 1024).toLongLong();
-    const qint64 maxBytes = configuredMaxIncomingBytes(settings_);
+    const auto limits = ResourceLimits::fromSettings(settings_);
+    const qint64 maxBytes = static_cast<qint64>(limits.acceptedFileBytes);
     if (maxBytes <= 0 || size > maxBytes) {
-        reason = QObject::tr("File exceeds the configured receive limit (%1 MB)").arg(maxMb);
+        reason = QObject::tr("File exceeds the configured receive limit (%1 GiB)")
+                .arg(static_cast<double>(limits.acceptedFileBytes)
+                     / (1024.0 * 1024.0 * 1024.0));
+        return false;
+    }
+
+    QSqlQuery usage;
+    usage.prepare("SELECT COALESCE(SUM(size), 0) FROM file "
+                  "WHERE direction=:direction AND state IN "
+                  "(:queued, :transferring, :hashing)");
+    usage.bindValue(":direction", static_cast<int>(File::INCOMING));
+    usage.bindValue(":queued", static_cast<int>(File::FS_QUEUED));
+    usage.bindValue(":transferring", static_cast<int>(File::FS_TRANSFERRING));
+    usage.bindValue(":hashing", static_cast<int>(File::FS_HASHING));
+    if (!usage.exec() || !usage.next()) {
+        reason = QObject::tr("Unable to determine current incoming disk usage");
+        return false;
+    }
+    const auto usedBytes = usage.value(0).toLongLong();
+    const bool alreadyCounted = file.getId() != 0
+            && (file.getState() == File::FS_QUEUED
+                || file.getState() == File::FS_TRANSFERRING
+                || file.getState() == File::FS_HASHING);
+    const auto reservation = alreadyCounted ? qint64{0} : size;
+    const auto diskLimit = static_cast<qint64>(limits.incomingDiskBytes);
+    if (usedBytes < 0 || reservation > diskLimit
+            || usedBytes > diskLimit - reservation) {
+        reason = QObject::tr("The incoming transfer disk limit has been reached");
+        return false;
+    }
+
+    QSqlQuery active;
+    active.prepare("SELECT COUNT(*) FROM file WHERE contact_id=:contact "
+                   "AND direction=:direction AND state=:state");
+    active.bindValue(":contact", file.getContactId());
+    active.bindValue(":direction", static_cast<int>(File::INCOMING));
+    active.bindValue(":state", static_cast<int>(File::FS_TRANSFERRING));
+    const auto activeCount = active.exec() && active.next()
+            ? active.value(0).toLongLong() : -1;
+    const auto activeOtherFiles = activeCount >= 0
+            ? activeCount - (file.getState() == File::FS_TRANSFERRING ? 1 : 0) : -1;
+    if (activeOtherFiles < 0 || activeOtherFiles >= limits.activeFileTransfers) {
+        reason = QObject::tr("The contact has reached the active transfer limit");
         return false;
     }
 
@@ -279,15 +322,15 @@ bool FileManager::canAcceptIncoming(const File& file, QString& reason) const
         return false;
     }
 
-    const qint64 configuredPercent = settings_.value(
-        "minimumFreeSpacePercent", 10).toLongLong();
-    const qint64 minimumPercent = qBound<qint64>(qint64{0}, configuredPercent, qint64{100});
+    const qint64 minimumPercent = limits.minimumFreeSpacePercent;
     const qint64 available = storage.bytesAvailable();
     const qint64 total = storage.bytesTotal();
+    const qint64 transferred = qMax<qint64>(0, file.getBytesTransferred());
+    const qint64 remaining = qMax<qint64>(0, size - qMin(size, transferred));
     const qint64 requiredReserve = total > 0
             ? (total / 100) * minimumPercent + ((total % 100) * minimumPercent) / 100
             : 0;
-    if (available < size || available - size < requiredReserve) {
+    if (available < remaining || available - remaining < requiredReserve) {
         reason = QObject::tr("There is not enough free space in the download location");
         return false;
     }

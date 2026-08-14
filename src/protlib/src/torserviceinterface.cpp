@@ -14,11 +14,13 @@ using namespace std;
 TorServiceInterface::TorServiceInterface(crypto::DsCert::ptr_t cert,
                                          const QByteArray& address,
                                          const QUuid& identityId,
+                                         core::ResourceLimits resourceLimits,
                                          QHostAddress appHost,
                                          QHostAddress socksHost,
                                          quint16 socksPort)
     : cert_{move(cert)}, address_{address}, identityId_{identityId}
     , app_host_{move(appHost)}, socks_host_{move(socksHost)}, socks_port_{socksPort}
+    , resourceLimits_{move(resourceLimits)}
 {
 }
 
@@ -79,6 +81,7 @@ TorServiceInterface::connectToService(const QByteArray &host, const uint16_t por
                 << " with connection-id " << connection->getUuid().toString();
     LFLOG_TRACE << "Using SOCKS5 proxy " << socks_host_ << ":" << socks_port_;
 
+    cd.resourceLimits = resourceLimits_;
     auto client = make_shared<DsClient>(connection, move(cd));
 
     connect(client.get(), &core::PeerConnection::disconnectedFromPeer,
@@ -119,6 +122,7 @@ void TorServiceInterface::onNewIncomingConnection(
     core::ConnectData cd;
     cd.identitysCert = cert_;
     cd.service = identityId_;
+    cd.resourceLimits = resourceLimits_;
     auto server = make_shared<DsServer>(connection, move(cd));
 
     connect(server.get(), &Peer::incomingPeer,

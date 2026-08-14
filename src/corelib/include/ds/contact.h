@@ -168,6 +168,10 @@ public:
     void queueMessage(const Message::ptr_t& message);
     void queueFile(const std::shared_ptr<File>& file);
     void sendAvatar(const QImage& avatar);
+    void sendMessageReceipt(const QByteArray& messageId);
+    void sendFileOfferResponse(const QByteArray& fileId, FileOfferResponseStatus status);
+    void sendFileCancel(const QByteArray& fileId, FileCancelReason reason);
+    void resumeFile(File& file);
 
     /*! Add the new Identity to the database. */
     void addToDb();
@@ -180,7 +184,6 @@ public:
 
     void onAddmeRequest(const PeerAddmeReq& req);
     //void onReceivedMessage(const PeerMessage& msg, Conversation *conversation = {});
-    void sendAck(const QString& what, const QString& status, const QString& data = {});
     static bool validateNick(const QString& nickName);
     void sendUserInfo();
 
@@ -216,7 +219,12 @@ private slots:
     void onDisconnectedFromPeer(const std::shared_ptr<PeerConnection>& peer);
     void onSendAddMeLater();
     void onSendAddmeAckLater();
-    void onReceivedAck(const PeerAck& ack);
+    void onReceivedConnectionResponse(const PeerConnectionResponse& response);
+    void onReceivedMessageReceipt(const PeerMessageReceipt& receipt);
+    void onReceivedFileOfferResponse(const PeerFileOfferResponse& response);
+    void onReceivedFileCancel(const PeerFileCancel& cancel);
+    void onReceivedFileResume(const PeerFileResume& resume);
+    void onReceivedFileResumeResult(const PeerFileResumeResult& result);
     bool procesMessageQueue();
     bool processFilesQueue();
     bool processFileBlocks();
@@ -236,6 +244,7 @@ private:
     void scheduleProcessOnlineLater();
     void processOnlineLater();
     void sendBlockNotification();
+    bool peerAllowsMimeType(const QString& mimeType) const;
 
     // Sends reject message if the conversation is not the default and don't exist.
     Conversation *getRequestedOrDefaultConversation(const QByteArray& hash,
@@ -253,6 +262,10 @@ private:
     bool sentAvatarPendingAck_ = false;
     bool avatarUrlChanging_ = false;
     quint64 avatarVersion_ = 0;
+    QByteArray expectedAvatarHash_;
+    UserInfo peerUserInfo_;
+    quint64 pendingConnectionRequestId_ = 0;
+    quint64 outgoingConnectionRequestId_ = 0;
 
     std::unique_ptr<Connection> connection_;
     std::deque<Message::ptr_t> messageQueue_;

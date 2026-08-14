@@ -25,6 +25,7 @@ public:
     Message::ptr_t getMessage(const QByteArray& messageId, const Message::Direction direction);
     Message::ptr_t sendMessage(Conversation& conversation, MessageData data);
     Message::ptr_t receivedMessage(Conversation& conversation, MessageData data);
+    bool hasConflictingMessage(const MessageData& data);
     void touch(const Message::ptr_t& message);
 
     void onMessageReceivedDateChanged(const Message::ptr_t& message);

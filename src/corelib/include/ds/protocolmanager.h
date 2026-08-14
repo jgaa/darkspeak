@@ -11,6 +11,7 @@
 #include "ds/transporthandle.h"
 #include "ds/peerconnection.h"
 #include "ds/dscert.h"
+#include "ds/resourcelimits.h"
 
 namespace ds {
 namespace core {
@@ -23,6 +24,7 @@ struct ConnectData {
     QByteArray address;  // Onion address
     crypto::DsCert::ptr_t contactsCert;
     crypto::DsCert::ptr_t identitysCert;
+    ResourceLimits resourceLimits;
 };
 
 struct AddmeReq {
@@ -32,13 +34,6 @@ struct AddmeReq {
     QString message;
 };
 
-struct AckMsg {
-    QUuid service; // for Identity
-    QUuid connection;
-    QByteArray what;
-    QByteArray status;
-    QString data;
-};
 
 /*! Generic interface to the IM protocol.
  *
@@ -173,7 +168,6 @@ public slots:
 
     virtual uint64_t sendAddme(const AddmeReq& req) = 0;
 
-    virtual uint64_t sendAck(const AckMsg& ack) = 0;
 
 public:
     static ptr_t create(QSettings& settings, Transport transport);

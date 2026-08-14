@@ -14,8 +14,6 @@ Item {
         property bool useDarkSpeakFolder : false
         property bool autoAcceptIncomingFiles : false
         property bool includeConversationNameInDownloadPath : false
-        property int maxIncomingFileSizeMb : 1024
-        property int minimumFreeSpacePercent : 10
     }
 
     function commit() {
@@ -34,8 +32,6 @@ Item {
         }
         settings.autoAcceptIncomingFiles = autoAccept.checked
         settings.includeConversationNameInDownloadPath = includeConversationName.checked
-        settings.maxIncomingFileSizeMb = maxIncomingSize.value
-        settings.minimumFreeSpacePercent = minimumFreeSpace.value
     }
 
     ColumnLayout {
@@ -88,39 +84,6 @@ Item {
             checked: settings.includeConversationNameInDownloadPath
         }
 
-        RowLayout {
-            Layout.fillWidth: true
-
-            Label {
-                text: qsTr("Maximum incoming file size (MB)")
-                Layout.fillWidth: true
-            }
-
-            SpinBox {
-                id: maxIncomingSize
-                from: 1
-                to: 102400
-                value: settings.maxIncomingFileSizeMb
-                editable: true
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-
-            Label {
-                text: qsTr("Minimum free space (%)")
-                Layout.fillWidth: true
-            }
-
-            SpinBox {
-                id: minimumFreeSpace
-                from: 0
-                to: 100
-                value: settings.minimumFreeSpacePercent
-                editable: true
-            }
-        }
     }
 
 }

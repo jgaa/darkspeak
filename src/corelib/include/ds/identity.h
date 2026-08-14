@@ -10,11 +10,13 @@
 #include "ds/conversation.h"
 
 #include <QString>
+#include <QStringList>
 #include <QtGui/QImage>
 #include <QUuid>
 #include <QDateTime>
 #include <QVariant>
 #include <map>
+#include <utility>
 
 namespace ds {
 namespace core {
@@ -27,6 +29,12 @@ struct IdentityData {
     QByteArray addressData;
     QString notes;
     QImage avatar;
+    bool allowUtf8 = true;
+    bool allowFiles = true;
+    QStringList allowMimeTypes{QStringLiteral("*")};
+    bool allowReactions = true;
+    bool publicBio = true;
+    bool publicAvatar = true;
     crypto::DsCert::ptr_t cert;
     bool autoConnect = true;
 };
@@ -36,6 +44,12 @@ struct IdentityReq {
     QString name;
     QString notes;
     QImage avatar;
+    bool allowUtf8 = true;
+    bool allowFiles = true;
+    QStringList allowMimeTypes{QStringLiteral("*")};
+    bool allowReactions = true;
+    bool publicBio = true;
+    bool publicAvatar = true;
     bool autoConnect = true;
 };
 
@@ -50,6 +64,12 @@ public:
     Q_PROPERTY(QString notes READ notes WRITE setNotes NOTIFY notesChanged)
     Q_PROPERTY(bool autoConnect READ autoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
     Q_PROPERTY(QImage avatar READ avatar WRITE setAvatar NOTIFY avatarChanged)
+    Q_PROPERTY(bool allowUtf8 READ allowUtf8 WRITE setAllowUtf8 NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool allowFiles READ allowFiles WRITE setAllowFiles NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(QStringList allowMimeTypes READ allowMimeTypes WRITE setAllowMimeTypes NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool allowReactions READ allowReactions WRITE setAllowReactions NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool publicBio READ publicBio WRITE setPublicBio NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool publicAvatar READ publicAvatar WRITE setPublicAvatar NOTIFY securityPreferencesChanged)
 
     QString name() const { return value.name; }
     void setName(QString name) {
@@ -84,11 +104,25 @@ public:
         }
     }
 
+    bool allowUtf8() const { return value.allowUtf8; }
+    void setAllowUtf8(bool enabled) { if (value.allowUtf8 != enabled) { value.allowUtf8 = enabled; emit securityPreferencesChanged(); } }
+    bool allowFiles() const { return value.allowFiles; }
+    void setAllowFiles(bool enabled) { if (value.allowFiles != enabled) { value.allowFiles = enabled; emit securityPreferencesChanged(); } }
+    QStringList allowMimeTypes() const { return value.allowMimeTypes; }
+    void setAllowMimeTypes(QStringList types) { if (value.allowMimeTypes != types) { value.allowMimeTypes = std::move(types); emit securityPreferencesChanged(); } }
+    bool allowReactions() const { return value.allowReactions; }
+    void setAllowReactions(bool enabled) { if (value.allowReactions != enabled) { value.allowReactions = enabled; emit securityPreferencesChanged(); } }
+    bool publicBio() const { return value.publicBio; }
+    void setPublicBio(bool enabled) { if (value.publicBio != enabled) { value.publicBio = enabled; emit securityPreferencesChanged(); } }
+    bool publicAvatar() const { return value.publicAvatar; }
+    void setPublicAvatar(bool enabled) { if (value.publicAvatar != enabled) { value.publicAvatar = enabled; emit securityPreferencesChanged(); } }
+
 signals:
     void nameChanged();
     void notesChanged();
     void autoConnectChanged();
     void avatarChanged();
+    void securityPreferencesChanged();
 
 public:
     IdentityReq value;
@@ -133,6 +167,12 @@ public:
     Q_PROPERTY(QByteArray b58identity READ getB58EncodedIdetity CONSTANT)
     Q_PROPERTY(QByteArray handle READ getHandle CONSTANT)
     Q_PROPERTY(bool autoConnect READ isAutoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
+    Q_PROPERTY(bool allowUtf8 READ getAllowUtf8 WRITE setAllowUtf8 NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool allowFiles READ getAllowFiles WRITE setAllowFiles NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(QStringList allowMimeTypes READ getAllowMimeTypes WRITE setAllowMimeTypes NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool allowReactions READ getAllowReactions WRITE setAllowReactions NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool publicBio READ getPublicBio WRITE setPublicBio NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool publicAvatar READ getPublicAvatar WRITE setPublicAvatar NOTIFY securityPreferencesChanged)
 
     Q_INVOKABLE void addContact(const QVariantMap& args);
     Q_INVOKABLE void startService();
@@ -152,6 +192,18 @@ public:
     QImage getAvatar() const noexcept;
     QString getAvatarUrl() const noexcept;
     void setAvatar(const QImage& avatar);
+    bool getAllowUtf8() const noexcept { return data_.allowUtf8; }
+    bool getAllowFiles() const noexcept { return data_.allowFiles; }
+    QStringList getAllowMimeTypes() const { return data_.allowMimeTypes; }
+    bool getAllowReactions() const noexcept { return data_.allowReactions; }
+    bool getPublicBio() const noexcept { return data_.publicBio; }
+    bool getPublicAvatar() const noexcept { return data_.publicAvatar; }
+    void setAllowUtf8(bool value);
+    void setAllowFiles(bool value);
+    void setAllowMimeTypes(QStringList value);
+    void setAllowReactions(bool value);
+    void setPublicBio(bool value);
+    void setPublicAvatar(bool value);
     bool isOnline() const noexcept;
     void setOnline(const bool value);
     QUuid getUuid() const noexcept;
@@ -191,6 +243,7 @@ signals:
     void avatarUrlChanged();
     void onlineChanged();
     void autoConnectChanged();
+    void securityPreferencesChanged();
     void processOnlineLater();
 
 private slots:

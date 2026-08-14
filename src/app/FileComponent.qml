@@ -46,6 +46,8 @@ Item {
 
         if (file.direction === File.INCOMING && file.state === File.FS_OFFERED) {
             height = 84
+        } else if (file.state === File.FS_FAILED) {
+            height = 84
         } else if (file.state === File.FS_QUEUED
                    || file.state === File.FS_TRANSFERRING
                    || file.state === File.FS_HASHING) {
@@ -161,6 +163,21 @@ Item {
         onPressAndHold: {
             cList.currentIndex = index
             showMenu(mouse)
+        }
+    }
+
+    Button {
+        id: resumeBtn
+        height: 28
+        text: qsTr("Resume")
+        icon.source: "qrc:/images/FileTansferActive.svg"
+        anchors.top: fileName.bottom
+        anchors.topMargin: 4
+        anchors.left: fileName.left
+        anchors.leftMargin: 0
+        visible: cFile.state === File.FS_FAILED
+        onClicked: {
+            cFile.resume()
         }
     }
 

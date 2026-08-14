@@ -15,6 +15,7 @@
 #include "ds/logutil.h"
 #include "ds/bytes.h"
 #include "ds/memoryview.h"
+#include "ds/resourcelimits.h"
 
 #include <QString>
 #include <QDebug>
@@ -432,18 +433,22 @@ void DsEngine::initialize()
     if (!settings_->contains("includeConversationNameInDownloadPath")) {
         settings_->setValue("includeConversationNameInDownloadPath", false);
     }
-    if (!settings_->contains("maxIncomingFileSizeMb")) {
-        settings_->setValue("maxIncomingFileSizeMb", 1024);
-    }
-    if (!settings_->contains("minimumFreeSpacePercent")) {
-        settings_->setValue("minimumFreeSpacePercent", 10);
-    }
-    if (!settings_->contains("maxPendingIncomingFiles")) {
-        settings_->setValue("maxPendingIncomingFiles", 32);
-    }
-    if (!settings_->contains("maxPendingIncomingFileBytes")) {
-        settings_->setValue("maxPendingIncomingFileBytes", 4LL * 1024 * 1024 * 1024);
-    }
+    const auto limits = core::ResourceLimits::fromSettings(*settings_);
+    settings_->setValue("resourceUnapprovedConnections", limits.unapprovedConnections);
+    settings_->setValue("resourceOutstandingRequests", limits.outstandingRequests);
+    settings_->setValue("resourcePendingConnectionRequests", limits.pendingConnectionRequests);
+    settings_->setValue("resourceActiveFileTransfers", limits.activeFileTransfers);
+    settings_->setValue("resourceQueuedFileOffers", limits.queuedFileOffers);
+    settings_->setValue("resourceRetainedInterruptedTransfers", limits.retainedInterruptedTransfers);
+    settings_->setValue("resourceAcceptedFileBytes",
+                        static_cast<qulonglong>(limits.acceptedFileBytes));
+    settings_->setValue("resourceUnfinishedIncomingBytes",
+                        static_cast<qulonglong>(limits.unfinishedIncomingBytes));
+    settings_->setValue("resourceIncomingDiskBytes",
+                        static_cast<qulonglong>(limits.incomingDiskBytes));
+    settings_->setValue("resourceMinimumFreeSpacePercent",
+                        limits.minimumFreeSpacePercent);
+    settings_->setValue("resourceSocketOutputBytes", limits.socketOutputBytes);
 
     if (settings_->value("dbpath", "").toString().isEmpty()) {
         QString dbpath = data_path;

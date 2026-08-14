@@ -84,6 +84,7 @@ void Database::createDatabase()
         exec(R"(CREATE UNIQUE INDEX `ix_contact_hash` ON `contact` ( `identity`, `hash` ))");
         exec(R"(CREATE UNIQUE INDEX `ix_contact_name` ON `contact` ( `identity`, `name` ))");
         exec(R"(CREATE UNIQUE INDEX `ix_message_id` ON `message` (`conversation_id` ,`id` ))");
+        exec(R"(CREATE UNIQUE INDEX `ix_message_global_id` ON `message` (`message_id` ))");
         QSqlQuery query(db_);
         query.prepare("INSERT INTO ds (version) VALUES (:version)");
         query.bindValue(":version", currentVersion);
@@ -110,6 +111,10 @@ void Database::exec(const char *sql)
 
 void Database::prepareData()
 {
+    // MessageId is globally scoped in protocol v3. Enforce that invariant in
+    // persistence as well as in the application duplicate check.
+    exec("CREATE UNIQUE INDEX IF NOT EXISTS ix_message_global_id ON message(message_id)");
+
     {   // Set outgoing files that was being transferred, when we last quit, to waiting state
         QSqlQuery query(db_);
         query.prepare("UPDATE file SET state=:waiting WHERE direction=:out AND state IN(:transferring, :offered, :queued)");

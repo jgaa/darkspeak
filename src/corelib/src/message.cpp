@@ -1,5 +1,8 @@
 
 #include <QTime>
+#include <QDate>
+#include <QTimeZone>
+#include <QtEndian>
 
 #include "ds/crypto.h"
 #include "ds/message.h"
@@ -15,6 +18,77 @@ using namespace std;
 
 namespace ds {
 namespace core {
+
+namespace {
+
+bool validMessageTime(const QDateTime& time)
+{
+    const auto isUtc = time.timeSpec() == Qt::UTC
+            || (time.timeSpec() == Qt::TimeZone
+                && time.timeZone().id() == QByteArrayLiteral("UTC"));
+    if (!time.isValid() || !isUtc) {
+        return false;
+    }
+    const auto minimum = QDateTime{QDate{1, 1, 1}, QTime{0, 0}, QTimeZone::UTC};
+    const auto maximum = QDateTime{QDate{9999, 12, 31}, QTime{23, 59}, QTimeZone::UTC};
+    const auto seconds = time.toSecsSinceEpoch();
+    return seconds >= minimum.toSecsSinceEpoch()
+            && seconds <= maximum.toSecsSinceEpoch()
+            && seconds % 60 == 0;
+}
+
+bool validMessageContent(const MessageData& data)
+{
+    const auto content = data.content.toUtf8();
+    if (content.size() > 65'536) {
+        return false;
+    }
+    if (data.encoding == Message::UTF8) {
+        return true;
+    }
+    if (data.encoding != Message::US_ACSII) {
+        return false;
+    }
+    for (const auto byte : content) {
+        const auto value = static_cast<unsigned char>(byte);
+        if (!((value >= 0x20 && value <= 0x7e) || value == 0x09 || value == 0x0a)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void appendU32(QByteArray& bytes, const quint32 value)
+{
+    const auto encoded = qToBigEndian(value);
+    bytes.append(reinterpret_cast<const char *>(&encoded), sizeof(encoded));
+}
+
+void appendU64(QByteArray& bytes, const quint64 value)
+{
+    const auto encoded = qToBigEndian(value);
+    bytes.append(reinterpret_cast<const char *>(&encoded), sizeof(encoded));
+}
+
+QByteArray messageSignatureBytes(const MessageData& data)
+{
+    const auto content = data.content.toUtf8();
+    QByteArray bytes = QByteArrayLiteral("DarkSpeak message signature v3");
+    bytes.append(char{1}); // conversation_id source type
+    appendU32(bytes, static_cast<quint32>(data.conversation.size()));
+    bytes += data.conversation;
+    appendU32(bytes, static_cast<quint32>(data.messageId.size()));
+    bytes += data.messageId;
+    appendU64(bytes, static_cast<quint64>(data.composedTime.toUTC().toSecsSinceEpoch() / 60));
+    bytes += data.sender;
+    appendU32(bytes, static_cast<quint32>(data.encoding == Message::UTF8 ? 2 : 1));
+    appendU32(bytes, static_cast<quint32>(content.size()));
+    bytes += content;
+    appendU32(bytes, 0); // attachment count; attachments are not in the current UI model
+    return bytes;
+}
+
+}
 
 Message::Message(QObject &parent)
     : QObject(&parent)
@@ -110,7 +184,9 @@ Conversation *Message::getConversation() const
 
 void Message::init()
 {
-    data_->messageId = crypto::Crypto::generateId();
+    const auto random = crypto::Crypto::getRandomBytes(32);
+    data_->messageId = crypto::Crypto::getSha256(
+        std::string_view{"DarkSpeak message id v3"}, data_->sender, random);
 
     // Don't expose the exact time the mesage was composed
     data_->composedTime = DsEngine::getSafeNow();
@@ -118,28 +194,23 @@ void Message::init()
 
 void Message::sign(const DsCert &cert)
 {
-    assert(!data_->messageId.isEmpty());
-    assert(data_->composedTime.isValid());
+    if (!data_ || data_->messageId.isEmpty() || !data_->composedTime.isValid()) {
+        throw Error("Cannot sign an incomplete message");
+    }
 
-    data_->signature = cert.sign<QByteArray>({
-        data_->conversation,
-        data_->messageId,
-        data_->composedTime.toString(Qt::ISODate).toUtf8(),
-        data_->content.toUtf8(),
-        data_->sender,
-        QString::number(static_cast<int>(data_->encoding)).toUtf8()});
+    data_->sender = cert.getSigningPubKey().toByteArray();
+    data_->signature = cert.sign<QByteArray>({messageSignatureBytes(*data_)});
 }
 
 bool Message::validate(const DsCert &cert) const
 {
-    return  cert.verify(data_->signature,
-        {data_->conversation,
-            data_->messageId,
-            data_->composedTime.toString(Qt::ISODate).toUtf8(),
-            data_->content.toUtf8(),
-            data_->sender,
-            QString::number(static_cast<int>(data_->encoding)).toUtf8()
-                        });
+    return data_->sender == cert.getSigningPubKey().toByteArray()
+            && data_->conversation.size() == 32
+            && data_->messageId.size() == 32
+            && data_->signature.size() == crypto_sign_BYTES
+            && validMessageTime(data_->composedTime)
+            && validMessageContent(*data_)
+            && cert.verify(data_->signature, {messageSignatureBytes(*data_)});
 }
 
 void Message::addToDb()

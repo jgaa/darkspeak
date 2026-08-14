@@ -31,6 +31,11 @@ bool comparesEqual(const QByteArray& left, const QByteArray& right) {
     }
     return memcmp(left.constData(), right.constData(), static_cast<size_t>(left.size())) == 0;
 }
+
+bool mimeAllowed(const QStringList& allowed, const QString& mimeType)
+{
+    return allowed.contains(QStringLiteral("*")) || allowed.contains(mimeType);
+}
 }
 
 Contact::Contact(const int dbId,
@@ -434,7 +439,8 @@ void Contact::queueFile(const std::shared_ptr<File> &file)
 
 void Contact::sendAvatar(const QImage &avatar)
 {
-    if (!isOnline()) {
+    if (!isOnline() || getState() != ACCEPTED
+            || !getIdentity()->getPublicAvatar() || !peerUserInfo_.publicAvatar) {
         return;
     }
 
@@ -711,8 +717,18 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
                 this, &Contact::onDisconnectedFromPeer);
     }
 
-    connect(connection_->peer.get(), &PeerConnection::receivedAck,
-            this, &Contact::onReceivedAck);
+    connect(connection_->peer.get(), &PeerConnection::receivedConnectionResponse,
+            this, &Contact::onReceivedConnectionResponse);
+    connect(connection_->peer.get(), &PeerConnection::receivedMessageReceipt,
+            this, &Contact::onReceivedMessageReceipt);
+    connect(connection_->peer.get(), &PeerConnection::receivedFileOfferResponse,
+            this, &Contact::onReceivedFileOfferResponse);
+    connect(connection_->peer.get(), &PeerConnection::receivedFileCancel,
+            this, &Contact::onReceivedFileCancel);
+    connect(connection_->peer.get(), &PeerConnection::receivedFileResume,
+            this, &Contact::onReceivedFileResume);
+    connect(connection_->peer.get(), &PeerConnection::receivedFileResumeResult,
+            this, &Contact::onReceivedFileResumeResult);
 
     connect(connection_->peer.get(), &PeerConnection::addmeRequest,
             this, &Contact::onAddmeRequest);
@@ -780,7 +796,7 @@ void Contact::onSendAddMeLater()
                      << " over connection " << ar.connection.toString();
 
         try {
-            getIdentity()->getProtocolManager().sendAddme(ar);
+            outgoingConnectionRequestId_ = getIdentity()->getProtocolManager().sendAddme(ar);
         } catch(const std::exception& ex) {
             LFLOG_WARN << "Failed to send addme from " << identity->getName()
                         << " to "
@@ -812,7 +828,10 @@ void Contact::onSendAddmeAckLater()
                      << " over connection " << connection_->peer->getConnectionId().toString();
 
         try {
-            connection_->peer->sendAck("AddMe", "Added");
+            if (pendingConnectionRequestId_ != 0) {
+                connection_->peer->sendConnectionResponse(
+                    pendingConnectionRequestId_, ConnectionResponseStatus::Accepted);
+            }
         } catch(const std::exception& ex) {
             LFLOG_WARN << "Failed to send addme Ack from " << identity->getName()
                         << " to "
@@ -856,10 +875,14 @@ void Contact::processOnlineLater()
 
 void Contact::sendBlockNotification()
 {
-    sendAck("Hello", "Blocked");
+    if (connection_ && isOnline() && pendingConnectionRequestId_ != 0) {
+        connection_->peer->sendConnectionResponse(
+            pendingConnectionRequestId_, ConnectionResponseStatus::Blocked);
+    }
 }
 
-void Contact::onReceivedAck(const PeerAck &ack)
+#if 0
+void Contact::legacyAckAdapterRemoved(const LegacyAck &ack)
 {
     touchLastSeen();
 
@@ -979,7 +1002,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
                 ack.peer->close();
                 return;
             }
-            ack.peer->acknowledgeFile(fileId, sequence, offset, final);
+            ack.peer->legacyFileAckAdapterRemoved(fileId, sequence, offset, final);
             return;
         }
 
@@ -993,7 +1016,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
             LFLOG_DEBUG << "Ignoring ack for cancelled file #" << file->getId();
 
             if (ack.status == "Proceed" || ack.status == "Resume") {
-                sendAck("IncomingFile", "Abort", file->getFileId().toBase64());
+                sendFileCancel(file->getFileId(), FileCancelReason::UserAction);
             }
             return; // The transfer is cancelled.
         }
@@ -1035,7 +1058,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
                 LFLOG_WARN << "Received ack/go-on for file #" << file->getId()
                            << " but the file is not outbound! Failing.";
                 file->setState(File::FS_FAILED);
-                sendAck("IncomingFile", "Failed", file->getFileId().toBase64());
+                sendFileCancel(file->getFileId(), FileCancelReason::SourceChanged);
                 return;
             }
 
@@ -1044,7 +1067,7 @@ void Contact::onReceivedAck(const PeerAck &ack)
                            << " but the file is not in FS_OFFERED state (state=" << getState()
                            << ")! Failing.";
                 file->setState(File::FS_FAILED);
-                sendAck("IncomingFile", "Failed", file->getFileId().toBase64());
+                sendFileCancel(file->getFileId(), FileCancelReason::SourceChanged);
                 return;
             }
 
@@ -1057,14 +1080,14 @@ void Contact::onReceivedAck(const PeerAck &ack)
                            << " with invalid channel-id: "
                            << channel;
                 file->setState(File::FS_FAILED);
-                sendAck("IncomingFile", "Failed", file->getFileId().toBase64());
+                sendFileCancel(file->getFileId(), FileCancelReason::SourceChanged);
                 return;
             }
             if (!channelOk || !restOk || rest < 0 || rest > file->getSize()
                     || rest % (1024 * 8) != 0) {
                 LFLOG_WARN << "Received invalid resume offset for file #" << file->getId();
                 file->setState(File::FS_FAILED);
-                sendAck("IncomingFile", "Failed", file->getFileId().toBase64());
+                sendFileCancel(file->getFileId(), FileCancelReason::SourceChanged);
                 return;
             }
             file->setChannel(channel);
@@ -1083,9 +1106,18 @@ void Contact::onReceivedAck(const PeerAck &ack)
     }
 }
 
+#endif
+
 bool Contact::procesMessageQueue()
 {
     if (isOnline() && !messageQueue_.empty()) {
+        if (messageQueue_.front()->getData().encoding == Message::UTF8
+                && !peerUserInfo_.allowUtf8) {
+            LFLOG_WARN << "Rejecting outgoing UTF-8 message because the peer disallows UTF-8";
+            messageQueue_.front()->setState(Message::MS_REJECTED);
+            messageQueue_.erase(messageQueue_.begin());
+            return true;
+        }
         // Send one message. Wait for the socket's buffer to be clear before proceeding with the next
 
         // TODO: Check ready status on socket
@@ -1120,6 +1152,12 @@ bool Contact::processFilesQueue()
             }
 
             if (file->getDirection() == File::OUTGOING) {
+                if (!peerAllowsMimeType(file->getMimeType())
+                        || !peerUserInfo_.allowFiles) {
+                    file->setState(File::FS_REJECTED);
+                    fileQueue_.erase(fileQueue_.begin());
+                    return true;
+                }
                 switch(file->getState()) {
                 case File::FS_WAITING:
                     connection_->peer->offerFile(*file);
@@ -1217,6 +1255,170 @@ bool Contact::processFileBlocks()
     return false;
 }
 
+void Contact::onReceivedConnectionResponse(const PeerConnectionResponse& response)
+{
+    touchLastSeen();
+    if (getState() != WAITING_FOR_ACCEPTANCE || outgoingConnectionRequestId_ == 0
+            || response.requestId != outgoingConnectionRequestId_) {
+        response.peer->close();
+        return;
+    }
+    outgoingConnectionRequestId_ = 0;
+    switch (response.status) {
+    case ConnectionResponseStatus::Accepted:
+        setState(ACCEPTED);
+        scheduleProcessOnlineLater();
+        break;
+    case ConnectionResponseStatus::Pending:
+        setState(WAITING_FOR_ACCEPTANCE);
+        response.peer->close();
+        break;
+    case ConnectionResponseStatus::Rejected:
+        setState(REJECTED);
+        response.peer->close();
+        break;
+    case ConnectionResponseStatus::Blocked:
+        setState(BLOCKED);
+        response.peer->close();
+        break;
+    }
+}
+
+void Contact::onReceivedMessageReceipt(const PeerMessageReceipt& receipt)
+{
+    touchLastSeen();
+    if (getState() != ACCEPTED || receipt.messageId.size() != 32) {
+        receipt.peer->close();
+        return;
+    }
+    const auto message = DsEngine::instance().getMessageManager()->getMessage(
+        receipt.messageId, Message::OUTGOING);
+    if (!message || !message->getConversation()
+            || !message->getConversation()->haveParticipant(*this)) {
+        receipt.peer->close();
+        return;
+    }
+    message->touchSentReceivedTime();
+    message->setState(Message::MS_RECEIVED);
+}
+
+void Contact::onReceivedFileOfferResponse(const PeerFileOfferResponse& response)
+{
+    touchLastSeen();
+    if (getState() != ACCEPTED || response.fileId.size() != 16) {
+        response.peer->close();
+        return;
+    }
+    const auto file = DsEngine::instance().getFileManager()->getFileFromId(
+        response.fileId, File::OUTGOING);
+    if (!file || file->getContactId() != getId()) {
+        response.peer->close();
+        return;
+    }
+    if (response.status == FileOfferResponseStatus::Rejected) {
+        file->setState(File::FS_REJECTED);
+        return;
+    }
+    if (file->getState() == File::FS_OFFERED) {
+        file->setBytesTransferred(0);
+        file->setState(File::FS_QUEUED);
+        queueFile(file);
+    }
+}
+
+void Contact::onReceivedFileResume(const PeerFileResume& resume)
+{
+    touchLastSeen();
+    if (getState() != ACCEPTED || resume.fileId.size() != 16
+            || resume.sha256.size() != crypto_hash_sha256_BYTES) {
+        resume.peer->close();
+        return;
+    }
+    const auto file = DsEngine::instance().getFileManager()->getFileFromId(
+        resume.fileId, File::OUTGOING);
+    if (!file || file->getContactId() != getId() || file->getState() != File::FS_FAILED
+            || file->getSize() < 0
+            || static_cast<quint64>(file->getSize()) != resume.fileSize
+            || file->getHash() != resume.sha256
+            || resume.nextOffset > resume.fileSize
+            || resume.nextOffset % (8 * 1024) != 0) {
+        resume.peer->sendFileResumeResult(resume.requestId, resume.fileId,
+                                          FileResumeStatus::Rejected, 0,
+                                          FileCancelReason::UserAction);
+        return;
+    }
+
+    QString reason;
+    if (!file->validateSourceSnapshot(reason)) {
+        LFLOG_WARN << "Cancelling file resume because the source changed: " << reason;
+        resume.peer->sendFileResumeResult(resume.requestId, resume.fileId,
+                                          FileResumeStatus::Cancelled, 0,
+                                          FileCancelReason::SourceChanged);
+        file->setState(File::FS_FAILED);
+        return;
+    }
+
+    file->setBytesTransferred(static_cast<qlonglong>(resume.nextOffset));
+    resume.peer->sendFileResumeResult(resume.requestId, resume.fileId,
+                                      FileResumeStatus::Accepted,
+                                      resume.nextOffset,
+                                      FileCancelReason::UserAction);
+    file->setState(File::FS_QUEUED);
+    queueTransfer(file);
+}
+
+void Contact::onReceivedFileResumeResult(const PeerFileResumeResult& result)
+{
+    touchLastSeen();
+    if (getState() != ACCEPTED || result.fileId.size() != 16) {
+        result.peer->close();
+        return;
+    }
+    const auto file = DsEngine::instance().getFileManager()->getFileFromId(
+        result.fileId, File::INCOMING);
+    if (!file || file->getContactId() != getId() || file->getState() != File::FS_FAILED) {
+        result.peer->close();
+        return;
+    }
+    if (result.status == FileResumeStatus::Accepted) {
+        if (result.nextOffset > static_cast<quint64>(file->getSize())
+                || result.nextOffset % (8 * 1024) != 0) {
+            result.peer->close();
+            return;
+        }
+        file->setBytesTransferred(static_cast<qlonglong>(result.nextOffset));
+        file->setState(File::FS_QUEUED);
+        queueFile(file);
+        return;
+    }
+    if (result.status == FileResumeStatus::Cancelled
+            && result.error == FileCancelReason::UserAction) {
+        file->setState(File::FS_CANCELLED);
+    } else {
+        file->setState(File::FS_FAILED);
+    }
+}
+
+void Contact::onReceivedFileCancel(const PeerFileCancel& cancel)
+{
+    touchLastSeen();
+    if (getState() != ACCEPTED || cancel.fileId.size() != 16) {
+        cancel.peer->close();
+        return;
+    }
+    const auto file = DsEngine::instance().getFileManager()->getFileFromId(
+        cancel.fileId, *this);
+    if (!file) {
+        cancel.peer->close();
+        return;
+    }
+    if (file->getState() == File::FS_TRANSFERRING) {
+        file->setState(File::FS_CANCELLED);
+    } else {
+        file->setState(File::FS_CANCELLED);
+    }
+}
+
 void Contact::onReceivedMessage(const PeerMessage &msg)
 {
     if (iBlocked() || (getState() != ACCEPTED)) {
@@ -1224,7 +1426,13 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
                    << msg.peer->getConnectionId().toString()
                    << ". Not in ACCEPTED state or blocked.";
 
-        msg.peer->sendAck("Message", "Rejected", msg.data.messageId.toBase64());
+            msg.peer->close();
+        return;
+    }
+
+    if (DsEngine::instance().getMessageManager()->hasConflictingMessage(msg.data)) {
+        LFLOG_WARN << "Rejecting reused MessageId from "
+                   << msg.peer->getConnectionId().toString();
         msg.peer->close();
         return;
     }
@@ -1252,7 +1460,6 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
                    << uinfo.peer->getConnectionId().toString()
                    << ". Not in ACCEPTED state or blocked.";
 
-        uinfo.peer->sendAck("UserInfo", "Rejected", "Not in ACCEPTED state");
         uinfo.peer->close();
         return;
     }
@@ -1262,16 +1469,18 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
                    << uinfo.peer->getConnectionId().toString()
                    << ". Invaid nick-name.";
 
-        uinfo.peer->sendAck("UserInfo", "Rejected", "Invalid nick-name");
         uinfo.peer->close();
         return;
     }
 
     setNickName(uinfo.userInfo.nickName);
-    if (uinfo.userInfo.avatarHash != avatarHash(data_->avatar)) {
-        uinfo.peer->sendAck("SetAvatar", "Request");
-    }
-    uinfo.peer->sendAck("UserInfo", "Accepted");
+    expectedAvatarHash_ = uinfo.userInfo.avatarHash;
+    peerUserInfo_ = uinfo.userInfo;
+}
+
+bool Contact::peerAllowsMimeType(const QString& mimeType) const
+{
+    return mimeAllowed(peerUserInfo_.allowMimeTypes, mimeType);
 }
 
 void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
@@ -1281,7 +1490,7 @@ void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
                    << msg.peer->getConnectionId().toString()
                    << ". Contact is blocked.";
 
-        msg.peer->sendAck("IncomingFile", "Rejected", msg.fileId.toBase64());
+        msg.peer->sendFileOfferResponse(msg.fileId, FileOfferResponseStatus::Rejected);
         msg.peer->close();
         return;
     }
@@ -1290,8 +1499,21 @@ void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
                    << msg.peer->getConnectionId().toString()
                    << ". Not in ACCEPTED state.";
 
-        msg.peer->sendAck("IncomingFile", "Rejected", msg.fileId.toBase64());
+        msg.peer->sendFileOfferResponse(msg.fileId, FileOfferResponseStatus::Rejected);
         msg.peer->close();
+        return;
+    }
+
+    const auto identity = getIdentity();
+    if (!identity->getAllowFiles()) {
+        LFLOG_WARN << "Rejecting file offer because file transfers are disabled by local security preferences";
+        msg.peer->sendFileOfferResponse(msg.fileId, FileOfferResponseStatus::Rejected);
+        return;
+    }
+    if (!mimeAllowed(identity->getAllowMimeTypes(), msg.type)) {
+        LFLOG_WARN << "Rejecting file offer because MIME type " << msg.type
+                   << " is not allowed by local security preferences";
+        msg.peer->sendFileOfferResponse(msg.fileId, FileOfferResponseStatus::Rejected);
         return;
     }
 
@@ -1311,8 +1533,16 @@ void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
 
 void Contact::onReceivedAvatar(const PeerSetAvatarReq &avatar)
 {
+    if (getState() != ACCEPTED || !peerUserInfo_.publicAvatar) {
+        avatar.peer->close();
+        return;
+    }
+    const auto receivedHash = avatarHash(avatar.avatar);
+    if (expectedAvatarHash_.isEmpty() || receivedHash != expectedAvatarHash_) {
+        avatar.peer->close();
+        return;
+    }
     setAvatar(avatar.avatar);
-    avatar.peer->sendAck("SetAvatar", "Accepted");
 }
 
 void Contact::onOutputBufferEmptied()
@@ -1435,8 +1665,6 @@ void Contact::queueTransfer(const std::shared_ptr<File> &file)
                              << "\" to \"" << path << "\"";
 
                 file->setPath(path);
-                QFileInfo fi{path};
-                file->setName(fi.fileName());
             }
         }
 
@@ -1496,7 +1724,6 @@ Conversation *Contact::getRequestedOrDefaultConversation(const QByteArray &hash,
                        << peer.getConnectionId().toString()
                        << ". Unknown conversation: " << hash.toHex();
 
-            peer.sendAck(what, "Rejected", id.toBase64());
             return {};
         }
 
@@ -1513,7 +1740,6 @@ Conversation *Contact::getRequestedOrDefaultConversation(const QByteArray &hash,
                    << " on Identyty " << getIdentity()->getName()
                    << " is not part of converation " << hash.toHex();
 
-        peer.sendAck(what, "Rejected", id.toBase64());
         peer.close();
         return {};
     }
@@ -1523,39 +1749,83 @@ Conversation *Contact::getRequestedOrDefaultConversation(const QByteArray &hash,
 
 void Contact::onAddmeRequest(const PeerAddmeReq &req)
 {
-    Q_UNUSED(req)
+    if (req.requestId == 0) {
+        req.peer->close();
+        return;
+    }
 
     touchLastSeen();
 
     if (!isPeerVerified()) {
         if (connection_ && isOnline()) {
-            connection_->peer->sendAck("AddMe", "Pending");
+            req.peer->sendConnectionResponse(req.requestId, ConnectionResponseStatus::Pending);
             connection_->peer->close();
             return;
         }
     }
 
     if (iBlocked()) {
-        if (connection_ && isOnline()) {
-            connection_->peer->sendAck("AddMe",
-                                       getSendBlockNotice() ? "Blocked" : "Rejected");
-            connection_->peer->close();
-            return;
-        }
+        req.peer->sendConnectionResponse(
+            req.requestId,
+            getSendBlockNotice() ? ConnectionResponseStatus::Blocked
+                                 : ConnectionResponseStatus::Rejected);
+        req.peer->close();
+        return;
     }
 
+    if (getState() == ACCEPTED) {
+        req.peer->sendConnectionResponse(req.requestId,
+                                         ConnectionResponseStatus::Accepted);
+        return;
+    }
+
+    if (getState() == REJECTED) {
+        req.peer->sendConnectionResponse(req.requestId,
+                                         ConnectionResponseStatus::Rejected);
+        req.peer->close();
+        return;
+    }
+
+    pendingConnectionRequestId_ = req.requestId;
+
     if (connection_ && isOnline()) {
-        connection_->peer->sendAck("AddMe", "Added");
-        setState(ACCEPTED);
-        scheduleProcessOnlineLater();
+        req.peer->sendConnectionResponse(req.requestId, ConnectionResponseStatus::Pending);
+        req.peer->close();
     }
 }
 
-void Contact::sendAck(const QString &what, const QString &status, const QString &data)
+void Contact::sendMessageReceipt(const QByteArray& messageId)
 {
-    if (isOnline()) {
-        connection_->peer->sendAck(what, status, data);
+    if (isOnline() && getState() == ACCEPTED && messageId.size() == 32) {
+        connection_->peer->sendMessageReceipt(messageId);
     }
+}
+
+void Contact::sendFileOfferResponse(const QByteArray& fileId,
+                                    const FileOfferResponseStatus status)
+{
+    if (isOnline() && getState() == ACCEPTED) {
+        connection_->peer->sendFileOfferResponse(fileId, status);
+    }
+}
+
+void Contact::sendFileCancel(const QByteArray& fileId, const FileCancelReason reason)
+{
+    if (isOnline() && getState() == ACCEPTED) {
+        connection_->peer->sendFileCancel(fileId, reason);
+    }
+}
+
+void Contact::resumeFile(File& file)
+{
+    if (!isOnline() || getState() != ACCEPTED || file.getDirection() != File::INCOMING
+            || file.getState() != File::FS_FAILED) {
+        return;
+    }
+    connection_->peer->sendFileResume(file.getFileId(),
+                                      static_cast<quint64>(file.getBytesTransferred()),
+                                      file.getHash(),
+                                      static_cast<quint64>(file.getSize()));
 }
 
 bool Contact::validateNick(const QString &nickName)
@@ -1577,7 +1847,14 @@ void Contact::sendUserInfo()
 
         UserInfo ui;
         ui.nickName = getIdentity()->getName();
-        ui.avatarHash = avatarHash(normalizeAvatar(getIdentity()->getAvatar()));
+        ui.avatarHash = getIdentity()->getPublicAvatar()
+                ? avatarHash(normalizeAvatar(getIdentity()->getAvatar())) : QByteArray{};
+        ui.allowUtf8 = getIdentity()->getAllowUtf8();
+        ui.allowFiles = getIdentity()->getAllowFiles();
+        ui.allowMimeTypes = getIdentity()->getAllowMimeTypes();
+        ui.allowReactions = getIdentity()->getAllowReactions();
+        ui.publicBio = getIdentity()->getPublicBio();
+        ui.publicAvatar = getIdentity()->getPublicAvatar();
 
         try {
             connection_->peer->sendUserInfo(ui);

@@ -49,17 +49,27 @@ void IdentityManager::load()
         if (cert->getSigningPubKey().toByteArray() != publicKey) {
             throw Error("Identity certificate in the OS vault does not match the database");
         }
-        IdentityData data {
-            identityUuid,
-            query.value(name).toString(),
-            query.value(hash).toByteArray(),
-            query.value(address).toByteArray(),
-            query.value(address_data).toByteArray(),
-            query.value(notes).toString(),
-            QImage::fromData(query.value(avatar).toByteArray(), "PNG"),
-            cert,
-            query.value(auto_connect).toBool()
-        };
+        IdentityData data;
+        data.uuid = identityUuid;
+        data.name = query.value(name).toString();
+        data.hash = query.value(hash).toByteArray();
+        data.address = query.value(address).toByteArray();
+        data.addressData = query.value(address_data).toByteArray();
+        data.notes = query.value(notes).toString();
+        data.avatar = QImage::fromData(query.value(avatar).toByteArray(), "PNG");
+        data.cert = cert;
+        data.autoConnect = query.value(auto_connect).toBool();
+
+        const auto prefix = QStringLiteral("identity/%1/").arg(
+            identityUuid.toString(QUuid::WithoutBraces));
+        const auto& settings = DsEngine::instance().settings();
+        data.allowUtf8 = settings.value(prefix + QStringLiteral("allowUtf8"), true).toBool();
+        data.allowFiles = settings.value(prefix + QStringLiteral("allowFiles"), true).toBool();
+        data.allowMimeTypes = settings.value(prefix + QStringLiteral("allowMimeTypes"),
+                                              QStringList{QStringLiteral("*")}).toStringList();
+        data.allowReactions = settings.value(prefix + QStringLiteral("allowReactions"), true).toBool();
+        data.publicBio = settings.value(prefix + QStringLiteral("publicBio"), true).toBool();
+        data.publicAvatar = settings.value(prefix + QStringLiteral("publicAvatar"), true).toBool();
 
         auto identity = new Identity{
                     *this,
@@ -141,6 +151,12 @@ void IdentityManager::createIdentity(const QmlIdentityReq *req)
     id.name = req->value.name;
     id.avatar = req->value.avatar;
     id.notes = req->value.notes;
+    id.allowUtf8 = req->value.allowUtf8;
+    id.allowFiles = req->value.allowFiles;
+    id.allowMimeTypes = req->value.allowMimeTypes;
+    id.allowReactions = req->value.allowReactions;
+    id.publicBio = req->value.publicBio;
+    id.publicAvatar = req->value.publicAvatar;
     id.uuid = req->value.uuid;
     id.autoConnect = req->autoConnect();
     id.cert = DsCert::create();

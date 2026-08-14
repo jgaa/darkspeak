@@ -59,6 +59,8 @@
         <file>FileComponent.qml</file>
         <file>FormattedTime.qml</file>
         <file>GeneralSettings.qml</file>
+        <file>ResourceLimitsSettings.qml</file>
+        <file>ResourceLimitRow.qml</file>
         <file>ImportTorServiceDialog.qml</file>
         <file>images/blocked.svg</file>
         <file>images/qr-code.svg</file>

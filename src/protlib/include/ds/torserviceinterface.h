@@ -47,6 +47,7 @@ public:
     TorServiceInterface(crypto::DsCert::ptr_t cert,
                         const QByteArray& address,
                         const QUuid& identityId,
+                        core::ResourceLimits resourceLimits,
                         QHostAddress appHost = QHostAddress::LocalHost,
                         QHostAddress socksHost = QHostAddress::LocalHost,
                         quint16 socksPort = 9050);
@@ -102,6 +103,7 @@ private:
     const QHostAddress app_host_;
     const QHostAddress socks_host_;
     const quint16 socks_port_;
+    const core::ResourceLimits resourceLimits_;
 };
 
 }} //namespaces

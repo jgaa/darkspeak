@@ -2,12 +2,11 @@
 #include <cassert>
 #include <array>
 
-#include <QJsonObject>
-#include <QJsonDocument>
 #include <QCoreApplication>
 #include <QDir>
 
 #include "ds/torprotocolmanager.h"
+#include "ds/protocolcodec.h"
 #include "ds/errors.h"
 #include "logfault/logfault.h"
 
@@ -21,6 +20,7 @@ namespace prot {
 
 TorProtocolManager::TorProtocolManager(QSettings &settings)
     : settings_{settings}
+    , resourceLimits_{core::ResourceLimits::fromSettings(settings)}
 {
     tor_ = make_unique<TorMgr>(getConfig());
 
@@ -191,27 +191,21 @@ TorServiceInterface& TorProtocolManager::getService(const QUuid& service)
 
 uint64_t TorProtocolManager::sendAddme(const AddmeReq& req)
 {
-    auto json = QJsonDocument{
-        QJsonObject{
-            {"type", "AddMe"},
-            {"nick", req.nickName},
-            {"address", getService(req.service).getAddress()},
-            {"message", req.message}
-        }
-    };
+    ds::protocol::ContactEndpoint endpoint;
+    endpoint.setOnionAddress(getService(req.service).getAddress());
+    ds::protocol::ConnectionRequest request;
+    request.setNickname(req.nickName);
+    request.setMessage(req.message);
+    request.setContactEndpoint(std::move(endpoint));
+    ds::protocol::Envelope envelope;
+    envelope.setProtocolVersion(codec::protocolVersion);
+    envelope.setConnectionRequest(std::move(request));
 
     if (auto peer = getService(req.service).getPeer(req.connection)) {
-        return peer->send(json);
-    }
-
-    throw runtime_error("Failed to access peer while sending addme");
-}
-
-uint64_t TorProtocolManager::sendAck(const AckMsg &ack)
-{
-
-    if (auto peer = getService(ack.service).getPeer(ack.connection)) {
-        return peer->sendAck(ack.what, ack.status, ack.data);
+        const auto requestId = peer->nextRequestId();
+        envelope.setRequestId(requestId);
+        peer->send(envelope);
+        return requestId;
     }
 
     throw runtime_error("Failed to access peer while sending addme");
@@ -261,6 +255,7 @@ void TorProtocolManager::startService(const QUuid& serviceId,
         config.socks_port = tor_->socksPort();
     }
     auto service = make_shared<TorServiceInterface>(cert, address.toString().toUtf8(), serviceId,
+                                                    resourceLimits_,
                                                     config.app_host,
                                                     config.socks_host,
                                                     config.socks_port);

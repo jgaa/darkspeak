@@ -54,10 +54,10 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.10 COMPONENTS Core Gui Qml Quick QuickControls2 LinguistTools Widgets Network Sql Svg Test REQUIRED)
+find_package(Qt6 6.10 COMPONENTS Core Gui Qml Quick QuickControls2 LinguistTools Protobuf Widgets Network Sql Svg Test REQUIRED)
 
 add_subdirectory(src/cryptolib)
 add_subdirectory(src/corelib)

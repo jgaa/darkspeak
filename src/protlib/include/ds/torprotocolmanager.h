@@ -38,6 +38,7 @@ protected:
 
     std::unique_ptr<::ds::tor::TorMgr> tor_;
     QSettings& settings_;
+    core::ResourceLimits resourceLimits_;
     State state_ = State::OFFLINE;
 
     std::map<QUuid, TorServiceInterface::ptr_t> services_;
@@ -45,7 +46,6 @@ protected:
     // ProtocolManager interface
 public slots:
     uint64_t sendAddme(const core::AddmeReq& req) override;
-    uint64_t sendAck(const core::AckMsg& ack) override;
 
     // ProtocolManager interface
 public:

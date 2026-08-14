@@ -10,6 +10,7 @@
 #include <QStandardPaths>
 #include <QRegularExpression>
 #include <QUrl>
+#include <algorithm>
 
 namespace ds {
 namespace core {
@@ -39,7 +40,6 @@ void Conversation::sendMessage(const QString &text)
 {
     LFLOG_DEBUG << "Sending message text payload of " << text.size() << " characters";
 
-    const auto random = crypto::Crypto::getRandomBytes(8);
     const auto identity = getIdentity();
     assert(identity);
 
@@ -48,12 +48,10 @@ void Conversation::sendMessage(const QString &text)
     data.composedTime = DsEngine::getSafeNow();
     data.content = text;
     data.encoding = Message::Encoding::UTF8;
-    data.sender = identity->getHash();
-    crypto::createHash(data.messageId, {
-                           random,
-                           data.content.toUtf8(),
-                           data.conversation,
-                           data.composedTime.toString().toUtf8()});
+    data.sender = identity->getCert()->getSigningPubKey().toByteArray();
+    const auto random = crypto::Crypto::getRandomBytes(32);
+    data.messageId = crypto::Crypto::getSha256(
+        std::string_view{"DarkSpeak message id v3"}, data.sender, random);
 
     DsEngine::instance().getMessageManager()->sendMessage(*this, data);
     touchLastActivity();
@@ -99,12 +97,12 @@ void Conversation::incomingMessage(Contact *contact, const MessageData &data)
 {
     // Add to the database
     if (!DsEngine::instance().getMessageManager()->receivedMessage(*this, data)) {
-        contact->sendAck("Message", "Rejected", data.messageId.toBase64());
         return;
     }
 
-    // Send ack
-    contact->sendAck("Message", "Received", data.messageId.toBase64());
+    if (data.messageId.size() == 32) {
+        contact->sendMessageReceipt(data.messageId);
+    }
 
     touchLastActivity();
 }
@@ -396,17 +394,12 @@ Contact::ptr_t Conversation::getParticipant() const
 
 QByteArray Conversation::calculateHash(const Contact &contact)
 {
-    const auto h1 = contact.getCert()->getHash().toByteArray();
-    const auto h2 = contact.getIdentity()->getCert()->getHash().toByteArray();
-
-    QByteArray hash;
-    if (h1 > h2) {
-        crypto::createHash(hash, {h1, h2});
-    } else {
-        crypto::createHash(hash, {h2, h1});
-    }
-
-    return hash;
+    const auto userA = contact.getCert()->getSigningPubKey().toByteArray();
+    const auto userB = contact.getIdentity()->getCert()->getSigningPubKey().toByteArray();
+    const auto first = std::min(userA, userB);
+    const auto second = std::max(userA, userB);
+    return crypto::Crypto::getSha256(
+        std::string_view{"DarkSpeak default conversation v3"}, first, second);
 }
 
 QString Conversation::getSelectStatement(const QString &where)

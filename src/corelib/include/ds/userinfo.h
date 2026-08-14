@@ -3,6 +3,7 @@
 
 #include <QString>
 #include <QByteArray>
+#include <QStringList>
 
 namespace ds {
 namespace core {
@@ -10,6 +11,12 @@ namespace core {
 struct UserInfo {
     QString nickName;
     QByteArray avatarHash;
+    bool allowUtf8 = true;
+    bool allowFiles = true;
+    QStringList allowMimeTypes{QStringLiteral("*")};
+    bool allowReactions = true;
+    bool publicBio = true;
+    bool publicAvatar = true;
 };
 
 }} // namespaces
