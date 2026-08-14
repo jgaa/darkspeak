@@ -1,0 +1,450 @@
+syntax = "proto3";
+
+package ds.protocol;
+
+// The protobuf schema starts at the encrypted transport stream. The v3
+// ClientHello, ServerHello, and ClientFinish messages are fixed binary
+// structures and are intentionally not represented here.
+//
+// All peer-provided values remain untrusted after protobuf parsing. Stable
+// object-format constraints are documented here; authorization, state-machine,
+// resource-budget, and defensive-processing requirements are defined by the
+// DarkSpeak protocol specification.
+
+message TransportEnvelope {
+  // Serialized application Envelope. The protocol specification defines the
+  // maximum accepted payload and total record sizes.
+  bytes payload = 1;
+
+  // Cryptographically random transport padding. Never dispatched to the
+  // application layer.
+  bytes padding = 2;
+}
+
+message Envelope {
+  uint32 protocol_version = 1;
+
+  // Correlation metadata is scoped to this authenticated connection.
+  // Neither field present: this envelope is not part of a request/response
+  // exchange. IDs are always non-zero when present.
+  oneof correlation {
+    // Locally generated ID for a request. It must be unique among this side's
+    // currently outstanding requests on this connection.
+    uint64 request_id = 2;
+
+    // Identifies the peer request answered by this envelope. A response may
+    // consume only already-existing pending state for the expected response
+    // type; it never creates request state.
+    uint64 response_to_request_id = 3;
+  }
+
+  oneof body {
+    Capabilities capabilities = 10;
+    KeepAlive keep_alive = 11;
+    BioRequest bio_request = 12;
+    BioResponse bio_response = 13;
+    ConnectionRequest connection_request = 14;
+    ConnectionResponse connection_response = 15;
+    Message message = 16;
+    FileOffer file_offer = 17;
+    FileChunk file_chunk = 18;
+    FileAck file_ack = 19;
+    UserInfo user_info = 20;
+    FileResume file_resume = 22;
+    FileResumeResult file_resume_result = 23;
+    FileCancel file_cancel = 24;
+    Avatar avatar = 25;
+    MessageReceipt message_receipt = 26;
+    FileOfferResponse file_offer_response = 27;
+  }
+}
+
+message Capabilities {
+  uint32 protocol_version = 1;
+
+  // Capability names are case-sensitive lowercase US-ASCII tokens matching:
+  //   [a-z0-9][a-z0-9._-]{0,63}
+  // At most 32 entries; duplicates invalid. V3 has no mandatory named capability.
+  // Unknown syntactically valid names are ignored.
+  repeated string capabilities = 2;
+
+  // Largest encrypted transport record this sender is willing to receive.
+  // Valid protocol-v3 range: 4096..1048576 bytes. This value can only lower,
+  // never raise, the peer's local hard receive ceiling.
+  uint32 max_record_bytes = 3;
+}
+
+// Empty by design. Keepalive records receive the same encrypted randomized
+// transport padding as every other application message and require no reply.
+message KeepAlive {}
+
+// The requester may ask for a bio from any authenticated peer. Local policy and
+// contact state determine whether a response exposes the bio and avatar state.
+message BioRequest {}
+
+message BioResponse {
+  // Human-readable text. Maximum 4096 encoded bytes. If absent, the requester
+  // is not permitted to see the bio. If present, it may be empty.
+  optional string bio = 1;
+
+  // If absent, the requester is not permitted to know avatar state.
+  // If present and empty, the user currently has no avatar.
+  // If present and non-empty, this is exactly 32 bytes containing
+  // SHA-256(red || green || blue) for the current Avatar, with channel bytes
+  // concatenated exactly in that order and with no separators.
+  optional bytes avatar_hash = 3;
+}
+
+// A privacy-preserving message timestamp. The value is the number of whole
+// UTC minutes since the Unix epoch (1970-01-01T00:00:00Z). It is rounded
+// down; implementations must not encode local time, timezone offsets, or
+// sub-minute precision in this message.
+message Timestamp {
+  int64 unix_minutes = 1;
+}
+
+// Protocol-v3 user identity.
+//
+// A UserId is exactly the user's 32-byte long-term Ed25519 signing public key.
+// The corresponding private key is the user's signing key and MUST remain
+// private. In protocol v3 there is one endpoint/device per user, and this same
+// signing identity is also used to authenticate that endpoint during the
+// handshake. Future protocol versions may authorize independent device keys
+// without changing the meaning of UserId or historical user signatures.
+message UserIdentity {
+  // Exactly 32 bytes containing the Ed25519 public key. This value is the
+  // UserId; nickname and transport endpoints are not part of user identity.
+  bytes user_id = 1;
+}
+
+// A transport locator for contacting a user. Endpoints identify where a user
+// can currently be reached, not who the user is. Unknown endpoint alternatives
+// may be ignored when at least one supported endpoint remains.
+message ContactEndpoint {
+  oneof endpoint {
+    // Canonical lowercase Tor v3 onion-service hostname: exactly 56 base32
+    // characters from [a-z2-7] followed by ".onion" (62 ASCII bytes total).
+    string onion_address = 1;
+  }
+}
+
+// Shareable contact bootstrap object.
+//
+// This object contains enough information to identify the user
+// cryptographically and locate at least one current endpoint. Nickname is only
+// an optional untrusted display hint. Protocol v3 requires at least one
+// supported endpoint and permits at most 8 endpoints. Duplicate endpoints are
+// invalid.
+message ContactDescriptor {
+  // ContactDescriptor object version. Protocol v3 uses descriptor version 1.
+  uint32 version = 1;
+
+  // Exactly 32 bytes. This is the user's UserId / Ed25519 signing public key.
+  bytes user_id = 2;
+
+  // Optional untrusted human-readable display hint. Maximum 128 encoded bytes.
+  optional string nickname = 3;
+
+  // One or more current transport locators. At most 8 entries.
+  repeated ContactEndpoint endpoints = 4;
+}
+
+message ConnectionRequest {
+  // Human-readable nickname. Maximum 128 encoded bytes.
+  string nickname = 1;
+
+  // Optional human-readable introduction. Maximum 4096 encoded bytes.
+  string message = 2;
+
+  // Current transport endpoint offered for future connections. This locator
+  // does not identify the user; the authenticated UserId does. Protocol v3
+  // requires a supported endpoint when a connection request is used to
+  // establish a new persistent contact.
+  ContactEndpoint contact_endpoint = 3;
+}
+
+message ConnectionResponse {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    PENDING = 1;
+    ACCEPTED = 2;
+    REJECTED = 3;
+    BLOCKED = 4;
+  }
+
+  // Unknown status values make this response unsupported and it must not be
+  // acted upon as any known state transition.
+  Status status = 1;
+
+  // Optional human-readable explanation. Maximum 4096 encoded bytes.
+  string message = 2;
+}
+
+message Message {
+  oneof source {
+    // Exactly 32 bytes in the ConversationId namespace.
+    bytes conversation_id = 1;
+
+    // Future public/broadcast message source. Exact identifier format and
+    // semantics must be frozen before this alternative is enabled.
+    bytes dark_cable = 10;
+  }
+
+  // Exactly 32 bytes; globally scoped. See protocol for generation formula.
+  bytes message_id = 2;
+
+  Timestamp composed_at = 3;
+
+  // Human-readable message text. Maximum 65536 encoded bytes. Its permitted
+  // character repertoire is determined by Encoding and by the receiver's
+  // current UserSecurityPreferences.
+  string content = 4;
+
+  // Exactly 32 bytes containing the author's UserId, which in protocol v3 is
+  // the author's long-term Ed25519 signing public key.
+  bytes sender_id = 5;
+
+  Encoding encoding = 6;
+
+  // Exactly 64 bytes containing the Ed25519 authorship signature made with
+  // the private key corresponding to sender_id. The protocol specification
+  // defines the canonical domain-separated bytes covered by this signature.
+  // It proves message authorship independently of the endpoint or relay that
+  // transported the Message.
+  bytes signature = 7;
+
+  // Attachments offered with this message. At most 16 attachment entries are
+  // permitted, of which at most 8 may be primary attachments. Attachment order
+  // is authored presentation semantics and is covered by the message signature.
+  // Each embedded FileOffer must use source.message_id equal to this
+  // Message.message_id and enters exactly the same bounded offer/transfer
+  // machinery as a top-level FileOffer. At most one thumbnail may reference a
+  // given primary attachment.
+  repeated MessageAttachment attachments = 8;
+}
+
+message MessageReceipt {
+  bytes message_id = 1; // Exactly 32 bytes; successfully validated/accepted.
+}
+
+
+message MessageAttachment {
+  FileOffer file_offer = 1;
+
+  // Absent means that file_offer is a primary attachment. If present, this
+  // attachment is a thumbnail for the primary attachment at the given
+  // zero-based index in Message.attachments. The referenced attachment must
+  // occur in the same Message, must be a primary attachment, and must not
+  // itself be a thumbnail. The index must be less than attachments.size().
+  // Cycles and thumbnail chains are therefore invalid by construction.
+  optional uint32 thumbnail_for_attachment_index = 2;
+}
+
+enum Encoding {
+  ENCODING_UNSPECIFIED = 0;
+
+  // Human-readable text fields governed by this encoding contain only the
+  // protocol-permitted US-ASCII repertoire. For general user text this means
+  // printable ASCII 0x20..0x7e plus LF (0x0a) and TAB (0x09). NUL, CR, other
+  // control characters, and every non-ASCII code point are forbidden.
+  US_ASCII = 1;
+
+  // Normal protobuf UTF-8 string encoding. Receivers may forbid UTF-8 through
+  // UserSecurityPreferences. Unknown Encoding values make the Message
+  // unsupported and it must be discarded rather than interpreted heuristically.
+  UTF8 = 2;
+}
+
+message FileOffer {
+  // Exactly 16 cryptographically random bytes; transfer-local, not content identity.
+  bytes file_id = 1;
+
+  oneof source {
+    // Exactly 32 bytes in the ConversationId namespace.
+    bytes conversation_id = 10;
+
+    // Exactly 32 bytes in the globally scoped MessageId namespace.
+    bytes message_id = 11;
+  }
+
+  // Display filename only, never a filesystem path. Maximum 1024 encoded
+  // bytes. Filesystem-safe naming is a local export operation.
+  string name = 3;
+
+  // Immutable offered content size. Zero-length files are valid. The receiver
+  // applies local file-size and quota policy before allocating persistent state.
+  uint64 size = 4;
+
+  // Exactly 32 bytes containing SHA-256 over the complete file contents from
+  // byte 0 through size-1. For a zero-length file this is SHA-256 of empty input.
+  bytes sha256 = 5;
+
+  // Lowercase US-ASCII HTTP media type. Syntax is type/subtype with no
+  // parameters, whitespace, comments, or controls; each component contains
+  // only ASCII letters, digits, and !#$&^_.+-. Maximum 127 bytes.
+  string mime_type = 7;
+}
+
+message FileOfferResponse {
+  bytes file_id = 1; // Exactly 16 bytes.
+  enum Status {
+    FILE_OFFER_STATUS_UNSPECIFIED = 0;
+    FILE_OFFER_ACCEPTED = 1;
+    FILE_OFFER_REJECTED = 2;
+  }
+  Status status = 2; // REJECTED deliberately carries no reason.
+}
+
+
+message FileChunk {
+  bytes file_id = 1;
+
+  // Zero-based chunk sequence. The first chunk is sequence 0. A receiver
+  // accepts only the next contiguous sequence, except that an already accepted
+  // duplicate may be answered with the current cumulative acknowledgement.
+  uint64 sequence = 2;
+
+  // Zero-based byte offset of data within the offered file. For a new transfer
+  // the first chunk starts at 0; after a validated resume it starts at the
+  // accepted resume offset. It must equal the receiver's next expected
+  // contiguous offset.
+  uint64 offset = 3;
+
+  // File bytes. Protocol v3 currently limits data to 8192 bytes per chunk.
+  // A non-final chunk normally contains the full configured chunk size; the
+  // final chunk may be shorter. A zero-length data field is valid only as the
+  // final chunk of a zero-length file.
+  bytes data = 4;
+
+  // True only for the final chunk. For a non-empty file, checked
+  // offset + data.size() must equal the immutable offered size. No later chunk
+  // is valid after a final chunk has been accepted.
+  bool final = 5;
+}
+
+message FileAck {
+  bytes file_id = 1; // Exactly 16 bytes.
+  uint64 next_sequence = 2; // Next FileChunk sequence expected; initially 0.
+  uint64 next_offset = 3;   // Next byte offset expected; initially 0.
+  // True only after complete content and final SHA-256 validation.
+  bool final = 4;
+}
+
+message UserSecurityPreferences {
+  // If false, user-generated/display text sent to this peer must be converted
+  // or transliterated to the protocol US_ASCII repertoire before transmission.
+  // The receiver independently rejects governed objects containing characters
+  // outside that repertoire. Machine-readable protocol strings retain their
+  // own stricter syntax regardless of this preference.
+  bool allow_utf8 = 1;
+
+  // If false, a compliant peer does not offer files and the receiver rejects
+  // file offers and attachment objects.
+  bool allow_files = 2;
+
+  // Lowercase US-ASCII HTTP media types using the FileOffer.mime_type syntax.
+  // At most 64 entries, each at most 127 bytes. A single "*" entry permits all
+  // syntactically valid media types and must be the only list entry. Duplicate
+  // entries are invalid. When allow_files is true, an empty list permits no
+  // media types until local policy says otherwise.
+  repeated string allow_mime_types = 3;
+
+  bool allow_reactions = 4;
+
+  // The user is willing to expose the bounded public bio to authenticated
+  // non-contacts. This never overrides local authorization or rate limits.
+  bool public_bio = 5;
+
+  // The user is willing to expose avatar state/content to authenticated
+  // non-contacts. This never overrides local authorization or rate limits.
+  bool public_avatar = 6;
+}
+
+// When these preferences change, a peer may send updated UserInfo to connected
+// approved contacts. Receivers still apply local authorization and validation.
+message UserInfo {
+  // Human-readable nickname. Maximum 128 encoded bytes.
+  string nickname = 1;
+
+  // If absent, this receiver is not permitted to know avatar state. If present
+  // and empty, the user has no avatar. If present and non-empty, exactly 32
+  // bytes containing SHA-256(red || green || blue) for the current Avatar.
+  optional bytes avatar_hash = 2;
+
+  // Required. UserInfo is a complete snapshot, not a patch.
+  UserSecurityPreferences security_prefs = 3;
+}
+
+enum FileError {
+  FILE_ERROR_UNSPECIFIED = 0;
+
+  // Sender's immutable source snapshot no longer matches, the source was
+  // deleted/replaced, or it became unavailable.
+  SOURCE_CHANGED = 1;
+
+  // A local user explicitly cancelled the transfer.
+  USER_ACTION = 2;
+}
+
+message FileResume {
+  bytes file_id = 1;
+
+  // First byte not present in the receiver's durably checkpointed contiguous
+  // prefix. Zero is valid. Must not exceed file_size and must satisfy the
+  // protocol's chunk/resume rules.
+  uint64 next_offset = 2;
+
+  // Exactly 32 bytes: immutable SHA-256 of the complete offered file.
+  bytes sha256 = 3;
+
+  // Immutable complete offered size. Zero is valid for an empty file.
+  uint64 file_size = 4;
+}
+
+message FileResumeResult {
+  enum Status {
+    RESUME_STATUS_UNSPECIFIED = 0;
+    RESUME_ACCEPTED = 1;
+    RESUME_REJECTED = 2;
+    RESUME_CANCELLED = 3;
+  }
+
+  bytes file_id = 1;
+
+  // Unknown status values make this response unsupported and it must not
+  // change transfer state.
+  Status status = 2;
+
+  // Meaningful when accepted: first byte the sender will transmit after the
+  // validated resume. Zero is valid.
+  uint64 next_offset = 3;
+
+  // FILE_ERROR_UNSPECIFIED unless status/reason semantics require a known
+  // FileError. Unknown values must not be guessed; the result is unsupported.
+  FileError error = 4;
+}
+
+message FileCancel {
+  bytes file_id = 1;
+
+  // Must be a known non-UNSPECIFIED reason. Unknown values are not interpreted
+  // as a known cancellation reason.
+  FileError reason = 2;
+}
+
+// Raw planar RGB is used deliberately so ordinary avatar handling does not
+// invoke a compressed-image decoder on hostile peer data.
+message Avatar {
+  // width == 0 and height == 0 is the explicit avatar-removal value. Exactly
+  // one zero dimension is invalid. Non-zero dimensions are at most 512 each
+  // and their checked product must not exceed 262144 pixels.
+  uint32 width = 1;
+  uint32 height = 2;
+
+  // For non-removal avatars, each channel contains exactly width * height
+  // bytes. For removal, all three channels are empty. The channels together
+  // must not exceed 786432 bytes and serialized Avatar must not exceed 800 KiB.
+  bytes red = 3;
+  bytes green = 4;
+  bytes blue = 5;
+}
