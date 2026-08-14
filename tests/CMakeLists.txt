@@ -31,6 +31,7 @@ add_test(NAME qml_smoke COMMAND ${CMAKE_COMMAND} -E env
     XDG_CONFIG_HOME=${CMAKE_CURRENT_BINARY_DIR}/qml-smoke-config
     XDG_DATA_HOME=${CMAKE_CURRENT_BINARY_DIR}/qml-smoke-data
     XDG_CACHE_HOME=${CMAKE_CURRENT_BINARY_DIR}/qml-smoke-cache
+    DARKSPEAK_TEST_SECRETSTORE_PASSPHRASE=darkspeak-qml-smoke-only
     $<TARGET_FILE:darkspeak>
     --qml-smoke-test
     --profile ${CMAKE_CURRENT_BINARY_DIR}/qml-smoke-profile

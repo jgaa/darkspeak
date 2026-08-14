@@ -1,6 +1,7 @@
 #include "ds/secretstore.h"
 
 #include <QCryptographicHash>
+#include <QByteArray>
 #include <QUuid>
 
 #include <cstddef>
@@ -28,12 +29,36 @@ std::string uuidName(const char* prefix, const QUuid& identity, const char* suff
            + suffix;
 }
 
+std::optional<std::string> testPassphrase()
+{
+    const auto value = qEnvironmentVariable("DARKSPEAK_TEST_SECRETSTORE_PASSPHRASE");
+    if (value.isEmpty()) {
+        return std::nullopt;
+    }
+    return value.toStdString();
+}
+
 } // namespace
 
 SecretStore::SecretStore(const QString& databasePath)
 {
     jgaa::safekeeping::SafeKeeping::setLinuxVaultRootName("org.darkspeak.DarkSpeak");
-    vault_ = jgaa::safekeeping::SafeKeeping::openOrCreate(namespaceName(databasePath));
+    const auto passphrase = testPassphrase();
+    if (passphrase.has_value()) {
+        jgaa::safekeeping::SafeKeeping::CreateOptions createOptions;
+        createOptions.createSystemVaultSlot = false;
+        createOptions.passphrase = passphrase;
+        jgaa::safekeeping::SafeKeeping::UnlockOptions unlockOptions;
+        unlockOptions.trySystemVaultFirst = false;
+        unlockOptions.passphrase = passphrase;
+        const auto name = namespaceName(databasePath);
+        vault_ = jgaa::safekeeping::SafeKeeping::open(name, unlockOptions);
+        if (!vault_) {
+            vault_ = jgaa::safekeeping::SafeKeeping::createNew(name, createOptions).instance;
+        }
+    } else {
+        vault_ = jgaa::safekeeping::SafeKeeping::openOrCreate(namespaceName(databasePath));
+    }
     if (!vault_ || !vault_->isUnlocked()) {
         throw std::runtime_error("DarkSpeak OS secret vault is locked or unavailable");
     }
