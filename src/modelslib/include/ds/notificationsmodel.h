@@ -56,7 +56,8 @@ private:
         H_HANDLE,
         H_ADDRESS,
         H_FILE_NAME,
-        H_FILE_SIZE
+        H_FILE_SIZE,
+        H_AVATAR_URL
     };
 
     QVariant data(const QModelIndex &index, int role) const override;
@@ -84,6 +85,9 @@ private:
     bool isHashPresent(const QString& hash) const ;
     void deleteFileNotification(const QByteArray& fileId);
     void purgeStaleFileNotifications();
+    void requestNotificationAvatar(core::Identity *identity,
+                                   const core::PeerAddmeReq& req,
+                                   const QString& hash);
 
 };
 

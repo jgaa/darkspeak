@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <sodium.h>
 
 #include "ds/torprotocolmanager.h"
 #include "ds/protocolcodec.h"
@@ -197,6 +198,9 @@ uint64_t TorProtocolManager::sendAddme(const AddmeReq& req)
     request.setNickname(req.nickName);
     request.setMessage(req.message);
     request.setContactEndpoint(std::move(endpoint));
+    if (req.avatarHash.size() == crypto_hash_sha256_BYTES) {
+        request.setAvatarHash(req.avatarHash);
+    }
     ds::protocol::Envelope envelope;
     envelope.setProtocolVersion(codec::protocolVersion);
     envelope.setConnectionRequest(std::move(request));

@@ -110,6 +110,7 @@ void Identity::addContact(const QVariantMap &args)
 
 void Identity::startService()
 {
+    try {
     if (data_.addressData.isEmpty()) {
         LFLOG_ERROR << "The identity " << getName()
                     << " has no address. Cannot go online.";
@@ -122,24 +123,51 @@ void Identity::startService()
     auto serviceData = DsEngine::fromJson(data_.addressData);
     serviceData.insert("key", DsEngine::instance().secretStore().torServiceKey(data_.uuid));
     getProtocolManager().startService(data_.uuid, data_.cert, serviceData);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to start identity " << getName() << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to start identity %1: %2").arg(getName(), QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to start identity " << getName() << ": unknown exception";
+    }
 }
 
 void Identity::stopService()
 {
+    try {
     disconnectContacts();
     getProtocolManager().stopService(data_.uuid);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to stop identity " << getName() << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to stop identity %1: %2").arg(getName(), QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to stop identity " << getName() << ": unknown exception";
+    }
 }
 
 void Identity::changeTransport()
 {
+    try {
      LFLOG_NOTICE << "Requesting a new Tor service for " << getName();
      DsEngine::instance().createNewTransport(
                  data_.name.toUtf8(),
                  data_.uuid);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to change transport for " << getName() << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to change transport for %1: %2").arg(getName(), QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to change transport for " << getName() << ": unknown exception";
+    }
 }
 
 void Identity::setNewTorService(const QString &address, int port, const QString privateKey)
 {
+    try {
     LFLOG_NOTICE << "Setting a new Tor service for " << getName();
 
     static const QRegularExpression addressPattern(
@@ -177,6 +205,14 @@ void Identity::setNewTorService(const QString &address, int port, const QString 
 
     setAddressData(json.toJson(QJsonDocument::Compact));
     setAddress((serviceId + ".onion:" + QString::number(servicePort)).toUtf8());
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to set Tor service for " << getName() << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to set Tor service for %1: %2").arg(getName(), QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to set Tor service for " << getName() << ": unknown exception";
+    }
 }
 
 ProtocolManager& Identity::getProtocolManager() {
@@ -209,10 +245,19 @@ void Identity::onIncomingPeer(const std::shared_ptr<PeerConnection>& peer)
 
 void Identity::onAddmeRequest(const PeerAddmeReq &req)
 {
+    LFLOG_TRACE << "Identity " << getName()
+                << " received contact request from handle " << req.handle
+                << ", request id " << req.requestId;
+
     if (auto contact = contactFromHandle(req.handle)) {
+        LFLOG_TRACE << "Contact request from handle " << req.handle
+                    << " matched an existing contact " << contact->getName();
         contact->onAddmeRequest(req);
         return;
     }
+
+    LFLOG_TRACE << "Contact request from handle " << req.handle
+                << " is for an unknown contact; relaying notification";
 
     // We need to trigger a signal that can be caught by the Notification system
     // in a higher API layer than the current library.
@@ -220,9 +265,14 @@ void Identity::onAddmeRequest(const PeerAddmeReq &req)
     // IdentityManager.
     DsEngine::instance().getIdentityManager()->relayNewContactRequest(this, req);
 
-    // No further input is required until we have deciced if we want to add the contact,
-    // and we have verified its handle.
-    req.peer->close();
+    if (req.avatarHash.size() == 32) {
+        LFLOG_TRACE << "Relayed contact request from handle " << req.handle
+                    << "; keeping request connection for avatar retrieval";
+    } else {
+        LFLOG_TRACE << "Relayed contact request from handle " << req.handle
+                    << "; no avatar requested, closing request connection";
+        req.peer->close();
+    }
 }
 
 void Identity::onProcessOnlineLater()

@@ -33,34 +33,53 @@ Conversation::Conversation(QObject &parent, QString name, QString topic, Contact
 
 void Conversation::incrementUnread()
 {
-    setUnread(getUnread() + 1);
+    try {
+        setUnread(getUnread() + 1);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to update unread count: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to update unread count: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to update unread count: unknown exception";
+    }
 }
 
 void Conversation::sendMessage(const QString &text)
 {
-    LFLOG_DEBUG << "Sending message text payload of " << text.size() << " characters";
+    try {
+        LFLOG_DEBUG << "Sending message text payload of " << text.size() << " characters";
 
-    const auto identity = getIdentity();
-    assert(identity);
+        const auto identity = getIdentity();
+        assert(identity);
 
-    MessageData data;
-    data.conversation = hash_;
-    data.composedTime = DsEngine::getSafeNow();
-    data.content = text;
-    data.encoding = Message::Encoding::UTF8;
-    data.sender = identity->getCert()->getSigningPubKey().toByteArray();
-    const auto random = crypto::Crypto::getRandomBytes(32);
-    data.messageId = crypto::Crypto::getSha256(
-        std::string_view{"DarkSpeak message id v3"}, data.sender, random);
+        MessageData data;
+        data.conversation = hash_;
+        data.composedTime = DsEngine::getSafeNow();
+        data.content = text;
+        data.encoding = Message::Encoding::UTF8;
+        data.sender = identity->getCert()->getSigningPubKey().toByteArray();
+        const auto random = crypto::Crypto::getRandomBytes(32);
+        data.messageId = crypto::Crypto::getSha256(
+            std::string_view{"DarkSpeak message id v3"}, data.sender, random);
 
-    DsEngine::instance().getMessageManager()->sendMessage(*this, data);
-    touchLastActivity();
+        DsEngine::instance().getMessageManager()->sendMessage(*this, data);
+        touchLastActivity();
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to send message: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to send message: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to send message: unknown exception";
+    }
 }
 
 void Conversation::sendFile(const QVariantMap &args)
 {
+    try {
 
-    const auto path = args.value("path").toString();
+        const auto path = args.value("path").toString();
     if (path.isEmpty()) {
         LFLOG_DEBUG << "Ignoring request to send file with no path...";
         return;
@@ -90,7 +109,15 @@ void Conversation::sendFile(const QVariantMap &args)
     data->identity = getIdentityId();
 
     DsEngine::instance().getFileManager()->addFile(move(data));
-    touchLastActivity();
+        touchLastActivity();
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to send file: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to send file: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to send file: unknown exception";
+    }
 }
 
 void Conversation::incomingMessage(Contact *contact, const MessageData &data)

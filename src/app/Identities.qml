@@ -168,12 +168,9 @@ Page {
             manager.textToClipboard(currentIdentity.handle)
         }
 
-        function copyOnion() {
-            manager.textToClipboard("onion:" + currentIdentity.address)
-        }
-
         function copyIdentity() {
-            manager.textToClipboard(currentIdentity.name + ':' + currentIdentity.b58identity)
+            manager.textToClipboard(manager.getIdentityText(currentIdentity.name,
+                                                            currentIdentity.b58identity))
         }
 
         function createIdentityQrCode() {
@@ -249,12 +246,6 @@ Page {
             text: qsTr("Copy handle")
             icon.name: "edit-copy"
             onTriggered: list.copyHandle()
-        }
-
-        MenuItem {
-            text: qsTr("Copy onion")
-            icon.name: "edit-copy"
-            onTriggered: list.copyOnion()
         }
 
         MenuItem {

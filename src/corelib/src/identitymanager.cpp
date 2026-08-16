@@ -133,14 +133,24 @@ Identity *IdentityManager::getCurrentIdentity() const noexcept
 
 void IdentityManager::setCurrentIdentity(int row)
 {
+    try {
     if (row != current_) {
         current_ = row;
         emit currentIdentityChanged();
+    }
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to select current identity: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to select identity: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to select current identity: unknown exception";
     }
 }
 
 void IdentityManager::createIdentity(const QmlIdentityReq *req)
 {
+    try {
     assert(req);
     if (!DsEngine::instance().isOnline()) {
         LFLOG_WARN << "Ignoring identity creation request while Tor is offline.";
@@ -170,12 +180,25 @@ void IdentityManager::createIdentity(const QmlIdentityReq *req)
     auto uuid = id.uuid;
 
     DsEngine::instance().whenOnline([this, name, uuid]() { tryMakeTransport(name, uuid); });
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to create identity: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to create identity: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to create identity: unknown exception";
+    }
 }
 
 void IdentityManager::relayNewContactRequest(Identity *identity, const PeerAddmeReq &req)
 {
     try {
+        LFLOG_TRACE << "Relaying contact request for identity " << identity->getName()
+                    << " to notification listeners; handle " << req.handle
+                    << ", request id " << req.requestId;
         emit newContactRequest(identity, req);
+        LFLOG_TRACE << "Finished relaying contact request for identity "
+                    << identity->getName();
     } catch (const std::exception& ex) {
         LFLOG_ERROR << "Caught exception: " << ex.what();
     }

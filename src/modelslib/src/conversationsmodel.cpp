@@ -47,6 +47,7 @@ ConversationsModel::ConversationsModel(QObject &parent)
 
 void ConversationsModel::setIdentity(const QUuid &uuid)
 {
+    try {
     setCurrentRow(-1);
     beginResetModel();
 
@@ -62,10 +63,17 @@ void ConversationsModel::setIdentity(const QUuid &uuid)
     endResetModel();
     emit currentRowChanged();
     contact_ = nullptr;
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to select identity conversations: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to load conversations: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    }
 }
 
 void ConversationsModel::setContact(Contact *contact)
 {
+    try {
     LFLOG_TRACE << "Selecting contact " << (contact ? contact->getName() : QStringLiteral("[none]"));
     contact_ = contact;
 
@@ -79,10 +87,17 @@ void ConversationsModel::setContact(Contact *contact)
             setCurrent(defaultConversation.get());
         }
     }
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to select contact conversation: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to load contact conversation: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    }
 }
 
 void ConversationsModel::setCurrent(Conversation *conversation)
 {
+    try {
     int row = 0;
     for(auto& r : rows_) {
         // Lazy loading
@@ -96,6 +111,9 @@ void ConversationsModel::setCurrent(Conversation *conversation)
         }
 
         ++row;
+    }
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to select conversation: " << ex.what();
     }
 }
 

@@ -61,6 +61,7 @@ void MessagesModel::onContactDeleted(const QUuid &uuid)
 
 void MessagesModel::setConversation(Conversation *conversation)
 {
+    try {
     if (conversation == conversation_.get()) {
         return;
     }
@@ -73,6 +74,12 @@ void MessagesModel::setConversation(Conversation *conversation)
     queryRows(rows_);
 
     endResetModel();
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to select conversation: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to select conversation: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    }
 }
 
 int MessagesModel::rowCount(const QModelIndex &parent) const

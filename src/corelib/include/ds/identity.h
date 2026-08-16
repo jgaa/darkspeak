@@ -230,6 +230,7 @@ public:
 
     void registerConnection(const Contact::ptr_t& contact);
     void unregisterConnection(const QUuid& uuid);
+    Contact::ptr_t contactFromHandle(const QString& handle);
 
 public slots:
     void onAddmeRequest(const PeerAddmeReq& req);
@@ -256,7 +257,6 @@ private:
     void forAllContacts(const std::function<void (const Contact::ptr_t&)>& fn );
     std::deque<QUuid> getAllContacts() const;
 
-    Contact::ptr_t contactFromHandle(const QString& handle);
     Contact::ptr_t contactFromHash(const QByteArray& hash);
     Contact::ptr_t contactFromUuid(const QUuid& uuid);
 

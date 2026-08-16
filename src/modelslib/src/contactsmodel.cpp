@@ -41,8 +41,15 @@ ContactsModel::ContactsModel(QObject& parent)
 
 void ContactsModel::setIdentity(const QUuid &uuid)
 {
+    try {
     identity_ = identityManager_.identityFromUuid(uuid);
     reload();
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to select identity contacts: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to load contacts: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    }
 }
 
 void ContactsModel::reload()

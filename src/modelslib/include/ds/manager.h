@@ -62,6 +62,7 @@ public:
     Q_PROPERTY(QUrl onlineStatusIcon READ getOnlineStatusIcon NOTIFY onlineStatusIconChanged)
     Q_PROPERTY(QString statusMessage READ getStatusMessage NOTIFY statusMessageChanged)
     Q_PROPERTY(StatusLevel statusLevel READ getStatusLevel NOTIFY statusMessageChanged)
+    Q_PROPERTY(bool hasValidContactInClipboard READ hasValidContactInClipboard NOTIFY clipboardChanged)
 
     Q_INVOKABLE LogModel *logModel();
     Q_INVOKABLE ContactsModel *contactsModel();
@@ -70,8 +71,11 @@ public:
     Q_INVOKABLE MessagesModel *messagesModel();
     Q_INVOKABLE FilesModel *filesModel();
     Q_INVOKABLE void textToClipboard(const QString& text);
+    Q_INVOKABLE bool hasValidContactInClipboard() const;
     Q_INVOKABLE void createIdentityQrCode(const QString& identityName,
                                           const QString& identity);
+    Q_INVOKABLE QString getIdentityText(const QString& identityName,
+                                         const QString& identity) const;
     Q_INVOKABLE QVariantMap getIdenityFromClipboard() const;
     Q_INVOKABLE static QString urlToPath(const QString& url);
     Q_INVOKABLE static QString pathToUrl(const QString& path);
@@ -118,6 +122,7 @@ signals:
     void onlineChanged();
     void torVersionChanged();
     void statusMessageChanged();
+    void clipboardChanged();
 
 private:
     static Manager *instance_;

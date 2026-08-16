@@ -43,29 +43,64 @@ void FilesModel::onContactDeleted(const QUuid &uuid)
 
 void FilesModel::setConversation(Conversation *conversation)
 {
+    try {
+    if (!conversation) {
+        currentConversation_.reset();
+        currentContact_.reset();
+        currentIdentity_ = nullptr;
+        rows_.clear();
+        return;
+    }
     currentConversation_ = conversation->shared_from_this();
     currentContact_ = conversation->getFirstParticipant()->shared_from_this();
     currentIdentity_ = currentContact_->getIdentity();
 
     queryRows(rows_);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to select conversation files: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to load files: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    }
 }
 
 void FilesModel::setContact(Contact *contact)
 {
+    try {
+    if (!contact) {
+        currentConversation_.reset();
+        currentContact_.reset();
+        currentIdentity_ = nullptr;
+        rows_.clear();
+        return;
+    }
     currentConversation_.reset();
     currentContact_ = contact->shared_from_this();
     currentIdentity_ = currentContact_->getIdentity();
 
     queryRows(rows_);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to select contact files: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to load files: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    }
 }
 
 void FilesModel::setIdentity(Identity *identity)
 {
+    try {
     currentConversation_.reset();
     currentContact_.reset();
     currentIdentity_ = identity;
 
     queryRows(rows_);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to select identity files: " << ex.what();
+        DsEngine::instance().reportStatus(
+            tr("Failed to load files: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    }
 }
 
 qlonglong FilesModel::getFileLength(const QString &path) const

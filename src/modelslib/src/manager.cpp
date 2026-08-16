@@ -12,6 +12,7 @@
 #include <QImage>
 #include <QPainter>
 #include <QRegularExpression>
+#include <QSet>
 #include <QStandardPaths>
 #include <QFile>
 #include <QSvgRenderer>
@@ -25,6 +26,7 @@
 #include "ds/base32.h"
 #include "ds/bytes.h"
 #include "ds/logutil.h"
+#include "ds/protocolcodec.h"
 
 #include "logfault/logfault.h"
 
@@ -38,6 +40,216 @@ namespace models {
 Manager *Manager::instance_;
 
 namespace {
+
+constexpr auto contactTextPrefix = "darkspeak:";
+constexpr auto contactTextPrefixLength = sizeof("darkspeak:") - 1;
+
+bool decodeLegacyIdentity(const QString& identity,
+                          QByteArray& publicKey,
+                          QString& endpoint)
+{
+    constexpr auto payloadLength = 1 + 32 + 35 + 2;
+    QByteArray data;
+    try {
+        data = b58tobin_check<QByteArray>(identity.toStdString(), payloadLength, {11, 176});
+    } catch (const std::exception&) {
+        return false;
+    }
+    if (data.size() != payloadLength || data.at(0) != 2) {
+        return false;
+    }
+
+    publicKey = data.mid(1, 32);
+    const auto host = QString::fromLatin1(onionv3encode(data.mid(33, 35)));
+    auto portBytes = data.mid(68, 2);
+    const auto port = qFromBigEndian(bytesToValue<quint16>(portBytes));
+    endpoint = QStringLiteral("onion:") + host + QStringLiteral(".onion:")
+            + QString::number(port);
+    return true;
+}
+
+bool setDescriptorFromLegacy(ds::protocol::ContactDescriptor& descriptor,
+                             const QString& nickname,
+                             const QString& identity)
+{
+    QByteArray publicKey;
+    QString endpoint;
+    if (!decodeLegacyIdentity(identity, publicKey, endpoint)) {
+        return false;
+    }
+
+    ds::protocol::ContactEndpoint contactEndpoint;
+    contactEndpoint.setOnionAddress(endpoint);
+    descriptor.setVersion(1);
+    descriptor.setUserId(publicKey);
+    if (!nickname.isEmpty()) {
+        descriptor.setNickname(nickname);
+    }
+    descriptor.setEndpoints({contactEndpoint});
+    return true;
+}
+
+bool validDescriptor(const ds::protocol::ContactDescriptor& descriptor)
+{
+    static const QRegularExpression endpointPattern{
+        QStringLiteral("^onion:[a-z2-7]{56}\\.onion:[1-9][0-9]{0,4}$")};
+    const auto reject = [](const char *reason) {
+        LFLOG_TRACE << "Contact descriptor rejected: " << reason;
+        return false;
+    };
+    if (descriptor.version() != 1) {
+        return reject("unsupported descriptor version");
+    }
+    if (descriptor.userId().size() != crypto_sign_PUBLICKEYBYTES) {
+        LFLOG_TRACE << "Contact descriptor rejected: user id length is "
+                    << descriptor.userId().size() << ", expected "
+                    << crypto_sign_PUBLICKEYBYTES;
+        return false;
+    }
+    if (descriptor.endpoints().isEmpty()) {
+        return reject("no endpoints");
+    }
+    if (descriptor.endpoints().size() > 8) {
+        return reject("too many endpoints");
+    }
+    if (!descriptor.unknownFieldNumbers().isEmpty()) {
+        return reject("unknown descriptor fields");
+    }
+    if (descriptor.hasNickname() && descriptor.nickname().toUtf8().size() > 128) {
+        return reject("nickname is too long");
+    }
+
+    if (descriptor.hasNickname() && descriptor.nickname().contains(QChar{u'\0'})) {
+        return reject("nickname contains NUL");
+    }
+
+    QSet<QString> endpoints;
+    for (const auto& endpoint : descriptor.endpoints()) {
+        if (!endpoint.hasOnionAddress()) {
+            return reject("endpoint has no onion address");
+        }
+        if (!endpointPattern.match(endpoint.onionAddress()).hasMatch()) {
+            LFLOG_TRACE << "Contact descriptor rejected: endpoint format mismatch; length is "
+                        << endpoint.onionAddress().size();
+            return false;
+        }
+        if (!endpoint.unknownFieldNumbers().isEmpty()) {
+            return reject("unknown endpoint fields");
+        }
+        if (endpoints.contains(endpoint.onionAddress())) {
+            return reject("duplicate endpoint");
+        }
+        const auto port = endpoint.onionAddress().section(QLatin1Char(':'), -1).toUShort();
+        if (port == 0) {
+            return reject("invalid endpoint port");
+        }
+        endpoints.insert(endpoint.onionAddress());
+    }
+    return true;
+}
+
+/*
+ * Keep the parser's failures distinguishable in trace logs.  Clipboard data
+ * is untrusted input, so this deliberately reports structure and sizes only.
+ */
+bool descriptorFromText(const QString& text, ds::protocol::ContactDescriptor& descriptor)
+{
+    const auto reject = [](const char *reason) {
+        LFLOG_TRACE << "Contact ID rejected: " << reason;
+        return false;
+    };
+    if (!text.startsWith(QStringLiteral("darkspeak:"))) {
+        return reject("missing prefix");
+    }
+    if (text.size() > 4096) {
+        return reject("text too long");
+    }
+    if (text.contains(QRegularExpression(QStringLiteral("\\s")))) {
+        return reject("whitespace present");
+    }
+    const auto encoded = text.mid(static_cast<int>(contactTextPrefixLength)).toUtf8();
+    if (encoded.isEmpty()) {
+        return reject("empty encoded payload");
+    }
+    if (encoded.size() > 4080) {
+        return reject("encoded payload too long");
+    }
+    if (!QRegularExpression(QStringLiteral("^[A-Za-z0-9_-]+$")).match(
+            QString::fromLatin1(encoded)).hasMatch()) {
+        return reject("invalid Base64URL alphabet");
+    }
+    const auto binary = QByteArray::fromBase64(encoded, QByteArray::Base64UrlEncoding);
+    LFLOG_TRACE << "Contact ID decoded payload size: " << binary.size();
+    if (binary.size() < 5) {
+        return reject("decoded payload too short");
+    }
+    if (binary.size() > 3072) {
+        return reject("decoded payload too long");
+    }
+    if (binary.left(3) != QByteArrayLiteral("DSC")) {
+        return reject("bad binary magic");
+    }
+    if (static_cast<unsigned char>(binary.at(3)) != 1) {
+        return reject("unsupported binary format version");
+    }
+    if (binary.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals)
+            != encoded) {
+        return reject("non-canonical Base64URL encoding");
+    }
+    if (!ds::prot::codec::deserialize(QByteArrayView{binary.mid(4)}, descriptor)) {
+        return reject("protobuf deserialization failed");
+    }
+    LFLOG_TRACE << "Contact descriptor decoded: version " << descriptor.version()
+                << ", user id length " << descriptor.userId().size()
+                << ", endpoints " << descriptor.endpoints().size()
+                << ", nickname present: " << (descriptor.hasNickname() ? "yes" : "no");
+    return validDescriptor(descriptor);
+}
+
+QByteArray contactText(const ds::protocol::ContactDescriptor& descriptor)
+{
+    if (!validDescriptor(descriptor)) {
+        return {};
+    }
+    QByteArray binary = QByteArrayLiteral("DSC");
+    binary.append(char{1});
+    binary += ds::prot::codec::serialize(descriptor);
+    return QByteArrayLiteral("darkspeak:")
+            + binary.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
+}
+
+bool descriptorToLegacy(const ds::protocol::ContactDescriptor& descriptor,
+                        QByteArray& identity,
+                        QString& address)
+{
+    if (!validDescriptor(descriptor) || descriptor.endpoints().size() != 1) {
+        return false;
+    }
+    static const QRegularExpression endpointPattern{
+        QStringLiteral("^onion:([a-z2-7]{56})\\.onion:([1-9][0-9]{0,4})$")};
+    const auto match = endpointPattern.match(descriptor.endpoints().constFirst().onionAddress());
+    if (!match.hasMatch()) {
+        return false;
+    }
+    bool ok = false;
+    const auto port = match.captured(2).toUShort(&ok);
+    if (!ok || port == 0) {
+        return false;
+    }
+
+    try {
+        QByteArray binary;
+        binary.append(char{2});
+        binary += descriptor.userId();
+        binary += onionv3decode(match.captured(1).toUtf8());
+        appendValueToBytes(qToBigEndian(port), binary);
+        identity = b58check_enc<QByteArray>(binary, {11, 176});
+    } catch (const std::exception&) {
+        return false;
+    }
+    address = descriptor.endpoints().constFirst().onionAddress();
+    return !identity.isEmpty();
+}
 
 QImage makeIdentityQrImage(const QString& payload, const QString& identityName)
 {
@@ -101,7 +313,7 @@ QImage makeIdentityQrImage(const QString& payload, const QString& identityName)
     const auto displayName = identityName.trimmed();
     const auto oneLine = displayName + QStringLiteral(" / DarkSpeak");
     const auto fitsOnOneLine = metrics.horizontalAdvance(oneLine) <= imageSize - 32;
-    const auto footerHeight = fitsOnOneLine ? 64 : 104;
+    const auto footerHeight = fitsOnOneLine ? 104 : 144;
     QImage result(imageSize, imageSize + footerHeight, QImage::Format_RGB32);
     result.fill(QColor(QStringLiteral("#e8e8e8")));
 
@@ -110,15 +322,19 @@ QImage makeIdentityQrImage(const QString& payload, const QString& identityName)
     painter.setPen(QColor(QStringLiteral("#001f5b")));
     painter.setFont(font);
     const QRect footerRect(16, imageSize, imageSize - 32, footerHeight);
+    const auto website = QStringLiteral("https://darkspeak.org");
     if (fitsOnOneLine) {
-        painter.drawText(footerRect, Qt::AlignCenter, oneLine);
+        painter.drawText(footerRect.adjusted(0, 0, 0, -40), Qt::AlignCenter, oneLine);
+        painter.drawText(footerRect.adjusted(0, 40, 0, 0), Qt::AlignCenter, website);
     } else {
         const auto nameLine = metrics.elidedText(displayName, Qt::ElideMiddle,
                                                  footerRect.width());
-        const QRect nameRect = footerRect.adjusted(0, 0, 0, -footerHeight / 2);
-        const QRect productRect = footerRect.adjusted(0, footerHeight / 2, 0, 0);
+        const QRect nameRect = footerRect.adjusted(0, 0, 0, -80);
+        const QRect productRect = footerRect.adjusted(0, 40, 0, -40);
+        const QRect websiteRect = footerRect.adjusted(0, 80, 0, 0);
         painter.drawText(nameRect, Qt::AlignCenter, nameLine);
         painter.drawText(productRect, Qt::AlignCenter, QStringLiteral("DarkSpeak"));
+        painter.drawText(websiteRect, Qt::AlignCenter, website);
     }
     return result;
 }
@@ -232,14 +448,36 @@ FilesModel *Manager::filesModel()
 
 void Manager::textToClipboard(const QString& text)
 {
+    LFLOG_DEBUG << "Copying text to clipboard; DarkSpeak ID: "
+                << (text.trimmed().startsWith(QStringLiteral("darkspeak:"))
+                        ? "yes" : "no")
+                << "; empty: " << (text.isEmpty() ? "yes" : "no");
     auto cb = QGuiApplication::clipboard();
     cb->setText(text);
+}
+
+bool Manager::hasValidContactInClipboard() const
+{
+    ds::protocol::ContactDescriptor descriptor;
+    QByteArray identity;
+    QString address;
+    return descriptorFromText(QGuiApplication::clipboard()->text().trimmed(), descriptor)
+            && descriptorToLegacy(descriptor, identity, address);
 }
 
 void Manager::createIdentityQrCode(const QString& identityName,
                                    const QString& identity)
 {
-    const auto payload = identityName + QStringLiteral(":") + identity;
+    ds::protocol::ContactDescriptor descriptor;
+    if (!setDescriptorFromLegacy(descriptor, identityName, identity)) {
+        setStatusMessage(tr("Unable to create identity QR code"), ERROR);
+        return;
+    }
+    const auto payload = contactText(descriptor);
+    if (payload.isEmpty()) {
+        setStatusMessage(tr("Unable to create identity QR code"), ERROR);
+        return;
+    }
     const auto image = makeIdentityQrImage(payload, identityName);
     if (image.isNull()) {
         setStatusMessage(tr("Unable to create identity QR code"), ERROR);
@@ -291,46 +529,38 @@ void Manager::createIdentityQrCode(const QString& identityName,
 
 QVariantMap Manager::getIdenityFromClipboard() const
 {
-    // name : base58 for v2 identity payload, pubkey, v3 address and port
-    static const regex identity_pattern(R"(^(.+)\:([123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+)$)");
-    std::smatch match;
-
     QVariantMap values;
-
-    const auto text =  QGuiApplication::clipboard()->text().toStdString();
-    if (!text.empty() && regex_match(text, match, identity_pattern)) {
-        if (match.size() == 3) {
-            const auto nick = match[1].str();
-            const auto blob = match[2].str();
-            values["nickName"] = nick.c_str();
-            values["identity"] = blob.c_str();
-
-            constexpr auto payload_len = 1 + 32 + 35 + 2;
-            QByteArray data;
-            try {
-                data = b58tobin_check<QByteArray>(blob, payload_len, {11, 176});
-            } catch (const std::exception&) {
-                return {};
-            }
-            if (data.size() != payload_len || data.at(0) != 2) { // Version
-                LFLOG_NOTICE << "Unsupported version of identity payload: v="
-                             << static_cast<int>(data.at(0));
-                return {};
-            }
-
-            const auto pubkey = data.mid(1, 32);
-            const auto host = onionv3encode(data.mid(33, 35));
-            const auto port = data.mid(68, 2);
-            const auto portVal = bytesToValue<uint16_t>(port);
-
-            values["address"] = QString("onion:") + host + ".onion"
-                    + ":" + QString::number(qFromBigEndian(portVal));
-
-            values["handle"] = b58check_enc<QByteArray>(pubkey, {249, 50});
-        }
+    const auto text = QGuiApplication::clipboard()->text().trimmed();
+    ds::protocol::ContactDescriptor descriptor;
+    if (!descriptorFromText(text, descriptor)) {
+        return values;
     }
 
+    QByteArray identity;
+    QString address;
+    if (!descriptorToLegacy(descriptor, identity, address)) {
+        return {};
+    }
+    values["nickName"] = descriptor.hasNickname() ? descriptor.nickname() : QString{};
+    values["identity"] = QString::fromLatin1(identity);
+    values["address"] = address;
+    values["handle"] = b58check_enc<QByteArray>(descriptor.userId(), {249, 50});
+
     return values;
+}
+
+QString Manager::getIdentityText(const QString& identityName,
+                                 const QString& identity) const
+{
+    ds::protocol::ContactDescriptor descriptor;
+    if (!setDescriptorFromLegacy(descriptor, identityName, identity)) {
+        LFLOG_DEBUG << "Unable to create DarkSpeak ID from identity data";
+        return {};
+    }
+    const auto result = QString::fromLatin1(contactText(descriptor));
+    LFLOG_DEBUG << "Created DarkSpeak ID from identity data; success: "
+                << (!result.isEmpty() ? "yes" : "no");
+    return result;
 }
 
 QString Manager::urlToPath(const QString& url)
@@ -443,6 +673,27 @@ Manager::Manager(const QString& logFile, const QString& logLevel)
 
     connect(engine_.get(), &ds::core::DsEngine::torVersionChanged,
             this, &Manager::torVersionChanged);
+
+    connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, [this] {
+        const auto clipboardText = QGuiApplication::clipboard()->text();
+        //LFLOG_TRACE << "Clipboard text: " << clipboardText;
+        const auto hasDarkSpeakPrefix = clipboardText.trimmed().startsWith(
+            QStringLiteral("darkspeak:"));
+        ds::protocol::ContactDescriptor descriptor;
+        QByteArray identity;
+        QString address;
+        const auto parsesAsContact = hasDarkSpeakPrefix
+                && descriptorFromText(clipboardText.trimmed(), descriptor);
+        const auto convertsToContact = parsesAsContact
+                && descriptorToLegacy(descriptor, identity, address);
+        LFLOG_DEBUG << "Clipboard changed; DarkSpeak ID: "
+                    << (convertsToContact ? "yes" : "no")
+                    << "; darkspeak prefix: "
+                    << (hasDarkSpeakPrefix ? "yes" : "no")
+                    << "; parses: " << (parsesAsContact ? "yes" : "no")
+                    << "; convertible: " << (convertsToContact ? "yes" : "no");
+        emit clipboardChanged();
+    });
 
     contacts_ = make_unique<ContactsModel>(*this);
     notifications_ = make_unique<NotificationsModel>(engine_->settings());

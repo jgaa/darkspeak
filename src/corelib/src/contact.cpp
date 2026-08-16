@@ -73,6 +73,7 @@ Contact::~Contact()
 
 void Contact::connectToContact()
 {
+    try {
     if (iBlocked()) {
         LFLOG_DEBUG << "Will not connect to " << getName()
                     << " at " << getAddress()
@@ -99,31 +100,67 @@ void Contact::connectToContact()
         setOnlineStatus(CONNECTING);
 
         connect(peer.get(), &PeerConnection::connectedToPeer,
-                this, &Contact::onConnectedToPeer);
+                this, &Contact::onConnectedToPeer, Qt::UniqueConnection);
 
         connect(peer.get(), &PeerConnection::disconnectedFromPeer,
-                this, &Contact::onDisconnectedFromPeer);
+                this, &Contact::onDisconnectedFromPeer, Qt::UniqueConnection);
 
         getIdentity()->registerConnection(shared_from_this());
 
     }
 
-    setManuallyDisconnected(false);
+        setManuallyDisconnected(false);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to connect to Contact " << getName()
+                    << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            QStringLiteral("Failed to connect to %1: %2").arg(getName(), QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+        setOnlineStatus(DISCONNECTED);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to connect to Contact " << getName()
+                    << ": unknown exception";
+        setOnlineStatus(DISCONNECTED);
+    }
 }
 
 void Contact::disconnectFromContact(bool manual)
 {
-    prepareForNewConnection();
-    connection_.reset();
-    setOnlineStatus(DISCONNECTED);
-    setManuallyDisconnected(manual);
-    getIdentity()->unregisterConnection(getUuid());
+    try {
+        prepareForNewConnection();
+        connection_.reset();
+        setOnlineStatus(DISCONNECTED);
+        setManuallyDisconnected(manual);
+        getIdentity()->unregisterConnection(getUuid());
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to disconnect Contact " << getName()
+                    << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            QStringLiteral("Failed to disconnect from %1: %2").arg(getName(), QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to disconnect Contact " << getName()
+                    << ": unknown exception";
+    }
 }
 
 Conversation *Contact::getDefaultConversation()
 {
-    // The conversation is cached by the LRU, so it's safe to return the pointer
-    return DsEngine::instance().getConversationManager()->getConversation(this).get();
+    try {
+        // The conversation is cached by the LRU, so it's safe to return the pointer
+        return DsEngine::instance().getConversationManager()->getConversation(this).get();
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to get default conversation for " << getName()
+                    << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            QStringLiteral("Failed to get conversation for %1: %2")
+                .arg(getName(), QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+        return nullptr;
+    } catch (...) {
+        LFLOG_ERROR << "Failed to get default conversation for " << getName();
+        return nullptr;
+    }
 }
 
 int Contact::getId() const noexcept {
@@ -444,8 +481,15 @@ void Contact::sendAvatar(const QImage &avatar)
         return;
     }
 
+    const auto normalized = normalizeAvatar(avatar);
+    const auto hash = avatarHash(normalized);
+    if (hash.isEmpty() || hash == lastSentAvatarHash_) {
+        return;
+    }
+
     // TODO: Check if the connection is ready to receive data
-    connection_->peer->sendAvatar(normalizeAvatar(avatar));
+    connection_->peer->sendAvatar(normalized);
+    lastSentAvatarHash_ = hash;
     sentAvatarPendingAck_ = true;
 }
 
@@ -638,6 +682,8 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
     getIdentity()->registerConnection(shared_from_this());
     setManuallyDisconnected(false); // No longer relevant
     sentAvatarPendingAck_ = false; // No longer relevant
+    userInfoSentOnConnection_ = false;
+    lastSentAvatarHash_.clear();
 
     if (getState() == ContactState::BLOCKED) {
         LFLOG_DEBUG << "Peer " << getName() << " was BLOCKED.";
@@ -664,7 +710,13 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
         [[fallthrough]];
     case WAITING_FOR_ACCEPTANCE:
         if (getWhoInitiated() == ME) {
-            emit sendAddMeLater();
+            if (!addMeDispatchQueued_ && outgoingConnectionRequestId_ == 0) {
+                addMeDispatchQueued_ = true;
+                emit sendAddMeLater();
+            } else {
+                LFLOG_TRACE << "Suppressing duplicate queued Addme for Contact "
+                            << getName();
+            }
         } else {
             emit sendAddmeAckLater();
         }
@@ -714,39 +766,42 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
     if (connection_->peer->getDirection() == PeerConnection::INCOMING) {
         // For outgoing connections, we already have a connect()
         connect(peer.get(), &PeerConnection::disconnectedFromPeer,
-                this, &Contact::onDisconnectedFromPeer);
+                this, &Contact::onDisconnectedFromPeer, Qt::UniqueConnection);
     }
 
     connect(connection_->peer.get(), &PeerConnection::receivedConnectionResponse,
-            this, &Contact::onReceivedConnectionResponse);
+            this, &Contact::onReceivedConnectionResponse, Qt::UniqueConnection);
     connect(connection_->peer.get(), &PeerConnection::receivedMessageReceipt,
-            this, &Contact::onReceivedMessageReceipt);
+            this, &Contact::onReceivedMessageReceipt, Qt::UniqueConnection);
     connect(connection_->peer.get(), &PeerConnection::receivedFileOfferResponse,
-            this, &Contact::onReceivedFileOfferResponse);
+            this, &Contact::onReceivedFileOfferResponse, Qt::UniqueConnection);
     connect(connection_->peer.get(), &PeerConnection::receivedFileCancel,
-            this, &Contact::onReceivedFileCancel);
+            this, &Contact::onReceivedFileCancel, Qt::UniqueConnection);
     connect(connection_->peer.get(), &PeerConnection::receivedFileResume,
-            this, &Contact::onReceivedFileResume);
+            this, &Contact::onReceivedFileResume, Qt::UniqueConnection);
     connect(connection_->peer.get(), &PeerConnection::receivedFileResumeResult,
-            this, &Contact::onReceivedFileResumeResult);
+            this, &Contact::onReceivedFileResumeResult, Qt::UniqueConnection);
 
     connect(connection_->peer.get(), &PeerConnection::addmeRequest,
-            this, &Contact::onAddmeRequest);
+            this, &Contact::onAddmeRequest, Qt::UniqueConnection);
 
     connect(connection_->peer.get(), &PeerConnection::receivedMessage,
-            this, &Contact::onReceivedMessage);
+            this, &Contact::onReceivedMessage, Qt::UniqueConnection);
 
     connect(connection_->peer.get(), &PeerConnection::receivedUserInfo,
-            this, &Contact::onReceivedUserInfo);
+            this, &Contact::onReceivedUserInfo, Qt::UniqueConnection);
 
     connect(connection_->peer.get(), &PeerConnection::receivedAvatar,
-            this, &Contact::onReceivedAvatar);
+            this, &Contact::onReceivedAvatar, Qt::UniqueConnection);
+
+    connect(connection_->peer.get(), &PeerConnection::receivedAvatarResponse,
+            this, &Contact::onReceivedAvatarResponse, Qt::UniqueConnection);
 
     connect(connection_->peer.get(), &PeerConnection::receivedFileOffer,
-            this, &Contact::onReceivedFileOffer);
+            this, &Contact::onReceivedFileOffer, Qt::UniqueConnection);
 
     connect(connection_->peer.get(), &PeerConnection::outputBufferEmptied,
-            this, &Contact::onOutputBufferEmptied);
+            this, &Contact::onOutputBufferEmptied, Qt::UniqueConnection);
 
     setOnlineStatus(ONLINE);
     touchLastSeen();
@@ -761,7 +816,7 @@ void Contact::onIncomingPeer(const std::shared_ptr<PeerConnection> &peer)
     }
 
     connect(peer.get(), &PeerConnection::connectedToPeer,
-            this, &Contact::onConnectedToPeer);
+            this, &Contact::onConnectedToPeer, Qt::UniqueConnection);
 
     peer->authorize(true);
 }
@@ -780,15 +835,26 @@ void Contact::onDisconnectedFromPeer(const std::shared_ptr<PeerConnection>& peer
 
 void Contact::onSendAddMeLater()
 {
+    addMeDispatchQueued_ = false;
+
     if (getOnlineStatus() != ONLINE) {
+        return;
+    }
+
+    if (outgoingConnectionRequestId_ != 0) {
+        LFLOG_TRACE << "Suppressing duplicate Addme for Contact " << getName()
+                    << "; request " << outgoingConnectionRequestId_
+                    << " is already outstanding";
         return;
     }
 
     if (auto identity = getIdentity()) {
         AddmeReq ar{identity->getUuid(),
-                   connection_->peer->getConnectionId(),
-                   identity->getName(),
-                   getAddMeMessage()};
+                    connection_->peer->getConnectionId(),
+                    identity->getName(),
+                    getAddMeMessage(),
+                    identity->getPublicAvatar()
+                        ? avatarHash(normalizeAvatar(identity->getAvatar())) : QByteArray{}};
 
         LFLOG_NOTICE << "Sending Addme from Identity " << identity->getName()
                      << " to Contact "
@@ -831,6 +897,11 @@ void Contact::onSendAddmeAckLater()
             if (pendingConnectionRequestId_ != 0) {
                 connection_->peer->sendConnectionResponse(
                     pendingConnectionRequestId_, ConnectionResponseStatus::Accepted);
+                pendingConnectionRequestId_ = 0;
+            } else {
+                LFLOG_TRACE << "Suppressing duplicate Addme Ack for Contact "
+                            << getName();
+                return;
             }
         } catch(const std::exception& ex) {
             LFLOG_WARN << "Failed to send addme Ack from " << identity->getName()
@@ -842,6 +913,7 @@ void Contact::onSendAddmeAckLater()
         }
 
         setState(ACCEPTED);
+        scheduleProcessOnlineLater();
     }
 }
 
@@ -1198,6 +1270,7 @@ bool Contact::processFilesQueue()
 
 bool Contact::processFileBlocks()
 {
+    try {
     if (transferringFileQueue_.empty()) {
         return false;
     }
@@ -1253,6 +1326,15 @@ bool Contact::processFileBlocks()
     } while (current != start);
 
     return false;
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Exception while processing file blocks for Contact "
+                    << getName() << ": " << ex.what();
+        return false;
+    } catch (...) {
+        LFLOG_ERROR << "Unknown exception while processing file blocks for Contact "
+                    << getName();
+        return false;
+    }
 }
 
 void Contact::onReceivedConnectionResponse(const PeerConnectionResponse& response)
@@ -1474,8 +1556,34 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
     }
 
     setNickName(uinfo.userInfo.nickName);
+    const auto oldAvatarHash = avatarHash(normalizeAvatar(getAvatar()));
     expectedAvatarHash_ = uinfo.userInfo.avatarHash;
     peerUserInfo_ = uinfo.userInfo;
+
+    LFLOG_TRACE << "Received UserInfo from Contact " << getName()
+                << "; publicAvatar=" << peerUserInfo_.publicAvatar
+                << ", avatar hash bytes=" << expectedAvatarHash_.size();
+
+    // UserInfo authorizes the peer's avatar and gives us the authorization
+    // needed to send ours.  This also initializes the exchange when the
+    // avatar was already set before peering.
+    if (!userInfoSentOnConnection_) {
+        sendUserInfo();
+        if (!userInfoSentOnConnection_) {
+            return;
+        }
+    }
+    sendAvatar(getIdentity()->getAvatar());
+
+    if (!expectedAvatarHash_.isEmpty() && expectedAvatarHash_ != oldAvatarHash) {
+        try {
+            LFLOG_TRACE << "Requesting changed avatar from Contact " << getName();
+            connection_->peer->requestAvatar();
+        } catch (const std::exception& ex) {
+            LFLOG_WARN << "Failed to request changed avatar from Contact "
+                       << getName() << ": " << ex.what();
+        }
+    }
 }
 
 bool Contact::peerAllowsMimeType(const QString& mimeType) const
@@ -1534,15 +1642,24 @@ void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
 void Contact::onReceivedAvatar(const PeerSetAvatarReq &avatar)
 {
     if (getState() != ACCEPTED || !peerUserInfo_.publicAvatar) {
+        LFLOG_WARN << "Rejecting avatar from Contact " << getName()
+                   << ": avatar is not authorized";
         avatar.peer->close();
         return;
     }
     const auto receivedHash = avatarHash(avatar.avatar);
-    if (expectedAvatarHash_.isEmpty() || receivedHash != expectedAvatarHash_) {
-        avatar.peer->close();
-        return;
-    }
+    LFLOG_TRACE << "Accepted avatar from Contact " << getName()
+                << "; learned hash " << receivedHash.toHex();
+    expectedAvatarHash_ = receivedHash;
+    peerUserInfo_.avatarHash = receivedHash;
     setAvatar(avatar.avatar);
+}
+
+void Contact::onReceivedAvatarResponse(const PeerSetAvatarReq &avatar)
+{
+    if (!avatar.avatar.isNull()) {
+        onReceivedAvatar(avatar);
+    }
 }
 
 void Contact::onOutputBufferEmptied()
@@ -1695,6 +1812,9 @@ void Contact::clearFileQueues()
 
 void Contact::prepareForNewConnection()
 {
+    addMeDispatchQueued_ = false;
+    outgoingConnectionRequestId_ = 0;
+
     if (connection_ && connection_->peer) {
         connection_->peer->disableNotifications();
         connection_->peer->close();
@@ -1857,7 +1977,11 @@ void Contact::sendUserInfo()
         ui.publicAvatar = getIdentity()->getPublicAvatar();
 
         try {
+            LFLOG_TRACE << "Sending UserInfo to Contact " << getName()
+                        << "; publicAvatar=" << ui.publicAvatar
+                        << ", avatar hash bytes=" << ui.avatarHash.size();
             connection_->peer->sendUserInfo(ui);
+            userInfoSentOnConnection_ = true;
         } catch(const std::exception& ex) {
             LFLOG_DEBUG << "Failed to send suer info: " << ex.what();
         }

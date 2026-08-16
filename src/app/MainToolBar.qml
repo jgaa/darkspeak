@@ -46,14 +46,17 @@ ToolBar {
         }
 
         ToolButton {
-            text: qsTr("Contact")
-            icon.name: "document-new"
+            text: qsTr("Paste new contact")
+            icon.name: "content-paste"
             height: parent.height
             visible: manager.currentPage === Manager.CONTACTS
+            enabled: manager.hasValidContactInClipboard
 
             onClicked: {
                 manager.clearTmpImage();
                 var clip = manager.getIdenityFromClipboard()
+                if (!clip || !clip.identity)
+                    return;
                 var component = Qt.createComponent("qrc:/EditContactDialog.qml")
                 if (component.status !== Component.Ready) {
                     if(component.status === Component.Error )

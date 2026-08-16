@@ -53,6 +53,8 @@ message Envelope {
     FileResume file_resume = 22;
     FileResumeResult file_resume_result = 23;
     FileCancel file_cancel = 24;
+    AvatarRequest avatar_request = 28;
+    AvatarResponse avatar_response = 29;
     Avatar avatar = 25;
     MessageReceipt message_receipt = 26;
     FileOfferResponse file_offer_response = 27;
@@ -161,6 +163,11 @@ message ConnectionRequest {
   // requires a supported endpoint when a connection request is used to
   // establish a new persistent contact.
   ContactEndpoint contact_endpoint = 3;
+
+  // If absent, this receiver is not permitted to know avatar state. If present
+  // and empty, the user has no avatar. If present and non-empty, exactly 32
+  // bytes containing SHA-256(red || green || blue) for the current Avatar.
+  optional bytes avatar_hash = 4;
 }
 
 message ConnectionResponse {
@@ -430,6 +437,16 @@ message FileCancel {
   // Must be a known non-UNSPECIFIED reason. Unknown values are not interpreted
   // as a known cancellation reason.
   FileError reason = 2;
+}
+
+// Requests the current avatar from the server
+message AvatarRequest {
+}
+
+message AvatarResponse {
+
+  // returns the current avatar if the user has access to it.
+  optional Avatar avatar = 1;
 }
 
 // Raw planar RGB is used deliberately so ordinary avatar handling does not

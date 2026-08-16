@@ -38,17 +38,19 @@ struct PeerAddmeReq : public PeerReq
     PeerAddmeReq(const PeerAddmeReq&) = default;
     PeerAddmeReq(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal, quint64 requestIdVal,
                  QString nickNameVal, QString messageVal, QByteArray addressVal,
-                 QByteArray handleVal)
+                 QByteArray handleVal, QByteArray avatarHashVal = {})
         : PeerReq{peerVal, std::move(connectionIdVal), requestIdVal}
         , nickName{std::move(nickNameVal)}
         , message{std::move(messageVal)}
         , address{std::move(addressVal)}
-        , handle{std::move(handleVal)} {}
+        , handle{std::move(handleVal)}
+        , avatarHash{std::move(avatarHashVal)} {}
 
     QString nickName;
     QString message;
     QString address;
     QString handle;
+    QByteArray avatarHash;
 };
 
 struct PeerSetAvatarReq : public PeerReq
@@ -293,6 +295,7 @@ public:
     virtual uint64_t sendUserInfo(const core::UserInfo &userInfo) = 0;
     virtual uint64_t sendMessage(const Message& message) = 0;
     virtual uint64_t sendAvatar(const QImage& avatar) = 0;
+    virtual uint64_t requestAvatar() = 0;
     virtual uint64_t offerFile(const File& file) = 0;
     virtual uint64_t startTransfer(File& file) = 0;
     virtual uint64_t sendSome(File& file) = 0;
@@ -312,6 +315,7 @@ signals:
     void receivedMessage(const PeerMessage& msg);
     void receivedFileOffer(const PeerFileOffer& msg);
     void receivedAvatar(const PeerSetAvatarReq& avatar);
+    void receivedAvatarResponse(const PeerSetAvatarReq& avatar);
     void receivedUserInfo(const PeerUserInfo& uinfo);
     void outputBufferEmptied();
 };

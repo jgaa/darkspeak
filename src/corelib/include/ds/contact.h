@@ -230,6 +230,7 @@ private slots:
     bool processFileBlocks();
     void onReceivedMessage(const PeerMessage& msg);
     void onReceivedUserInfo(const PeerUserInfo& uinfo);
+    void onReceivedAvatarResponse(const PeerSetAvatarReq& avatar);
     void onReceivedFileOffer(const PeerFileOffer& msg);
     void onReceivedAvatar(const PeerSetAvatarReq& avatar);
     void onOutputBufferEmptied();
@@ -260,12 +261,15 @@ private:
     QString onlineIcon_ = "qrc:///images/onion-bw.svg";
     OnlineStatus onlineStatus_ = DISCONNECTED;
     bool sentAvatarPendingAck_ = false;
+    bool userInfoSentOnConnection_ = false;
     bool avatarUrlChanging_ = false;
     quint64 avatarVersion_ = 0;
+    QByteArray lastSentAvatarHash_;
     QByteArray expectedAvatarHash_;
     UserInfo peerUserInfo_;
     quint64 pendingConnectionRequestId_ = 0;
     quint64 outgoingConnectionRequestId_ = 0;
+    bool addMeDispatchQueued_ = false;
 
     std::unique_ptr<Connection> connection_;
     std::deque<Message::ptr_t> messageQueue_;

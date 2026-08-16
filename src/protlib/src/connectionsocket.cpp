@@ -74,7 +74,9 @@ void ConnectionSocket::onConnected()
 void ConnectionSocket::onDisconnected()
 {
     LFLOG_DEBUG << "Socket on connection " << uuid.toString()
-                << " was disconnected.";
+                << " was disconnected; buffered input bytes: " << inData.size()
+                << ", bytes wanted: " << bytesWanted_
+                << ", socket error: " << errorString();
 
     emit disconnectedFromHost(uuid);
 }
@@ -82,9 +84,9 @@ void ConnectionSocket::onDisconnected()
 void ConnectionSocket::onSocketFailed(SocketError socketError)
 {
     LFLOG_WARN << "Socket connection " << uuid.toString()
-               << " to " << host_ << ":" << port_
-               << " failed with error " << socketError
-               << ": " << errorString();
+                << " to " << host_ << ":" << port_
+                << " failed with error " << socketError
+                << ": " << errorString();
 
     emit socketFailed(uuid, socketError);
 }

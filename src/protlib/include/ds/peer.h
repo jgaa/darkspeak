@@ -90,7 +90,8 @@ public:
 
     enum class RequestType {
         ConnectionResponse,
-        FileResumeResult
+        FileResumeResult,
+        AvatarResponse
     };
 
 public slots:
@@ -165,6 +166,7 @@ protected:
     quint64 request_id_ = {}; // Counter for outgoing requests
     quint64 frame_id_ = {}; // Counter for outgoing encrypted transport records
     quint64 last_received_request_id_ = {};
+    QByteArray advertisedAvatarHash_;
     std::map<quint64, PendingRequest> outstandingRequests_;
     quint32 nextInchannel_ = 1;
     std::map<quint32, Channel::ptr_t> outChannels_;
@@ -194,10 +196,15 @@ public:
     uint64_t sendUserInfo(const core::UserInfo &userInfo) override;
     uint64_t sendMessage(const core::Message &message) override;
     uint64_t sendAvatar(const QImage& avatar) override;
+    uint64_t requestAvatar() override;
     uint64_t offerFile(const core::File& file) override;
     uint64_t startTransfer(core::File& file) override;
     uint64_t sendSome(core::File& file) override;
     void disableNotifications() override;
+
+private:
+    uint64_t sendAvatarResponse(quint64 responseToRequestId,
+                                const QImage& avatar, bool authorized);
 };
 
 }} // namespaces

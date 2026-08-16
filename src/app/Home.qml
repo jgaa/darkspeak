@@ -47,7 +47,9 @@ Page {
                         Image {
                             fillMode: Image.PreserveAspectFit
                             anchors.fill: parent
-                            source: type === 1
+                            source: avatarUrl !== ""
+                                    ? avatarUrl
+                                    : type === 1
                                     ? "qrc:///images/FileTansferActive.svg"
                                     : "qrc:///images/add-user.svg"
 

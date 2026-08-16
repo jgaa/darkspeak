@@ -23,6 +23,9 @@ bool deserialize(QByteArrayView bytes, ds::protocol::Envelope& envelope);
 QByteArray serialize(const ds::protocol::TransportEnvelope& envelope);
 bool deserialize(QByteArrayView bytes, ds::protocol::TransportEnvelope& envelope);
 
+QByteArray serialize(const ds::protocol::ContactDescriptor& descriptor);
+bool deserialize(QByteArrayView bytes, ds::protocol::ContactDescriptor& descriptor);
+
 bool validRecordLength(quint32 length) noexcept;
 
 ds::protocol::Envelope makeCapabilities(const QStringList& names,

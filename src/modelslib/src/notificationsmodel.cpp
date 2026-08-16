@@ -3,8 +3,15 @@
 
 
 #include <QDateTime>
+#include <QBuffer>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QTimer>
+
+#include <functional>
+
+#include "ds/avatarhash.h"
+#include "ds/avatarutil.h"
 
 namespace ds {
 namespace models {
@@ -16,6 +23,7 @@ NotificationsModel::NotificationsModel(QSettings &settings)
 {
     Q_UNUSED(settings)
 
+    LFLOG_TRACE << "Creating NotificationsModel and connecting contact-request listener";
     connect(core::DsEngine::instance().getIdentityManager(), &IdentityManager::newContactRequest,
             this, &NotificationsModel::addNotification);
     connect(core::DsEngine::instance().getContactManager(), &ContactManager::contactDeleted,
@@ -38,6 +46,11 @@ void NotificationsModel::refresh()
 {
     purgeStaleFileNotifications();
     setQuery(R"(select n.id, n.status, n.type, n.timestamp, n.message, n.data, n.identity, n.contact, i.name as iname, c.name as cname from notification as n left join identity as i on n.identity = i.id left join contact as c on n.contact = c.id order by i.name, c.name, n.priority, n.timestamp)");
+    if (lastError().isValid()) {
+        LFLOG_ERROR << "Failed to refresh notification model: " << lastError().text();
+    } else {
+        LFLOG_TRACE << "Refreshed notification model; rows: " << rowCount();
+    }
 }
 
 void NotificationsModel::purgeStaleFileNotifications()
@@ -96,7 +109,11 @@ bool NotificationsModel::isHashPresent(const QString &hash) const
     QSqlQuery query;
     query.prepare("SELECT count(0) FROM notification WHERE hash=:hash");
     query.bindValue(":hash", hash);
-    query.exec();
+    if (!query.exec()) {
+        LFLOG_ERROR << "Failed to check for duplicate contact notification: "
+                    << query.lastError().text();
+        return false;
+    }
     return query.next() && (query.value(0).toInt() > 0);
 }
 
@@ -177,6 +194,8 @@ QVariant NotificationsModel::data(const QModelIndex &ix, int role) const
                 return data.value("fileName").toString();
             case H_FILE_SIZE:
                 return data.value("fileSize").toLongLong();
+            case H_AVATAR_URL:
+                return data.value("avatarUrl").toString();
             default:
                 assert(false);
                 return {};
@@ -217,7 +236,8 @@ QHash<int, QByteArray> NotificationsModel::roleNames() const
         {H_HANDLE, "handle"},
         {H_ADDRESS, "address"},
         {H_FILE_NAME, "fileName"},
-        {H_FILE_SIZE, "fileSize"}
+        {H_FILE_SIZE, "fileSize"},
+        {H_AVATAR_URL, "avatarUrl"}
     };
 
     return names;
@@ -225,11 +245,37 @@ QHash<int, QByteArray> NotificationsModel::roleNames() const
 
 void NotificationsModel::addNotification(Identity *identity, const core::PeerAddmeReq &req)
 {  
+    LFLOG_TRACE << "Notification slot invoked for contact request: identity "
+                << identity->getName() << " (#" << identity->getId()
+                << "), handle " << req.handle << ", request id " << req.requestId;
+
     QString hash, identityId = QString::number(identity->getId());
     crypto::createHash(hash, {req.handle, req.address, identityId});
 
     if (isHashPresent(hash)) {
-        LFLOG_DEBUG << "Ignoring duplicate AddMe notification.";
+        QSqlQuery existing;
+        existing.prepare("SELECT data FROM notification WHERE hash=:hash");
+        existing.bindValue(":hash", hash);
+        if (existing.exec() && existing.next()) {
+            auto data = core::DsEngine::fromJson(existing.value(0).toByteArray());
+            if (req.avatarHash.size() == 32
+                    && req.avatarHash != data.value("avatarHash").toByteArray()) {
+                data.insert("avatarHash", req.avatarHash);
+                data.insert("avatarAttempts", 0);
+                data.insert("avatarResolved", false);
+                existing.prepare("UPDATE notification SET data=:data WHERE hash=:hash");
+                existing.bindValue(":data", core::DsEngine::toJson(data));
+                existing.bindValue(":hash", hash);
+                existing.exec();
+            }
+            if (!data.value("avatarResolved").toBool()
+                    && data.value("avatarAttempts").toInt() < 3
+                    && req.avatarHash.size() == 32) {
+                requestNotificationAvatar(identity, req, hash);
+            }
+        }
+        LFLOG_TRACE << "Ignoring duplicate contact notification for identity "
+                    << identity->getName();
         return;
     }
 
@@ -240,6 +286,10 @@ void NotificationsModel::addNotification(Identity *identity, const core::PeerAdd
     data.insert("address", req.address);
     data.insert("handle", req.handle);
     data.insert("nickName", req.nickName);
+    data.insert("avatarHash", req.avatarHash);
+    data.insert("avatarAttempts", 0);
+    data.insert("avatarResolved", req.avatarHash.isEmpty());
+    data.insert("avatarUrl", QString{});
 
     query.prepare("INSERT INTO notification "
                   "(status, priority, identity, type, timestamp, message, data, hash) "
@@ -254,8 +304,115 @@ void NotificationsModel::addNotification(Identity *identity, const core::PeerAdd
     query.bindValue(":data", core::DsEngine::toJson(data));
     query.bindValue(":hash", hash);
 
-    query.exec();
+    if (!query.exec()) {
+        LFLOG_ERROR << "Failed to insert contact notification for identity "
+                    << identity->getName() << ": " << query.lastError().text();
+        return;
+    }
+
+    LFLOG_TRACE << "Inserted contact notification for identity "
+                << identity->getName() << ", database row id "
+                << query.lastInsertId().toLongLong();
     refresh();
+
+    if (req.avatarHash.size() == 32) {
+        requestNotificationAvatar(identity, req, hash);
+    } else {
+        req.peer->close();
+    }
+}
+
+void NotificationsModel::requestNotificationAvatar(core::Identity *identity,
+                                                    const core::PeerAddmeReq &req,
+                                                    const QString &hash)
+{
+    int storedAttempts = 0;
+    QSqlQuery attemptsQuery;
+    attemptsQuery.prepare("SELECT data FROM notification WHERE hash=:hash");
+    attemptsQuery.bindValue(":hash", hash);
+    if (attemptsQuery.exec() && attemptsQuery.next()) {
+        storedAttempts = core::DsEngine::fromJson(
+            attemptsQuery.value(0).toByteArray()).value("avatarAttempts").toInt();
+    }
+    const auto attempts = std::make_shared<int>(storedAttempts);
+    const auto resolved = std::make_shared<bool>(false);
+    const auto request = std::make_shared<std::function<void()>>();
+
+    connect(req.peer.get(), &core::PeerConnection::receivedAvatarResponse,
+            this, [this, identity, req, hash, resolved](const core::PeerSetAvatarReq& response) {
+        if (*resolved) {
+            return;
+        }
+        *resolved = true;
+
+        QSqlQuery query;
+        query.prepare("SELECT data FROM notification WHERE hash=:hash");
+        query.bindValue(":hash", hash);
+        if (!query.exec() || !query.next()) {
+            const auto receivedHash = response.avatar.isNull()
+                    ? QByteArray{} : core::avatarHash(core::normalizeAvatar(response.avatar));
+            if (!response.avatar.isNull() && receivedHash == req.avatarHash) {
+                if (auto contact = identity->contactFromHandle(req.handle)) {
+                    contact->setAvatar(response.avatar);
+                }
+            }
+            req.peer->close();
+            return;
+        }
+
+        auto data = core::DsEngine::fromJson(query.value(0).toByteArray());
+        const auto expected = data.value("avatarHash").toByteArray();
+        auto received = response.avatar;
+        const auto receivedHash = received.isNull()
+                ? QByteArray{} : core::avatarHash(core::normalizeAvatar(received));
+        if (!received.isNull() && receivedHash == expected) {
+            QByteArray encoded;
+            QBuffer buffer(&encoded);
+            buffer.open(QIODevice::WriteOnly);
+            received.save(&buffer, "PNG");
+            data.insert("avatar", encoded);
+            data.insert("avatarReceivedHash", receivedHash);
+            data.insert("avatarUrl", QStringLiteral("data:image/png;base64,")
+                        + QString::fromLatin1(encoded.toBase64()));
+        }
+        data.insert("avatarResolved", true);
+        query.prepare("UPDATE notification SET data=:data WHERE hash=:hash");
+        query.bindValue(":data", core::DsEngine::toJson(data));
+        query.bindValue(":hash", hash);
+        query.exec();
+        refresh();
+        req.peer->close();
+    });
+
+    *request = [this, req, hash, attempts, resolved, request]() {
+        if (*resolved || *attempts >= 3 || !req.peer->isConnected()) {
+            if (!*resolved) {
+                req.peer->close();
+            }
+            return;
+        }
+
+        ++*attempts;
+        QSqlQuery query;
+        query.prepare("SELECT data FROM notification WHERE hash=:hash");
+        query.bindValue(":hash", hash);
+        if (query.exec() && query.next()) {
+            auto data = core::DsEngine::fromJson(query.value(0).toByteArray());
+            data.insert("avatarAttempts", *attempts);
+            query.prepare("UPDATE notification SET data=:data WHERE hash=:hash");
+            query.bindValue(":data", core::DsEngine::toJson(data));
+            query.bindValue(":hash", hash);
+            query.exec();
+        }
+
+        try {
+            req.peer->requestAvatar();
+        } catch (const std::exception& ex) {
+            LFLOG_WARN << "Avatar request failed: " << ex.what();
+        }
+        QTimer::singleShot(1500 * *attempts, this, [request]() { (*request)(); });
+    };
+    (*request)();
 }
 
 void NotificationsModel::acceptContact(const int row, bool accept)
@@ -281,6 +438,7 @@ void NotificationsModel::acceptContact(const int row, bool accept)
 
         cr->cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(handle_str, 32, {249, 50}));
         cr->address = d.value("address").toByteArray();
+        cr->avatar = QImage::fromData(d.value("avatar").toByteArray(), "PNG");
 
         try {
             DsEngine::instance().getContactManager()->addContact(move(cr));

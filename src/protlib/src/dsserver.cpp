@@ -37,7 +37,14 @@ DsServer::DsServer(ConnectionSocket::ptr_t connection, core::ConnectData connect
 
 void DsServer::authorize(bool authorize)
 {
+    LFLOG_TRACE << "Server authorization decision for connection "
+                << getConnectionId().toString() << ": "
+                << (authorize ? "allow" : "reject")
+                << ", state " << static_cast<int>(state_);
     if (state_ != State::WAITING_FOR_AUTHORIZATION) {
+        LFLOG_WARN << "Ignoring server authorization decision for connection "
+                   << getConnectionId().toString()
+                   << " because it is not waiting for authorization";
         return;
     }
     handshakeTimer_.stop();
@@ -50,6 +57,9 @@ void DsServer::authorize(bool authorize)
     applicationAuthorizationPending_ = false;
     releaseUnapprovedBudget();
     state_ = State::ENCRYPTED_STREAM;
+    LFLOG_TRACE << "Server authorization accepted for connection "
+                << getConnectionId().toString()
+                << "; emitting connectedToPeer";
     emit connectedToPeer(shared_from_this());
 }
 
@@ -163,22 +173,39 @@ void DsServer::getClientFinish(const data_t& data)
     sodium_memzero(serverRx_.data(), serverRx_.size());
     sodium_memzero(serverTx_.data(), serverTx_.size());
 
-    enableEncryptedStream();
     if (!claimUnapprovedBudget()) {
         LFLOG_WARN << "Rejecting encrypted unapproved connection: global limit reached";
         failHandshake();
         return;
     }
+
+    // Set the post-handshake state before enabling record input.  The socket
+    // may already contain the first encrypted record, and wantBytes() can
+    // dispatch it synchronously.  Leaving state_ at WAITING_FOR_FINISH would
+    // make that record get parsed as another ClientFinish.
     state_ = State::WAITING_FOR_AUTHORIZATION;
     applicationAuthorizationPending_ = true;
     handshakeBudget_.release();
+
+    enableEncryptedStream();
+    LFLOG_TRACE << "Server handshake complete for connection "
+                << getConnectionId().toString()
+                << "; encrypted stream enabled";
     sendCapabilities();
+    LFLOG_TRACE << "Server capabilities sent for connection "
+                << getConnectionId().toString()
+                << "; waiting for application authorization";
     handshakeTimer_.start(authorizationTimeoutMilliseconds);
+    LFLOG_TRACE << "Emitting incomingPeer for connection "
+                << getConnectionId().toString();
     emit incomingPeer(shared_from_this());
 }
 
 void DsServer::failHandshake() noexcept
 {
+    LFLOG_WARN << "Server handshake failed for connection "
+               << getConnectionId().toString()
+               << "; state " << static_cast<int>(state_);
     handshakeBudget_.release();
     state_ = State::FAILED;
     close();

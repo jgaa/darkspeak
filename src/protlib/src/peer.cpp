@@ -1089,6 +1089,17 @@ void Peer::onReceivedJson(const quint64 id, const Peer::mview_t& data)
 
 void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
 {
+    LFLOG_TRACE << "Received v3 envelope on " << getConnectionId().toString()
+                << "; body: capabilities=" << envelope.hasCapabilities()
+                << ", keepalive=" << envelope.hasKeepAlive()
+                << ", connectionRequest=" << envelope.hasConnectionRequest()
+                << ", connectionResponse=" << envelope.hasConnectionResponse()
+                << ", userInfo=" << envelope.hasUserInfo()
+                << ", avatarRequest=" << envelope.hasAvatarRequest()
+                << ", avatarResponse=" << envelope.hasAvatarResponse()
+                << ", avatar=" << envelope.hasAvatar()
+                << "; requestId=" << envelope.hasRequestId()
+                << ", responseToRequestId=" << envelope.hasResponseToRequestId();
     for (const auto field : envelope.unknownFieldNumbers()) {
         if (field >= 10 && field <= 99) {
             protocolError(QStringLiteral("Unknown v3 Envelope body field %1").arg(field));
@@ -1099,6 +1110,7 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
             || envelope.hasMessage() || envelope.hasFileOffer() || envelope.hasFileChunk()
             || envelope.hasFileAck() || envelope.hasUserInfo() || envelope.hasFileResume()
             || envelope.hasFileResumeResult() || envelope.hasFileCancel()
+            || envelope.hasAvatarRequest() || envelope.hasAvatarResponse()
             || envelope.hasAvatar() || envelope.hasMessageReceipt()
             || envelope.hasFileOfferResponse();
     if (envelope.protocolVersion() != codec::protocolVersion || !hasBody) {
@@ -1115,12 +1127,14 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         peerMaxRecordBytes_ = envelope.capabilities().maxRecordBytes();
         return;
     }
-    if ((envelope.hasRequestId() && !envelope.hasConnectionRequest())
+    if ((envelope.hasRequestId() && !envelope.hasConnectionRequest()
+            && !envelope.hasAvatarRequest())
             && !envelope.hasFileResume()) {
         protocolError(QStringLiteral("Correlation does not match v3 request body"));
     }
     if (envelope.hasResponseToRequestId()
             && !envelope.hasConnectionResponse()
+            && !envelope.hasAvatarResponse()
             && !envelope.hasFileResumeResult()) {
         protocolError(QStringLiteral("Correlation does not match v3 envelope body"));
     }
@@ -1130,8 +1144,12 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
     if (envelope.hasKeepAlive()) {
         return;
     }
-    const auto requestId = envelope.hasRequestId() ? envelope.requestId()
-                                                   : envelope.responseToRequestId();
+    quint64 requestId = 0;
+    if (envelope.hasRequestId()) {
+        requestId = envelope.requestId();
+    } else if (envelope.hasResponseToRequestId()) {
+        requestId = envelope.responseToRequestId();
+    }
     if (requestId == 0 && (envelope.hasConnectionRequest() || envelope.hasFileResume())) {
         protocolError(QStringLiteral("Request-bearing v3 object has no correlation id"));
     }
@@ -1146,8 +1164,25 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         PeerAddmeReq addme{shared_from_this(), getConnectionId(), requestId,
                            request.nickname(), request.message(),
                            request.contactEndpoint().onionAddress().toUtf8(),
-                           getPeerCert() ? getPeerCert()->getB58PubKey() : QByteArray{}};
+                           getPeerCert() ? getPeerCert()->getB58PubKey() : QByteArray{},
+                           request.hasAvatarHash() ? request.avatarHash() : QByteArray{}};
+        if (!addme.avatarHash.isEmpty() && addme.avatarHash.size() != crypto_hash_sha256_BYTES) {
+            protocolError(QStringLiteral("Invalid connection-request avatar hash"));
+        }
+        advertisedAvatarHash_ = addme.avatarHash;
         emit addmeRequest(addme);
+        return;
+    }
+    if (envelope.hasAvatarRequest()) {
+        if (!envelope.hasRequestId() || requestId == 0) {
+            protocolError(QStringLiteral("Avatar request requires request_id"));
+        }
+        auto identity = DsEngine::instance().getIdentityManager()
+                ? DsEngine::instance().getIdentityManager()->identityFromUuid(getIdentityId())
+                : nullptr;
+        sendAvatarResponse(requestId,
+                           identity ? identity->getAvatar() : QImage{},
+                           identity && identity->getPublicAvatar());
         return;
     }
     if (envelope.hasMessage()) {
@@ -1286,6 +1321,43 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
                                              info.securityPrefs().publicBio(),
                                              info.securityPrefs().publicAvatar()}};
         emit receivedUserInfo(incoming);
+        return;
+    }
+    if (envelope.hasAvatarResponse()) {
+        if (!envelope.hasResponseToRequestId() || requestId == 0
+                || !consumeRequest(requestId, RequestType::AvatarResponse)) {
+            protocolError(QStringLiteral("Unsolicited, duplicate, or mismatched avatar response"));
+        }
+        QImage image;
+        if (envelope.avatarResponse().hasAvatar()) {
+            const auto& avatar = envelope.avatarResponse().avatar();
+            const auto width = avatar.width();
+            const auto height = avatar.height();
+            if ((width == 0) != (height == 0) || width > 512 || height > 512
+                    || static_cast<quint64>(width) * height > 262144) {
+                protocolError(QStringLiteral("Invalid avatar response dimensions"));
+            }
+            const auto pixels = static_cast<qsizetype>(width) * height;
+            if ((width == 0 && (!avatar.red().isEmpty() || !avatar.green().isEmpty()
+                                || !avatar.blue().isEmpty()))
+                    || (width != 0 && (avatar.red().size() != pixels
+                                       || avatar.green().size() != pixels
+                                       || avatar.blue().size() != pixels))) {
+                protocolError(QStringLiteral("Invalid avatar response data"));
+            }
+            image = QImage(static_cast<int>(width), static_cast<int>(height), QImage::Format_RGB888);
+            for (quint32 y = 0; y < height; ++y) {
+                auto *line = image.scanLine(static_cast<int>(y));
+                for (quint32 x = 0; x < width; ++x) {
+                    const auto index = static_cast<qsizetype>(y) * width + x;
+                    line[3 * x] = static_cast<unsigned char>(avatar.red().at(index));
+                    line[3 * x + 1] = static_cast<unsigned char>(avatar.green().at(index));
+                    line[3 * x + 2] = static_cast<unsigned char>(avatar.blue().at(index));
+                }
+            }
+        }
+        emit receivedAvatarResponse(PeerSetAvatarReq{shared_from_this(), getConnectionId(),
+                                                      requestId, std::move(image)});
         return;
     }
     if (envelope.hasFileAck()) {
@@ -1470,6 +1542,9 @@ void Peer::sendCapabilities()
 
 void Peer::onCloseLater()
 {
+    LFLOG_TRACE << "Closing peer connection " << getConnectionId().toString()
+                << "; socket open: " << (connection_->isOpen() ? "yes" : "no")
+                << "; encrypted input state: " << static_cast<int>(inState_);
     if (connection_->isOpen()) {
         connection_->close();
     }
@@ -1570,6 +1645,8 @@ void Peer::processStream(const Peer::data_t &ciphertext)
         quint32 length = {};
         memcpy(&length, ciphertext.cdata(), sizeof(length));
         length = qFromBigEndian(length);
+        LFLOG_TRACE << "Received encrypted v3 record length " << length
+                    << " on " << getConnectionId().toString();
         if (!codec::validRecordLength(length)) {
             throw runtime_error("Invalid v3 record length");
         }
@@ -1585,6 +1662,8 @@ void Peer::processStream(const Peer::data_t &ciphertext)
                           static_cast<size_t>(plaintext.size())};
         bool final = {};
         decrypt(plainView, ciphertext, final);
+        LFLOG_TRACE << "Authenticated encrypted v3 record on "
+                    << getConnectionId().toString();
         ds::protocol::TransportEnvelope transport;
         if (!codec::deserialize(QByteArrayView{plaintext}, transport)
                 || transport.payload().isEmpty()
@@ -1816,6 +1895,10 @@ uint64_t Peer::startReceive(File &file)
 uint64_t Peer::startSend(File &file)
 {
     auto channelId = createChannel(file);
+    // The scheduler uses the file's channel id for all subsequent chunks.
+    // Keep it in sync with the channel created above before sending the first
+    // chunk.
+    file.setChannel(channelId);
     file.setState(File::FS_TRANSFERRING);
     return outChannels_.at(channelId)->onOutgoing(*this);
 }
@@ -1862,6 +1945,9 @@ crypto::DsCert::ptr_t Peer::getPeerCert() const noexcept
 
 void Peer::close()
 {
+   LFLOG_TRACE << "Peer close requested for connection "
+               << getConnectionId().toString()
+               << "; encrypted input state: " << static_cast<int>(inState_);
    inState_ = InState::CLOSING;
    emit closeLater();
 }
@@ -2006,6 +2092,59 @@ uint64_t Peer::sendAvatar(const QImage &avatar)
     return send(envelope);
 }
 
+uint64_t Peer::requestAvatar()
+{
+    ds::protocol::Envelope envelope;
+    envelope.setProtocolVersion(codec::protocolVersion);
+    envelope.setRequestId(nextRequestId(RequestType::AvatarResponse));
+    envelope.setAvatarRequest(ds::protocol::AvatarRequest{});
+    return send(envelope);
+}
+
+uint64_t Peer::sendAvatarResponse(const quint64 responseToRequestId,
+                                  const QImage &avatar, const bool authorized)
+{
+    if (responseToRequestId == 0) {
+        throw Error("Avatar response requires a request id");
+    }
+    ds::protocol::AvatarResponse response;
+    if (authorized) {
+        const auto normalized = avatar.convertToFormat(QImage::Format_RGB888);
+        ds::protocol::Avatar wire;
+        if (!normalized.isNull()) {
+            const auto width = normalized.width();
+            const auto height = normalized.height();
+            if (width <= 0 || height <= 0 || width > 512 || height > 512
+                    || static_cast<qint64>(width) * height > 262144) {
+                throw Error("Avatar exceeds protocol v3 limits");
+            }
+            QByteArray red(width * height, Qt::Uninitialized);
+            QByteArray green(width * height, Qt::Uninitialized);
+            QByteArray blue(width * height, Qt::Uninitialized);
+            for (int y = 0; y < height; ++y) {
+                const auto *line = normalized.constScanLine(y);
+                for (int x = 0; x < width; ++x) {
+                    const auto index = y * width + x;
+                    red[index] = static_cast<char>(line[3 * x]);
+                    green[index] = static_cast<char>(line[3 * x + 1]);
+                    blue[index] = static_cast<char>(line[3 * x + 2]);
+                }
+            }
+            wire.setWidth(static_cast<quint32>(width));
+            wire.setHeight(static_cast<quint32>(height));
+            wire.setRed(std::move(red));
+            wire.setGreen(std::move(green));
+            wire.setBlue(std::move(blue));
+        }
+        response.setAvatar(std::move(wire));
+    }
+    ds::protocol::Envelope envelope;
+    envelope.setProtocolVersion(codec::protocolVersion);
+    envelope.setResponseToRequestId(responseToRequestId);
+    envelope.setAvatarResponse(std::move(response));
+    return send(envelope);
+}
+
 uint64_t Peer::offerFile(const File &file)
 {
     const auto mimeType = file.getMimeType();
@@ -2042,24 +2181,57 @@ uint64_t Peer::startTransfer(File &file)
 
 uint64_t Peer::sendSome(File &file)
 {
-    if (file.getState() != File::FS_TRANSFERRING) {
-        throw Error("File is not in transferring state");
-    }
+    try {
+        if (file.getState() != File::FS_TRANSFERRING) {
+            throw Error("File is not in transferring state");
+        }
 
-    auto it = outChannels_.find(file.getChannel());
-    if (it == outChannels_.end()) {
-        LFLOG_ERROR << "Asked to send data for file #"
-                    << file.getId()
-                    << " on channel "
-                    << file.getChannel()
-                    << " but I don't have that channel!";
+        auto it = outChannels_.find(file.getChannel());
+        if (it == outChannels_.end()) {
+            LFLOG_ERROR << "Asked to send data for file #"
+                        << file.getId()
+                        << " on channel "
+                        << file.getChannel()
+                        << " but I don't have that channel!";
 
-        file.transferFailed("No active channel to send to");
+            try {
+                file.transferFailed("No active channel to send to");
+            } catch (const std::exception& ex) {
+                LFLOG_ERROR << "Failed to mark file #" << file.getId()
+                            << " as failed: " << ex.what();
+            } catch (...) {
+                LFLOG_ERROR << "Failed to mark file #" << file.getId()
+                            << " as failed: unknown exception";
+            }
+            return {};
+        }
+
+        auto instance = it->second;
+        return instance->onOutgoing(*this);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "File #" << file.getId()
+                    << " failed while sending data: " << ex.what();
+        try {
+            if (file.getState() == File::FS_TRANSFERRING) {
+                file.transferFailed(QStringLiteral("File transfer failed: ") + ex.what(),
+                                    File::FS_FAILED);
+            }
+        } catch (...) {
+            LFLOG_ERROR << "Unable to record failure for file #" << file.getId();
+        }
+        return {};
+    } catch (...) {
+        LFLOG_ERROR << "File #" << file.getId()
+                    << " failed while sending data: unknown exception";
+        try {
+            if (file.getState() == File::FS_TRANSFERRING) {
+                file.transferFailed(QStringLiteral("File transfer failed"), File::FS_FAILED);
+            }
+        } catch (...) {
+            LFLOG_ERROR << "Unable to record failure for file #" << file.getId();
+        }
         return {};
     }
-
-    auto instance = it->second;
-    return instance->onOutgoing(*this);
 }
 
 void Peer::handleFileAck(const QByteArray& fileId, const quint64 nextSequence,

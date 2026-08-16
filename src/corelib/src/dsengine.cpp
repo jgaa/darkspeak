@@ -185,7 +185,7 @@ QDateTime DsEngine::getSafeTime(const QDateTime &when) noexcept
     auto secs = when.toSecsSinceEpoch();
     secs /= 60;
     secs *= 60;
-    return QDateTime::fromSecsSinceEpoch(secs);
+    return QDateTime::fromSecsSinceEpoch(secs, QTimeZone::UTC);
 }
 
 void DsEngine::online()

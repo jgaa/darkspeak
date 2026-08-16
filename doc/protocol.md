@@ -827,8 +827,10 @@ allowed:
 -   `KeepAlive`
 -   public-bio request and response
 -   connection request and response
+-   avatar request and response when the connection request advertised a
+    non-empty public avatar hash
 
-Ordinary messages, files and file offers, avatars, full `UserInfo`, and
+Ordinary messages, files and file offers, unsolicited avatars, full `UserInfo`, and
 contact-only bio require `APPROVED` state. A message received in the
 wrong authorization state is rejected and does not reach the application
 handler.

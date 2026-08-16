@@ -43,6 +43,7 @@ File::File(QObject &parent, std::unique_ptr<FileData> data)
 
 void File::cancel()
 {
+    try {
     if (getState() == FS_FAILED || getState() == FS_REJECTED) {
         return;
     }
@@ -65,10 +66,19 @@ void File::cancel()
             contact->sendFileCancel(getFileId(), FileCancelReason::UserAction);
         }
     }
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to cancel file #" << getId() << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            QObject::tr("Failed to cancel file: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to cancel file #" << getId() << ": unknown exception";
+    }
 }
 
 void File::accept()
 {
+    try {
     if (getDirection() != INCOMING) {
         return;
     }
@@ -90,10 +100,19 @@ void File::accept()
 
     queueForTransfer();
     getConversation()->touchLastActivity();
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to accept file #" << getId() << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            QObject::tr("Failed to accept file: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to accept file #" << getId() << ": unknown exception";
+    }
 }
 
 void File::reject()
 {
+    try {
     if (getDirection() != INCOMING) {
         return;
     }
@@ -107,10 +126,19 @@ void File::reject()
             contact->sendFileOfferResponse(getFileId(), FileOfferResponseStatus::Rejected);
         }
     }
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to reject file #" << getId() << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            QObject::tr("Failed to reject file: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to reject file #" << getId() << ": unknown exception";
+    }
 }
 
 void File::resume()
 {
+    try {
     if (getState() != FS_FAILED) {
         return;
     }
@@ -138,19 +166,39 @@ void File::resume()
     }
     setBytesTransferred(static_cast<qlonglong>(offset));
     contact->resumeFile(*this);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to resume file #" << getId() << ": " << ex.what();
+        DsEngine::instance().reportStatus(
+            QObject::tr("Failed to resume file: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::ERROR);
+    } catch (...) {
+        LFLOG_ERROR << "Failed to resume file #" << getId() << ": unknown exception";
+    }
 }
 
 void File::openInDefaultApplication()
 {
+    try {
     auto url = QUrl::fromLocalFile(getPath());
     QDesktopServices::openUrl(url);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to open file #" << getId() << ": " << ex.what();
+    } catch (...) {
+        LFLOG_ERROR << "Failed to open file #" << getId() << ": unknown exception";
+    }
 }
 
 void File::openFolder()
 {
+    try {
     const auto path = getPath();
     auto url = QUrl::fromLocalFile(path.left(path.lastIndexOf("/")));
     QDesktopServices::openUrl(url);
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to open folder for file #" << getId() << ": " << ex.what();
+    } catch (...) {
+        LFLOG_ERROR << "Failed to open folder for file #" << getId() << ": unknown exception";
+    }
 }
 int File::getId() const noexcept
 {

@@ -239,8 +239,8 @@ Page {
         }
 
         function copy() {
-            manager.textToClipboard(currentItem.cco.name + ':'
-                    + currentItem.cco.b58identity)
+            manager.textToClipboard(manager.getIdentityText(currentItem.cco.nickName,
+                                                            currentItem.cco.b58identity))
         }
 
         function deleteCurrent() {

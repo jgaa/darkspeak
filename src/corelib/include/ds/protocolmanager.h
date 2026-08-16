@@ -32,6 +32,7 @@ struct AddmeReq {
     QUuid connection;
     QString nickName;
     QString message;
+    QByteArray avatarHash;
 };
 
 

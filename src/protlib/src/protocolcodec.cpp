@@ -54,6 +54,16 @@ bool deserialize(QByteArrayView bytes, ds::protocol::TransportEnvelope& envelope
     return decode(bytes, envelope);
 }
 
+QByteArray serialize(const ds::protocol::ContactDescriptor& descriptor)
+{
+    return encode(descriptor);
+}
+
+bool deserialize(QByteArrayView bytes, ds::protocol::ContactDescriptor& descriptor)
+{
+    return decode(bytes, descriptor);
+}
+
 bool validRecordLength(const quint32 length) noexcept
 {
     return length >= crypto_secretstream_xchacha20poly1305_ABYTES
