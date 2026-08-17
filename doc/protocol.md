@@ -648,6 +648,38 @@ blocking policy; `PENDING` performs no approval transition. Requests from an
 already approved user create no second contact. Unknown status values are not
 interpreted as known transitions.
 
+The complete addme workflow is:
+
+1. After the encrypted capability exchange, the initiator sends one
+   `ConnectionRequest` with a connection-scoped `request_id`. It may also
+   advertise a public-avatar hash. The request creates or refreshes one
+   bounded pending request keyed by the authenticated `UserId`; it does not
+   itself approve the peer.
+2. The receiver validates the request and applies local policy. It may answer
+   `PENDING`, `REJECTED`, or `BLOCKED`. `PENDING` leaves both persistent
+   contacts unapproved and the request connection may close.
+3. If the user accepts, the receiver durably records the peer as approved and
+   answers that exact request with `ACCEPTED` while the request connection is
+   usable. The response is correlated with the request's ID. A receiver that
+   is already approved answers every later request with `ACCEPTED`; it never
+   creates a new pending request or sends `PENDING`.
+4. The initiator enters `APPROVED` only after validating an `ACCEPTED`
+   response for its own outstanding request. Both sides may then exchange
+   complete `UserInfo` snapshots and ordinary approved traffic.
+5. Bio and avatar retrieval are auxiliary, bounded operations. Avatar
+   retrieval may close the request connection and therefore must never be a
+   prerequisite for durable acceptance or for sending the acceptance
+   response. If the response cannot be delivered because that connection has
+   closed, the approved receiver reconnects and repeats `ConnectionRequest`;
+   the durable receiver answers `ACCEPTED`, allowing the initiator to finish
+   approval. Request IDs are not reused across connections.
+
+The workflow is idempotent: duplicate requests for an approved `UserId` get
+`ACCEPTED`, duplicate acceptance attempts do not create contacts, and a lost
+response is recovered by reconnecting and repeating the request. Persistent
+approval is never inferred merely from transport authentication or from
+receipt of `UserInfo`.
+
 The first application message sent in each direction after encryption
 must be `Capabilities`:
 
@@ -885,6 +917,13 @@ avatar state is authorized and its SHA-256 matches the expected non-empty
 idempotent. An unsolicited avatar for which no hash is expected is rejected.
 Avatar delivery has no application receipt.
 
+Avatar visibility is evaluated for the authenticated relationship: `public_avatar`
+permits disclosure to an authenticated non-contact, while an approved contact
+may receive the avatar even when `public_avatar` is false. The effective
+per-recipient visibility is reflected in `UserInfo.avatar_hash` and its
+`public_avatar` preference snapshot. Avatar requests are answered by the
+application authorization layer, not directly by the transport.
+
 ## Bio visibility
 
 Bio visibility is an explicit local policy:
@@ -898,6 +937,12 @@ Public bio responses must be bounded and must not implicitly include
 private contact identifiers, exact location, private metadata,
 or full user info. Public-bio requests are rate-limited and may be
 rejected without changing contact state.
+
+Bio text is UTF-8 and is limited to 4096 encoded bytes. `UserInfo.bio_hash`
+is SHA-256 of that UTF-8 text and is sent only when the recipient is authorized
+to learn whether the bio changed. The full text is transferred only in a
+correlated `BioResponse`; an absent bio means that local policy denied the
+request. Receivers must verify the returned hash before storing the text.
 
 Connection requests and responses must validate the local contact state,
 authorization policy, request ownership, and object identifiers before
