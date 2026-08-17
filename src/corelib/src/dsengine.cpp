@@ -43,13 +43,26 @@ DsEngine *DsEngine::instance_;
 DsEngine::DsEngine()
     : settings_{std::make_unique<QSettings>()}
 {
-    initialize();
+    try {
+        initialize();
+    } catch (...) {
+        // initialize() publishes the singleton before constructing dependent
+        // services.  Do not leave a dangling singleton if a secure service
+        // (such as the OS vault) prevents construction from completing.
+        instance_ = {};
+        throw;
+    }
 }
 
 DsEngine::DsEngine(std::unique_ptr<QSettings> settings)
     : settings_{move(settings)}
 {
-    initialize();
+    try {
+        initialize();
+    } catch (...) {
+        instance_ = {};
+        throw;
+    }
 }
 
 DsEngine::~DsEngine()

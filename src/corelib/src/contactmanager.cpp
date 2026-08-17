@@ -127,6 +127,7 @@ void ContactManager::onContactAddedLater(const Contact::ptr_t& contact)
 {
     if (contact->isAutoConnect()
             && !contact->isBlocked()
+            && !contact->isOnline()
             && contact->getIdentity()->isOnline()) {
         contact->connectToContact();
     }

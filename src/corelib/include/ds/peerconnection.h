@@ -249,6 +249,15 @@ struct PeerUserInfo : public PeerReq
     UserInfo userInfo;
 };
 
+struct PeerBio : public PeerReq
+{
+    PeerBio(std::shared_ptr<PeerConnection> peerVal, QUuid connectionIdVal,
+            quint64 requestIdVal, QString bioVal)
+        : PeerReq{std::move(peerVal), std::move(connectionIdVal), requestIdVal}
+        , bio{std::move(bioVal)} {}
+    QString bio;
+};
+
 
 /*! Representation of a incoming or outgoing connection to a contact.
  *
@@ -293,9 +302,15 @@ public:
                                           FileCancelReason error) = 0;
     virtual bool isConnected() const noexcept = 0;
     virtual uint64_t sendUserInfo(const core::UserInfo &userInfo) = 0;
+    virtual uint64_t requestBio() = 0;
+    virtual uint64_t sendBioResponse(quint64 responseToRequestId,
+                                     const QString& bio) = 0;
     virtual uint64_t sendMessage(const Message& message) = 0;
     virtual uint64_t sendAvatar(const QImage& avatar) = 0;
     virtual uint64_t requestAvatar() = 0;
+    virtual uint64_t sendAvatarResponse(quint64 responseToRequestId,
+                                        const QImage& avatar,
+                                        bool authorized) = 0;
     virtual uint64_t offerFile(const File& file) = 0;
     virtual uint64_t startTransfer(File& file) = 0;
     virtual uint64_t sendSome(File& file) = 0;
@@ -315,8 +330,11 @@ signals:
     void receivedMessage(const PeerMessage& msg);
     void receivedFileOffer(const PeerFileOffer& msg);
     void receivedAvatar(const PeerSetAvatarReq& avatar);
+    void receivedAvatarRequest(const PeerReq& request);
     void receivedAvatarResponse(const PeerSetAvatarReq& avatar);
     void receivedUserInfo(const PeerUserInfo& uinfo);
+    void receivedBioRequest(const PeerReq& request);
+    void receivedBio(const PeerBio& bio);
     void outputBufferEmptied();
 };
 
@@ -326,6 +344,7 @@ Q_DECLARE_METATYPE(ds::core::PeerConnection *)
 //Q_DECLARE_SMART_POINTER_METATYPE(std::shared_ptr)
 //Q_DECLARE_METATYPE(ds::core::PeerConnection::ptr_t)
 Q_DECLARE_METATYPE(ds::core::PeerReq)
+Q_DECLARE_METATYPE(ds::core::PeerBio)
 Q_DECLARE_METATYPE(ds::core::PeerAddmeReq)
 Q_DECLARE_METATYPE(ds::core::PeerConnectionResponse)
 Q_DECLARE_METATYPE(ds::core::PeerMessageReceipt)

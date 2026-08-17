@@ -206,7 +206,7 @@ Page {
          Rectangle {
              radius: 5
              opacity: 1
-             y: list.currentItem.y;
+             y: list.currentItem ? list.currentItem.y : 0;
              color: root.selectedFill
              border.color: root.selectedBorder
              Behavior on y { SpringAnimation { spring: 1; damping: 0.1 } }

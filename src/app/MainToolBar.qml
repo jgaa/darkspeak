@@ -40,7 +40,7 @@ ToolBar {
                         console.debug("Error:"+ component.errorString() );
                     return;
                 }
-                var dlg = component.createObject(mainWindow, {"parent" : mainWindow});
+                var dlg = component.createObject(mainWindow, {});
                 dlg.open()
             }
         }
@@ -64,7 +64,6 @@ ToolBar {
                     return;
                 }
                 var dlg = component.createObject(mainWindow, {
-                    "parent"   : mainWindow,
                     "clipboardData" : clip,
                     "identity" : identities.getCurrentIdentity()
                 });

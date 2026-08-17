@@ -71,6 +71,7 @@ public:
     Q_INVOKABLE MessagesModel *messagesModel();
     Q_INVOKABLE FilesModel *filesModel();
     Q_INVOKABLE void textToClipboard(const QString& text);
+    Q_INVOKABLE QString sanitizeBio(const QString& text) const;
     Q_INVOKABLE bool hasValidContactInClipboard() const;
     Q_INVOKABLE void createIdentityQrCode(const QString& identityName,
                                           const QString& identity);
@@ -81,7 +82,7 @@ public:
     Q_INVOKABLE static QString pathToUrl(const QString& path);
 
     Q_INVOKABLE void setTmpImageFromPath(const QString& path, const QSize& size = {128, 128});
-    Q_INVOKABLE void setTmpImageFromImage(QImage& image);
+    Q_INVOKABLE void setTmpImageFromImage(const QImage& image);
     Q_INVOKABLE void clearTmpImage();
     Q_INVOKABLE QImage getTmpImage() const;
     Q_INVOKABLE void deleteContact(const QUuid& uuid);

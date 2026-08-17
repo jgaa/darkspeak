@@ -28,6 +28,7 @@ struct IdentityData {
     QByteArray address;
     QByteArray addressData;
     QString notes;
+    QString bio;
     QImage avatar;
     bool allowUtf8 = true;
     bool allowFiles = true;
@@ -43,6 +44,7 @@ struct IdentityReq {
     QUuid uuid = QUuid::createUuid();
     QString name;
     QString notes;
+    QString bio;
     QImage avatar;
     bool allowUtf8 = true;
     bool allowFiles = true;
@@ -62,6 +64,7 @@ public:
 
     Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
     Q_PROPERTY(QString notes READ notes WRITE setNotes NOTIFY notesChanged)
+    Q_PROPERTY(QString bio READ bio WRITE setBio NOTIFY bioChanged)
     Q_PROPERTY(bool autoConnect READ autoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
     Q_PROPERTY(QImage avatar READ avatar WRITE setAvatar NOTIFY avatarChanged)
     Q_PROPERTY(bool allowUtf8 READ allowUtf8 WRITE setAllowUtf8 NOTIFY securityPreferencesChanged)
@@ -85,6 +88,11 @@ public:
             value.notes = notes;
             emit notesChanged();
         }
+    }
+
+    QString bio() const { return value.bio; }
+    void setBio(QString bio) {
+        if (value.bio != bio) { value.bio = std::move(bio); emit bioChanged(); }
     }
 
     bool autoConnect() const { return value.autoConnect ;}
@@ -120,6 +128,7 @@ public:
 signals:
     void nameChanged();
     void notesChanged();
+    void bioChanged();
     void autoConnectChanged();
     void avatarChanged();
     void securityPreferencesChanged();
@@ -159,6 +168,10 @@ public:
     Q_PROPERTY(QByteArray address READ getAddress WRITE setAddress NOTIFY addressChanged)
     Q_PROPERTY(QByteArray addressData READ getAddressData WRITE setAddressData NOTIFY addressDataChanged)
     Q_PROPERTY(QString notes READ getNotes WRITE setNotes NOTIFY notesChanged)
+    Q_PROPERTY(QString bio READ getBio WRITE setBio NOTIFY bioChanged)
+    Q_PROPERTY(QString probeBio READ getProbeBio NOTIFY probeBioChanged)
+    Q_PROPERTY(QImage probeAvatar READ getProbeAvatar NOTIFY probeAvatarChanged)
+    Q_PROPERTY(bool hasProbeAvatar READ hasProbeAvatar NOTIFY probeAvatarChanged)
     Q_PROPERTY(QImage avatar READ getAvatar WRITE setAvatar NOTIFY avatarChanged)
     Q_PROPERTY(QString avatarUrl READ getAvatarUrl NOTIFY avatarUrlChanged)
     Q_PROPERTY(QUuid uuid READ getUuid CONSTANT)
@@ -175,6 +188,8 @@ public:
     Q_PROPERTY(bool publicAvatar READ getPublicAvatar WRITE setPublicAvatar NOTIFY securityPreferencesChanged)
 
     Q_INVOKABLE void addContact(const QVariantMap& args);
+    Q_INVOKABLE void probeContact(const QString& identityId);
+    Q_INVOKABLE void cancelContactProbe();
     Q_INVOKABLE void startService();
     Q_INVOKABLE void stopService();
     Q_INVOKABLE void changeTransport();
@@ -189,6 +204,11 @@ public:
     void setAddressData(const QByteArray& data);
     QString getNotes() const noexcept;
     void setNotes(const QString& notes);
+    QString getBio() const noexcept { return data_.bio; }
+    void setBio(const QString& bio);
+    QString getProbeBio() const noexcept;
+    QImage getProbeAvatar() const noexcept;
+    bool hasProbeAvatar() const noexcept;
     QImage getAvatar() const noexcept;
     QString getAvatarUrl() const noexcept;
     void setAvatar(const QImage& avatar);
@@ -240,6 +260,9 @@ signals:
     void addressChanged();
     void addressDataChanged();
     void notesChanged();
+    void bioChanged();
+    void probeBioChanged();
+    void probeAvatarChanged();
     void avatarChanged();
     void avatarUrlChanged();
     void onlineChanged();
@@ -270,6 +293,7 @@ private:
     // Active Connections in any direction
     // Keeps connected Contacts in memory
     std::map<QUuid /* contact id */, std::unique_ptr<Connected>> connected_;
+    Contact::ptr_t bioProbe_;
 };
 
 }} // identities

@@ -252,6 +252,10 @@ void NotificationsModel::addNotification(Identity *identity, const core::PeerAdd
     QString hash, identityId = QString::number(identity->getId());
     crypto::createHash(hash, {req.handle, req.address, identityId});
 
+    // Keep the live request separately from the persisted notification.  The
+    // latter cannot contain the authenticated PeerConnection or request id.
+    pendingContactRequests_[hash] = req;
+
     if (isHashPresent(hash)) {
         QSqlQuery existing;
         existing.prepare("SELECT data FROM notification WHERE hash=:hash");
@@ -429,6 +433,18 @@ void NotificationsModel::acceptContact(const int row, bool accept)
 
 
         cr->whoInitiated = Contact::THEM;
+        // Accepting the notification is the user's acceptance of the peer;
+        // retain that state even if the original request connection has gone
+        // away before the next reconnect.
+        cr->state = Contact::ACCEPTED;
+        // The request connection is intentionally short-lived (it may only
+        // have been kept open for avatar retrieval).  An accepted contact
+        // must therefore establish the follow-up contact connection itself.
+        cr->autoConnect = true;
+        // The request was authenticated against the contact certificate.  A
+        // later reconnect must not downgrade this accepted contact to Pending
+        // merely because the short-lived request connection was closed.
+        cr->peerVerified = true;
         cr->name = d.value("nickName").toString();
 
         cr->identity = data(index(row, H_IDENTITY), Qt::DisplayRole).toInt();
@@ -440,8 +456,22 @@ void NotificationsModel::acceptContact(const int row, bool accept)
         cr->address = d.value("address").toByteArray();
         cr->avatar = QImage::fromData(d.value("avatar").toByteArray(), "PNG");
 
+        Contact *added = nullptr;
         try {
-            DsEngine::instance().getContactManager()->addContact(move(cr));
+            added = DsEngine::instance().getContactManager()->addContact(move(cr));
+
+            const auto identityId = QString::number(
+                data(index(row, H_IDENTITY), Qt::DisplayRole).toInt());
+            QString hash;
+            crypto::createHash(hash, {d.value("handle").toString(),
+                                      d.value("address").toString(), identityId});
+            if (const auto it = pendingContactRequests_.find(hash);
+                    it != pendingContactRequests_.end()) {
+                if (added) {
+                    added->acceptIncomingRequest(it->second);
+                }
+                pendingContactRequests_.erase(it);
+            }
         } catch(const std::exception& ex) {
             LFLOG_ERROR << "Error adding contact: " << ex.what();
         }

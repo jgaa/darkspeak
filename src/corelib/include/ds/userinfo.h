@@ -17,6 +17,7 @@ struct UserInfo {
     bool allowReactions = true;
     bool publicBio = true;
     bool publicAvatar = true;
+    QByteArray bioHash;
 };
 
 }} // namespaces

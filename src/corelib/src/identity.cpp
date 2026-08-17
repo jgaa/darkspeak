@@ -5,6 +5,7 @@
 #include "ds/avatarutil.h"
 #include "ds/errors.h"
 #include "ds/update_helper.h"
+#include "ds/bio.h"
 #include "ds/dscert.h"
 #include "ds/base58.h"
 #include "ds/base32.h"
@@ -17,6 +18,7 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
+#include <QCryptographicHash>
 #include <QTimer>
 #include <QRegularExpression>
 #include <QFile>
@@ -36,6 +38,7 @@ Identity::Identity(QObject& parent,
     : QObject{&parent}
     , id_{dbId}, online_{online}, data_{std::move(data)}, created_{move(created)}
 {
+    data_.bio = bio::sanitize(data_.bio);
     const auto prefix = QStringLiteral("identity/%1/").arg(
         data_.uuid.toString(QUuid::WithoutBraces));
     auto& settings = DsEngine::instance().settings();
@@ -44,6 +47,7 @@ Identity::Identity(QObject& parent,
     settings.setValue(prefix + QStringLiteral("allowMimeTypes"), data_.allowMimeTypes);
     settings.setValue(prefix + QStringLiteral("allowReactions"), data_.allowReactions);
     settings.setValue(prefix + QStringLiteral("publicBio"), data_.publicBio);
+    settings.setValue(prefix + QStringLiteral("bio"), data_.bio);
     settings.setValue(prefix + QStringLiteral("publicAvatar"), data_.publicAvatar);
 
     connect(this, &Identity::processOnlineLater,
@@ -95,7 +99,24 @@ void Identity::addContact(const QVariantMap &args)
     data->autoConnect = args.value("autoConnect").toBool();
     data->notes = args.value("notes").toString();
 
+    const auto probedHandle = data->cert->getHash().toByteArray();
+    if (bioProbe_ && bioProbe_->getCert()
+            && bioProbe_->getCert()->getHash().toByteArray() == probedHandle) {
+        // Keep the probe connection separate. The received bio is copied into
+        // the new record, then the normal contact lifecycle creates its own
+        // connection after the dialog is accepted.
+        data->bio = bioProbe_->getBio();
+        data->bioHash = QCryptographicHash::hash(data->bio.toUtf8(),
+                                                 QCryptographicHash::Sha256);
+        data->avatar = bioProbe_->getAvatar();
+    }
+
     try {
+        // The probe deliberately uses a separate connection.  Close it before
+        // starting the real contact connection; otherwise both connections
+        // can race through the peer handshake and the Addme request may never
+        // reach the unknown-peer notification path.
+        cancelContactProbe();
         DsEngine::instance().getContactManager()->addContact(move(data));
     } catch (const std::exception& ex) {
         // The database intentionally rejects duplicate contacts for the same
@@ -106,6 +127,91 @@ void Identity::addContact(const QVariantMap &args)
             tr("Failed to add contact: %1").arg(QString::fromUtf8(ex.what())),
             DsEngine::StatusLevel::WARNING);
     }
+}
+
+QString Identity::getProbeBio() const noexcept
+{
+    return bioProbe_ ? bioProbe_->getBio() : QString{};
+}
+
+QImage Identity::getProbeAvatar() const noexcept
+{
+    return bioProbe_ ? bioProbe_->getAvatar() : QImage{};
+}
+
+bool Identity::hasProbeAvatar() const noexcept
+{
+    return bioProbe_ && !bioProbe_->getAvatar().isNull();
+}
+
+void Identity::cancelContactProbe()
+{
+    if (!bioProbe_) {
+        return;
+    }
+    bioProbe_->disconnectFromContact(true);
+    bioProbe_.reset();
+    emit probeBioChanged();
+}
+
+void Identity::probeContact(const QString& suppliedIdentityId)
+{
+    cancelContactProbe();
+    if (!isOnline()) {
+        DsEngine::instance().reportStatus(
+            tr("Connect to Tor before checking a contact's public bio"),
+            DsEngine::StatusLevel::WARNING);
+        return;
+    }
+
+    DsEngine::instance().reportStatus(
+        tr("Checking contact for a public bio"), DsEngine::StatusLevel::INFO);
+
+    auto identityId = suppliedIdentityId.trimmed();
+    const auto separator = identityId.indexOf(':');
+    if (separator > 0) {
+        identityId = identityId.mid(separator + 1);
+    }
+
+    constexpr auto payloadLength = 1 + 32 + 35 + 2;
+    QByteArray identityData;
+    try {
+        identityData = crypto::b58tobin_check<QByteArray>(
+            identityId.toStdString(), payloadLength, {11, 176});
+    } catch (const std::exception& ex) {
+        DsEngine::instance().reportStatus(
+            tr("Invalid identity ID: %1").arg(QString::fromUtf8(ex.what())),
+            DsEngine::StatusLevel::WARNING);
+        return;
+    }
+    if (identityData.size() != payloadLength || identityData.at(0) != 2) {
+        DsEngine::instance().reportStatus(tr("Invalid identity ID payload"),
+                                          DsEngine::StatusLevel::WARNING);
+        return;
+    }
+
+    auto data = make_unique<ContactData>();
+    data->identity = getId();
+    data->cert = crypto::DsCert::createFromPubkey(identityData.mid(1, 32));
+    const auto host = crypto::onionv3encode(identityData.mid(33, 35));
+    auto portBytes = identityData.mid(68, 2);
+    const auto port = qFromBigEndian(bytesToValue<quint16>(portBytes));
+    data->address = (QStringLiteral("onion:") + host + QStringLiteral(".onion:")
+                     + QString::number(port)).toUtf8();
+
+    bioProbe_ = make_shared<Contact>(-1, false, move(data));
+    bioProbe_->setProbeOnly(true);
+    connect(bioProbe_.get(), &Contact::bioChanged, this, [this]() {
+        emit probeBioChanged();
+        if (bioProbe_ && !bioProbe_->getBio().isEmpty()) {
+            DsEngine::instance().reportStatus(
+                tr("Public bio received"), DsEngine::StatusLevel::INFO);
+        }
+    });
+    connect(bioProbe_.get(), &Contact::avatarChanged, this, [this]() {
+        emit probeAvatarChanged();
+    });
+    bioProbe_->connectToContact();
 }
 
 void Identity::startService()
@@ -235,6 +341,19 @@ void Identity::onIncomingPeer(const std::shared_ptr<PeerConnection>& peer)
 
     connect(peer.get(), &PeerConnection::addmeRequest,
             this, &Identity::onAddmeRequest);
+    connect(peer.get(), &PeerConnection::receivedBioRequest,
+            this, [this](const PeerReq& request) {
+        if (getPublicBio()) {
+            request.peer->sendBioResponse(request.requestId, getBio());
+        } else {
+            request.peer->sendBioResponse(request.requestId, {});
+        }
+    });
+    connect(peer.get(), &PeerConnection::receivedAvatarRequest,
+            this, [this](const PeerReq& request) {
+        request.peer->sendAvatarResponse(request.requestId,
+                                         getAvatar(), getPublicAvatar());
+    });
 
     // At this point we leave the ownership and responsibility for the
     // connection at the protocol layer
@@ -638,6 +757,22 @@ void Identity::setPublicBio(bool value)
         QStringLiteral("identity/%1/publicBio").arg(data_.uuid.toString(QUuid::WithoutBraces)), value);
     emit securityPreferencesChanged();
     forAllContacts([](const Contact::ptr_t& contact) { if (contact->isOnline()) contact->sendUserInfo(); });
+}
+
+void Identity::setBio(const QString& value)
+{
+    const auto limited = bio::sanitize(value);
+    if (!bio::withinLimits(limited) || limited == data_.bio) {
+        return;
+    }
+    data_.bio = limited;
+    DsEngine::instance().settings().setValue(
+        QStringLiteral("identity/%1/bio").arg(data_.uuid.toString(QUuid::WithoutBraces)),
+        data_.bio);
+    emit bioChanged();
+    forAllContacts([](const Contact::ptr_t& contact) {
+        if (contact->isOnline()) contact->sendUserInfo();
+    });
 }
 
 void Identity::setPublicAvatar(bool value)

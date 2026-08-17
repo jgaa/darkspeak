@@ -22,6 +22,7 @@
 #include <qrcodegen.hpp>
 
 #include "ds/manager.h"
+#include "ds/bio.h"
 #include "ds/base58.h"
 #include "ds/base32.h"
 #include "ds/bytes.h"
@@ -456,6 +457,11 @@ void Manager::textToClipboard(const QString& text)
     cb->setText(text);
 }
 
+QString Manager::sanitizeBio(const QString& text) const
+{
+    return ds::core::bio::sanitize(text);
+}
+
 bool Manager::hasValidContactInClipboard() const
 {
     ds::protocol::ContactDescriptor descriptor;
@@ -596,7 +602,7 @@ void Manager::setTmpImageFromPath(const QString& path, const QSize &size)
     LFLOG_TRACE << "Loaded tmp image \"" << location.toLocalFile() << "\".";
 }
 
-void Manager::setTmpImageFromImage(QImage &image)
+void Manager::setTmpImageFromImage(const QImage &image)
 {
     tmpImage_ = make_unique<QImage>(image);
 }

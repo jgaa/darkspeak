@@ -38,6 +38,7 @@ Dialog {
         if (identity) {
             value.name = identity.name
             value.notes = identity.notes
+            value.bio = identity.bio
             value.autoConnect = identity.autoConnect
             value.avatar = identity.avatar
             value.allowUtf8 = identity.allowUtf8
@@ -58,6 +59,7 @@ Dialog {
             id: tabs
             Layout.fillWidth: true
             TabButton { text: qsTr("Profile") }
+            TabButton { text: qsTr("Bio") }
             TabButton { text: qsTr("Security preferences") }
         }
 
@@ -145,6 +147,74 @@ Dialog {
             Item {
                 ColumnLayout {
                     anchors.fill: parent
+                    spacing: 8
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label {
+                            text: qsTr("Bio")
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+                        Label {
+                            text: qsTr("Markdown is supported")
+                            color: "#334e68"
+                        }
+                        Label {
+                            text: qsTr("%1 remaining").arg(Math.max(0, 1000 - bioEdit.text.length))
+                            color: bioEdit.text.length >= 1000 ? "#b91c1c" : "#166534"
+                        }
+                    }
+
+                    TabBar {
+                        id: bioTabs
+                        Layout.fillWidth: true
+                        TabButton { text: qsTr("Edit") }
+                        TabButton { text: qsTr("Preview") }
+                    }
+
+                    StackLayout {
+                        currentIndex: bioTabs.currentIndex
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+
+                        TextArea {
+                            id: bioEdit
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            text: value.bio
+                            wrapMode: TextEdit.Wrap
+                            onTextChanged: {
+                                if (text.length > 1000) {
+                                    const position = cursorPosition
+                                    text = text.slice(0, 1000)
+                                    cursorPosition = Math.min(position, 1000)
+                                }
+                            }
+                        }
+
+                        ScrollView {
+                            clip: true
+                            TextEdit {
+                                width: parent.width
+                                textFormat: TextEdit.MarkdownText
+                                text: manager.sanitizeBio(bioEdit.text)
+                                readOnly: true
+                                selectByMouse: true
+                                wrapMode: TextEdit.Wrap
+                                onLinkActivated: function(link) {
+                                    manager.textToClipboard(link)
+                                    manager.setStatusMessage(qsTr("Bio link copied to clipboard"))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Item {
+                ColumnLayout {
+                    anchors.fill: parent
                     spacing: 10
 
                     Label {
@@ -184,6 +254,7 @@ Dialog {
     onAccepted: {
         value.name = name.text ? name.text : qsTr("Anonymous Coward")
         value.notes = notes.text
+        value.bio = bioEdit.text
         value.autoConnect = autoConnect.checked
         value.allowUtf8 = allowUtf8.checked
         value.allowFiles = allowFiles.checked
@@ -197,6 +268,7 @@ Dialog {
         if (identity) {
             identity.name = value.name
             identity.notes = value.notes
+            identity.bio = value.bio
             identity.autoConnect = value.autoConnect
             identity.avatar = value.avatar
             identity.allowUtf8 = value.allowUtf8

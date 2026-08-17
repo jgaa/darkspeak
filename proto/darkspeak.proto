@@ -80,6 +80,13 @@ message Capabilities {
 // transport padding as every other application message and require no reply.
 message KeepAlive {}
 
+
+message Bio {
+  // Bio text. Support markdown and links. HTML, images, and other media are
+  // rewritten to inert text before transmission or display.
+  string bio_text = 1;
+}
+
 // The requester may ask for a bio from any authenticated peer. Local policy and
 // contact state determine whether a response exposes the bio and avatar state.
 message BioRequest {}
@@ -87,7 +94,7 @@ message BioRequest {}
 message BioResponse {
   // Human-readable text. Maximum 4096 encoded bytes. If absent, the requester
   // is not permitted to see the bio. If present, it may be empty.
-  optional string bio = 1;
+  optional Bio bio = 1;
 
   // If absent, the requester is not permitted to know avatar state.
   // If present and empty, the user currently has no avatar.
@@ -380,6 +387,12 @@ message UserInfo {
 
   // Required. UserInfo is a complete snapshot, not a patch.
   UserSecurityPreferences security_prefs = 3;
+
+  optional Bio bio = 4;
+
+  // SHA-256 of the UTF-8 bio text. The full bio is requested separately so
+  // that unchanged peer data is not repeatedly transferred.
+  bytes bio_hash = 5;
 }
 
 enum FileError {

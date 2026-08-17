@@ -24,6 +24,7 @@
 #include <QtEndian>
 
 #include "ds/peer.h"
+#include "ds/bio.h"
 #include "ds/message.h"
 #include "ds/errors.h"
 #include "ds/file.h"
@@ -1094,7 +1095,9 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
                 << ", keepalive=" << envelope.hasKeepAlive()
                 << ", connectionRequest=" << envelope.hasConnectionRequest()
                 << ", connectionResponse=" << envelope.hasConnectionResponse()
-                << ", userInfo=" << envelope.hasUserInfo()
+        << ", userInfo=" << envelope.hasUserInfo()
+                << ", bioRequest=" << envelope.hasBioRequest()
+                << ", bioResponse=" << envelope.hasBioResponse()
                 << ", avatarRequest=" << envelope.hasAvatarRequest()
                 << ", avatarResponse=" << envelope.hasAvatarResponse()
                 << ", avatar=" << envelope.hasAvatar()
@@ -1112,7 +1115,8 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
             || envelope.hasFileResumeResult() || envelope.hasFileCancel()
             || envelope.hasAvatarRequest() || envelope.hasAvatarResponse()
             || envelope.hasAvatar() || envelope.hasMessageReceipt()
-            || envelope.hasFileOfferResponse();
+            || envelope.hasFileOfferResponse() || envelope.hasBioRequest()
+            || envelope.hasBioResponse();
     if (envelope.protocolVersion() != codec::protocolVersion || !hasBody) {
         protocolError(QStringLiteral("Invalid v3 envelope"));
     }
@@ -1128,14 +1132,14 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         return;
     }
     if ((envelope.hasRequestId() && !envelope.hasConnectionRequest()
-            && !envelope.hasAvatarRequest())
+            && !envelope.hasAvatarRequest() && !envelope.hasBioRequest())
             && !envelope.hasFileResume()) {
         protocolError(QStringLiteral("Correlation does not match v3 request body"));
     }
     if (envelope.hasResponseToRequestId()
             && !envelope.hasConnectionResponse()
             && !envelope.hasAvatarResponse()
-            && !envelope.hasFileResumeResult()) {
+            && !envelope.hasFileResumeResult() && !envelope.hasBioResponse()) {
         protocolError(QStringLiteral("Correlation does not match v3 envelope body"));
     }
     if (applicationAuthorizationPending_) {
@@ -1177,12 +1181,7 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         if (!envelope.hasRequestId() || requestId == 0) {
             protocolError(QStringLiteral("Avatar request requires request_id"));
         }
-        auto identity = DsEngine::instance().getIdentityManager()
-                ? DsEngine::instance().getIdentityManager()->identityFromUuid(getIdentityId())
-                : nullptr;
-        sendAvatarResponse(requestId,
-                           identity ? identity->getAvatar() : QImage{},
-                           identity && identity->getPublicAvatar());
+        emit receivedAvatarRequest(PeerReq{shared_from_this(), getConnectionId(), requestId});
         return;
     }
     if (envelope.hasMessage()) {
@@ -1308,6 +1307,8 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         if (!info.hasSecurityPrefs()
                 || (info.hasAvatarHash() && !info.avatarHash().isEmpty()
                     && info.avatarHash().size() != crypto_hash_sha256_BYTES)
+                || (!info.bioHash().isEmpty()
+                    && info.bioHash().size() != crypto_hash_sha256_BYTES)
                 || !validMimePreferences(info.securityPrefs().allowMimeTypes())) {
             protocolError(QStringLiteral("Invalid v3 UserInfo snapshot"));
         }
@@ -1319,7 +1320,12 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
                                              info.securityPrefs().allowMimeTypes(),
                                              info.securityPrefs().allowReactions(),
                                              info.securityPrefs().publicBio(),
-                                             info.securityPrefs().publicAvatar()}};
+                                             info.securityPrefs().publicAvatar(),
+                                             info.bioHash()}};
+        if (info.hasBio() && (info.bio().bioText().size() > 1000
+                              || info.bio().bioText().toUtf8().size() > 4096)) {
+            protocolError(QStringLiteral("Bio exceeds the v3 size limit"));
+        }
         emit receivedUserInfo(incoming);
         return;
     }
@@ -1518,9 +1524,26 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         emit receivedAvatar(incoming);
         return;
     }
-    if (envelope.hasBioRequest()
-            || envelope.hasBioResponse()) {
-        protocolError(QStringLiteral("Typed v3 object requires an unresolved UI adapter"));
+    if (envelope.hasBioRequest()) {
+        if (!envelope.hasRequestId() || requestId == 0) {
+            protocolError(QStringLiteral("Bio request lacks correlation"));
+        }
+        emit receivedBioRequest(PeerReq{shared_from_this(), getConnectionId(), requestId});
+        return;
+    }
+    if (envelope.hasBioResponse()) {
+        if (!envelope.hasResponseToRequestId() || requestId == 0
+                || !consumeRequest(requestId, RequestType::BioResponse)) {
+            protocolError(QStringLiteral("Unsolicited, duplicate, or mismatched bio response"));
+        }
+        const auto& response = envelope.bioResponse();
+        if (response.hasBio() && !core::bio::withinLimits(
+                    core::bio::sanitize(response.bio().bioText()))) {
+            protocolError(QStringLiteral("Bio exceeds the v3 size limit"));
+        }
+        emit receivedBio(PeerBio{shared_from_this(), getConnectionId(), requestId,
+                                 response.hasBio() ? response.bio().bioText() : QString{}});
+        return;
     }
     protocolError(QStringLiteral("Unsupported v3 envelope body"));
 }
@@ -2019,6 +2042,9 @@ uint64_t Peer::sendUserInfo(const UserInfo &userInfo)
     preferences.setAllowReactions(userInfo.allowReactions);
     preferences.setPublicBio(userInfo.publicBio);
     preferences.setPublicAvatar(userInfo.publicAvatar);
+    if (!userInfo.bioHash.isEmpty()) {
+        info.setBioHash(userInfo.bioHash);
+    }
     info.setSecurityPrefs(std::move(preferences));
     ds::protocol::Envelope envelope;
     envelope.setProtocolVersion(codec::protocolVersion);
@@ -2054,6 +2080,37 @@ uint64_t Peer::sendMessage(const core::Message &message)
     ds::protocol::Envelope envelope;
     envelope.setProtocolVersion(codec::protocolVersion);
     envelope.setMessage(std::move(wire));
+    return send(envelope);
+}
+
+uint64_t Peer::requestBio()
+{
+    const auto requestId = nextRequestId(RequestType::BioResponse);
+    ds::protocol::Envelope envelope;
+    envelope.setProtocolVersion(codec::protocolVersion);
+    envelope.setRequestId(requestId);
+    ds::protocol::BioRequest request;
+    envelope.setBioRequest(std::move(request));
+    send(envelope);
+    return requestId;
+}
+
+uint64_t Peer::sendBioResponse(const quint64 responseToRequestId, const QString& bio)
+{
+    const auto sanitized = core::bio::sanitize(bio);
+    if (responseToRequestId == 0 || !core::bio::withinLimits(sanitized)) {
+        throw Error("Invalid bio response");
+    }
+    ds::protocol::Envelope envelope;
+    envelope.setProtocolVersion(codec::protocolVersion);
+    envelope.setResponseToRequestId(responseToRequestId);
+    ds::protocol::BioResponse response;
+    if (!bio.isEmpty()) {
+        ds::protocol::Bio wireBio;
+        wireBio.setBioText(sanitized);
+        response.setBio(std::move(wireBio));
+    }
+    envelope.setBioResponse(std::move(response));
     return send(envelope);
 }
 

@@ -233,14 +233,19 @@ Page {
 
         function editCurrent() {
             var component = Qt.createComponent("qrc:/EditContactDialog.qml")
-            var dlg = component.createObject(mainWindow, {"parent" : mainWindow,
-                                              "contact" : currentItem.cco});
+            var dlg = component.createObject(mainWindow, {"contact" : currentItem.cco});
             dlg.open()
         }
 
         function copy() {
             manager.textToClipboard(manager.getIdentityText(currentItem.cco.nickName,
                                                             currentItem.cco.b58identity))
+        }
+
+        function showBio() {
+            var component = Qt.createComponent("qrc:/BioDialog.qml")
+            var dlg = component.createObject(mainWindow, {"contact": currentItem.cco})
+            dlg.open()
         }
 
         function deleteCurrent() {
@@ -290,6 +295,13 @@ Page {
             text: qsTr("Copy contact")
             icon.name: "edit-copy"
             onTriggered: list.copy()
+        }
+
+        MenuItem {
+            text: qsTr("Bio")
+            icon.name: "user-info"
+            enabled: list.currentItem && list.currentItem.cco && list.currentItem.cco.hasBio
+            onTriggered: list.showBio()
         }
 
         MenuItem {

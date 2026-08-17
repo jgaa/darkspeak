@@ -5,6 +5,7 @@
 #include <QTimer>
 #include <QSqlDatabase>
 #include <QSqlQuery>
+#include <QCryptographicHash>
 
 #include "ds/contact.h"
 #include "ds/dsengine.h"
@@ -15,6 +16,7 @@
 #include "ds/conversation.h"
 #include "ds/avatarhash.h"
 #include "ds/avatarutil.h"
+#include "ds/bio.h"
 
 #include "logfault/logfault.h"
 
@@ -98,6 +100,14 @@ void Contact::connectToContact()
         prepareForNewConnection();
         connection_ = make_unique<Connection>(peer, *this);
         setOnlineStatus(CONNECTING);
+
+        // The remote side may send its ConnectionRequest before the
+        // transport emits connectedToPeer.  Install this before the socket
+        // handshake starts so a fast response/request cannot be lost.
+        connect(peer.get(), &PeerConnection::addmeRequest,
+                this, &Contact::onAddmeRequest, Qt::UniqueConnection);
+        connect(peer.get(), &PeerConnection::receivedAvatarRequest,
+                this, &Contact::onReceivedAvatarRequest, Qt::UniqueConnection);
 
         connect(peer.get(), &PeerConnection::connectedToPeer,
                 this, &Contact::onConnectedToPeer, Qt::UniqueConnection);
@@ -210,6 +220,10 @@ QString Contact::getNotes() const noexcept {
     return data_->notes;
 }
 
+QString Contact::getBio() const noexcept { return data_->bio; }
+
+bool Contact::hasBio() const noexcept { return !data_->bio.isEmpty(); }
+
 void Contact::setNotes(QString notes) {
     if (notes.isEmpty()) {
         notes = nullptr;
@@ -219,6 +233,11 @@ void Contact::setNotes(QString notes) {
 
 QImage Contact::getAvatar() const noexcept  {
     return data_->avatar;
+}
+
+bool Contact::hasAvatar() const noexcept
+{
+    return !data_->avatar.isNull();
 }
 
 QString Contact::getAvatarUrl() const noexcept
@@ -476,8 +495,9 @@ void Contact::queueFile(const std::shared_ptr<File> &file)
 
 void Contact::sendAvatar(const QImage &avatar)
 {
-    if (!isOnline() || getState() != ACCEPTED
-            || !getIdentity()->getPublicAvatar() || !peerUserInfo_.publicAvatar) {
+    if (!isOnline()
+            || (getState() != ACCEPTED && !getIdentity()->getPublicAvatar())
+            || (getState() != ACCEPTED && !peerUserInfo_.publicAvatar)) {
         return;
     }
 
@@ -498,11 +518,11 @@ Contact::ptr_t Contact::load(const QUuid &key)
     QSqlQuery query;
 
     enum Fields {
-        id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, sent_avatar, blocked, notify_blocked
+        id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, sent_avatar, blocked, notify_blocked, bio, bio_hash
     };
 
     query.prepare("SELECT "
-                  "id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, sent_avatar, blocked, notify_blocked "
+                  "id, identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, sent_avatar, blocked, notify_blocked, bio, bio_hash "
                   " from contact where uuid=:uuid");
     query.bindValue(":uuid", key);
     if(!query.exec()) {
@@ -540,6 +560,8 @@ Contact::ptr_t Contact::load(const QUuid &key)
     data->sentAvatar = query.value(sent_avatar).toBool();
     data->isBlocked = query.value(blocked).toBool();
     data->sendBlockNotice = query.value(notify_blocked).toBool();
+    data->bio = query.value(bio).toString();
+    data->bioHash = query.value(bio_hash).toByteArray();
 
     return make_shared<Contact>(query.value(id).toInt(),
                                false, //Contacts that are connected are always in memory
@@ -551,9 +573,9 @@ void Contact::addToDb()
     QSqlQuery query;
 
     query.prepare("INSERT INTO contact ("
-                  "identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, blocked, notify_blocked "
+                  "identity, uuid, name, nickname, cert, address, notes, contact_group, avatar, created, initiated_by, last_seen, state, addme_message, auto_connect, hash, peer_verified, manually_disconnected, download_path, blocked, notify_blocked, bio, bio_hash "
                   ") VALUES ("
-                  ":identity, :uuid, :name, :nickname, :cert, :address, :notes, :contact_group, :avatar, :created, :initiated_by, :last_seen, :state, :addme_message, :auto_connect, :hash, :peer_verified, :manually_disconnected, :download_path, :blocked, :notify_blocked "
+                  ":identity, :uuid, :name, :nickname, :cert, :address, :notes, :contact_group, :avatar, :created, :initiated_by, :last_seen, :state, :addme_message, :auto_connect, :hash, :peer_verified, :manually_disconnected, :download_path, :blocked, :notify_blocked, :bio, :bio_hash "
                   ")");
 
     if (data_->group.isEmpty()) {
@@ -589,6 +611,8 @@ void Contact::addToDb()
     query.bindValue(":download_path", data_->downloadPath);
     query.bindValue(":blocked", data_->isBlocked);
     query.bindValue(":notify_blocked", data_->sendBlockNotice);
+    query.bindValue(":bio", data_->bio);
+    query.bindValue(":bio_hash", data_->bioHash);
 
     if(!query.exec()) {
         throw Error(QStringLiteral("Failed to add Contact: %1").arg(
@@ -685,6 +709,14 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
     userInfoSentOnConnection_ = false;
     lastSentAvatarHash_.clear();
 
+    // A request ID belongs to one connection.  If a new connection replaces
+    // the connection on which the Addme was sent, the request must be sent
+    // again on the new connection instead of being suppressed as a duplicate.
+    if (connection_ && connection_->peer != peer) {
+        addMeDispatchQueued_ = false;
+        outgoingConnectionRequestId_ = 0;
+    }
+
     if (getState() == ContactState::BLOCKED) {
         LFLOG_DEBUG << "Peer " << getName() << " was BLOCKED.";
         if (isPeerVerified()) {
@@ -709,6 +741,9 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
     case PENDING:
         [[fallthrough]];
     case WAITING_FOR_ACCEPTANCE:
+        if (probeOnly_) {
+            break;
+        }
         if (getWhoInitiated() == ME) {
             if (!addMeDispatchQueued_ && outgoingConnectionRequestId_ == 0) {
                 addMeDispatchQueued_ = true;
@@ -784,12 +819,18 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
 
     connect(connection_->peer.get(), &PeerConnection::addmeRequest,
             this, &Contact::onAddmeRequest, Qt::UniqueConnection);
+    connect(connection_->peer.get(), &PeerConnection::receivedAvatarRequest,
+            this, &Contact::onReceivedAvatarRequest, Qt::UniqueConnection);
 
     connect(connection_->peer.get(), &PeerConnection::receivedMessage,
             this, &Contact::onReceivedMessage, Qt::UniqueConnection);
 
     connect(connection_->peer.get(), &PeerConnection::receivedUserInfo,
             this, &Contact::onReceivedUserInfo, Qt::UniqueConnection);
+    connect(connection_->peer.get(), &PeerConnection::receivedBio,
+            this, &Contact::onReceivedBio, Qt::UniqueConnection);
+    connect(connection_->peer.get(), &PeerConnection::receivedBioRequest,
+            this, &Contact::onReceivedBioRequest, Qt::UniqueConnection);
 
     connect(connection_->peer.get(), &PeerConnection::receivedAvatar,
             this, &Contact::onReceivedAvatar, Qt::UniqueConnection);
@@ -805,6 +846,20 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
 
     setOnlineStatus(ONLINE);
     touchLastSeen();
+
+    // A newly added contact may expose a public bio before accepting the
+    // contact request. Pull it opportunistically; the peer may return an
+    // empty response according to its security policy.
+    if (getState() != ACCEPTED) {
+        try {
+            connection_->peer->requestBio();
+            if (probeOnly_) {
+                connection_->peer->requestAvatar();
+            }
+        } catch (const std::exception& ex) {
+            LFLOG_DEBUG << "Bio pull for unapproved Contact was not sent: " << ex.what();
+        }
+    }
 }
 
 void Contact::onIncomingPeer(const std::shared_ptr<PeerConnection> &peer)
@@ -814,6 +869,15 @@ void Contact::onIncomingPeer(const std::shared_ptr<PeerConnection> &peer)
         peer->authorize(false);
         return;
     }
+
+    // Application records can arrive before the transport emits
+    // connectedToPeer (the server authorizes the stream after the first
+    // record has already been read).  Install the approval handler before
+    // authorizing the peer or a fast ConnectionRequest can be lost.
+    connect(peer.get(), &PeerConnection::addmeRequest,
+            this, &Contact::onAddmeRequest, Qt::UniqueConnection);
+    connect(peer.get(), &PeerConnection::receivedAvatarRequest,
+            this, &Contact::onReceivedAvatarRequest, Qt::UniqueConnection);
 
     connect(peer.get(), &PeerConnection::connectedToPeer,
             this, &Contact::onConnectedToPeer, Qt::UniqueConnection);
@@ -827,7 +891,15 @@ void Contact::onDisconnectedFromPeer(const std::shared_ptr<PeerConnection>& peer
                 << " to Contact " << getName()
                 << " is disconnected.";
 
+    // Ignore a delayed disconnect from a connection that has already been
+    // replaced.  Its request ID must not invalidate the active connection.
+    if (connection_ && connection_->peer != peer) {
+        return;
+    }
+
     connection_.reset();
+    addMeDispatchQueued_ = false;
+    outgoingConnectionRequestId_ = 0;
     setOnlineStatus(DISCONNECTED);
     clearFileQueues();
     getIdentity()->unregisterConnection(getUuid());
@@ -957,6 +1029,18 @@ void Contact::sendBlockNotification()
 void Contact::legacyAckAdapterRemoved(const LegacyAck &ack)
 {
     touchLastSeen();
+
+    // An authenticated Addme from a contact that the user has already
+    // accepted must not be downgraded to Pending because an older database
+    // record lacks the peerVerified flag.
+    if (getState() == ACCEPTED) {
+        LFLOG_NOTICE << "Sending accepted response for Contact " << getName()
+                     << " on request connection "
+                     << req.peer->getConnectionId().toString();
+        req.peer->sendConnectionResponse(req.requestId,
+                                         ConnectionResponseStatus::Accepted);
+        return;
+    }
 
     if (!isPeerVerified()) {
         LFLOG_DEBUG << "Received Ack from unverified peer on connection "
@@ -1537,12 +1621,24 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
 
 void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
 {
-    if (iBlocked() || (getState() != ACCEPTED)) {
+    if (iBlocked()) {
         LFLOG_WARN << "Rejecting user-info on connection "
                    << uinfo.peer->getConnectionId().toString()
                    << ". Not in ACCEPTED state or blocked.";
 
         uinfo.peer->close();
+        return;
+    }
+
+    if (getState() != ACCEPTED) {
+        // UserInfo is only actionable after both peers have completed Addme,
+        // but it may arrive on a parallel connection before the response to
+        // our Addme is delivered.  Ignore it without closing the connection;
+        // closing here can discard the connection that carries the pending
+        // acceptance response.
+        LFLOG_TRACE << "Ignoring user-info on connection "
+                    << uinfo.peer->getConnectionId().toString()
+                    << " until Contact " << getName() << " is ACCEPTED.";
         return;
     }
 
@@ -1559,6 +1655,22 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
     const auto oldAvatarHash = avatarHash(normalizeAvatar(getAvatar()));
     expectedAvatarHash_ = uinfo.userInfo.avatarHash;
     peerUserInfo_ = uinfo.userInfo;
+
+    if (peerUserInfo_.bioHash.size() != 0
+            && peerUserInfo_.bioHash.size() != QCryptographicHash::hashLength(QCryptographicHash::Sha256)) {
+        uinfo.peer->close();
+        return;
+    }
+    if (peerUserInfo_.bioHash != data_->bioHash) {
+        try {
+            // UserInfo contains only the hash. The separate pull is bounded
+            // and is authorized by the peer's public/contact policy.
+            uinfo.peer->requestBio();
+        } catch (const std::exception& ex) {
+            LFLOG_WARN << "Failed to request changed bio from Contact " << getName()
+                       << ": " << ex.what();
+        }
+    }
 
     LFLOG_TRACE << "Received UserInfo from Contact " << getName()
                 << "; publicAvatar=" << peerUserInfo_.publicAvatar
@@ -1584,6 +1696,50 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
                        << getName() << ": " << ex.what();
         }
     }
+}
+
+void Contact::onReceivedBio(const PeerBio &bio)
+{
+    if (iBlocked() || (getState() != ACCEPTED && !peerUserInfo_.publicBio)) {
+        bio.peer->close();
+        return;
+    }
+    const auto sanitized = core::bio::sanitize(bio.bio);
+    const auto bytes = sanitized.toUtf8();
+    if (!core::bio::withinLimits(sanitized)) {
+        bio.peer->close();
+        return;
+    }
+    const auto hash = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
+    if (!peerUserInfo_.bioHash.isEmpty() && hash != peerUserInfo_.bioHash) {
+        bio.peer->close();
+        return;
+    }
+    if (data_->bio != sanitized || data_->bioHash != hash) {
+        data_->bio = sanitized;
+        data_->bioHash = hash;
+        QSqlQuery query;
+        query.prepare("UPDATE contact SET bio=:bio, bio_hash=:hash WHERE id=:id");
+        query.bindValue(":bio", data_->bio);
+        query.bindValue(":hash", data_->bioHash);
+        if (id_ > 0 && !query.exec()) {
+            LFLOG_WARN << "Failed to save bio for Contact " << getName()
+                       << ": " << query.lastError().text();
+            return;
+        }
+        emit bioChanged();
+    }
+}
+
+void Contact::onReceivedBioRequest(const PeerReq &request)
+{
+    const auto identity = getIdentity();
+    if (!identity || iBlocked()
+            || (getState() != ACCEPTED && !identity->getPublicBio())) {
+        request.peer->sendBioResponse(request.requestId, {});
+        return;
+    }
+    request.peer->sendBioResponse(request.requestId, identity->getBio());
 }
 
 bool Contact::peerAllowsMimeType(const QString& mimeType) const
@@ -1641,7 +1797,8 @@ void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
 
 void Contact::onReceivedAvatar(const PeerSetAvatarReq &avatar)
 {
-    if (getState() != ACCEPTED || !peerUserInfo_.publicAvatar) {
+    if ((!probeOnly_ && getState() != ACCEPTED)
+            || (!probeOnly_ && getState() != ACCEPTED && !peerUserInfo_.publicAvatar)) {
         LFLOG_WARN << "Rejecting avatar from Contact " << getName()
                    << ": avatar is not authorized";
         avatar.peer->close();
@@ -1653,6 +1810,16 @@ void Contact::onReceivedAvatar(const PeerSetAvatarReq &avatar)
     expectedAvatarHash_ = receivedHash;
     peerUserInfo_.avatarHash = receivedHash;
     setAvatar(avatar.avatar);
+}
+
+void Contact::onReceivedAvatarRequest(const PeerReq &request)
+{
+    if (iBlocked() || (getState() != ACCEPTED && !getIdentity()->getPublicAvatar())) {
+        request.peer->sendAvatarResponse(request.requestId, {}, false);
+        return;
+    }
+    request.peer->sendAvatarResponse(request.requestId,
+                                     getIdentity()->getAvatar(), true);
 }
 
 void Contact::onReceivedAvatarResponse(const PeerSetAvatarReq &avatar)
@@ -1875,6 +2042,30 @@ void Contact::onAddmeRequest(const PeerAddmeReq &req)
     }
 
     touchLastSeen();
+    LFLOG_TRACE << "Handling Addme for Contact " << getName()
+                << " on connection " << req.connectionId.toString()
+                << "; local state=" << static_cast<int>(getState())
+                << ", peer verified=" << isPeerVerified();
+
+    // ACCEPTED is durable local authorization.  A reconnect, a duplicate
+    // request, or a request arriving after the short-lived avatar probe must
+    // never turn it back into PENDING.  In particular, do not put this
+    // request in pendingConnectionRequestId_: it is a response to an
+    // already-approved contact, not a new approval event.
+    if (getState() == ACCEPTED) {
+        try {
+            req.peer->sendConnectionResponse(req.requestId,
+                                             ConnectionResponseStatus::Accepted);
+            LFLOG_TRACE << "Answered Addme from already accepted Contact "
+                        << getName() << " with ACCEPTED on connection "
+                        << req.connectionId.toString();
+            scheduleProcessOnlineLater();
+        } catch (const std::exception& ex) {
+            LFLOG_WARN << "Failed to answer repeat Addme from accepted Contact "
+                       << getName() << ": " << ex.what();
+        }
+        return;
+    }
 
     if (!isPeerVerified()) {
         if (connection_ && isOnline()) {
@@ -1893,12 +2084,6 @@ void Contact::onAddmeRequest(const PeerAddmeReq &req)
         return;
     }
 
-    if (getState() == ACCEPTED) {
-        req.peer->sendConnectionResponse(req.requestId,
-                                         ConnectionResponseStatus::Accepted);
-        return;
-    }
-
     if (getState() == REJECTED) {
         req.peer->sendConnectionResponse(req.requestId,
                                          ConnectionResponseStatus::Rejected);
@@ -1911,6 +2096,37 @@ void Contact::onAddmeRequest(const PeerAddmeReq &req)
     if (connection_ && isOnline()) {
         req.peer->sendConnectionResponse(req.requestId, ConnectionResponseStatus::Pending);
         req.peer->close();
+    }
+}
+
+void Contact::acceptIncomingRequest(const PeerAddmeReq &req)
+{
+    if (!req.peer || req.requestId == 0) {
+        return;
+    }
+
+    // The request was authenticated by the identity before it reached the
+    // notification model.  Mark the contact verified before attaching an
+    // already-connected incoming peer; onConnectedToPeer deliberately rejects
+    // unverified incoming connections.
+    setPeerVerified(true);
+    setState(ACCEPTED);
+
+    // Avatar retrieval may already have closed this request connection.  In
+    // that case the durable ACCEPTED state is enough; the normal reconnect
+    // path will answer the next Addme request.
+    if (!req.peer->isConnected()) {
+        return;
+    }
+
+    if (!connection_ || connection_->peer != req.peer) {
+        onConnectedToPeer(req.peer);
+    }
+
+    if (connection_ && isOnline()) {
+        connection_->peer->sendConnectionResponse(
+            req.requestId, ConnectionResponseStatus::Accepted);
+        scheduleProcessOnlineLater();
     }
 }
 
@@ -1967,14 +2183,20 @@ void Contact::sendUserInfo()
 
         UserInfo ui;
         ui.nickName = getIdentity()->getName();
-        ui.avatarHash = getIdentity()->getPublicAvatar()
+        const bool avatarVisible = getIdentity()->getPublicAvatar()
+                || getState() == ContactState::ACCEPTED;
+        ui.avatarHash = avatarVisible
                 ? avatarHash(normalizeAvatar(getIdentity()->getAvatar())) : QByteArray{};
         ui.allowUtf8 = getIdentity()->getAllowUtf8();
         ui.allowFiles = getIdentity()->getAllowFiles();
         ui.allowMimeTypes = getIdentity()->getAllowMimeTypes();
         ui.allowReactions = getIdentity()->getAllowReactions();
         ui.publicBio = getIdentity()->getPublicBio();
-        ui.publicAvatar = getIdentity()->getPublicAvatar();
+        ui.publicAvatar = avatarVisible;
+        if (ui.publicBio || getState() == ACCEPTED) {
+            ui.bioHash = QCryptographicHash::hash(core::bio::sanitize(getIdentity()->getBio()).toUtf8(),
+                                                  QCryptographicHash::Sha256);
+        }
 
         try {
             LFLOG_TRACE << "Sending UserInfo to Contact " << getName()

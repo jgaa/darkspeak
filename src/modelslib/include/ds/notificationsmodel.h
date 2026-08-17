@@ -4,6 +4,8 @@
 #include <QSettings>
 #include <QSqlQueryModel>
 
+#include <unordered_map>
+
 #include "ds/dsengine.h"
 #include "ds/identity.h"
 #include "logfault/logfault.h"
@@ -88,6 +90,10 @@ private:
     void requestNotificationAvatar(core::Identity *identity,
                                    const core::PeerAddmeReq& req,
                                    const QString& hash);
+
+    // Keep the authenticated request alive while the user decides whether to
+    // accept it.  The database notification remains the durable fallback.
+    std::unordered_map<QString, core::PeerAddmeReq> pendingContactRequests_;
 
 };
 

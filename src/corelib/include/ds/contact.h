@@ -86,7 +86,10 @@ public:
     Q_PROPERTY(QString group READ getGroup WRITE setGroup NOTIFY groupChanged)
     Q_PROPERTY(QByteArray address READ getAddress WRITE setAddress NOTIFY addressChanged)
     Q_PROPERTY(QString notes READ getNotes WRITE setNotes NOTIFY notesChanged)
+    Q_PROPERTY(QString bio READ getBio NOTIFY bioChanged)
+    Q_PROPERTY(bool hasBio READ hasBio NOTIFY bioChanged)
     Q_PROPERTY(QImage avatar READ getAvatar WRITE setAvatar NOTIFY avatarChanged)
+    Q_PROPERTY(bool hasAvatar READ hasAvatar NOTIFY avatarChanged)
     Q_PROPERTY(QString avatarUrl READ getAvatarUrl NOTIFY avatarUrlChanged)
     Q_PROPERTY(QUuid uuid READ getUuid CONSTANT)
     Q_PROPERTY(InitiatedBy whoInitiated READ getWhoInitiated CONSTANT)
@@ -125,7 +128,10 @@ public:
     void setAddress(const QByteArray& address);
     QString getNotes() const noexcept;
     void setNotes(QString notes);
+    QString getBio() const noexcept;
+    bool hasBio() const noexcept;
     QImage getAvatar() const noexcept;
+    bool hasAvatar() const noexcept;
     QString getAvatarUrl() const noexcept;
     void setAvatar(const QImage& avatar);
     bool isAvatarSent() const noexcept;
@@ -183,9 +189,12 @@ public:
     const char *getTableName() const noexcept { return "contact"; }
 
     void onAddmeRequest(const PeerAddmeReq& req);
+    /*! Accept an incoming request while its authenticated connection is alive. */
+    void acceptIncomingRequest(const PeerAddmeReq& req);
     //void onReceivedMessage(const PeerMessage& msg, Conversation *conversation = {});
     static bool validateNick(const QString& nickName);
     void sendUserInfo();
+    void setProbeOnly(bool value) noexcept { probeOnly_ = value; }
 
 signals:
     void nameChanged();
@@ -193,6 +202,7 @@ signals:
     void groupChanged();
     void addressChanged();
     void notesChanged();
+    void bioChanged();
     void avatarChanged();
     void onlineChanged();
     void autoConnectChanged();
@@ -230,6 +240,9 @@ private slots:
     bool processFileBlocks();
     void onReceivedMessage(const PeerMessage& msg);
     void onReceivedUserInfo(const PeerUserInfo& uinfo);
+    void onReceivedBio(const PeerBio& bio);
+    void onReceivedBioRequest(const PeerReq& request);
+    void onReceivedAvatarRequest(const PeerReq& request);
     void onReceivedAvatarResponse(const PeerSetAvatarReq& avatar);
     void onReceivedFileOffer(const PeerFileOffer& msg);
     void onReceivedAvatar(const PeerSetAvatarReq& avatar);
@@ -270,6 +283,7 @@ private:
     quint64 pendingConnectionRequestId_ = 0;
     quint64 outgoingConnectionRequestId_ = 0;
     bool addMeDispatchQueued_ = false;
+    bool probeOnly_ = false;
 
     std::unique_ptr<Connection> connection_;
     std::deque<Message::ptr_t> messageQueue_;
@@ -352,6 +366,11 @@ struct ContactData {
 
     // Tell them they are blocked
     bool sendBlockNotice = true;
+
+    // Last authorized bio received from the peer. It is persisted with the
+    // contact, while the hash is also used to decide when to pull a refresh.
+    QString bio;
+    QByteArray bioHash;
 };
 
 

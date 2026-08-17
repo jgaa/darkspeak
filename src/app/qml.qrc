@@ -36,6 +36,7 @@
         <file>images/onion-bw.svg</file>
         <file>images/user.svg</file>
         <file>EditContactDialog.qml</file>
+        <file>BioDialog.qml</file>
         <file>images/add-user.svg</file>
         <file>images/Sent-32.png</file>
         <file>images/FileDownload.svg</file>

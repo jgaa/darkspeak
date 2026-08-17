@@ -71,7 +71,8 @@ QImage ImageProvider::requestImage(const QString &id, QSize *size,
     }
 
     if ((getName() == QStringLiteral("contact")
-         || getName() == QStringLiteral("identity")) && !copy.isNull()) {
+         || getName() == QStringLiteral("identity")
+         || getName() == QStringLiteral("temp")) && !copy.isNull()) {
         copy = maskToCircle(std::move(copy));
     }
 

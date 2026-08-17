@@ -12,6 +12,8 @@ CREATE TABLE identity (
     cert BLOB NOT NULL,
     address TEXT,
     created TEXT NOT NULL
+    ,bio TEXT
+    ,bio_hash BLOB
 );
 CREATE TABLE contact (
     id INTEGER PRIMARY KEY,

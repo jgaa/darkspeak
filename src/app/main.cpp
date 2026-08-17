@@ -215,8 +215,22 @@ int main(int argc, char *argv[])
         return 2;
     }
 
-    auto manager = make_unique<Manager>(parser.value(QStringLiteral("log-file")),
-                                        requestedLogLevel);
+    unique_ptr<Manager> manager;
+    try {
+        manager = make_unique<Manager>(parser.value(QStringLiteral("log-file")),
+                                       requestedLogLevel);
+    } catch (const std::exception& ex) {
+        const QString detail = QString::fromUtf8(ex.what());
+        std::cerr << "DarkSpeak could not start securely: "
+                  << detail.toStdString() << '\n';
+        QMessageBox::critical(
+            nullptr,
+            QObject::tr("Secure storage unavailable"),
+            QObject::tr("DarkSpeak cannot start because its secure OS vault is locked or unavailable.\n\n"
+                         "Unlock or restore the system vault, then start DarkSpeak again.\n"
+                         "No private keys or other secrets will be stored outside the vault."));
+        return 1;
+    }
     manager->connect(&app, &QGuiApplication::aboutToQuit, manager.get(), &Manager::onQuit);
 
     LFLOG_DEBUG << "Darkspeak is starting up cwd='"

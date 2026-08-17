@@ -63,6 +63,7 @@ void IdentityManager::load()
         const auto prefix = QStringLiteral("identity/%1/").arg(
             identityUuid.toString(QUuid::WithoutBraces));
         const auto& settings = DsEngine::instance().settings();
+        data.bio = settings.value(prefix + QStringLiteral("bio")).toString();
         data.allowUtf8 = settings.value(prefix + QStringLiteral("allowUtf8"), true).toBool();
         data.allowFiles = settings.value(prefix + QStringLiteral("allowFiles"), true).toBool();
         data.allowMimeTypes = settings.value(prefix + QStringLiteral("allowMimeTypes"),
@@ -161,6 +162,7 @@ void IdentityManager::createIdentity(const QmlIdentityReq *req)
     id.name = req->value.name;
     id.avatar = req->value.avatar;
     id.notes = req->value.notes;
+    id.bio = req->value.bio;
     id.allowUtf8 = req->value.allowUtf8;
     id.allowFiles = req->value.allowFiles;
     id.allowMimeTypes = req->value.allowMimeTypes;

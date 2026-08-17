@@ -92,6 +92,7 @@ public:
         ConnectionResponse,
         FileResumeResult,
         AvatarResponse
+        , BioResponse
     };
 
 public slots:
@@ -194,17 +195,20 @@ public:
     uint64_t sendMessageReceipt(const QByteArray& messageId) override;
     bool isConnected() const noexcept override;
     uint64_t sendUserInfo(const core::UserInfo &userInfo) override;
+    uint64_t requestBio() override;
+    uint64_t sendBioResponse(quint64 responseToRequestId,
+                             const QString& bio) override;
     uint64_t sendMessage(const core::Message &message) override;
     uint64_t sendAvatar(const QImage& avatar) override;
     uint64_t requestAvatar() override;
+    uint64_t sendAvatarResponse(quint64 responseToRequestId,
+                                const QImage& avatar,
+                                bool authorized) override;
     uint64_t offerFile(const core::File& file) override;
     uint64_t startTransfer(core::File& file) override;
     uint64_t sendSome(core::File& file) override;
     void disableNotifications() override;
 
-private:
-    uint64_t sendAvatarResponse(quint64 responseToRequestId,
-                                const QImage& avatar, bool authorized);
 };
 
 }} // namespaces
