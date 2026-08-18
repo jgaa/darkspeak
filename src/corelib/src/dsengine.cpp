@@ -430,7 +430,7 @@ void DsEngine::initialize()
     }
 
     if (!settings_->contains("useDarkSpeakFolder")) {
-        settings_->setValue("useDarkSpeakFolder", false);
+        settings_->setValue("useDarkSpeakFolder", true);
     }
 
     if (!settings_->contains("torMode")) {

@@ -312,7 +312,7 @@ QImage makeIdentityQrImage(const QString& payload, const QString& identityName)
     font.setBold(true);
     const QFontMetrics metrics(font);
     const auto displayName = identityName.trimmed();
-    const auto oneLine = displayName + QStringLiteral(" / DarkSpeak");
+    const auto oneLine = displayName;
     const auto fitsOnOneLine = metrics.horizontalAdvance(oneLine) <= imageSize - 32;
     const auto footerHeight = fitsOnOneLine ? 104 : 144;
     QImage result(imageSize, imageSize + footerHeight, QImage::Format_RGB32);

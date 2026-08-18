@@ -11,7 +11,7 @@ Item {
         id: settings
         property bool appAutoConnect : true
         property bool autostart : false
-        property bool useDarkSpeakFolder : false
+        property bool useDarkSpeakFolder : true
         property bool autoAcceptIncomingFiles : false
         property bool includeConversationNameInDownloadPath : false
     }
@@ -45,7 +45,7 @@ Item {
 
         CheckBox {
             id: autoConnect
-            text: qsTr("Auto-connect")
+            text: qsTr("Auto-connect to Tor")
             ToolTip.text: qsTr("Connect automatically when the application is started")
             ToolTip.visible: hovered
             checked: settings.appAutoConnect

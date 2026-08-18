@@ -70,11 +70,14 @@ Page {
             }
             Row {
                 id: row1
-                Text {
+                TextEdit {
                     id: logText
                     anchors.margins: 3
                     text: display
                     width: root.width - 10
+                    readOnly: true
+                    selectByMouse: true
+                    persistentSelection: true
                     renderType: Text.QtRendering
                     textFormat: Text.PlainText
                     wrapMode: Text.WordWrap

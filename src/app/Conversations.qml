@@ -11,6 +11,36 @@ Page {
     property color secondaryText: "#475569"
     property color selectedFill: "#294d70"
     property color selectedBorder: "#79c2f2"
+    // Drafts intentionally live only for the lifetime of this page/application.
+    property var messageDrafts: ({})
+    property bool restoringDraft: false
+
+    function draftKey(conversation) {
+        if (!conversation || !identities.current)
+            return ""
+        return identities.current.id + ":" + conversation.id
+    }
+
+    function saveDraft() {
+        var key = draftKey(conversations.current)
+        if (key.length > 0)
+            messageDrafts[key] = textinput.text
+    }
+
+    function restoreDraft() {
+        restoringDraft = true
+        var key = draftKey(conversations.current)
+        textinput.text = key.length > 0 && messageDrafts[key] !== undefined
+                ? messageDrafts[key] : ""
+        restoringDraft = false
+    }
+
+    function scrollActiveConversationToEnd() {
+        if (conversations.current && messageList.count > 0) {
+            messageList.positionViewAtEnd()
+            messageList.currentIndex = messageList.count - 1
+        }
+    }
 
     header: Header {
         whom: identities.current
@@ -25,11 +55,51 @@ Page {
                 list.currentIndex = 0
             else
                 list.currentIndex = -1
+            Qt.callLater(root.restoreDraft)
         }
 
         function onCurrentRowChanged() {
             list.currentIndex = conversations.currentRow
             messages.setConversation(conversations.current)
+            Qt.callLater(root.restoreDraft)
+            Qt.callLater(root.clearActiveConversationNotifications)
+            Qt.callLater(root.scrollActiveConversationToEnd)
+        }
+    }
+
+    Connections {
+        target: identities
+        function onCurrentIdentityChanged() {
+            Qt.callLater(root.restoreDraft)
+        }
+    }
+
+    Connections {
+        target: messages
+        function onModelReset() {
+            Qt.callLater(root.scrollActiveConversationToEnd)
+        }
+    }
+
+    Connections {
+        target: manager
+        function onCurrentPageChanged() {
+            Qt.callLater(root.clearActiveConversationNotifications)
+        }
+    }
+
+    Connections {
+        target: mainWindow
+        function onActiveChanged() {
+            if (mainWindow.active)
+                Qt.callLater(root.clearActiveConversationNotifications)
+        }
+    }
+
+    function clearActiveConversationNotifications() {
+        if (manager.currentPage === Manager.CONVERSATIONS && root.visible
+                && conversations.current) {
+            notifications.clearConversationNotifications(conversations.current.id)
         }
     }
 
@@ -97,13 +167,7 @@ Page {
                             Text {
                                 font.pointSize: 10
                                 color: itemDelegate.ListView.isCurrentItem ? "#ffffff" : root.primaryText
-                                text: cco && cco.name
-                                      ? cco.name
-                                      : cco && cco.participant
-                                        ? cco.participant.name
-                                          ? cco.participant.name
-                                          : cco.participant.nickName
-                                        : ""
+                                text: cco ? cco.contactName : ""
                                 font.bold: itemDelegate.ListView.isCurrentItem
                             }
 
@@ -118,22 +182,8 @@ Page {
 
                     MouseArea {
                         anchors.fill: parent
-                        acceptedButtons: Qt.LeftButton | Qt.RightButton
-
-                        onClicked: function(mouse) {
+                        onClicked: {
                             list.currentIndex = index
-                            if (mouse.button === Qt.RightButton) {
-                                contextMenu.x = mouse.x
-                                contextMenu.y = mouse.y
-                                contextMenu.open()
-                            }
-                        }
-
-                        onPressAndHold: function(mouse) {
-                            list.currentIndex = index
-                            contextMenu.x = mouse.x
-                            contextMenu.y = mouse.y
-                            contextMenu.open()
                         }
                     }
                 }
@@ -151,7 +201,8 @@ Page {
                 leftPadding: 12
                 verticalAlignment: Text.AlignVCenter
                 text: root.hasConversation && conversations.current.participant
-                      ? qsTr("Chat with ") + conversations.current.participant.name
+                      ? qsTr("Chat with ")
+                        + conversations.current.contactName
                       : qsTr("Select a conversation")
                 color: root.primaryText
                 background: Rectangle { color: "#263746" }
@@ -243,6 +294,12 @@ Page {
                                 return
                             conversations.current.sendMessage(text)
                             text = ""
+                            root.saveDraft()
+                        }
+
+                        onTextChanged: {
+                            if (!root.restoringDraft)
+                                root.saveDraft()
                         }
                     }
                 }
@@ -257,15 +314,6 @@ Page {
                     onClicked: textinput.send()
                 }
             }
-        }
-    }
-
-    Menu {
-        id: contextMenu
-
-        MenuItem {
-            text: qsTr("Open")
-            onTriggered: list.currentIndex = conversations.currentRow
         }
     }
 

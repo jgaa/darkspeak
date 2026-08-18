@@ -32,6 +32,9 @@ NotificationsModel::NotificationsModel(QSettings &settings)
             this, &NotificationsModel::onFileAdded);
     connect(core::DsEngine::instance().getFileManager(), &FileManager::fileStateChanged,
             this, &NotificationsModel::onFileStateChanged);
+    connect(core::DsEngine::instance().getConversationManager(),
+            &ConversationManager::conversationTouched,
+            this, [this](const core::Conversation::ptr_t&) { refresh(); });
 
     refresh();
 }
@@ -45,11 +48,48 @@ void NotificationsModel::onContactDeleted(const QUuid &uuid)
 void NotificationsModel::refresh()
 {
     purgeStaleFileNotifications();
-    setQuery(R"(select n.id, n.status, n.type, n.timestamp, n.message, n.data, n.identity, n.contact, i.name as iname, c.name as cname from notification as n left join identity as i on n.identity = i.id left join contact as c on n.contact = c.id order by i.name, c.name, n.priority, n.timestamp)");
+    setQuery(R"(
+        SELECT n.id, n.status, n.type, n.timestamp, n.message, n.data,
+               n.identity, n.contact, i.name AS iname, c.name AS cname,
+               0 AS conversation, 0 AS unread_count,
+               CASE WHEN n.type = 0 THEN 0 ELSE 1 END AS sort_group,
+               CASE WHEN n.type = 0 THEN 0 WHEN n.type = 2 THEN 1 ELSE 2 END AS sort_order
+          FROM notification AS n
+          LEFT JOIN identity AS i ON n.identity = i.id
+          LEFT JOIN contact AS c ON n.contact = c.id
+        UNION ALL
+        SELECT -cv.id, 0, 2, cv.updated, '', '{}', cv.identity, ct.id,
+               i.name AS iname, ct.name AS cname, cv.id, cv.unread,
+               1 AS sort_group, 1 AS sort_order
+          FROM conversation AS cv
+          JOIN identity AS i ON cv.identity = i.id
+          LEFT JOIN contact AS ct
+            ON ct.uuid = cv.participants AND ct.identity = cv.identity
+         WHERE cv.unread > 0
+        ORDER BY iname, sort_group, cname, sort_order, timestamp
+    )");
     if (lastError().isValid()) {
         LFLOG_ERROR << "Failed to refresh notification model: " << lastError().text();
     } else {
         LFLOG_TRACE << "Refreshed notification model; rows: " << rowCount();
+    }
+    updateNotificationState();
+}
+
+void NotificationsModel::updateNotificationState()
+{
+    bool messages = false;
+    bool contactRequests = false;
+    for (int row = 0; row < rowCount(); ++row) {
+        const auto type = QSqlQueryModel::data(index(row, H_TYPE), Qt::DisplayRole).toInt();
+        messages = messages || type == N_MESSAGE;
+        contactRequests = contactRequests || type == N_ADDME;
+    }
+
+    if (messages != has_messages_ || contactRequests != has_contact_requests_) {
+        has_messages_ = messages;
+        has_contact_requests_ = contactRequests;
+        emit notificationStateChanged();
     }
 }
 
@@ -181,6 +221,29 @@ QVariant NotificationsModel::data(const QModelIndex &ix, int role) const
     // Map the QML field name mapping back to normal column based access
     auto model_ix = ix;
 
+    if (role == H_CONTACT_OBJECT) {
+        const auto contactId = QSqlQueryModel::data(
+            index(ix.row(), H_CONTACT), Qt::DisplayRole).toInt();
+        if (contactId > 0) {
+            if (auto contact = core::DsEngine::instance().getContactManager()->getContact(contactId)) {
+                return QVariant::fromValue<core::Contact *>(contact.get());
+            }
+        }
+        return {};
+    }
+
+    if (role == H_CONTACT_HEADER) {
+        return isContactHeader(ix);
+    }
+
+    if (role == col2Role(H_CONTACT_NAME)
+            && QSqlQueryModel::data(index(ix.row(), H_TYPE), Qt::DisplayRole).toInt() == N_ADDME
+            && QSqlQueryModel::data(index(ix.row(), H_CONTACT), Qt::DisplayRole).toInt() == 0) {
+        const auto data = core::DsEngine::fromJson(
+            QSqlQueryModel::data(index(ix.row(), H_DATA), Qt::DisplayRole).toByteArray());
+        return data.value("nickName").toString();
+    }
+
     if (role >= H_NICKNAME) {
         const auto data = core::DsEngine::fromJson(QSqlQueryModel::data(index(model_ix.row(), H_DATA), Qt::DisplayRole).toByteArray());
         switch (role) {
@@ -195,7 +258,25 @@ QVariant NotificationsModel::data(const QModelIndex &ix, int role) const
             case H_FILE_SIZE:
                 return data.value("fileSize").toLongLong();
             case H_AVATAR_URL:
+                if (const auto contactId = QSqlQueryModel::data(
+                        index(model_ix.row(), H_CONTACT), Qt::DisplayRole).toInt();
+                    contactId > 0) {
+                    if (auto contact = core::DsEngine::instance().getContactManager()->getContact(contactId)) {
+                        return contact->getAvatarUrl();
+                    }
+                }
                 return data.value("avatarUrl").toString();
+            case H_REQUESTER_ID: {
+                try {
+                    const auto cert = crypto::DsCert::createFromPubkey(
+                        crypto::b58tobin_check<QByteArray>(
+                            data.value("handle").toString().toStdString(), 32, {249, 50}));
+                    return QString::fromLatin1(core::DsEngine::getIdentityAsBase58(
+                        cert, data.value("address").toByteArray()));
+                } catch (const std::exception&) {
+                    return {};
+                }
+            }
             default:
                 assert(false);
                 return {};
@@ -232,15 +313,78 @@ QHash<int, QByteArray> NotificationsModel::roleNames() const
         {col2Role(H_CONTACT), "contactId"},
         {col2Role(H_IDENTITY_NAME), "identityName"},
         {col2Role(H_CONTACT_NAME), "contactName"},
+        {col2Role(H_CONVERSATION), "conversationId"},
+        {col2Role(H_UNREAD_COUNT), "unreadCount"},
         {H_NICKNAME, "nickName"},
         {H_HANDLE, "handle"},
         {H_ADDRESS, "address"},
         {H_FILE_NAME, "fileName"},
         {H_FILE_SIZE, "fileSize"},
-        {H_AVATAR_URL, "avatarUrl"}
+        {H_AVATAR_URL, "avatarUrl"},
+        {H_CONTACT_OBJECT, "contact"},
+        {H_CONTACT_HEADER, "contactHeader"},
+        {H_REQUESTER_ID, "requesterIdentityId"}
     };
 
     return names;
+}
+
+bool NotificationsModel::isContactHeader(const QModelIndex& ix) const
+{
+    if (ix.row() == 0) {
+        return true;
+    }
+
+    const auto identity = QSqlQueryModel::data(index(ix.row(), H_IDENTITY), Qt::DisplayRole);
+    const auto contact = QSqlQueryModel::data(index(ix.row(), H_CONTACT), Qt::DisplayRole);
+    const auto type = QSqlQueryModel::data(index(ix.row(), H_TYPE), Qt::DisplayRole).toInt();
+    const auto previousType = QSqlQueryModel::data(
+        index(ix.row() - 1, H_TYPE), Qt::DisplayRole).toInt();
+    if (type == N_ADDME && previousType == N_ADDME && contact.toInt() == 0
+            && QSqlQueryModel::data(index(ix.row() - 1, H_CONTACT), Qt::DisplayRole).toInt() == 0) {
+        return true;
+    }
+    return identity != QSqlQueryModel::data(index(ix.row() - 1, H_IDENTITY), Qt::DisplayRole)
+        || contact != QSqlQueryModel::data(index(ix.row() - 1, H_CONTACT), Qt::DisplayRole);
+}
+
+void NotificationsModel::refreshNotifications()
+{
+    refresh();
+}
+
+void NotificationsModel::clearConversationNotifications(const int conversationId)
+{
+    if (conversationId <= 0) {
+        return;
+    }
+
+    const auto conversation =
+        core::DsEngine::instance().getConversationManager()->getConversation(conversationId);
+    if (!conversation) {
+        return;
+    }
+
+    // Message notifications are represented by the conversation's unread
+    // count in the notification query.  File notifications are persisted
+    // separately and need to be removed explicitly for this conversation.
+    conversation->setUnread(0);
+
+    const auto contact = conversation->getFirstParticipant();
+    if (contact) {
+        QSqlQuery query;
+        query.prepare("DELETE FROM notification "
+                      "WHERE type=:type AND identity=:identity AND contact=:contact");
+        query.bindValue(":type", N_FILE);
+        query.bindValue(":identity", conversation->getIdentityId());
+        query.bindValue(":contact", contact->getId());
+        if (!query.exec()) {
+            LFLOG_WARN << "Failed to clear file notifications for conversation "
+                       << conversationId << ": " << query.lastError().text();
+        }
+    }
+
+    refresh();
 }
 
 void NotificationsModel::addNotification(Identity *identity, const core::PeerAddmeReq &req)

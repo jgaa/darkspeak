@@ -32,6 +32,7 @@ public:
     Q_PROPERTY(int id READ getId)
     Q_PROPERTY(Type type READ getType)
     Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
+    Q_PROPERTY(QString contactName READ getContactName NOTIFY participantsChanged)
     Q_PROPERTY(QUuid uuid READ getUuid)
     Q_PROPERTY(participants_t participants READ getParticipants NOTIFY participantsChanged)
     Q_PROPERTY(Contact *participant READ getFirstParticipant NOTIFY participantsChanged) // p2p
@@ -49,6 +50,7 @@ public:
 
     int getId() const noexcept;
     QString getName() const noexcept;
+    QString getContactName() const;
     void setName(const QString& name);
     QUuid getUuid() const noexcept;
     participants_t getParticipants() const;

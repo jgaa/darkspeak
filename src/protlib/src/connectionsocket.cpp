@@ -50,6 +50,9 @@ ConnectionSocket::ConnectionSocket(QByteArray host,
 
 ConnectionSocket::~ConnectionSocket()
 {
+    // QTcpSocket may emit disconnected while its base destructor runs. Remove
+    // callbacks targeting this derived object before that phase begins.
+    QObject::disconnect(this, nullptr, this, nullptr);
     LFLOG_TRACE << "Socket is destructed: " << uuid.toString();
 }
 

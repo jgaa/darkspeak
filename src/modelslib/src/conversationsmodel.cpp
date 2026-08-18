@@ -95,6 +95,15 @@ void ConversationsModel::setContact(Contact *contact)
     }
 }
 
+void ConversationsModel::setConversationById(const int id)
+{
+    try {
+        setCurrent(conversationManager_.getConversation(id).get());
+    } catch (const std::exception& ex) {
+        LFLOG_ERROR << "Failed to select conversation by id: " << ex.what();
+    }
+}
+
 void ConversationsModel::setCurrent(Conversation *conversation)
 {
     try {

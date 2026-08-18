@@ -5,21 +5,36 @@
 #include <QCoreApplication>
 #include <QEvent>
 #include <QMenu>
+#include <QPainter>
 #include <QSystemTrayIcon>
 #include <QWindow>
 
-TrayController::TrayController(QWindow *window, bool startHidden, QObject *parent)
+#include "ds/notificationsmodel.h"
+
+TrayController::TrayController(QWindow *window,
+                               ds::models::NotificationsModel *notifications,
+                               bool startHidden,
+                               QObject *parent)
     : QObject(parent)
     , window_(window)
+    , notifications_(notifications)
 {
-    if (window_ == nullptr || !QSystemTrayIcon::isSystemTrayAvailable()) {
-        if (window_ != nullptr) {
-            window_->installEventFilter(this);
-        }
+    icon_ = QIcon(QStringLiteral(":/icons/darkspeak.svg"));
+    if (window_ == nullptr) {
         return;
     }
 
-    icon_ = QIcon(QStringLiteral(":/icons/darkspeak.svg"));
+    if (notifications_ != nullptr) {
+        connect(notifications_, &ds::models::NotificationsModel::notificationStateChanged,
+                this, &TrayController::updateNotificationIcon);
+    }
+
+    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+        window_->installEventFilter(this);
+        updateNotificationIcon();
+        return;
+    }
+
     trayIcon_ = new QSystemTrayIcon(icon_, this);
     trayIcon_->setToolTip(QStringLiteral("DarkSpeak"));
 
@@ -46,11 +61,51 @@ TrayController::TrayController(QWindow *window, bool startHidden, QObject *paren
                 : QStringLiteral("Show DarkSpeak"));
         }
     });
-
     window_->installEventFilter(this);
+    updateNotificationIcon();
     trayIcon_->show();
     if (startHidden) {
         hideWindow();
+    }
+}
+
+void TrayController::updateNotificationIcon()
+{
+    const auto messages = notifications_ != nullptr && notifications_->hasMessages();
+    const auto contactRequests = notifications_ != nullptr
+            && notifications_->hasContactRequests();
+    if (!messages && !contactRequests) {
+        if (trayIcon_ != nullptr) {
+            trayIcon_->setIcon(icon_);
+        }
+        if (window_ != nullptr) {
+            window_->setIcon(icon_);
+        }
+        return;
+    }
+
+    auto pixmap = icon_.pixmap(QSize{64, 64});
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    const auto drawDot = [&painter](const QPointF center, const QColor color) {
+        painter.setPen(QPen(Qt::white, 2));
+        painter.setBrush(color);
+        painter.drawEllipse(center, 8, 8);
+    };
+    if (contactRequests) {
+        drawDot(QPointF{51, 13}, QColor{Qt::red});
+    }
+    if (messages) {
+        drawDot(QPointF{51, 51}, QColor{Qt::green});
+    }
+    painter.end();
+    const QIcon notificationIcon{pixmap};
+    if (trayIcon_ != nullptr) {
+        trayIcon_->setIcon(notificationIcon);
+    }
+    if (window_ != nullptr) {
+        window_->setIcon(notificationIcon);
     }
 }
 

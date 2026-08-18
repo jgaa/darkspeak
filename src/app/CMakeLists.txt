@@ -20,3 +20,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     models prot tor core crypto
     Qt6::Core Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2
     Qt6::Sql Qt6::Svg Qt6::Widgets)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(${PROJECT_NAME} PRIVATE
+        desktop_notifications.cpp
+        desktop_notifications.h)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::DBus)
+endif()

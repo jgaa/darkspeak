@@ -29,6 +29,11 @@ Page {
         highlight: highlightBar
         property Identity currentIdentity: identities.current
         property bool online: currentIdentity ? currentIdentity.online : false
+        // The identity manager starts with no selected row. Select the first
+        // identity so contacts and conversations are initialized on startup.
+        currentIndex: identities.currentRow >= 0
+                      ? identities.currentRow
+                      : (count > 0 ? 0 : -1)
 
         onCurrentItemChanged: {
             identities.setCurrentIdentity(currentIndex)
@@ -242,11 +247,11 @@ Page {
             onTriggered: list.createIdentityQrCode()
         }
 
-        MenuItem {
-            text: qsTr("Copy handle")
-            icon.name: "edit-copy"
-            onTriggered: list.copyHandle()
-        }
+        // MenuItem {
+        //     text: qsTr("Copy handle")
+        //     icon.name: "edit-copy"
+        //     onTriggered: list.copyHandle()
+        // }
 
         MenuItem {
             text: qsTr("Edit")
@@ -254,18 +259,18 @@ Page {
             onTriggered: list.editCurrent()
         }
 
-        MenuItem {
-            text: qsTr("New Tor service")
-            icon.name: "document-new"
-            onTriggered: confirmNewTransport.open()
-            enabled: manager.online
-        }
+        // MenuItem {
+        //     text: qsTr("New Tor service")
+        //     icon.name: "document-new"
+        //     onTriggered: confirmNewTransport.open()
+        //     enabled: manager.online
+        // }
 
-        MenuItem {
-            text: qsTr("Import Tor service")
-            icon.name: "document-open"
-            onTriggered: list.importTorService()
-        }
+        // MenuItem {
+        //     text: qsTr("Import Tor service")
+        //     icon.name: "document-open"
+        //     onTriggered: list.importTorService()
+        // }
 
         MenuItem {
             text: qsTr("Delete")

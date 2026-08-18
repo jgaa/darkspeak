@@ -22,6 +22,7 @@ public:
     IdentityManager(QObject& parent);
 
     Q_PROPERTY(Identity * current READ getCurrentIdentity NOTIFY currentIdentityChanged)
+    Q_PROPERTY(int currentRow READ getCurrentRow NOTIFY currentIdentityChanged)
 
     /*! Load all the identities from the database */
     void load();
@@ -36,6 +37,8 @@ public:
     Q_INVOKABLE Identity *identityFromId(const int id) const;
     Q_INVOKABLE Identity *getCurrentIdentity() const noexcept;
     Q_INVOKABLE void setCurrentIdentity(int row);
+    Q_INVOKABLE void setCurrentIdentityById(int id);
+    int getCurrentRow() const noexcept { return current_; }
     Q_INVOKABLE void createIdentity(const QmlIdentityReq *req);
 
     void relayNewContactRequest(Identity *identity, const core::PeerAddmeReq &req);

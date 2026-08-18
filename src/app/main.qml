@@ -106,8 +106,8 @@ ApplicationWindow {
                 }
 
                 model: ListModel {
-                    ListElement { shortName: "IDs"; iconName: "badge"; page: 1 }
                     ListElement { shortName: "Home"; iconName: "home"; page: 3 }
+                    ListElement { shortName: "IDs"; iconName: "badge"; page: 1 }
                     ListElement { shortName: "People"; iconName: "group"; page: 2 }
                     ListElement { shortName: "Conversations"; iconName: "forum"; page: 4 }
                     ListElement { shortName: "Log"; iconName: "description"; page: 0 }
@@ -131,7 +131,7 @@ ApplicationWindow {
                     background: Rectangle {
                         radius: 6
                         color: parent.highlighted ? "#294d70"
-                               : parent.hovered ? "#24384b" : "transparent"
+                               : parent.hovered ? "cornflowerblue" : "transparent"
                         border.color: parent.highlighted ? "#79c2f2" : "transparent"
                         border.width: 1
                     }
@@ -144,7 +144,8 @@ ApplicationWindow {
                             font.family: materialIcons.name
                             font.pixelSize: 30
                             font.features: { "liga": 1 }
-                            color: parent.parent.highlighted ? "#e6f1fb" : "#334155"
+                            color: parent.parent.highlighted ? "#e6f1fb"
+                                   : parent.parent.hovered ? "#1e293b" : "#334155"
                             Layout.preferredWidth: 34
                             horizontalAlignment: Text.AlignHCenter
                         }
@@ -152,7 +153,8 @@ ApplicationWindow {
                         Label {
                             text: qsTr(shortName)
                             font.pixelSize: 15
-                            color: parent.parent.highlighted ? "#ffffff" : "#243447"
+                            color: parent.parent.highlighted ? "#ffffff"
+                                   : parent.parent.hovered ? "#1e293b" : "#243447"
                             Layout.fillWidth: true
                         }
                     }

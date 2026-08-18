@@ -89,7 +89,16 @@ void Identity::addContact(const QVariantMap &args)
         return;
     }
 
-    data->cert = crypto::DsCert::createFromPubkey(identityData.mid(1, 32));
+    const auto publicKey = identityData.mid(1, 32);
+    data->cert = crypto::DsCert::createFromPubkey(publicKey);
+    if (getCert() && publicKey == getCert()->getSigningPubKey().toByteArray()) {
+        LFLOG_WARN << "Refusing to add identity " << getName()
+                   << " as its own contact";
+        DsEngine::instance().reportStatus(
+            tr("You cannot add this identity as its own contact"),
+            DsEngine::StatusLevel::WARNING);
+        return;
+    }
     const auto host = crypto::onionv3encode(identityData.mid(33, 35));
     auto portBytes = identityData.mid(68, 2);
     const auto port = qFromBigEndian(bytesToValue<quint16>(portBytes));
@@ -112,6 +121,15 @@ void Identity::addContact(const QVariantMap &args)
     }
 
     try {
+        if (contactFromHash(data->cert->getHash().toByteArray())) {
+            LFLOG_WARN << "Refusing to add an existing contact for identity "
+                       << getName();
+            DsEngine::instance().reportStatus(
+                tr("This contact already exists for this identity"),
+                DsEngine::StatusLevel::WARNING);
+            return;
+        }
+
         // The probe deliberately uses a separate connection.  Close it before
         // starting the real contact connection; otherwise both connections
         // can race through the peer handshake and the Addme request may never

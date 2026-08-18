@@ -131,6 +131,7 @@ void Conversation::incomingMessage(Contact *contact, const MessageData &data)
         contact->sendMessageReceipt(data.messageId);
     }
 
+    incrementUnread();
     touchLastActivity();
 }
 
@@ -150,6 +151,17 @@ int Conversation::getId() const noexcept {
 
 QString Conversation::getName() const noexcept  {
     return name_;
+}
+
+QString Conversation::getContactName() const
+{
+    if (const auto participant = getFirstParticipant()) {
+        if (!participant->getName().isEmpty()) {
+            return participant->getName();
+        }
+        return participant->getNickName();
+    }
+    return {};
 }
 
 void Conversation::setName(const QString &name) {

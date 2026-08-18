@@ -5,206 +5,168 @@ import QtQuick.Dialogs
 import org.darkspeak 1.0
 
 Page {
+    id: root
     width: 600
     height: 400
-    id: root
+
     property color primaryText: "#243447"
     property color secondaryText: "#475569"
-    property color labelText: "#64748b"
-    property color selectedFill: "#294d70"
-    property color selectedBorder: "#79c2f2"
+    property color identityHeader: "#263746"
 
     header: Label {
-        id: label
         text: qsTr("Home")
         font.pixelSize: Qt.application.font.pixelSize * 2
         padding: 10
     }
 
+    Label {
+        anchors.centerIn: parent
+        visible: list.count === 0
+        text: qsTr("No new notifications")
+        color: "#4b5563"
+        font.pixelSize: 18
+    }
+
     ListView {
         id: list
         anchors.fill: parent
+        anchors.margins: 8
+        clip: true
         model: notifications
         section.property: "identityName"
-        section.delegate: sectionHeading
-        highlight: highlightBar
+        section.delegate: Component {
+            Rectangle {
+                width: list.width
+                height: 36
+                color: root.identityHeader
+
+                Label {
+                    anchors.fill: parent
+                    leftPadding: 10
+                    verticalAlignment: Text.AlignVCenter
+                    text: section
+                    color: "#ffffff"
+                    font.bold: true
+                    font.pixelSize: 16
+                }
+            }
+        }
+
         delegate: Item {
-            id: itemDelegate
-            width: parent.width - 10
-            height: type === 1 ? 110 : 120
+            id: notificationItem
+            width: list.width
+            property var contactObject: contact
+            property string avatar: contactObject && contactObject.avatarUrl
+                                   ? contactObject.avatarUrl : avatarUrl
+            property int notificationHeight: type === NotificationsModel.N_ADDME ? 92 : 62
+            height: (contactHeader ? 56 : 0) + notificationHeight
 
             Column {
-                leftPadding: 10
-                Row {
-                    id: notificationFrame
-                    topPadding: 4
-                    Rectangle {
-                        height: notificationLabel.height - 4
-                        width: height
-                        radius: width*0.5
-                        color: itemDelegate.ListView.isCurrentItem ? "#ffffff" : root.primaryText
+                anchors.fill: parent
+                spacing: 2
 
-                        Image {
-                            fillMode: Image.PreserveAspectFit
-                            anchors.fill: parent
-                            source: avatarUrl !== ""
-                                    ? avatarUrl
-                                    : type === 1
-                                    ? "qrc:///images/FileTansferActive.svg"
-                                    : "qrc:///images/add-user.svg"
+                RowLayout {
+                    visible: contactHeader
+                    width: parent.width
+                    height: 52
+                    spacing: 10
 
+                    Image {
+                        Layout.preferredWidth: 42
+                        Layout.preferredHeight: 42
+                        fillMode: Image.PreserveAspectFit
+                        source: notificationItem.avatar
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: contactName || qsTr("Unknown contact")
+                        color: root.primaryText
+                        font.bold: true
+                        font.pixelSize: 15
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: notificationItem.notificationHeight
+                    color: mouseArea.containsMouse ? "#e5eef8" : "#f7f9fc"
+                    radius: 5
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 10
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: type === NotificationsModel.N_ADDME
+                                  ? qsTr("New contact request")
+                                  : type === NotificationsModel.N_MESSAGE
+                                    ? qsTr("Unread messages (%1)").arg(unreadCount)
+                                    : qsTr("Incoming file: %1").arg(fileName)
+                            color: root.primaryText
+                            font.bold: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Label {
+                            visible: type === NotificationsModel.N_ADDME
+                            Layout.maximumWidth: 360
+                            text: message
+                            color: root.secondaryText
+                            elide: Text.ElideRight
                         }
                     }
-                    Text {
-                        leftPadding: 10
-                        id: notificationLabel
-                        font.pointSize: 14
-                        color: itemDelegate.ListView.isCurrentItem ? "#ffffff" : root.primaryText
-                        text: type === 1 ? qsTr("Incoming File") : qsTr("New Contact Request")
-                        font.bold: itemDelegate.ListView.isCurrentItem
-                    }
-                }
 
-                GridLayout {
-                    x: 16
-                    rowSpacing: 0
-                    rows: type === 1 ? 3 : 5
-                    flow: GridLayout.TopToBottom
-                    Label { visible: type !== 1; font.pointSize: 9; color: root.labelText; text: qsTr("Nick")}
-                    Label { visible: type !== 1; font.pointSize: 9; color: root.labelText; text: qsTr("Message")}
-                    Label { font.pointSize: 9; color: root.labelText; text: qsTr("When")}
-                    Label { visible: type !== 1; font.pointSize: 9; color: root.labelText; text: qsTr("Handle")}
-                    Label { visible: type !== 1; font.pointSize: 9; color: root.labelText; text: qsTr("Address")}
-
-                    Text {
-                        font.pointSize: 9;
-                        color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
-                        text: nickName
-                        visible: type !== 1
-                    }
-
-                    Text {
-                        font.pointSize: 9;
-                        color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
-                        text: message
-                        visible: type !== 1
-                    }
-
-                    Text {
-                        font.pointSize: 9;
-                        color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
-                        text: when
-                    }
-
-                    Text {
-                        font.pointSize: 9;
-                        color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
-                        text: handle
-                        visible: type !== 1
-                    }
-
-                    Text {
-                        font.pointSize: 9;
-                        color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
-                        text: address
-                        visible: type !== 1
-                    }
-
-                    Text {
-                        visible: type === 1
-                        font.pointSize: 9
-                        color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
-                        text: fileName + " (" + fileSize + " bytes)"
-                    }
-
-                    Row {
+                    MouseArea {
+                        id: mouseArea
                         anchors.fill: parent
-                        spacing: 4
+                        hoverEnabled: true
+                        onClicked: {
+                            list.currentIndex = index
+                            if (type === NotificationsModel.N_ADDME) {
+                                confirmNewContact.notificationRow = index
+                                confirmNewContact.requesterName = nickName
+                                confirmNewContact.requestMessage = message
+                                confirmNewContact.requesterAvatarUrl = avatar
+                                confirmNewContact.requesterIdentityId = requesterIdentityId
+                                confirmNewContact.requestingIdentity = identities.identityFromId(identityId)
+                                confirmNewContact.open()
+                            } else {
+                                openConversation()
+                            }
+                        }
                     }
                 }
             }
 
-            MouseArea {
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                anchors.fill: parent
-                onClicked: {
-                    list.currentIndex = index
-                    if (mouse.button === Qt.RightButton) {
-                        takeAction()
-                    }
-                }
+            function openConversation() {
+                var identity = identities.identityFromId(identityId)
+                if (!identity)
+                    return
 
-                onPressAndHold: {
-                    list.currentIndex = index
-                    takeAction()
-                }
+                identities.setCurrentIdentityById(identityId)
+                contacts.setIdentity(identity.uuid)
+                conversations.setIdentity(identity.uuid)
+                if (conversationId > 0)
+                    conversations.setConversationById(conversationId)
+                else if (contactObject)
+                    conversations.setContact(contactObject)
+                manager.currentPage = Manager.CONVERSATIONS
 
-                function takeAction() {
-                    if (type === 1) {
-                        fileActions.open()
-                    } else {
-                        confirmNewContact.message = message
-                        confirmNewContact.open();
-                    }
-                }
+                Qt.callLater(function() {
+                    if (conversations.current)
+                        conversations.current.unread = 0
+                    notifications.refreshNotifications()
+                })
             }
         }
-
-        function acceptContact(accept) {
-            notifications.acceptContact(currentIndex, accept)
-        }
     }
 
-    Component {
-       id: sectionHeading
-       Rectangle {
-           width: root.width
-           height: childrenRect.height
-           color: "#263746"
-
-           Text {
-               text: section
-               font.bold: true
-               font.pointSize: 16
-               color: root.primaryText
-           }
-       }
-   }
-
-   Component {
-         id: highlightBar
-         Rectangle {
-             x: 8
-             width: list.currentItem.width - 8
-             radius: 5
-             y: list.currentItem.y;
-             color: root.selectedFill
-             border.color: root.selectedBorder
-             Behavior on y { SpringAnimation { spring: 1; damping: 0.1 } }
-         }
-    }
-
-    MessageDialog {
+    AcceptContactDialog {
         id: confirmNewContact
-        property string message: ""
-        title: qsTr("Accept Contact")
-        text: qsTr("Do you accept this Contact Request?")
-        buttons: MessageDialog.Yes | MessageDialog.No | MessageDialog.Cancel
-        detailedText: qsTr("Message from contact: ") + message
-        onButtonClicked: function(button) {
-            if (button === MessageDialog.Yes) list.acceptContact(true)
-            else if (button === MessageDialog.No) list.acceptContact(false)
-        }
-    }
-
-    MessageDialog {
-        id: fileActions
-        title: qsTr("Incoming File")
-        text: qsTr("Accept this file?")
-        buttons: MessageDialog.Yes | MessageDialog.No | MessageDialog.Cancel
-        onButtonClicked: function(button) {
-            if (button === MessageDialog.Yes) notifications.acceptFile(list.currentIndex, true)
-            else if (button === MessageDialog.No) notifications.acceptFile(list.currentIndex, false)
-        }
+        onAccepted: notifications.acceptContact(notificationRow, true)
+        onRejected: notifications.acceptContact(notificationRow, false)
     }
 }

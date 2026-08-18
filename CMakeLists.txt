@@ -58,6 +58,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 6.10 COMPONENTS Core Gui Qml Quick QuickControls2 LinguistTools Protobuf Widgets Network Sql Svg Test REQUIRED)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(Qt6 6.10 COMPONENTS DBus REQUIRED)
+endif()
 
 add_subdirectory(src/cryptolib)
 add_subdirectory(src/corelib)

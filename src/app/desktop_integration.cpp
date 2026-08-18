@@ -74,7 +74,7 @@ bool DesktopIntegration::initializeDarkSpeakFolder()
 {
     QSettings settings;
     const auto enabled = darkSpeakFolderForced()
-        || settings.value(QStringLiteral("useDarkSpeakFolder"), false).toBool();
+        || settings.value(QStringLiteral("useDarkSpeakFolder"), true).toBool();
     if (!enabled) {
         return true;
     }

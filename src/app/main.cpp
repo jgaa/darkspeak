@@ -38,6 +38,9 @@
 #include "filedialogmodel.h"
 #include "desktop_integration.h"
 #include "tray_controller.h"
+#ifdef Q_OS_LINUX
+#include "desktop_notifications.h"
+#endif
 
 #include "logfault/logfault.h"
 
@@ -233,6 +236,11 @@ int main(int argc, char *argv[])
     }
     manager->connect(&app, &QGuiApplication::aboutToQuit, manager.get(), &Manager::onQuit);
 
+#ifdef Q_OS_LINUX
+    [[maybe_unused]] const auto desktopNotifications =
+            std::make_unique<ds::app::DesktopNotifications>(&app);
+#endif
+
     LFLOG_DEBUG << "Darkspeak is starting up cwd='"
                 << QDir::currentPath()
                 << '\'';
@@ -260,7 +268,7 @@ int main(int argc, char *argv[])
                                                            "Cannot create ContactsModel in QML");
 
     qmlRegisterUncreatableType<ds::models::NotificationsModel>("org.darkspeak", 1, 0,
-                                                           "ContactsModel",
+                                                           "NotificationsModel",
                                                            "Cannot create NotificationsModel in QML");
 
     qmlRegisterUncreatableType<ds::core::Identity>("org.darkspeak", 1, 0,
@@ -361,6 +369,7 @@ int main(int argc, char *argv[])
     std::unique_ptr<TrayController> tray;
     if (window != nullptr) {
         tray = std::make_unique<TrayController>(window,
+                                                manager->notificationsModel(),
                                                 parser.isSet(QStringLiteral("autostart")),
                                                 &app);
         app.setQuitOnLastWindowClosed(!tray->available());

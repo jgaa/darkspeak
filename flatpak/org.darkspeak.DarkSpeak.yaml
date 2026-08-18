@@ -12,6 +12,7 @@ finish-args:
   - --share=ipc
   # QSystemTrayIcon registers its KDE StatusNotifier item through this bus name.
   - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.Notifications
   - --socket=wayland
   - --socket=fallback-x11
   # Includes ~/DarkSpeak/Downloads and ~/DarkSpeak/Log.

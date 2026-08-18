@@ -149,6 +149,13 @@ void IdentityManager::setCurrentIdentity(int row)
     }
 }
 
+void IdentityManager::setCurrentIdentityById(const int id)
+{
+    if (auto identity = identityFromId(id)) {
+        setCurrentIdentity(getRow(identity));
+    }
+}
+
 void IdentityManager::createIdentity(const QmlIdentityReq *req)
 {
     try {

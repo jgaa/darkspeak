@@ -41,7 +41,7 @@ void ensureLogSettings(QSettings& settings)
 {
     if (!settings.contains(QStringLiteral("logLevelApp"))) {
         settings.setValue(QStringLiteral("logLevelApp"),
-                          static_cast<int>(logfault::LogLevel::DISABLED));
+                          static_cast<int>(logfault::LogLevel::INFO));
     }
     if (!settings.contains(QStringLiteral("logLevelFile"))) {
         settings.setValue(QStringLiteral("logLevelFile"),
