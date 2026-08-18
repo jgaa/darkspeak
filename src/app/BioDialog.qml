@@ -31,6 +31,7 @@ Dialog {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             TextEdit {
                 id: body
                 width: root.width - 32
@@ -38,7 +39,7 @@ Dialog {
                 text: root.contact ? manager.sanitizeBio(root.contact.bio) : ""
                 readOnly: true
                 selectByMouse: true
-                wrapMode: TextEdit.Wrap
+                wrapMode: TextEdit.WrapAnywhere
                 onLinkActivated: function(link) {
                     manager.textToClipboard(link)
                     manager.setStatusMessage(qsTr("Bio link copied to clipboard"))

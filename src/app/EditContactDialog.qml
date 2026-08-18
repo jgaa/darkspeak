@@ -168,6 +168,7 @@ Dialog {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                         TextEdit {
                             width: root.width - 32
                             textFormat: TextEdit.MarkdownText
@@ -175,7 +176,7 @@ Dialog {
                                            : identity ? manager.sanitizeBio(identity.probeBio) : ""
                             readOnly: true
                             selectByMouse: true
-                            wrapMode: TextEdit.Wrap
+                            wrapMode: TextEdit.WrapAnywhere
                             onLinkActivated: function(link) {
                                 manager.textToClipboard(link)
                                 manager.setStatusMessage(qsTr("Bio link copied to clipboard"))

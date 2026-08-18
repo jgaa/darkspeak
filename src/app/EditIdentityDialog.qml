@@ -195,13 +195,14 @@ Dialog {
 
                         ScrollView {
                             clip: true
+                            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                             TextEdit {
                                 width: parent.width
                                 textFormat: TextEdit.MarkdownText
                                 text: manager.sanitizeBio(bioEdit.text)
                                 readOnly: true
                                 selectByMouse: true
-                                wrapMode: TextEdit.Wrap
+                                wrapMode: TextEdit.WrapAnywhere
                                 onLinkActivated: function(link) {
                                     manager.textToClipboard(link)
                                     manager.setStatusMessage(qsTr("Bio link copied to clipboard"))
