@@ -1,13 +1,16 @@
-# Agent handoff notes
+This project is a secure instant messager using the Tor network as its network layer.
 
-## General rules and info
+# Rules and guidelines
+
+Cache the files locally (not checked into git) and either refresh or check the timestamp on the HTTP server when you refresh your Agents instructions, or checkout the agents repository https://github.com/jgaa/agents.git outside the project and keep it up to date before you re-read the files.
+
+https://raw.githubusercontent.com/jgaa/agents/refs/heads/main/rules/tlv-agents.md
+https://raw.githubusercontent.com/jgaa/agents/refs/heads/main/rules/tlv-agents-cpp.md
 
 - You run as a seperate user than me. You don't have access to `/home/jgaa`
 - The source code is in `/var/local/src/darkspeak/`
 - If you lack write access to files or directory, ask me to update the permissions
-- Use modern C++20. Avoid old style "C" strings and other primitives. Use views and spans
 - Do not compile (except for new tests you need to run). I will deal with that.
-- Don't make assumptions about my preferences. Ask.
 - The first priority is security. Use zero-trust architecture and assume that any peer is hostile.
 - The second proirity is privacy. Do not leak any information that can be used to decude information about the user, the users location or anuthing else.
 - Always be aware of a peers security preferences. Don't send or offer to send (in the UI) anything they don't accept.
@@ -17,16 +20,6 @@
 The project is being resurrected and improved. 
 
 - No backwards compatibility is expected. Treat it as a new project for now. 
-
-## Repository orientation
-
-- Working tree: `/var/local/src/darkspeak` (the environment may display the
-  same checkout as `/home/codex/src/darkspeak`).
-- Main targets: `crypto`, `tor`, `prot`, `core`, `models`, and `darkspeak`.
-- QML resources live in `src/app`; public headers are under each library's
-  `include/ds` directory.
-- Persistent data is SQLite; `database/master.db` is reference material only.
-  The resurrected application may use a fresh schema and disposable database.
 
 ## Useful investigation commands
 
