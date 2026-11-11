@@ -15,7 +15,8 @@ include(FetchContent)
 FetchContent_Declare(safekeeping
     GIT_REPOSITORY https://github.com/jgaa/SafeKeeping.git
     GIT_TAG c53b3f5ad5ec150058e0313a856aa3ad2c68f9e1
-    GIT_SHALLOW TRUE)
+    # A shallow HEAD clone cannot check out this historical pinned commit.
+    GIT_SHALLOW FALSE)
 set(SAFEKEEPING_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SAFEKEEPING_ENABLE_KWALLET OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(safekeeping)
@@ -61,6 +62,7 @@ find_package(Qt6 6.10 COMPONENTS Core Gui Qml Quick QuickControls2 LinguistTools
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(Qt6 6.10 COMPONENTS DBus REQUIRED)
 endif()
+include(cmake/KdeColorScheme.cmake)
 
 add_subdirectory(src/cryptolib)
 add_subdirectory(src/corelib)

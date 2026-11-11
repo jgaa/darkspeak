@@ -5,29 +5,42 @@ import org.darkspeak 1.0
 
 Page {
     id: root
-    width: 600
-    height: 400
+    width: 600 * appearance.factor
+    height: 400 * appearance.factor
     title: qsTr("Log")
 
     property bool follow: true
-    property color primaryText: "#334155"
+    property color primaryText: appearance.text
 
     background: Rectangle {
-        color: "#f7f9fc"
+        color: appearance.surface
     }
 
     header: ToolBar {
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 8
-            anchors.rightMargin: 8
+            anchors.leftMargin: 8 * appearance.factor
+            anchors.rightMargin: 8 * appearance.factor
 
             Label {
+                textFormat: Text.PlainText
                 text: qsTr("Log")
-                font.pixelSize: Qt.application.font.pixelSize * 1.4
+                font.pixelSize: appearance.fontPixels * 1.4
                 Layout.fillWidth: true
             }
 
+            TextField {
+                Layout.preferredWidth: 220 * appearance.factor
+                placeholderText: qsTr("Filter log messages")
+                Accessible.name: qsTr("Filter log messages")
+                onTextEdited: filteredLog.search = text
+            }
+            ComboBox {
+                model: [qsTr("Errors"), qsTr("Warnings"), qsTr("Notices"), qsTr("Info"), qsTr("Debug"), qsTr("Trace")]
+                currentIndex: filteredLog.maximumLevel - 1
+                onActivated: filteredLog.maximumLevel = currentIndex + 1
+                Accessible.name: qsTr("Maximum log verbosity")
+            }
             ToolButton {
                 text: qsTr("Follow")
                 checkable: true
@@ -41,7 +54,7 @@ Page {
 
     ListView {
         id: listView
-        model: log
+        model: filteredLog
         clip: true
         anchors.fill: parent
         spacing: 0
@@ -51,7 +64,9 @@ Page {
 
         function scrollToLatest() {
             if (root.follow) {
-                Qt.callLater(function() { listView.positionViewAtEnd() })
+                Qt.callLater(function () {
+                    listView.positionViewAtEnd();
+                });
             }
         }
 
@@ -62,17 +77,13 @@ Page {
             width: listView.width
             Rectangle {
                 anchors.fill: parent
-                color: level === 1 ? "#fff1f0"
-                       : level === 2 ? "#fff7e6"
-                       : (level === 3 || level === 4) ? "#eef6ff"
-                       : level === 5 ? "#edf9f7"
-                       : (index % 2 === 0 ? "#f7f9fc" : "#eef2f7")
+                color: level === 1 ? appearance.surface : level === 2 ? appearance.surface : (level === 3 || level === 4) ? appearance.surface : level === 5 ? appearance.surface : (index % 2 === 0 ? appearance.surface : appearance.sidebar)
             }
             Row {
                 id: row1
                 TextEdit {
                     id: logText
-                    anchors.margins: 3
+                    anchors.margins: 3 * appearance.factor
                     text: display
                     width: root.width - 10
                     readOnly: true
@@ -82,12 +93,8 @@ Page {
                     textFormat: Text.PlainText
                     wrapMode: Text.WordWrap
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pointSize: 8
-                    color: level === 1 ? "#b42318"
-                           : level === 2 ? "#9a6700"
-                           : (level === 3 || level === 4) ? "#175cd3"
-                           : level === 5 ? "#087f5b"
-                           : root.primaryText
+                    font: appearance.captionFont
+                    color: level === 1 ? appearance.error : level === 2 ? appearance.warning : (level === 3 || level === 4) ? appearance.accent : level === 5 ? appearance.success : root.primaryText
                 }
             }
         }

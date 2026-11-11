@@ -27,7 +27,7 @@ set_tests_properties(tor_config PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscree
 
 add_test(NAME qml_smoke COMMAND ${CMAKE_COMMAND} -E env
     QT_QPA_PLATFORM=offscreen
-    QT_QUICK_CONTROLS_STYLE=Fusion
+    QT_QUICK_CONTROLS_STYLE=org.kde.desktop
     XDG_CONFIG_HOME=${CMAKE_CURRENT_BINARY_DIR}/qml-smoke-config
     XDG_DATA_HOME=${CMAKE_CURRENT_BINARY_DIR}/qml-smoke-data
     XDG_CACHE_HOME=${CMAKE_CURRENT_BINARY_DIR}/qml-smoke-cache
@@ -47,3 +47,11 @@ if(DS_ENABLE_TOR_TESTS)
         $<TARGET_FILE:crypto_handshake_test>)
     set_tests_properties(tor_integration PROPERTIES LABELS tor)
 endif()
+
+add_subdirectory(ui)
+
+add_executable(ui_history_model_test ui_history_model_test.cpp)
+target_compile_features(ui_history_model_test PRIVATE cxx_std_20)
+target_link_libraries(ui_history_model_test PRIVATE models Qt6::Test)
+add_test(NAME ui_history_model COMMAND ui_history_model_test)
+set_tests_properties(ui_history_model PROPERTIES TIMEOUT 30)

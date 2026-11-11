@@ -4,27 +4,34 @@ import QtQuick.Layouts
 import QtQuick.Dialogs
 import org.darkspeak 1.0
 
-Dialog {
+UiDialog {
     id: root
     property Identity identity: null
-    standardButtons: (port.acceptableInput && address.acceptableInput)
-                     ? (Dialog.Ok | Dialog.Cancel)
-                     : Dialog.Cancel
-    title: qsTr("Import service for") + " " + (identity ? identity.name : "")
-
+    standardButtons: (port.acceptableInput && address.acceptableInput) ? (Dialog.Ok | Dialog.Cancel) : Dialog.Cancel
+    title: qsTr("Import service for %1").arg(identity ? identity.name : "")
+    width: Math.min(mainWindow.width - 24 * appearance.factor, 600 * appearance.factor)
+    height: Math.min(mainWindow.height - 24 * appearance.factor, 420 * appearance.factor)
 
     ColumnLayout {
-        spacing: 4
+        spacing: appearance.smallSpacing
         anchors.fill: parent
 
         GridLayout {
             id: fields
-            rowSpacing: 4
+            rowSpacing: appearance.smallSpacing
             rows: 2
             flow: GridLayout.TopToBottom
 
-            Label { font.pointSize: 9; text: qsTr("address")}
-            Label { font.pointSize: 9; text: qsTr("port")}
+            Label {
+                textFormat: Text.PlainText
+                font: appearance.captionFont
+                text: qsTr("address")
+            }
+            Label {
+                textFormat: Text.PlainText
+                font: appearance.captionFont
+                text: qsTr("port")
+            }
 
             TextField {
                 id: address
@@ -32,7 +39,7 @@ Dialog {
                 validator: RegularExpressionValidator {
                     regularExpression: /[a-z2-7]{56}(\.onion)?/
                 }
-                color: acceptableInput ? "black" : "red";
+                color: acceptableInput ? appearance.text : appearance.error
             }
 
             TextField {
@@ -42,24 +49,28 @@ Dialog {
                     bottom: 1024
                     top: 65535
                 }
-                color: acceptableInput ? "black" : "red";
+                color: acceptableInput ? appearance.text : appearance.error
             }
         }
 
-        Label { font.pointSize: 9; text: qsTr("Private key")}
+        Label {
+            textFormat: Text.PlainText
+            font: appearance.captionFont
+            text: qsTr("Private key")
+        }
 
         TextArea {
             id: key
             Layout.fillHeight: true
-            Layout.minimumHeight: 30
-            Layout.minimumWidth: 3
+            Layout.minimumHeight: 30 * appearance.factor
+            Layout.minimumWidth: 3 * appearance.factor
             Layout.fillWidth: true
         }
     }
 
     onAccepted: {
-        identity.setNewTorService(address.text, port.text, key.text)
-        destroy()
+        identity.setNewTorService(address.text, port.text, key.text);
+        destroy();
     }
 
     onRejected: {

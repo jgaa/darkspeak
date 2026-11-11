@@ -2,5 +2,10 @@ import QtQuick
 
 TextEdit {
     property var value: null
-    text: new Date(value).toLocaleString(Qt.locale(), "ddd yyyy-MM-dd hh:mm")
+    readOnly: true
+    selectByMouse: true
+    textFormat: TextEdit.PlainText
+    font: appearance.captionFont
+    color: appearance.secondaryText
+    text: value ? Qt.formatDateTime(value, Qt.DefaultLocaleShortDate) : ""
 }

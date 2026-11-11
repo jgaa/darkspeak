@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import org.darkspeak 1.0
 
-Dialog {
+UiDialog {
     id: root
 
     property int notificationRow: -1
@@ -16,25 +16,29 @@ Dialog {
     property bool hasBio: probeBio.length > 0
 
     title: qsTr("Accept Contact")
-    width: Math.min(Math.max(mainWindow.width - 80, 560), 800)
-    height: Math.min(Math.max(mainWindow.height - 80, 420), 620)
+    width: Math.min(mainWindow.width - 24 * appearance.factor, 800 * appearance.factor)
+    height: Math.min(mainWindow.height - 24 * appearance.factor, 620 * appearance.factor)
     anchors.centerIn: parent
-    padding: 16
+    padding: appearance.largeSpacing
     standardButtons: Dialog.Ok | Dialog.Cancel
 
     onOpened: {
         if (requestingIdentity && requesterIdentityId.length > 0)
-            Qt.callLater(function() { requestingIdentity.probeContact(requesterIdentityId) })
+            Qt.callLater(function () {
+                requestingIdentity.probeContact(requesterIdentityId);
+            });
     }
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 6
+        spacing: 6 * appearance.factor
 
         TabBar {
             id: tabs
             Layout.fillWidth: true
-            TabButton { text: qsTr("Contact") }
+            TabButton {
+                text: qsTr("Contact")
+            }
             TabButton {
                 text: qsTr("Bio")
                 enabled: root.hasBio
@@ -49,33 +53,34 @@ Dialog {
             Item {
                 ColumnLayout {
                     anchors.fill: parent
-                    spacing: 12
+                    spacing: 12 * appearance.factor
 
                     RoundedImage {
                         id: avatar
                         Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: 128
-                        Layout.preferredHeight: 128
+                        Layout.preferredWidth: 128 * appearance.factor
+                        Layout.preferredHeight: 128 * appearance.factor
                         visible: source.length > 0
                         source: root.requesterAvatarUrl
-                        border.width: 4
-                        border.color: "gray"
+                        border.width: 4 * appearance.factor
+                        border.color: appearance.secondaryText
                         color: "transparent"
                     }
 
                     Label {
+                        textFormat: Text.PlainText
                         Layout.fillWidth: true
                         text: root.requesterName || qsTr("Unknown contact")
-                        color: "#243447"
-                        font.bold: true
-                        font.pixelSize: 18
+                        color: appearance.text
+                        font: appearance.headingFont
                         horizontalAlignment: Text.AlignHCenter
                     }
 
                     Label {
+                        textFormat: Text.PlainText
                         Layout.fillWidth: true
                         text: qsTr("Message from contact:")
-                        color: "#475569"
+                        color: appearance.secondaryText
                     }
 
                     ScrollView {
@@ -105,9 +110,9 @@ Dialog {
                         readOnly: true
                         selectByMouse: true
                         wrapMode: TextEdit.WrapAnywhere
-                        onLinkActivated: function(link) {
-                            manager.textToClipboard(link)
-                            manager.setStatusMessage(qsTr("Bio link copied to clipboard"))
+                        onLinkActivated: function (link) {
+                            manager.textToClipboard(link);
+                            manager.setStatusMessage(qsTr("Bio link copied to clipboard"));
                         }
                     }
                 }
@@ -119,9 +124,9 @@ Dialog {
         target: root.requestingIdentity
         function onProbeAvatarChanged() {
             if (root.requestingIdentity && root.requestingIdentity.hasProbeAvatar) {
-                manager.setTmpImageFromImage(root.requestingIdentity.probeAvatar)
-                avatar.source = ""
-                avatar.source = "image://temp/image"
+                manager.setTmpImageFromImage(root.requestingIdentity.probeAvatar);
+                avatar.source = "";
+                avatar.source = "image://temp/image";
             }
         }
     }

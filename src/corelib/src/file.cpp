@@ -1,3 +1,4 @@
+#include "ds/textpolicy.h"
 
 #include <chrono>
 #include <array>
@@ -39,6 +40,8 @@ File::File(QObject &parent)
 File::File(QObject &parent, std::unique_ptr<FileData> data)
     : QObject (&parent), data_{std::move(data)}
 {
+    if (auto *identity = DsEngine::instance().getIdentityManager()->identityFromId(data_->identity))
+        connect(identity, &Identity::securityPreferencesChanged, this, &File::nameChanged);
 }
 
 void File::cancel()
@@ -230,6 +233,15 @@ File::Direction File::getDirection() const noexcept
 
 QString File::getName() const noexcept
 {
+    return data_->name;
+}
+
+QString File::getDisplayName() const
+{
+    const auto *identity = DsEngine::instance().getIdentityManager()->identityFromId(data_->identity);
+    if (getDirection() == INCOMING && identity && !identity->getAllowUtf8()
+        && !text_policy::permittedAscii(data_->name, false))
+        return tr("Filename hidden by text security preference");
     return data_->name;
 }
 
@@ -675,6 +687,8 @@ File::ptr_t File::load(QObject &parent, const std::function<void (QSqlQuery &)> 
     ptr->data_->state = static_cast<State>(query.value(state).toInt());
     ptr->data_->direction = static_cast<Direction>(query.value(direction).toInt());
     ptr->data_->identity = query.value(identity_id).toInt();
+    if (auto *identity = DsEngine::instance().getIdentityManager()->identityFromId(ptr->data_->identity))
+        connect(identity, &Identity::securityPreferencesChanged, ptr.get(), &File::nameChanged);
     ptr->data_->conversation = query.value(conversation_id).toInt();
     ptr->data_->contact = query.value(contact_id).toInt();
     ptr->data_->hash = query.value(hash).toByteArray();

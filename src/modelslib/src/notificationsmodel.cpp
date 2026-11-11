@@ -12,6 +12,7 @@
 
 #include "ds/avatarhash.h"
 #include "ds/avatarutil.h"
+#include "ds/textpolicy.h"
 
 namespace ds {
 namespace models {
@@ -36,6 +37,16 @@ NotificationsModel::NotificationsModel(QSettings &settings)
             &ConversationManager::conversationTouched,
             this, [this](const core::Conversation::ptr_t&) { refresh(); });
 
+    const auto watch = [this](int first, int last) {
+        auto *identities = core::DsEngine::instance().getIdentityManager();
+        for (int row = first; row <= last; ++row) {
+            if (auto *identity = identities->identityFromRow(row))
+                connect(identity, &Identity::securityPreferencesChanged, this, &NotificationsModel::refresh, Qt::UniqueConnection);
+        }
+    };
+    auto *identities = core::DsEngine::instance().getIdentityManager();
+    watch(0, identities->rowCount({}) - 1);
+    connect(identities, &QAbstractItemModel::rowsInserted, this, [watch](const QModelIndex &, int first, int last) { watch(first, last); });
     refresh();
 }
 
@@ -218,6 +229,12 @@ QVariant NotificationsModel::data(const QModelIndex &ix, int role) const
         return {};
     }
 
+    const auto safe_text = [this, &ix](const QString &text, bool multiline = true) {
+        const auto identity_id = QSqlQueryModel::data(index(ix.row(), H_IDENTITY), Qt::DisplayRole).toInt();
+        const auto *identity = core::DsEngine::instance().getIdentityManager()->identityFromId(identity_id);
+        return identity && !identity->getAllowUtf8() && !core::text_policy::permittedAscii(text, multiline)
+            ? tr("Text hidden by current security preference") : text;
+    };
     // Map the QML field name mapping back to normal column based access
     auto model_ix = ix;
 
@@ -241,20 +258,20 @@ QVariant NotificationsModel::data(const QModelIndex &ix, int role) const
             && QSqlQueryModel::data(index(ix.row(), H_CONTACT), Qt::DisplayRole).toInt() == 0) {
         const auto data = core::DsEngine::fromJson(
             QSqlQueryModel::data(index(ix.row(), H_DATA), Qt::DisplayRole).toByteArray());
-        return data.value("nickName").toString();
+        return safe_text(data.value("nickName").toString(), false);
     }
 
     if (role >= H_NICKNAME) {
         const auto data = core::DsEngine::fromJson(QSqlQueryModel::data(index(model_ix.row(), H_DATA), Qt::DisplayRole).toByteArray());
         switch (role) {
             case H_NICKNAME:
-                return data.value("nickName").toString();
+                return safe_text(data.value("nickName").toString(), false);
             case H_HANDLE:
                 return data.value("handle").toString();
             case H_ADDRESS:
                 return data.value("address").toString();
             case H_FILE_NAME:
-                return data.value("fileName").toString();
+                return safe_text(data.value("fileName").toString(), false);
             case H_FILE_SIZE:
                 return data.value("fileSize").toLongLong();
             case H_AVATAR_URL:
@@ -289,6 +306,9 @@ QVariant NotificationsModel::data(const QModelIndex &ix, int role) const
     }
 
     if (role == Qt::DisplayRole) {
+        if (model_ix.column() == H_MESSAGE
+            && QSqlQueryModel::data(index(ix.row(), H_TYPE), Qt::DisplayRole).toInt() == N_ADDME)
+            return safe_text(QSqlQueryModel::data(model_ix, role).toString());
         if (model_ix.column() == H_TIMESTAMP) {
             return QSqlQueryModel::data(index(model_ix.row(), H_TIMESTAMP), Qt::DisplayRole).toDateTime().toString();
         }

@@ -31,6 +31,7 @@
 #include "ds/resourcelimits.h"
 #include "ds/dsengine.h"
 #include "ds/imageutil.h"
+#include "ds/textpolicy.h"
 #include "ds/bytes.h"
 
 #include "logfault/logfault.h"
@@ -1693,6 +1694,11 @@ void Peer::processStream(const Peer::data_t &ciphertext)
                 || transport.payload().size() > static_cast<qsizetype>(max_payload_bytes)
                 || transport.padding().size() > 256) {
             throw runtime_error("Invalid v3 transport envelope");
+        }
+        const auto *local_identity = DsEngine::instance().getIdentityManager()->identityFromUuid(getIdentityId());
+        if (local_identity && !local_identity->getAllowUtf8()
+            && !core::text_policy::permittedAsciiEnvelope(QByteArrayView{transport.payload()})) {
+            throw runtime_error("Application text violates the local ASCII policy");
         }
         ds::protocol::Envelope envelope;
         if (!codec::deserialize(QByteArrayView{transport.payload()}, envelope)) {

@@ -1,6 +1,9 @@
 
 #include <regex>
 #include <optional>
+#include <fstream>
+#include <cerrno>
+#include <system_error>
 
 #include <QClipboard>
 #include <QDir>
@@ -350,6 +353,27 @@ logfault::LogLevel levelFromName(const QString& name)
     return logfault::LogLevel::NOTICE;
 }
 
+// StreamHandler's path constructor does not expose open failures. Keep the
+// same output format while allowing failures to reach the other log sinks.
+class CheckedFileHandler final : public logfault::Handler {
+public:
+    CheckedFileHandler(const std::string &path, logfault::LogLevel level)
+        : Handler(level), stream_(path, std::ios::out | std::ios::trunc)
+    {
+        if (!stream_.is_open() || !stream_.good())
+            error_ = std::error_code(errno ? errno : EIO, std::generic_category());
+    }
+    bool opened() const { return !error_; }
+    std::string error() const { return error_.message(); }
+    void LogMessage(const logfault::Message &message) noexcept override {
+        PrintMessage(stream_, message);
+        stream_ << LOGFAULT_ENDL;
+    }
+private:
+    std::ofstream stream_;
+    std::error_code error_;
+};
+
 void configureLogging(const QSettings& settings,
                       const QString& logFile,
                       const QString& logLevel,
@@ -390,28 +414,34 @@ void configureLogging(const QSettings& settings,
                      << logfault::Handler::LevelName(stdoutLevel);
     }
 
-    if (!logFile.isEmpty()) {
-        makePrivate(logFile);
-        logManager.AddHandler(std::make_unique<logfault::StreamHandler>(
-                                  logFile.toStdString(), fileLevel, true));
-        QFile::setPermissions(logFile, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-        LFLOG_NOTICE << "Enabled logging to \""
-                     << logFile.toStdString()
-                     << "\" at level "
-                     << logfault::Handler::LevelName(fileLevel);
-    } else if (core::isEnabled(settings, core::LogSystem::LOGFILE)) {
-        const auto path = settings.value("logPath").toString();
-        makePrivate(path);
-        logManager.AddHandler(std::make_unique<logfault::StreamHandler>(
-                                  path.toStdString(),
-                                  fileLevel,
-                                  true));
-        QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-        LFLOG_NOTICE << "Enabled logging to \""
-                     << path.toStdString()
-                     << "\" at level "
-                     << logfault::Handler::LevelName(fileLevel);
+    const bool cli_path = !logFile.isEmpty();
+    const bool enabled = cli_path || core::isEnabled(settings, core::LogSystem::LOGFILE);
+    LFLOG_DEBUG << "File logging configuration: enabled=" << enabled
+                << ", saved level=" << logfault::Handler::LevelName(core::getLogLevel(settings, core::LogSystem::LOGFILE))
+                << ", effective level=" << logfault::Handler::LevelName(fileLevel)
+                << ", command-line path override=" << cli_path;
+    LFLOG_TRACE << "Logging settings loaded from " << settings.fileName();
+    if (!enabled) {
+        LFLOG_DEBUG << "File logging is disabled; no log file will be opened";
+        return;
     }
+    const auto path = cli_path ? logFile : settings.value("logPath").toString();
+    LFLOG_DEBUG << "Opening log file: path=\"" << path << "\", mode=truncate";
+    makePrivate(path);
+    const QFileInfo parent(QFileInfo(path).absolutePath());
+    LFLOG_TRACE << "Log directory: exists=" << parent.exists()
+                << ", directory=" << parent.isDir() << ", writable=" << parent.isWritable();
+    auto handler = std::make_unique<CheckedFileHandler>(path.toStdString(), fileLevel);
+    if (!handler->opened()) {
+        LFLOG_ERROR << "Failed to open log file \"" << path << "\": " << handler->error();
+        return;
+    }
+    logManager.AddHandler(std::move(handler));
+    const auto secured = QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    LFLOG_DEBUG << "Opened log file successfully: path=\"" << path
+                << "\", owner-only permissions=" << secured;
+    LFLOG_NOTICE << "Enabled logging to \"" << path << "\" at level "
+                 << logfault::Handler::LevelName(fileLevel);
 }
 
 }
@@ -707,6 +737,24 @@ Manager::Manager(const QString& logFile, const QString& logLevel)
     messagesModel_ = make_unique<MessagesModel>(*this);
     filesModel_ = make_unique<FilesModel>(*this);
 
+    auto *identity_manager = engine_->getIdentityManager();
+    const auto select_identity = [this, identity_manager] {
+        auto *identity = identity_manager->getCurrentIdentity();
+        const auto uuid = identity ? identity->getUuid() : QUuid{};
+        contacts_->setIdentity(uuid);
+        conversationsModel_->setIdentity(uuid);
+        messagesModel_->setConversation(nullptr);
+    };
+    connect(identity_manager, &IdentityManager::currentIdentityChanged, this, select_identity);
+    if (!identity_manager->getCurrentIdentity() && identity_manager->rowCount({}) > 0)
+        identity_manager->setCurrentIdentity(0);
+    else select_identity();
+    connect(conversationsModel_.get(), &ConversationsModel::currentRowChanged, this, [this] {
+        // Once a conversation is selected, its data lifetime belongs to C++.
+        if (page_ == CONVERSATIONS)
+            messagesModel_->setConversation(conversationsModel_->getCurrentConversation());
+    });
+
     instance_ = this;
 }
 
@@ -763,8 +811,12 @@ int Manager::getCurrentPage()
 
 void Manager::setCurrentPage(int page)
 {
+    if (page == CHAT) page = CONVERSATIONS;
+    if (page < LOG || page > CONVERSATIONS) return;
     if (page != page_) {
         page_ = page;
+        if (page_ == CONVERSATIONS)
+            messagesModel_->setConversation(conversationsModel_->getCurrentConversation());
         emit currentPageChanged(page);
     }
 }

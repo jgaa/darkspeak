@@ -2,6 +2,9 @@
 #define MESSAGEMODEL_H
 
 #include <deque>
+#include <QThread>
+#include <QHash>
+#include <QSet>
 
 #include <QSettings>
 #include <QAbstractListModel>
@@ -17,6 +20,11 @@ namespace models {
 class MessagesModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(bool loading READ loading NOTIFY historyChanged)
+    Q_PROPERTY(bool hasOlder READ hasOlder NOTIFY historyChanged)
+    Q_PROPERTY(bool hasNewer READ hasNewer NOTIFY historyChanged)
+    Q_PROPERTY(QString draft READ draft WRITE setDraft NOTIFY draftChanged)
+    Q_PROPERTY(QString historyError READ historyError NOTIFY historyChanged)
 
 public:
     enum Type {MESSAGE, FILE};
@@ -36,6 +44,7 @@ private:
                     || ((type_ == FILE) && file_);
         }
 
+        QString sort_created;
         int id;
         Type type_ = MESSAGE;
         mutable std::shared_ptr<core::MessageContent> data_;
@@ -50,6 +59,16 @@ public:
     using rows_t = std::deque<Row>;
 
     MessagesModel(QObject& parent);
+    ~MessagesModel() override;
+    bool loading() const { return loading_; }
+    bool hasOlder() const { return has_older_; }
+    bool hasNewer() const { return has_newer_; }
+    QString historyError() const { return history_error_; }
+    QString draft() const;
+    void setDraft(const QString &text);
+    Q_INVOKABLE void loadOlder();
+    Q_INVOKABLE void loadNewer();
+    Q_INVOKABLE void loadLatest();
 
     Q_INVOKABLE void setConversation(core::Conversation *conversation);
 
@@ -62,6 +81,9 @@ public:
 
 signals:
     void dataChangedLater();
+    void historyChanged();
+    void draftChanged();
+    void pageLoaded(int direction);
 
 
 private slots:
@@ -75,15 +97,30 @@ private slots:
     void onFileStateChanged(const core::File *file);
 
 private:
-    void queryRows(rows_t& rows);
-    void load(Row& row) const;
-    std::shared_ptr<core::MessageContent> loadData(const int id) const;
+    void trimLiveWindow();
+    void insertLiveRow(Row row);
+    void recordPendingMessage(const core::Message::ptr_t &message);
+    void recordPendingDeletion(int id, Type type);
+    void requestPage(int direction);
+    void acceptPage(quint64 generation, int direction, rows_t rows, bool more, const QString &error);
     std::shared_ptr<core::MessageContent> loadData(const core::Message& message) const;
     void onMessageChanged(const core::Message::ptr_t& message, const int role);
     void onFileChanged(const core::File *file, const int role);
     QString getStateName(const Row& r) const;
 
     mutable rows_t rows_;
+    QThread history_thread_;
+    QObject *history_worker_ = nullptr;
+    quint64 generation_ = 0;
+    bool loading_ = false;
+    QHash<int, core::Message::ptr_t> pending_messages_;
+    QSet<quint64> pending_deletions_;
+    bool has_older_ = false;
+    bool has_newer_ = false;
+    QString history_error_;
+    QHash<int, QString> drafts_;
+    std::deque<int> draft_order_;
+    QMetaObject::Connection policy_connection_;
     core::Conversation::ptr_t conversation_;    
 };
 

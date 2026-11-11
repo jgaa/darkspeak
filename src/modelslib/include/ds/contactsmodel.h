@@ -27,6 +27,7 @@ namespace models {
 class ContactsModel : public QAbstractListModel
 {
     Q_OBJECT
+    Q_PROPERTY(QString search READ search WRITE setSearch NOTIFY searchChanged)
 
     struct Row {
         Row(QUuid&& uuidVal) : uuid{std::move(uuidVal)} {}
@@ -39,6 +40,11 @@ class ContactsModel : public QAbstractListModel
 public:
 
     ContactsModel(QObject& parent);
+    QString search() const { return search_; }
+    void setSearch(const QString &text);
+signals:
+    void searchChanged();
+public:
 
     // Set the identity to work with
     Q_INVOKABLE void setIdentity(const QUuid& uuid);
@@ -57,6 +63,7 @@ private:
     void queryRows(rows_t& rows);
     void reload();
 
+    QString search_;
     rows_t rows_;
     core::IdentityManager& identityManager_;
     core::ContactManager& contactManager_;

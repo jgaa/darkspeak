@@ -42,7 +42,7 @@ public:
     Q_PROPERTY(int unread READ getUnread WRITE setUnread NOTIFY unredChanged)
 
     Q_INVOKABLE void incrementUnread();
-    Q_INVOKABLE void sendMessage(const QString& text);
+    Q_INVOKABLE bool sendMessage(const QString& text);
     Q_INVOKABLE void sendFile(const QVariantMap& args);
 
     void incomingMessage(Contact *contact, const MessageData& data);

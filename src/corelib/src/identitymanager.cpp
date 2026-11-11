@@ -64,6 +64,8 @@ void IdentityManager::load()
             identityUuid.toString(QUuid::WithoutBraces));
         const auto& settings = DsEngine::instance().settings();
         data.bio = settings.value(prefix + QStringLiteral("bio")).toString();
+        data.previewImages = settings.value(prefix + QStringLiteral("previewImages"), false).toBool();
+        data.previewVideo = settings.value(prefix + QStringLiteral("previewVideo"), false).toBool();
         data.allowUtf8 = settings.value(prefix + QStringLiteral("allowUtf8"), true).toBool();
         data.allowFiles = settings.value(prefix + QStringLiteral("allowFiles"), true).toBool();
         data.allowMimeTypes = settings.value(prefix + QStringLiteral("allowMimeTypes"),
@@ -159,7 +161,10 @@ void IdentityManager::setCurrentIdentityById(const int id)
 void IdentityManager::createIdentity(const QmlIdentityReq *req)
 {
     try {
-    assert(req);
+    if (!req || !validIdentityMimePreferences(req->value.allowMimeTypes)) {
+        LFLOG_WARN << "Ignoring invalid identity preferences";
+        return;
+    }
     if (!DsEngine::instance().isOnline()) {
         LFLOG_WARN << "Ignoring identity creation request while Tor is offline.";
         return;
@@ -170,6 +175,8 @@ void IdentityManager::createIdentity(const QmlIdentityReq *req)
     id.avatar = req->value.avatar;
     id.notes = req->value.notes;
     id.bio = req->value.bio;
+    id.previewImages = req->value.previewImages;
+    id.previewVideo = req->value.previewVideo;
     id.allowUtf8 = req->value.allowUtf8;
     id.allowFiles = req->value.allowFiles;
     id.allowMimeTypes = req->value.allowMimeTypes;

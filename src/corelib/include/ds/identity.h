@@ -8,6 +8,7 @@
 #include "ds/protocolmanager.h"
 #include "ds/contact.h"
 #include "ds/conversation.h"
+#include "ds/mimepreferences.h"
 
 #include <QString>
 #include <QStringList>
@@ -30,6 +31,8 @@ struct IdentityData {
     QString notes;
     QString bio;
     QImage avatar;
+    bool previewImages = false;
+    bool previewVideo = false;
     bool allowUtf8 = true;
     bool allowFiles = true;
     QStringList allowMimeTypes{QStringLiteral("*")};
@@ -46,6 +49,8 @@ struct IdentityReq {
     QString notes;
     QString bio;
     QImage avatar;
+    bool previewImages = false;
+    bool previewVideo = false;
     bool allowUtf8 = true;
     bool allowFiles = true;
     QStringList allowMimeTypes{QStringLiteral("*")};
@@ -67,12 +72,22 @@ public:
     Q_PROPERTY(QString bio READ bio WRITE setBio NOTIFY bioChanged)
     Q_PROPERTY(bool autoConnect READ autoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
     Q_PROPERTY(QImage avatar READ avatar WRITE setAvatar NOTIFY avatarChanged)
+    Q_PROPERTY(bool previewImages READ previewImages WRITE setPreviewImages NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool previewVideo READ previewVideo WRITE setPreviewVideo NOTIFY securityPreferencesChanged)
     Q_PROPERTY(bool allowUtf8 READ allowUtf8 WRITE setAllowUtf8 NOTIFY securityPreferencesChanged)
     Q_PROPERTY(bool allowFiles READ allowFiles WRITE setAllowFiles NOTIFY securityPreferencesChanged)
     Q_PROPERTY(QStringList allowMimeTypes READ allowMimeTypes WRITE setAllowMimeTypes NOTIFY securityPreferencesChanged)
     Q_PROPERTY(bool allowReactions READ allowReactions WRITE setAllowReactions NOTIFY securityPreferencesChanged)
     Q_PROPERTY(bool publicBio READ publicBio WRITE setPublicBio NOTIFY securityPreferencesChanged)
     Q_PROPERTY(bool publicAvatar READ publicAvatar WRITE setPublicAvatar NOTIFY securityPreferencesChanged)
+
+    Q_INVOKABLE bool validMimeText(const QString &text) const { return parseMimePreferences(text).has_value(); }
+    Q_INVOKABLE bool setMimeText(const QString &text) {
+        const auto parsed = parseMimePreferences(text);
+        if (!parsed) return false;
+        setAllowMimeTypes(*parsed);
+        return true;
+    }
 
     QString name() const { return value.name; }
     void setName(QString name) {
@@ -112,6 +127,10 @@ public:
         }
     }
 
+    bool previewImages() const { return value.previewImages; }
+    void setPreviewImages(bool enabled) { if (value.previewImages != enabled) { value.previewImages = enabled; emit securityPreferencesChanged(); } }
+    bool previewVideo() const { return value.previewVideo; }
+    void setPreviewVideo(bool enabled) { if (value.previewVideo != enabled) { value.previewVideo = enabled; emit securityPreferencesChanged(); } }
     bool allowUtf8() const { return value.allowUtf8; }
     void setAllowUtf8(bool enabled) { if (value.allowUtf8 != enabled) { value.allowUtf8 = enabled; emit securityPreferencesChanged(); } }
     bool allowFiles() const { return value.allowFiles; }
@@ -180,6 +199,8 @@ public:
     Q_PROPERTY(QByteArray b58identity READ getB58EncodedIdetity CONSTANT)
     Q_PROPERTY(QByteArray handle READ getHandle CONSTANT)
     Q_PROPERTY(bool autoConnect READ isAutoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
+    Q_PROPERTY(bool previewImages READ getPreviewImages WRITE setPreviewImages NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool previewVideo READ getPreviewVideo WRITE setPreviewVideo NOTIFY securityPreferencesChanged)
     Q_PROPERTY(bool allowUtf8 READ getAllowUtf8 WRITE setAllowUtf8 NOTIFY securityPreferencesChanged)
     Q_PROPERTY(bool allowFiles READ getAllowFiles WRITE setAllowFiles NOTIFY securityPreferencesChanged)
     Q_PROPERTY(QStringList allowMimeTypes READ getAllowMimeTypes WRITE setAllowMimeTypes NOTIFY securityPreferencesChanged)
@@ -212,6 +233,10 @@ public:
     QImage getAvatar() const noexcept;
     QString getAvatarUrl() const noexcept;
     void setAvatar(const QImage& avatar);
+    bool getPreviewImages() const noexcept { return data_.previewImages; }
+    bool getPreviewVideo() const noexcept { return data_.previewVideo; }
+    void setPreviewImages(bool enabled);
+    void setPreviewVideo(bool enabled);
     bool getAllowUtf8() const noexcept { return data_.allowUtf8; }
     bool getAllowFiles() const noexcept { return data_.allowFiles; }
     QStringList getAllowMimeTypes() const { return data_.allowMimeTypes; }

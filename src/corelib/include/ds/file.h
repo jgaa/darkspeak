@@ -66,6 +66,7 @@ public:
     Q_PROPERTY(Direction direction READ getDirection CONSTANT)
     Q_PROPERTY(bool active READ isActive NOTIFY isActiveChanged)
     Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
+    Q_PROPERTY(QString displayName READ getDisplayName NOTIFY nameChanged)
     Q_PROPERTY(QString path READ getPath WRITE setPath NOTIFY pathChanged)
     Q_PROPERTY(QString hash READ getPrintableHash NOTIFY hashChanged)
     Q_PROPERTY(QDateTime created READ getCreated CONSTANT)
@@ -89,6 +90,7 @@ public:
     void setState(const State state);
     Direction getDirection() const noexcept;
     QString getName() const noexcept;
+    QString getDisplayName() const;
     QString getMimeType() const;
     void setName(const QString& name);
     QString getPath() const noexcept;

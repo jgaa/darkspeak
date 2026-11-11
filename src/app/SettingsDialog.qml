@@ -1,89 +1,117 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Dialogs
 
-Dialog {
+UiDialog {
     id: root
-    standardButtons: Dialog.Save | Dialog.Cancel
     title: qsTr("Settings")
-    anchors.centerIn: parent
-    width: Math.min(Math.max(mainWindow.width - 80, 480), 900)
-    height: Math.min(Math.max(mainWindow.height - 80, 360), 760)
-    padding: 16
+    width: Math.min(mainWindow.width - 24 * appearance.factor, 900 * appearance.factor)
+    height: Math.min(mainWindow.height - 24 * appearance.factor, 760 * appearance.factor)
+    property bool saved: false
+
+    Component.onCompleted: settingsSession.begin()
+    Component.onDestruction: {
+        if (!saved)
+            settingsSession.cancel();
+    }
 
     contentItem: ColumnLayout {
-        spacing: 12
-
-        TabBar {
-            id: tabs
-            Layout.fillWidth: true
-
-            onCurrentIndexChanged: root.loadPage(currentIndex)
-
-            TabButton { text: qsTr("General") }
-            TabButton { text: qsTr("Tor") }
-            TabButton { text: qsTr("Paths") }
-            TabButton { text: qsTr("Logging") }
-            TabButton { text: qsTr("Limits") }
-        }
-
-        ScrollView {
-            id: pageScroll
+        spacing: 12 * appearance.factor
+        RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            contentWidth: availableWidth
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-
-            Loader {
-                id: pageLoader
-                width: pageScroll.availableWidth
-                height: Math.max(pageScroll.availableHeight,
-                                 item && item.implicitHeight ? item.implicitHeight : 0)
+            ListView {
+                id: sections
+                objectName: "settingsSections"
+                Layout.preferredWidth: 150 * appearance.factor
+                Layout.fillHeight: true
+                currentIndex: 0
+                model: [qsTr("General"), qsTr("Appearance"), qsTr("Tor"), qsTr("Files / Paths"), qsTr("Logging"), qsTr("Limits")]
+                delegate: ItemDelegate {
+                    required property int index
+                    required property string modelData
+                    width: ListView.view.width
+                    text: modelData
+                    highlighted: ListView.isCurrentItem
+                    onClicked: sections.currentIndex = index
+                }
+            }
+            StackLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                currentIndex: sections.currentIndex
+                Repeater {
+                    model: ["GeneralSettings.qml", "AppearanceSettings.qml", "TorSettings.qml", "PathsSettings.qml", "LogSettings.qml", "ResourceLimitsSettings.qml"]
+                    ScrollView {
+                        id: scroll
+                        required property int index
+                        required property string modelData
+                        property bool visited: false
+                        Component.onCompleted: {
+                            if (sections.currentIndex === index)
+                                visited = true;
+                        }
+                        Connections {
+                            target: sections
+                            function onCurrentIndexChanged() {
+                                if (sections.currentIndex === scroll.index)
+                                    scroll.visited = true;
+                            }
+                        }
+                        clip: true
+                        contentWidth: availableWidth
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        Loader {
+                            id: loader
+                            width: scroll.availableWidth
+                            active: scroll.visited
+                            source: scroll.modelData
+                            // Keep visited forms alive; stage their controls only on Save.
+                            Connections {
+                                target: root
+                                function onStage() {
+                                    if (loader.item && loader.item.commit)
+                                        loader.item.commit();
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
-    }
-
-    function loadPage(index) {
-        if (pageLoader.item && pageLoader.item.commit) {
-            pageLoader.item.commit()
+        Label {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: settingsSession.error
+            textFormat: Text.PlainText
+            color: appearance.error
+            wrapMode: Text.WordWrap
         }
-        pageLoader.sourceComponent = pageComponents[index]
-    }
-
-    property var pageComponents: [generalPage, torPage, pathsPage, loggingPage, limitsPage]
-
-    Component {
-        id: generalPage
-        GeneralSettings {}
-    }
-
-    Component {
-        id: torPage
-        TorSettings {}
-    }
-
-    Component {
-        id: pathsPage
-        PathsSettings {}
-    }
-
-    Component {
-        id: loggingPage
-        LogSettings {}
-    }
-
-    Component {
-        id: limitsPage
-        ResourceLimitsSettings {}
-    }
-
-    Component.onCompleted: loadPage(tabs.currentIndex)
-
-    onAccepted: {
-        if (pageLoader.item && pageLoader.item.commit) {
-            pageLoader.item.commit()
+        Label {
+            Layout.fillWidth: true
+            text: qsTr("Tor, storage, logging, and connection limits may require reconnection or restart.")
+            color: appearance.secondaryText
+            wrapMode: Text.WordWrap
         }
+    }
+    signal stage
+    footer: DialogButtonBox {
+        Button {
+            objectName: "saveSettingsButton"
+            text: qsTr("Save")
+            DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
+            onClicked: {
+                root.stage();
+                if (settingsSession.save()) {
+                    root.saved = true;
+                    root.close();
+                }
+            }
+        }
+        Button {
+            text: qsTr("Cancel")
+            DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+        }
+        onRejected: root.reject()
     }
 }

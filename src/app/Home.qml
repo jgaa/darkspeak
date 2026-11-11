@@ -6,48 +6,51 @@ import org.darkspeak 1.0
 
 Page {
     id: root
-    width: 600
-    height: 400
+    width: 600 * appearance.factor
+    height: 400 * appearance.factor
 
-    property color primaryText: "#243447"
-    property color secondaryText: "#475569"
-    property color identityHeader: "#263746"
+    property color primaryText: appearance.text
+    property color secondaryText: appearance.secondaryText
+    property color identityHeader: appearance.raised
 
     header: Label {
+        textFormat: Text.PlainText
         text: qsTr("Home")
-        font.pixelSize: Qt.application.font.pixelSize * 2
-        padding: 10
+        font.pixelSize: appearance.fontPixels * 2
+        padding: 10 * appearance.factor
     }
 
     Label {
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         visible: list.count === 0
         text: qsTr("No new notifications")
-        color: "#4b5563"
-        font.pixelSize: 18
+        color: appearance.secondaryText
+        font: appearance.headingFont
     }
 
     ListView {
         id: list
         anchors.fill: parent
-        anchors.margins: 8
+        anchors.margins: appearance.spacing
         clip: true
         model: notifications
         section.property: "identityName"
         section.delegate: Component {
             Rectangle {
                 width: list.width
-                height: 36
+                height: 36 * appearance.factor
                 color: root.identityHeader
 
                 Label {
+                    textFormat: Text.PlainText
                     anchors.fill: parent
-                    leftPadding: 10
+                    leftPadding: 10 * appearance.factor
                     verticalAlignment: Text.AlignVCenter
                     text: section
-                    color: "#ffffff"
+                    color: appearance.selectedText
                     font.bold: true
-                    font.pixelSize: 16
+                    font.pixelSize: 16 * appearance.factor
                 }
             }
         }
@@ -56,63 +59,61 @@ Page {
             id: notificationItem
             width: list.width
             property var contactObject: contact
-            property string avatar: contactObject && contactObject.avatarUrl
-                                   ? contactObject.avatarUrl : avatarUrl
+            property string avatar: contactObject && contactObject.avatarUrl ? contactObject.avatarUrl : avatarUrl
             property int notificationHeight: type === NotificationsModel.N_ADDME ? 92 : 62
             height: (contactHeader ? 56 : 0) + notificationHeight
 
             Column {
                 anchors.fill: parent
-                spacing: 2
+                spacing: 2 * appearance.factor
 
                 RowLayout {
                     visible: contactHeader
                     width: parent.width
-                    height: 52
-                    spacing: 10
+                    height: 52 * appearance.factor
+                    spacing: 10 * appearance.factor
 
                     Image {
-                        Layout.preferredWidth: 42
-                        Layout.preferredHeight: 42
+                        Layout.preferredWidth: 42 * appearance.factor
+                        Layout.preferredHeight: 42 * appearance.factor
                         fillMode: Image.PreserveAspectFit
                         source: notificationItem.avatar
                     }
 
                     Label {
+                        textFormat: Text.PlainText
                         Layout.fillWidth: true
                         text: contactName || qsTr("Unknown contact")
                         color: root.primaryText
                         font.bold: true
-                        font.pixelSize: 15
+                        font.pixelSize: 15 * appearance.factor
                     }
                 }
 
                 Rectangle {
                     width: parent.width
                     height: notificationItem.notificationHeight
-                    color: mouseArea.containsMouse ? "#e5eef8" : "#f7f9fc"
-                    radius: 5
+                    color: mouseArea.containsMouse ? appearance.hover : appearance.surface
+                    radius: 5 * appearance.factor
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.margins: 8
-                        spacing: 10
+                        anchors.margins: appearance.spacing
+                        spacing: 10 * appearance.factor
 
                         Label {
+                            textFormat: Text.PlainText
                             Layout.fillWidth: true
-                            text: type === NotificationsModel.N_ADDME
-                                  ? qsTr("New contact request")
-                                  : type === NotificationsModel.N_MESSAGE
-                                    ? qsTr("Unread messages (%1)").arg(unreadCount)
-                                    : qsTr("Incoming file: %1").arg(fileName)
+                            text: type === NotificationsModel.N_ADDME ? qsTr("New contact request") : type === NotificationsModel.N_MESSAGE ? qsTr("Unread messages (%1)").arg(unreadCount) : qsTr("Incoming file: %1").arg(fileName)
                             color: root.primaryText
                             font.bold: true
                             wrapMode: Text.WordWrap
                         }
 
                         Label {
+                            textFormat: Text.PlainText
                             visible: type === NotificationsModel.N_ADDME
-                            Layout.maximumWidth: 360
+                            Layout.maximumWidth: 360 * appearance.factor
                             text: message
                             color: root.secondaryText
                             elide: Text.ElideRight
@@ -124,17 +125,19 @@ Page {
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: {
-                            list.currentIndex = index
+                            list.currentIndex = index;
                             if (type === NotificationsModel.N_ADDME) {
-                                confirmNewContact.notificationRow = index
-                                confirmNewContact.requesterName = nickName
-                                confirmNewContact.requestMessage = message
-                                confirmNewContact.requesterAvatarUrl = avatar
-                                confirmNewContact.requesterIdentityId = requesterIdentityId
-                                confirmNewContact.requestingIdentity = identities.identityFromId(identityId)
-                                confirmNewContact.open()
+                                requestLoader.setSource("AcceptContactDialog.qml", {
+                                    notificationRow: index,
+                                    requesterName: nickName,
+                                    requestMessage: message,
+                                    requesterAvatarUrl: avatar,
+                                    requesterIdentityId: requesterIdentityId,
+                                    requestingIdentity: identities.identityFromId(identityId)
+                                });
+                                requestLoader.active = true;
                             } else {
-                                openConversation()
+                                openConversation();
                             }
                         }
                     }
@@ -142,31 +145,40 @@ Page {
             }
 
             function openConversation() {
-                var identity = identities.identityFromId(identityId)
+                var identity = identities.identityFromId(identityId);
                 if (!identity)
-                    return
-
-                identities.setCurrentIdentityById(identityId)
-                contacts.setIdentity(identity.uuid)
-                conversations.setIdentity(identity.uuid)
+                    return;
+                identities.setCurrentIdentityById(identityId);
                 if (conversationId > 0)
-                    conversations.setConversationById(conversationId)
+                    conversations.setConversationById(conversationId);
                 else if (contactObject)
-                    conversations.setContact(contactObject)
-                manager.currentPage = Manager.CONVERSATIONS
+                    conversations.setContact(contactObject);
+                manager.currentPage = Manager.CONVERSATIONS;
 
-                Qt.callLater(function() {
+                Qt.callLater(function () {
                     if (conversations.current)
-                        conversations.current.unread = 0
-                    notifications.refreshNotifications()
-                })
+                        conversations.current.unread = 0;
+                    notifications.refreshNotifications();
+                });
             }
         }
     }
 
-    AcceptContactDialog {
-        id: confirmNewContact
-        onAccepted: notifications.acceptContact(notificationRow, true)
-        onRejected: notifications.acceptContact(notificationRow, false)
+    Loader {
+        id: requestLoader
+        active: false
+        onLoaded: item.open()
+        Connections {
+            target: requestLoader.item
+            function onAccepted() {
+                notifications.acceptContact(requestLoader.item.notificationRow, true);
+            }
+            function onRejected() {
+                notifications.acceptContact(requestLoader.item.notificationRow, false);
+            }
+            function onClosed() {
+                requestLoader.active = false;
+            }
+        }
     }
 }

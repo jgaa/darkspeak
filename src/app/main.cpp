@@ -19,9 +19,12 @@
 #include <QSize>
 #include <QSettings>
 #include <QWindow>
+#include <QQuickWindow>
+#include <QElapsedTimer>
 
 #include "ds/manager.h"
 #include "ds/logmodel.h"
+#include "ds/logfiltermodel.h"
 #include "ds/crypto.h"
 #include "ds/identity.h"
 #include "ds/contact.h"
@@ -38,6 +41,9 @@
 #include "filedialogmodel.h"
 #include "desktop_integration.h"
 #include "tray_controller.h"
+#include "appearance.h"
+#include "controls_style.h"
+#include "settings_session.h"
 #ifdef Q_OS_LINUX
 #include "desktop_notifications.h"
 #endif
@@ -110,7 +116,8 @@ LogLevel logLevelFromName(const QString &name, bool &ok)
 
 int main(int argc, char *argv[])
 {
-    //QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    QElapsedTimer startup_timer;
+    startup_timer.start();
 
     QString profile;
     QString earlyArgumentError;
@@ -135,6 +142,7 @@ int main(int argc, char *argv[])
 #endif
 
     QApplication app(argc, argv);
+    ds::ui::configureControls();
 
     // Desktop environments request small icon sizes repeatedly while laying
     // out and repainting the window decoration.  Keep pre-rasterized sizes so
@@ -311,7 +319,15 @@ int main(int argc, char *argv[])
     qmlRegisterType<ds::core::QmlIdentityReq>("org.darkspeak", 1, 0, "QmlIdentityReq");
     qmlRegisterType<ds::models::IdentityNameValidator>("org.darkspeak", 1, 0, "IdentityNameValidator");
 
+    Appearance appearance;
+    LFLOG_DEBUG << "Qt Quick Controls style: " << QQuickStyle::name();
+    SettingsSession settingsSession(appearance, desktopIntegration);
+    LogFilterModel filtered_log;
+    filtered_log.setSourceModel(manager->logModel());
     QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty("filteredLog", &filtered_log);
+    engine.rootContext()->setContextProperty("appearance", &appearance);
+    engine.rootContext()->setContextProperty("settingsSession", &settingsSession);
     engine.rootContext()->setContextProperty("desktopIntegration", &desktopIntegration);
     FileDialogModel fileDialogs;
 
@@ -353,8 +369,6 @@ int main(int argc, char *argv[])
     engine.addImageProvider(contactProvider->getName(), contactProvider);
 
 
-    //QQuickStyle::setStyle("Fusion");
-
     engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
     if (engine.rootObjects().isEmpty()) {
         LFLOG_ERROR << "No root object after loading main.qml. Aborting mission.";
@@ -367,12 +381,21 @@ int main(int argc, char *argv[])
 
     auto *window = qobject_cast<QWindow *>(engine.rootObjects().constFirst());
     std::unique_ptr<TrayController> tray;
+    if (auto *quick_window = qobject_cast<QQuickWindow *>(window)) {
+        QObject::connect(quick_window, &QQuickWindow::frameSwapped, &app, [startup_timer] {
+            LFLOG_DEBUG << "First shell frame after " << startup_timer.elapsed() << " ms";
+        }, Qt::SingleShotConnection);
+    }
     if (window != nullptr) {
-        tray = std::make_unique<TrayController>(window,
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, &appearance, [&appearance, window] {
+            appearance.saveWindow(window);
+        });
+        if (!parser.isSet(QStringLiteral("qml-smoke-test")))
+            tray = std::make_unique<TrayController>(window,
                                                 manager->notificationsModel(),
                                                 parser.isSet(QStringLiteral("autostart")),
                                                 &app);
-        app.setQuitOnLastWindowClosed(!tray->available());
+        app.setQuitOnLastWindowClosed(!tray || !tray->available());
     }
 
     if (parser.isSet(QStringLiteral("qml-smoke-test"))) {

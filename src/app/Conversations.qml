@@ -1,332 +1,348 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Dialogs
 import org.darkspeak 1.0
 
 Page {
     id: root
     property bool hasConversation: !!conversations.current
-    property color primaryText: "#243447"
-    property color secondaryText: "#475569"
-    property color selectedFill: "#294d70"
-    property color selectedBorder: "#79c2f2"
-    // Drafts intentionally live only for the lifetime of this page/application.
-    property var messageDrafts: ({})
+    property bool narrow: width < 760 * appearance.factor
+    property bool showMessages: false
     property bool restoringDraft: false
-
-    function draftKey(conversation) {
-        if (!conversation || !identities.current)
-            return ""
-        return identities.current.id + ":" + conversation.id
-    }
-
-    function saveDraft() {
-        var key = draftKey(conversations.current)
-        if (key.length > 0)
-            messageDrafts[key] = textinput.text
-    }
+    property bool followLatest: true
+    property var activeConversation: null
 
     function restoreDraft() {
-        restoringDraft = true
-        var key = draftKey(conversations.current)
-        textinput.text = key.length > 0 && messageDrafts[key] !== undefined
-                ? messageDrafts[key] : ""
-        restoringDraft = false
+        restoringDraft = true;
+        composer.text = messages.draft;
+        restoringDraft = false;
     }
-
-    function scrollActiveConversationToEnd() {
-        if (conversations.current && messageList.count > 0) {
-            messageList.positionViewAtEnd()
-            messageList.currentIndex = messageList.count - 1
+    function clearNotifications() {
+        if (manager.currentPage === Manager.CONVERSATIONS && visible && mainWindow.active && hasConversation && (!narrow || showMessages))
+            notifications.clearConversationNotifications(conversations.current.id);
+    }
+    Component.onCompleted: {
+        activeConversation = conversations.current;
+        restoreDraft();
+        showMessages = hasConversation;
+        Qt.callLater(history.positionViewAtEnd);
+    }
+    Connections {
+        target: conversations
+        function onCurrentRowChanged() {
+            if (root.activeConversation !== conversations.current) {
+                root.activeConversation = conversations.current;
+                root.restoreDraft();
+                root.followLatest = true;
+                root.showMessages = root.hasConversation;
+            }
+            root.clearNotifications();
         }
     }
-
+    Connections {
+        target: messages
+        function onPageLoaded(direction) {
+            if (direction === 0)
+                history.positionViewAtEnd();
+        }
+        function onDraftChanged() {
+            if (composer.text !== messages.draft)
+                root.restoreDraft();
+        }
+    }
+    Connections {
+        target: mainWindow
+        function onActiveChanged() {
+            root.clearNotifications();
+        }
+    }
+    onVisibleChanged: clearNotifications()
     header: Header {
         whom: identities.current
         text: qsTr("Conversations for ")
     }
-
-    Connections {
-        target: conversations
-
-        function onModelReset() {
-            if (conversations.rowCount() === 1)
-                list.currentIndex = 0
-            else
-                list.currentIndex = -1
-            Qt.callLater(root.restoreDraft)
-        }
-
-        function onCurrentRowChanged() {
-            list.currentIndex = conversations.currentRow
-            messages.setConversation(conversations.current)
-            Qt.callLater(root.restoreDraft)
-            Qt.callLater(root.clearActiveConversationNotifications)
-            Qt.callLater(root.scrollActiveConversationToEnd)
-        }
-    }
-
-    Connections {
-        target: identities
-        function onCurrentIdentityChanged() {
-            Qt.callLater(root.restoreDraft)
-        }
-    }
-
-    Connections {
-        target: messages
-        function onModelReset() {
-            Qt.callLater(root.scrollActiveConversationToEnd)
-        }
-    }
-
-    Connections {
-        target: manager
-        function onCurrentPageChanged() {
-            Qt.callLater(root.clearActiveConversationNotifications)
-        }
-    }
-
-    Connections {
-        target: mainWindow
-        function onActiveChanged() {
-            if (mainWindow.active)
-                Qt.callLater(root.clearActiveConversationNotifications)
-        }
-    }
-
-    function clearActiveConversationNotifications() {
-        if (manager.currentPage === Manager.CONVERSATIONS && root.visible
-                && conversations.current) {
-            notifications.clearConversationNotifications(conversations.current.id)
-        }
-    }
-
     SplitView {
+        id: split
         anchors.fill: parent
-        spacing: 0
-
-        handle: Rectangle {
-            implicitWidth: 12
-            color: SplitHandle.hovered || SplitHandle.pressed ? palette.highlight : palette.mid
-
-            Rectangle {
-                anchors.centerIn: parent
-                width: 2
-                height: parent.height
-                color: palette.dark
+        onResizingChanged: {
+            if (!resizing && !root.narrow) {
+                appearance.conversationWidth = conversationPane.width / appearance.factor;
+                conversationPane.SplitView.preferredWidth = Qt.binding(function () {
+                    return appearance.conversationWidth * appearance.factor;
+                });
             }
         }
-
+        handle: Rectangle {
+            implicitWidth: 5 * appearance.factor
+            color: SplitHandle.hovered || SplitHandle.pressed ? appearance.accent : appearance.border
+        }
         Pane {
-            SplitView.preferredWidth: 280
-            SplitView.minimumWidth: 220
+            id: conversationPane
+            visible: !root.narrow || !root.showMessages
+            SplitView.preferredWidth: appearance.conversationWidth * appearance.factor
+            SplitView.minimumWidth: 180 * appearance.factor
+            SplitView.fillWidth: root.narrow
             SplitView.fillHeight: true
             padding: 0
 
             ListView {
-                id: list
+                id: conversationList
                 anchors.fill: parent
-                interactive: true
                 model: conversations
-                highlight: highlightBar
                 clip: true
-
-                onCurrentIndexChanged: conversations.currentRow = currentIndex
-
-                delegate: Item {
-                    id: itemDelegate
-                    width: list.width
-                    height: 60
-                    property Conversation cco: conversation
-
-                    Row {
-                        anchors.fill: parent
-                        spacing: 4
-
-                        Column {
-                            padding: 5
-                            anchors.verticalCenter: parent.verticalCenter
-
-                            RoundedImage {
-                                source: cco && cco.participant ? cco.participant.avatarUrl : ""
-                                height: 45
-                                width: 45
-                                border.width: 6
-                                border.color: cco && cco.participant
-                                              ? cco.participant.online ? "lime" : "red"
-                                              : "grey"
-                            }
-                        }
-
-                        Column {
-                            spacing: 10
-                            anchors.verticalCenter: parent.verticalCenter
-
-                            Text {
-                                font.pointSize: 10
-                                color: itemDelegate.ListView.isCurrentItem ? "#ffffff" : root.primaryText
-                                text: cco ? cco.contactName : ""
-                                font.bold: itemDelegate.ListView.isCurrentItem
-                            }
-
-                            Text {
-                                font.pointSize: 14
-                                color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
-                                text: cco ? cco.topic : ""
-                                font.bold: itemDelegate.ListView.isCurrentItem
-                            }
-                        }
+                currentIndex: conversations.currentRow
+                ScrollBar.vertical: ScrollBar {}
+                delegate: ItemDelegate {
+                    id: entry
+                    required property int index
+                    required property var conversation
+                    width: conversationList.width
+                    height: 68 * appearance.factor
+                    highlighted: index === conversations.currentRow
+                    onClicked: {
+                        conversations.currentRow = index;
+                        root.showMessages = true;
+                        root.clearNotifications();
                     }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            list.currentIndex = index
+                    contentItem: RowLayout {
+                        spacing: 10 * appearance.factor
+                        RoundedImage {
+                            source: entry.conversation && entry.conversation.participant ? entry.conversation.participant.avatarUrl : ""
+                            Layout.preferredWidth: 38 * appearance.factor
+                            Layout.preferredHeight: 38 * appearance.factor
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 3 * appearance.factor
+                            Label {
+                                Layout.fillWidth: true
+                                text: entry.conversation ? entry.conversation.contactName : ""
+                                textFormat: Text.PlainText
+                                color: entry.highlighted ? appearance.selectedText : appearance.text
+                                font.bold: entry.conversation && entry.conversation.unread > 0
+                                elide: Text.ElideRight
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                text: entry.conversation ? entry.conversation.topic : ""
+                                textFormat: Text.PlainText
+                                color: entry.highlighted ? appearance.selectedText : appearance.secondaryText
+                                elide: Text.ElideRight
+                            }
+                        }
+                        Label {
+                            visible: entry.conversation && entry.conversation.unread > 0
+                            text: entry.conversation ? entry.conversation.unread : ""
+                            color: entry.highlighted ? appearance.selectedText : appearance.text
+                            Accessible.name: qsTr("%1 unread messages").arg(text)
                         }
                     }
                 }
+            }
+            EmptyState {
+                anchors.centerIn: parent
+                width: parent.width - 24 * appearance.factor
+                visible: conversationList.count === 0
+                title: qsTr("No conversations yet")
+                description: qsTr("Select a contact in People to start a conversation.")
             }
         }
-
         ColumnLayout {
+            visible: !root.narrow || root.showMessages
             SplitView.fillWidth: true
-            SplitView.fillHeight: true
             spacing: 0
-
-            Label {
+            ToolBar {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 36
-                leftPadding: 12
-                verticalAlignment: Text.AlignVCenter
-                text: root.hasConversation && conversations.current.participant
-                      ? qsTr("Chat with ")
-                        + conversations.current.contactName
-                      : qsTr("Select a conversation")
-                color: root.primaryText
-                background: Rectangle { color: "#263746" }
+                RowLayout {
+                    anchors.fill: parent
+                    ToolButton {
+                        visible: root.narrow
+                        text: qsTr("Back")
+                        onClicked: root.showMessages = false
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        text: root.hasConversation ? conversations.current.contactName : qsTr("Select a conversation")
+                        textFormat: Text.PlainText
+                        font.bold: true
+                        elide: Text.ElideRight
+                    }
+                    Label {
+                        visible: root.hasConversation
+                        text: root.hasConversation && conversations.current.participant && conversations.current.participant.online ? qsTr("Contact connected") : qsTr("Contact offline")
+                        color: appearance.secondaryText
+                    }
+                    ToolButton {
+                        text: qsTr("Details")
+                        enabled: root.hasConversation
+                        onClicked: details.open()
+                    }
+                }
             }
-
-            Rectangle {
-                id: chatArea
+            RowLayout {
+                Layout.fillWidth: true
+                ToolButton {
+                    text: qsTr("Older messages")
+                    visible: messages.hasOlder
+                    enabled: !messages.loading
+                    onClicked: {
+                        root.followLatest = false;
+                        messages.loadOlder();
+                    }
+                }
+                Label {
+                    text: messages.loading ? qsTr("Loading history…") : messages.historyError
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                    color: messages.historyError.length ? appearance.error : appearance.secondaryText
+                }
+                ToolButton {
+                    text: qsTr("Latest")
+                    enabled: root.hasConversation && !messages.loading
+                    onClicked: {
+                        root.followLatest = true;
+                        messages.loadLatest();
+                    }
+                }
+            }
+            ListView {
+                id: history
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                color: "#d7d7d7"
-
-                ListView {
-                    id: messageList
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.bottom: input.top
-                    anchors.margins: 4
-                    anchors.bottomMargin: 8
-                    spacing: 4
-                    clip: true
-                    model: messages
-                    ScrollBar.vertical: ScrollBar { id: scrollbar }
-
-                    function scrollToEnd() {
-                        positionViewAtEnd()
-                        currentIndex = count - 1
-                    }
-
-                    onCountChanged: {
-                        if (currentIndex === -1 || currentIndex === count - 2)
-                            scrollToEnd()
-                    }
-
-                    DropArea {
-                        anchors.fill: parent
-                        enabled: root.hasConversation
-                        onDropped: function(drop) {
-                            if (drop.hasUrls) {
-                                for (var i = 0; i < drop.urls.length; ++i)
-                                    conversations.current.sendFile({"path": drop.urls[i]})
-                            }
+                model: messages
+                clip: true
+                spacing: appearance.smallSpacing
+                // Visible delegates plus a small nearby buffer; never instantiate the history.
+                cacheBuffer: Math.max(0, height)
+                ScrollBar.vertical: ScrollBar {}
+                onContentYChanged: {
+                    if (!messages.loading)
+                        root.followLatest = !moving && atYEnd && !messages.hasNewer;
+                }
+                onMovementStarted: root.followLatest = false
+                onMovementEnded: {
+                    root.followLatest = atYEnd && !messages.hasNewer;
+                    if (root.followLatest)
+                        root.clearNotifications();
+                    if (atYEnd && messages.hasNewer)
+                        messages.loadNewer();
+                    else if (atYBeginning && messages.hasOlder)
+                        messages.loadOlder();
+                }
+                Connections {
+                    target: messages
+                    function onRowsInserted(parent, first, last) {
+                        if (root.followLatest && !messages.loading) {
+                            Qt.callLater(history.positionViewAtEnd);
+                            root.clearNotifications();
                         }
-                    }
-
-                    delegate: Loader {
-                        property File cFile: file ? file : null
-                        property var cData: model
-                        property int msgBorder: 16
-                        property int margin: 4
-                        property var cList: messageList
-                        property var scrollBar: scrollbar
-                        source: type === MessagesModel.MESSAGE
-                                ? "MessageComponent.qml" : "FileComponent.qml"
                     }
                 }
-
-                Rectangle {
-                    id: input
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    anchors.margins: 4
-                    height: 96
-                    radius: 4
-                    color: "white"
-                    border.color: "steelblue"
-                    border.width: 1
-                    enabled: root.hasConversation
-
+                delegate: Loader {
+                    width: history.width
+                    property File cFile: model.file || null
+                    property var cData: model
+                    property int msgBorder: 16 * appearance.factor
+                    property int margin: 4 * appearance.factor
+                    property var cList: history
+                    property var scrollBar: ({
+                            width: 0
+                        })
+                    source: model.type === MessagesModel.MESSAGE ? "MessageComponent.qml" : "FileComponent.qml"
+                }
+                DropArea {
+                    anchors.fill: parent
+                    enabled: root.hasConversation && conversations.current.participant && conversations.current.participant.canSendFiles
+                    onDropped: function (drop) {
+                        if (drop.hasUrls && drop.urls.length <= 16) {
+                            for (let i = 0; i < drop.urls.length; ++i)
+                                conversations.current.sendFile({
+                                    path: drop.urls[i]
+                                });
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                visible: messages.hasNewer
+                Item {
+                    Layout.fillWidth: true
+                }
+                Button {
+                    text: qsTr("Newer messages")
+                    enabled: !messages.loading
+                    onClicked: messages.loadNewer()
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: appearance.spacing
+                spacing: appearance.spacing
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 90 * appearance.factor
                     TextArea {
-                        id: textinput
-                        anchors.fill: parent
-                        color: "black"
-                        clip: true
-                        focus: root.hasConversation
-
-                        Keys.onPressed: function(event) {
-                            if (event.modifiers && Qt.ControlModifier
-                                    && (event.key === Qt.Key_Enter
-                                        || event.key === Qt.Key_Return)) {
-                                event.accepted = true
-                                send()
-                            }
-                        }
-
-                        function send() {
-                            if (!root.hasConversation)
-                                return
-                            conversations.current.sendMessage(text)
-                            text = ""
-                            root.saveDraft()
-                        }
-
+                        id: composer
+                        enabled: root.hasConversation
+                        placeholderText: qsTr("Write a message… (Ctrl+Enter to send)")
+                        textFormat: TextEdit.PlainText
+                        wrapMode: TextEdit.Wrap
+                        selectByMouse: true
+                        Accessible.name: qsTr("Message")
                         onTextChanged: {
                             if (!root.restoringDraft)
-                                root.saveDraft()
+                                messages.draft = text;
+                        }
+                        function send() {
+                            if (!root.hasConversation || !text.trim().length)
+                                return;
+                            if (!conversations.current.sendMessage(text))
+                                return;
+                            text = "";
+                            root.followLatest = true;
+                        }
+                        Keys.onPressed: function (event) {
+                            if ((event.modifiers & Qt.ControlModifier) && (event.key === Qt.Key_Enter || event.key === Qt.Key_Return)) {
+                                event.accepted = true;
+                                send();
+                            }
                         }
                     }
                 }
-
                 Button {
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    anchors.margins: 4
                     text: qsTr("Send")
-                    icon.source: "qrc:/images/Sent-32.png"
-                    enabled: root.hasConversation
-                    onClicked: textinput.send()
+                    enabled: root.hasConversation && composer.text.trim().length > 0
+                    onClicked: composer.send()
                 }
             }
         }
     }
-
-    Component {
-        id: highlightBar
-        Rectangle {
-            radius: 5
-            opacity: 1
-            y: list.currentItem ? list.currentItem.y : 0
-            color: root.selectedFill
-            border.color: root.selectedBorder
-            visible: list.currentItem
-            Behavior on y { SpringAnimation { spring: 1; damping: 0.1 } }
+    UiDialog {
+        id: details
+        title: qsTr("Connection and identity")
+        width: Math.min(root.width - 24 * appearance.factor, 560 * appearance.factor)
+        standardButtons: Dialog.Close
+        contentItem: ColumnLayout {
+            Label {
+                Layout.fillWidth: true
+                text: root.hasConversation && conversations.current.participant && conversations.current.participant.peerVerified ? qsTr("Contact key authenticated by the connection protocol.") : qsTr("Contact key has not been authenticated.")
+                wrapMode: Text.WordWrap
+            }
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("Manual fingerprint verification is not available yet. Tor connectivity and message delivery do not establish manual verification.")
+                wrapMode: Text.WordWrap
+            }
+            TextArea {
+                Layout.fillWidth: true
+                readOnly: true
+                selectByMouse: true
+                textFormat: TextEdit.PlainText
+                text: root.hasConversation && conversations.current.participant ? conversations.current.participant.handle : ""
+                wrapMode: TextEdit.WrapAnywhere
+            }
         }
     }
 }

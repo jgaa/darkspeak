@@ -3,89 +3,60 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import org.darkspeak 1.0
 
-Dialog {
+UiDialog {
     id: root
     property Conversation conversation: null
-    modal: true
-    closePolicy: Popup.NoAutoClose
-    standardButtons: path.text ? (Dialog.Ok | Dialog.Cancel) : Dialog.Cancel
-    width: mainWindow.width < 450 ? mainWindow.width : 450
-
-    function updateInfo(fpath) {
-        name.text = files.getFileName(fpath)
-        var len = files.getFileLength(fpath)
-        size.text = len >= 0 ? len.toString() : ""
+    title: qsTr("Offer a file")
+    width: Math.min(mainWindow.width - 24 * appearance.factor, 600 * appearance.factor)
+    standardButtons: path.text.length > 0 && conversation && conversation.participant && conversation.participant.canSendFiles ? Dialog.Ok | Dialog.Cancel : Dialog.Cancel
+    function updateInfo(filePath) {
+        name.text = files.getFileName(filePath);
     }
-
-    ColumnLayout {
-        spacing: 4
-        width: parent.width
-
-        GridLayout {
-            id: fields
-            rowSpacing: 4
-            rows: 3
-            Layout.fillWidth: parent.width
-            flow: GridLayout.TopToBottom
-
-            Label { font.pointSize: 9; text: qsTr("Path")}
-            Label { font.pointSize: 9; text: qsTr("Name")}
-            Label { font.pointSize: 9; text: qsTr("Size")}
-
-            Row {
+    contentItem: ColumnLayout {
+        spacing: 10 * appearance.factor
+        Label {
+            text: qsTr("File")
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            TextField {
+                id: path
                 Layout.fillWidth: true
-                spacing: 4
-                TextField {
-                    id: path
-                    width: parent.width - 50
-
-                    onTextChanged: {
-                        onTextChanged: console.log("Text has changed to:", text)
-                        updateInfo(text)
+                Accessible.name: qsTr("File path")
+                onEditingFinished: root.updateInfo(text)
+            }
+            Button {
+                text: qsTr("Browse…")
+                onClicked: {
+                    const selected = fileDialogs.openFile(qsTr("File to send"), path.text);
+                    if (selected) {
+                        path.text = selected;
+                        root.updateInfo(selected);
                     }
                 }
-
-                Button {
-                    x: path.right + 5
-                    width: 45
-                    text: "...";
-
-                    onClicked: {
-                        const selected = fileDialogs.openFile(
-                            qsTr("File to Send"), path.text)
-                        if (selected)
-                            path.text = selected
-                    }
-                }
-            }
-
-            TextField {
-                id: name
-                Layout.fillWidth: true
-            }
-
-            TextField {
-                id: size
-                width: 200
-                readOnly: true
             }
         }
-
+        Label {
+            text: qsTr("Display filename")
+        }
+        TextField {
+            id: name
+            Layout.fillWidth: true
+            Accessible.name: qsTr("Display filename")
+        }
+        Label {
+            Layout.fillWidth: true
+            text: qsTr("The contact's current file and MIME preferences are checked before an offer is queued.")
+            wrapMode: Text.WordWrap
+            color: appearance.secondaryText
+        }
     }
-
     onAccepted: {
-        const args = {
-            "name" : name.text ? name.text : files.getFileName(path.text),
-            "path" : path.text
-        }
-
-        conversation.sendFile(args);
-
-        //close()
-        destroy()
-    }
-
-    onRejected: {
+        conversation.sendFile({
+            name: name.text || files.getFileName(path.text),
+            path: path.text
+        });
         destroy();
     }
+    onRejected: destroy()
 }

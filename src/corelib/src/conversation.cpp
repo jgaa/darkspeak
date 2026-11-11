@@ -1,9 +1,11 @@
+#include <QMimeDatabase>
 #include "ds/conversation.h"
 #include "ds/errors.h"
 #include "ds/update_helper.h"
 #include "ds/dsengine.h"
 #include "ds/crypto.h"
 #include "ds/identity.h"
+#include "ds/textpolicy.h"
 
 #include "logfault/logfault.h"
 
@@ -45,11 +47,20 @@ void Conversation::incrementUnread()
     }
 }
 
-void Conversation::sendMessage(const QString &text)
+bool Conversation::sendMessage(const QString &text)
 {
     try {
         LFLOG_DEBUG << "Sending message text payload of " << text.size() << " characters";
 
+        if (text.isEmpty() || text.size() > 65536 || text.toUtf8().size() > 65536) {
+            DsEngine::instance().reportStatus(tr("Messages must contain between 1 and 65536 encoded bytes."), DsEngine::WARNING);
+            return false;
+        }
+        const auto *participant = getFirstParticipant();
+        if (!participant || !participant->canSendText(text)) {
+            DsEngine::instance().reportStatus(tr("The contact is blocked or currently accepts ASCII text only."), DsEngine::WARNING);
+            return false;
+        }
         const auto identity = getIdentity();
         assert(identity);
 
@@ -57,7 +68,7 @@ void Conversation::sendMessage(const QString &text)
         data.conversation = hash_;
         data.composedTime = DsEngine::getSafeNow();
         data.content = text;
-        data.encoding = Message::Encoding::UTF8;
+        data.encoding = text_policy::permittedAscii(text) ? Message::US_ACSII : Message::UTF8;
         data.sender = identity->getCert()->getSigningPubKey().toByteArray();
         const auto random = crypto::Crypto::getRandomBytes(32);
         data.messageId = crypto::Crypto::getSha256(
@@ -65,6 +76,7 @@ void Conversation::sendMessage(const QString &text)
 
         DsEngine::instance().getMessageManager()->sendMessage(*this, data);
         touchLastActivity();
+        return true;
     } catch (const std::exception& ex) {
         LFLOG_ERROR << "Failed to send message: " << ex.what();
         DsEngine::instance().reportStatus(
@@ -73,6 +85,7 @@ void Conversation::sendMessage(const QString &text)
     } catch (...) {
         LFLOG_ERROR << "Failed to send message: unknown exception";
     }
+    return false;
 }
 
 void Conversation::sendFile(const QVariantMap &args)
@@ -102,6 +115,13 @@ void Conversation::sendFile(const QVariantMap &args)
     if (data->name.isEmpty()) {
         QFileInfo fi{data->path};
         data->name = fi.fileName();
+    }
+
+    const auto *participant = getFirstParticipant();
+    const auto mime_type = QMimeDatabase{}.mimeTypeForFile(data->path, QMimeDatabase::MatchContent).name();
+    if (!participant || !participant->canSendFileType(mime_type, data->name)) {
+        DsEngine::instance().reportStatus(tr("The contact does not currently accept this file type or filename."), DsEngine::WARNING);
+        return;
     }
 
     data->conversation = getId();

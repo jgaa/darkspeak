@@ -2,38 +2,32 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtCore
-import org.darkspeak 1.0
 
 ScrollView {
     id: root
     clip: true
 
-    Settings {
-        id: settings
-        property string logPath: ""
-        property int logLevelFile: 0
-        property int logLevelStdout: 0
-        property int logLevelApp: 4
-    }
+    property var settings: settingsSession.values
 
     function commit() {
-        settings.logPath = logPath.text
-        settings.logLevelFile = fileLog.currentIndex
-        settings.logLevelStdout = stdoutLog.currentIndex
-        settings.logLevelApp = viewerLog.currentIndex
-        settings.sync()
+        settings.logPath = logPath.text;
+        settings.logLevelFile = fileLog.currentIndex;
+        settings.logLevelStdout = stdoutLog.currentIndex;
+        settings.logLevelApp = viewerLog.currentIndex;
     }
 
     GridLayout {
         id: fields
         width: root.availableWidth
         columns: width >= 480 ? 2 : 1
-        rowSpacing: 10
-        columnSpacing: 16
-        property var levels: [qsTr("Disabled"), qsTr("Error"), qsTr("Warning"),
-            qsTr("Notice"), qsTr("Info"), qsTr("Debug"), qsTr("Trace")]
+        rowSpacing: 10 * appearance.factor
+        columnSpacing: appearance.largeSpacing
+        property var levels: [qsTr("Disabled"), qsTr("Error"), qsTr("Warning"), qsTr("Notice"), qsTr("Info"), qsTr("Debug"), qsTr("Trace")]
 
-        Label { text: qsTr("Log file") }
+        Label {
+            textFormat: Text.PlainText
+            text: qsTr("Log file")
+        }
         RowLayout {
             Layout.fillWidth: true
             TextField {
@@ -45,15 +39,17 @@ ScrollView {
             Button {
                 text: qsTr("Browse…")
                 onClicked: {
-                    const selected = fileDialogs.openFile(
-                        qsTr("Select log file"), logPath.text)
+                    const selected = fileDialogs.openFile(qsTr("Select log file"), logPath.text);
                     if (selected)
-                        logPath.text = selected
+                        logPath.text = selected;
                 }
             }
         }
 
-        Label { text: qsTr("Stdout level") }
+        Label {
+            textFormat: Text.PlainText
+            text: qsTr("Stdout level")
+        }
         ComboBox {
             id: stdoutLog
             Layout.fillWidth: true
@@ -61,7 +57,10 @@ ScrollView {
             currentIndex: settings.logLevelStdout
         }
 
-        Label { text: qsTr("Log file level") }
+        Label {
+            textFormat: Text.PlainText
+            text: qsTr("Log file level")
+        }
         ComboBox {
             id: fileLog
             Layout.fillWidth: true
@@ -69,7 +68,10 @@ ScrollView {
             currentIndex: settings.logLevelFile
         }
 
-        Label { text: qsTr("Log viewer level") }
+        Label {
+            textFormat: Text.PlainText
+            text: qsTr("Log viewer level")
+        }
         ComboBox {
             id: viewerLog
             Layout.fillWidth: true
@@ -78,6 +80,7 @@ ScrollView {
         }
 
         Label {
+            textFormat: Text.PlainText
             Layout.columnSpan: fields.columns
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
@@ -85,5 +88,4 @@ ScrollView {
             text: qsTr("Logging settings are applied when DarkSpeak starts. The log viewer keeps the latest 1000 messages.")
         }
     }
-
 }

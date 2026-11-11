@@ -1,0 +1,31 @@
+#pragma once
+
+#include <QObject>
+#include <QQmlPropertyMap>
+#include <QSettings>
+
+class Appearance;
+class DesktopIntegration;
+
+// A dialog-scoped draft. No QSettings writes or desktop side effects before Save.
+class SettingsSession final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QQmlPropertyMap *values READ values CONSTANT)
+    Q_PROPERTY(QString error READ error NOTIFY errorChanged)
+public:
+    SettingsSession(Appearance &appearance, DesktopIntegration &desktop, QObject *parent = nullptr);
+    QQmlPropertyMap *values() { return &values_; }
+    QString error() const { return error_; }
+    Q_INVOKABLE void begin();
+    Q_INVOKABLE bool save();
+    Q_INVOKABLE void cancel();
+signals:
+    void errorChanged();
+private:
+    bool fail(const QString &error);
+    Appearance &appearance_;
+    DesktopIntegration &desktop_;
+    QQmlPropertyMap values_;
+    QVariantMap original_;
+    QString error_;
+};

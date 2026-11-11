@@ -2,9 +2,12 @@ project(models LANGUAGES CXX)
 
 add_library(${PROJECT_NAME} STATIC
     include/ds/notificationsmodel.h
+    include/ds/logfiltermodel.h
+    src/logfiltermodel.cpp
     include/ds/logmodel.h
     include/ds/contactsmodel.h
     include/ds/model_util.h
+    include/ds/historyquery.h
     include/ds/messagesmodel.h
     include/ds/filesmodel.h
     include/ds/strategy.h
@@ -22,10 +25,10 @@ add_library(${PROJECT_NAME} STATIC
     src/filesmodel.cpp
     src/notificationsmodel.cpp
     )
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
+set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
     PRIVATE ${CMAKE_SOURCE_DIR}/dependencies/logfault/include)
-target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 target_compile_definitions(${PROJECT_NAME} PUBLIC
     PROGRAM_VERSION="${CMAKE_PROJECT_VERSION}"
     DARKSPEAK_COMPILER="${DARKSPEAK_COMPILER}"

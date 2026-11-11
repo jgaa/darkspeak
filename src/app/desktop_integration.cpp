@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QLoggingCategory>
 #include <QSettings>
+#include <QSaveFile>
 #include <QStandardPaths>
 
 namespace {
@@ -24,7 +25,8 @@ const QString iconPath()
 
 const QString darkSpeakFolderPath()
 {
-    return QDir(QDir::homePath()).filePath(QStringLiteral("DarkSpeak"));
+    const auto profile = qEnvironmentVariable("DARKSPEAK_PROFILE_ROOT");
+    return QDir(profile.isEmpty() ? QDir::homePath() : profile).filePath(QStringLiteral("DarkSpeak"));
 }
 
 const QString darkSpeakDownloadsPath()
@@ -158,9 +160,9 @@ bool DesktopIntegration::updateAutostart(bool enabled, QString *errorMessage) co
         if (errorMessage != nullptr) *errorMessage = QStringLiteral("Unable to read bundled application icon");
         return false;
     }
-    QFile iconFile(icon);
+    QSaveFile iconFile(icon);
     if (!iconFile.open(QIODevice::WriteOnly | QIODevice::Truncate)
-        || iconFile.write(resource.readAll()) < 0) {
+        || iconFile.write(resource.readAll()) < 0 || !iconFile.commit()) {
         if (errorMessage != nullptr) *errorMessage = QStringLiteral("Unable to write application icon: %1").arg(icon);
         return false;
     }
@@ -170,7 +172,7 @@ bool DesktopIntegration::updateAutostart(bool enabled, QString *errorMessage) co
         if (errorMessage != nullptr) *errorMessage = QStringLiteral("Unable to create autostart directory: %1").arg(directory.absolutePath());
         return false;
     }
-    QFile entryFile(entry);
+    QSaveFile entryFile(entry);
     if (!entryFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
         if (errorMessage != nullptr) *errorMessage = QStringLiteral("Unable to write autostart entry: %1").arg(entry);
         return false;
@@ -181,7 +183,8 @@ bool DesktopIntegration::updateAutostart(bool enabled, QString *errorMessage) co
         "Icon=%2\nCategories=Network;Chat;\nHidden=false\nStartupNotify=true\n"
         "Terminal=false\nX-GNOME-Autostart-enabled=true\n")
         .arg(desktopExecArgument(QCoreApplication::applicationFilePath()), icon);
-    if (entryFile.write(contents.toUtf8()) < 0) {
+    const auto encoded_contents = contents.toUtf8();
+    if (entryFile.write(encoded_contents) != encoded_contents.size() || !entryFile.commit()) {
         if (errorMessage != nullptr) *errorMessage = QStringLiteral("Unable to write autostart entry: %1").arg(entry);
         return false;
     }

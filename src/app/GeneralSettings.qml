@@ -7,31 +7,14 @@ Item {
     id: root
     implicitHeight: content.implicitHeight
 
-    Settings {
-        id: settings
-        property bool appAutoConnect : true
-        property bool autostart : false
-        property bool useDarkSpeakFolder : true
-        property bool autoAcceptIncomingFiles : false
-        property bool includeConversationNameInDownloadPath : false
-    }
+    property var settings: settingsSession.values
 
     function commit() {
-        settings.appAutoConnect = autoConnect.checked
-        if (useDarkSpeakFolder.checked !== settings.useDarkSpeakFolder) {
-            if (desktopIntegration.setDarkSpeakFolderEnabled(useDarkSpeakFolder.checked)) {
-                settings.useDarkSpeakFolder = useDarkSpeakFolder.checked
-            } else {
-                useDarkSpeakFolder.checked = settings.useDarkSpeakFolder
-            }
-        }
-        if (desktopIntegration.setAutostartEnabled(autostart.checked)) {
-            settings.autostart = autostart.checked
-        } else {
-            autostart.checked = settings.autostart
-        }
-        settings.autoAcceptIncomingFiles = autoAccept.checked
-        settings.includeConversationNameInDownloadPath = includeConversationName.checked
+        settings.appAutoConnect = autoConnect.checked;
+        settings.useDarkSpeakFolder = useDarkSpeakFolder.checked;
+        settings.autostart = autostart.checked;
+        settings.autoAcceptIncomingFiles = autoAccept.checked;
+        settings.includeConversationNameInDownloadPath = includeConversationName.checked;
     }
 
     ColumnLayout {
@@ -41,7 +24,7 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        spacing: 4
+        spacing: appearance.smallSpacing
 
         CheckBox {
             id: autoConnect
@@ -70,8 +53,8 @@ Item {
 
         CheckBox {
             id: autoAccept
-            text: qsTr("Auto-accept incoming files")
-            ToolTip.text: qsTr("Start receiving files without asking first")
+            text: qsTr("Automatically accept and download incoming files")
+            ToolTip.text: qsTr("Download allowed files without asking. This does not open files or enable image or video previews.")
             ToolTip.visible: hovered
             checked: settings.autoAcceptIncomingFiles
         }
@@ -83,7 +66,5 @@ Item {
             ToolTip.visible: hovered
             checked: settings.includeConversationNameInDownloadPath
         }
-
     }
-
 }

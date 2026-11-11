@@ -9,16 +9,22 @@ RowLayout {
     property alias value: valueSlider.value
     Layout.fillWidth: true
 
-    Label { text: parent.label; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+    Label {
+        textFormat: Text.PlainText
+        text: parent.label
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+    }
     Slider {
         id: valueSlider
-        Layout.preferredWidth: 190
+        Layout.preferredWidth: 190 * appearance.factor
         stepSize: 1
         snapMode: Slider.SnapAlways
     }
     Label {
+        textFormat: Text.PlainText
         text: Math.round(valueSlider.value)
-        Layout.preferredWidth: 48
+        Layout.preferredWidth: 48 * appearance.factor
         horizontalAlignment: Text.AlignRight
     }
 }

@@ -1,231 +1,110 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import org.darkspeak 1.0
 
 Item {
-    property var fileColors: ["silver", "blue", "silver", "orange", "yellow", "yellowgreen", "lightgreen", "red", "red", "red"]
-
-    function chatDate(value) {
-        if (!value) {
-            return ""
+    id: root
+    width: cList.width
+    height: card.implicitHeight + 12 * appearance.factor
+    function showMenu() {
+        const menu = cFile && cFile.direction === File.OUTGOING ? contextFileSendMenu : contextFileReceiveMenu;
+        menu.file = cFile;
+        menu.popup();
+    }
+    Pane {
+        id: card
+        width: Math.max(1, Math.min(root.width - 24 * appearance.factor, 680 * appearance.factor))
+        x: cFile && cFile.direction === File.OUTGOING ? root.width - width - 8 * appearance.factor : 8 * appearance.factor
+        padding: 10 * appearance.factor
+        background: Rectangle {
+            color: cFile && cFile.direction === File.OUTGOING ? appearance.outgoing : appearance.incoming
+            radius: appearance.bubbleRadius
+            border.color: appearance.border
         }
-
-        var date = new Date(value)
-        if (isNaN(date.getTime())) {
-            return ""
-        }
-
-        var now = new Date()
-        var today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-        var fileDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-        var days = Math.round((today.getTime() - fileDay.getTime()) / 86400000)
-
-        if (days === 0) {
-            return qsTr("today") + " " + Qt.formatDateTime(date, "hh:mm")
-        }
-        if (days === 1) {
-            return qsTr("yesterday") + " " + Qt.formatDateTime(date, "hh:mm")
-        }
-
-        var weekdays = [qsTr("sun"), qsTr("mon"), qsTr("tue"), qsTr("wed"),
-                        qsTr("thu"), qsTr("fri"), qsTr("sat")]
-        return weekdays[date.getDay()] + " " + Qt.formatDateTime(date, "yyyy-MM-dd hh:mm")
-    }
-
-
-    function pickColor(file) {
-        if (typeof file.state !== 'number') {
-            return "grey"
-        }
-
-        return fileColors[file.state]
-    }
-
-    function getTransferHeight(file) {
-        var height = 48
-
-        if (file.direction === File.INCOMING && file.state === File.FS_OFFERED) {
-            height = 84
-        } else if (file.state === File.FS_FAILED) {
-            height = 84
-        } else if (file.state === File.FS_QUEUED
-                   || file.state === File.FS_TRANSFERRING
-                   || file.state === File.FS_HASHING) {
-            height = 64
-        }
-
-        return height
-    }
-
-    function showMenu(mouse) {
-        var ctxmenu = null
-        if (cFile.direction === File.OUTGOING) {
-            ctxmenu = contextFileSendMenu
-        } else {
-            ctxmenu = contextFileReceiveMenu
-        }
-
-        ctxmenu.x = mouse.x;
-        ctxmenu.y = mouse.y;
-        ctxmenu.file = cFile
-        ctxmenu.open();
-    }
-
-    x: cData.direction === Message.OUTGOING ? 0 : msgBorder
-    width: cList.width - msgBorder - scrollBar.width
-    height: getTransferHeight(cFile)
-
-    Rectangle {
-        id: background
-        property int margin: 4
-        anchors.fill: parent
-        color: pickColor(cFile)
-        radius: 4
-    }
-
-    TextEdit {
-        anchors.left: background.left
-        anchors.top: background.top
-        anchors.margins: 2
-        font.pointSize: 8
-        color: cData.direction === Message.INCOMING
-            ? "darkblue" : "darkgreen"
-        text: cData.stateName ? qsTr(cData.stateName) : ""
-    }
-
-    Text {
-        id: date
-        anchors.right: background.right
-        anchors.top: background.top
-        anchors.margins: 2
-        font.pointSize: 8
-        color: cData.direction === Message.INCOMING
-            ? "darkblue" : "darkgreen"
-        text: chatDate(cData.composedTime)
-    }
-
-    Image {
-        id: icon
-        source: "qrc:/images/FileTansferActive.svg"
-        height: 32
-        width: 32
-        anchors.top: date.bottom
-        anchors.leftMargin: 2
-        anchors.rightMargin: 2
-    }
-
-    Label {
-        id: fileName
-        text: cFile.name
-        anchors.top: date.bottom
-        anchors.left: icon.right
-        anchors.leftMargin: 2
-        anchors.rightMargin: 2
-        color: "black"
-    }
-
-    Label {
-        id: fileSize
-        text: cFile.size + ' ' + qsTr("bytes")
-        anchors.top: date.bottom
-        anchors.left: fileName.right
-        color: "gray"
-        anchors.leftMargin: 6
-        anchors.rightMargin: 2
-    }
-
-    ProgressBar {
-        id: pbar
-        anchors.right: parent.right
-        anchors.rightMargin: 6
-        anchors.top: fileName.bottom
-        anchors.topMargin: 0
-        anchors.left: fileName.left
-        anchors.leftMargin: 0
-        from: 0.0
-        to: 1.0
-        value: cFile.progress
-        visible: cFile.state === File.FS_QUEUED
-                 || cFile.state === File.FS_TRANSFERRING
-                 || cFile.state === File.FS_HASHING
-    }
-
-    MouseArea {
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
-        anchors.fill: parent
-        onClicked: {
-            cList.currentIndex = index
-            if (mouse.button === Qt.RightButton) {
-                showMenu(mouse)
+        contentItem: ColumnLayout {
+            spacing: 6 * appearance.factor
+            RowLayout {
+                Layout.fillWidth: true
+                Label {
+                    text: cData.stateName || ""
+                    textFormat: Text.PlainText
+                    color: cFile && cFile.state === File.FS_FAILED ? appearance.error : appearance.secondaryText
+                    Layout.fillWidth: true
+                }
+                Label {
+                    text: cData.composedTime ? Qt.formatDateTime(cData.composedTime, Qt.DefaultLocaleShortDate) : ""
+                    textFormat: Text.PlainText
+                    color: appearance.secondaryText
+                }
+            }
+            TextEdit {
+                Layout.fillWidth: true
+                text: cFile ? cFile.displayName : ""
+                textFormat: TextEdit.PlainText
+                font: appearance.font
+                color: appearance.text
+                readOnly: true
+                selectByMouse: true
+                wrapMode: TextEdit.WrapAnywhere
+            }
+            Label {
+                text: cFile ? qsTr("%1 bytes").arg(Number(cFile.size).toLocaleString(Qt.locale(), 'f', 0)) : ""
+                textFormat: Text.PlainText
+                color: appearance.secondaryText
+            }
+            ProgressBar {
+                Layout.fillWidth: true
+                from: 0
+                to: 1
+                value: cFile ? cFile.progress : 0
+                visible: cFile && (cFile.state === File.FS_QUEUED || cFile.state === File.FS_TRANSFERRING || cFile.state === File.FS_HASHING)
+                Accessible.name: qsTr("File transfer progress")
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Button {
+                    text: qsTr("Accept and download")
+                    visible: cFile && cFile.direction === File.INCOMING && cFile.state === File.FS_OFFERED
+                    onClicked: cFile.accept()
+                }
+                Button {
+                    text: qsTr("Reject")
+                    visible: cFile && cFile.direction === File.INCOMING && cFile.state === File.FS_OFFERED
+                    onClicked: cFile.reject()
+                }
+                Button {
+                    text: qsTr("Resume")
+                    visible: cFile && cFile.state === File.FS_FAILED
+                    onClicked: cFile.resume()
+                }
+                Item {
+                    Layout.fillWidth: true
+                }
+                ToolButton {
+                    text: qsTr("Actions…")
+                    enabled: !!cFile
+                    onClicked: root.showMenu()
+                }
             }
         }
-
-        onPressAndHold: {
-            cList.currentIndex = index
-            showMenu(mouse)
-        }
     }
-
-    Button {
-        id: resumeBtn
-        height: 28
-        text: qsTr("Resume")
-        icon.source: "qrc:/images/FileTansferActive.svg"
-        anchors.top: fileName.bottom
-        anchors.topMargin: 4
-        anchors.left: fileName.left
-        anchors.leftMargin: 0
-        visible: cFile.state === File.FS_FAILED
-        onClicked: {
-            cFile.resume()
-        }
-    }
-
-    Button {
-        id: accepptBtn
-        height: 28
-        text: qsTr("Accept")
-        anchors.top: pbar.visible ? pbar.bottom : fileName.bottom
-        anchors.topMargin: 4
-        anchors.left: fileName.left
-        anchors.leftMargin: 0
-        visible:  (cFile.direction === File.INCOMING) && (cFile.state === File.FS_OFFERED)
-        onClicked: {
-            cFile.accept()
-        }
-    }
-
-    Button {
-        height: 28
-        text: qsTr("Reject")
-        anchors.top: fileName.bottom
-        anchors.topMargin: 4
-        anchors.left: accepptBtn.right
-        anchors.leftMargin: 6
-        visible: cFile.direction === File.INCOMING && cFile.state === File.FS_OFFERED
-        onClicked: {
-            cFile.reject()
-        }
-    }
-
     Menu {
         id: contextFileSendMenu
         property File file: null
 
         MenuItem {
             onTriggered: {
-                contextFileSendMenu.file.cancel()
+                contextFileSendMenu.file.cancel();
             }
 
-            enabled : (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_WAITING)
-                || (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_OFFERED)
-                || (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_TRANSFERRING)
+            enabled: (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_WAITING) || (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_OFFERED) || (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_TRANSFERRING)
             text: qsTr("Cancel")
         }
 
         MenuItem {
             onTriggered: {
-                manager.textToClipboard(contextFileSendMenu.file.name + ": " + contextFileSendMenu.file.hash)
+                manager.textToClipboard(contextFileSendMenu.file.name + ": " + contextFileSendMenu.file.hash);
             }
 
             text: qsTr("Copy Sha256")
@@ -233,14 +112,14 @@ Item {
 
         MenuItem {
             onTriggered: {
-                contextFileSendMenu.file.openInDefaultApplication()
+                contextFileSendMenu.file.openInDefaultApplication();
             }
-            text: qsTr("Open File")
+            text: qsTr("Open in external application")
         }
 
         MenuItem {
             onTriggered: {
-                contextFileSendMenu.file.openFolder()
+                contextFileSendMenu.file.openFolder();
             }
             text: qsTr("Open Folder")
         }
@@ -249,7 +128,6 @@ Item {
     Menu {
         id: contextFileReceiveMenu
         property File file: null
-
 
         MenuItem {
             onTriggered: {
@@ -268,13 +146,12 @@ Item {
                 }
             }
 
-            text: (contextFileReceiveMenu.file && contextFileReceiveMenu.file.state == File.FS_TRANSFERRING)
-                  ? qsTr("Cancel") : qsTr("Reject")
+            text: (contextFileReceiveMenu.file && contextFileReceiveMenu.file.state == File.FS_TRANSFERRING) ? qsTr("Cancel") : qsTr("Reject")
         }
 
         MenuItem {
             onTriggered: {
-                manager.textToClipboard(contextFileReceiveMenu.file.name)
+                manager.textToClipboard(contextFileReceiveMenu.file.name);
             }
 
             text: qsTr("Copy Name")
@@ -282,7 +159,7 @@ Item {
 
         MenuItem {
             onTriggered: {
-                manager.textToClipboard(contextFileReceiveMenu.file.name + ": " + contextFileReceiveMenu.file.hash)
+                manager.textToClipboard(contextFileReceiveMenu.file.name + ": " + contextFileReceiveMenu.file.hash);
             }
 
             text: qsTr("Copy Sha256")
@@ -290,19 +167,18 @@ Item {
 
         MenuItem {
             onTriggered: {
-                contextFileReceiveMenu.file.openInDefaultApplication()
+                contextFileReceiveMenu.file.openInDefaultApplication();
             }
-            text: qsTr("Open File (take care!)")
+            text: qsTr("Open in external application")
             enabled: contextFileReceiveMenu.file && contextFileReceiveMenu.file.state === File.FS_DONE
         }
 
         MenuItem {
             onTriggered: {
-                contextFileReceiveMenu.file.openFolder()
+                contextFileReceiveMenu.file.openFolder();
             }
             text: qsTr("Open Folder")
             enabled: contextFileReceiveMenu.file && contextFileReceiveMenu.file.state === File.FS_DONE
         }
     }
-
 }

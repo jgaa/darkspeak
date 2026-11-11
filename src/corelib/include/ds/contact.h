@@ -103,6 +103,7 @@ public:
     Q_PROPERTY(bool autoConnect READ isAutoConnect WRITE setAutoConnect NOTIFY autoConnectChanged)
     Q_PROPERTY(ContactState state READ getState WRITE setState NOTIFY stateChanged)
     Q_PROPERTY(QString addMeMessage READ getAddMeMessage WRITE setAddMeMessage NOTIFY addMeMessageChanged)
+    Q_PROPERTY(bool canSendFiles READ canSendFiles NOTIFY peerPreferencesChanged)
     Q_PROPERTY(bool peerVerified READ isPeerVerified WRITE setPeerVerified NOTIFY peerVerifiedChanged)
     Q_PROPERTY(Identity * identity READ getIdentity CONSTANT)
     Q_PROPERTY(bool sentAvatar READ isAvatarSent WRITE setSentAvatar NOTIFY sentAvatarChanged)
@@ -110,6 +111,10 @@ public:
     Q_PROPERTY(bool iBlocked READ iBlocked WRITE setBlocked NOTIFY blockedChanged)
     Q_PROPERTY(bool theyBlocked READ theyBlocked WRITE setBlocked NOTIFY blockedChanged)
     Q_PROPERTY(bool sendBlockNotice READ getSendBlockNotice WRITE setSendBlockNotice NOTIFY sendBlockNoticeChanged)
+
+    bool canSendFiles() const;
+    bool canSendFileType(const QString &mime_type, const QString &filename = {}) const;
+    bool canSendText(const QString &text) const;
 
     Q_INVOKABLE void connectToContact();
     Q_INVOKABLE void disconnectFromContact(bool manual = false);
@@ -197,6 +202,7 @@ public:
     void setProbeOnly(bool value) noexcept { probeOnly_ = value; }
 
 signals:
+    void peerPreferencesChanged();
     void nameChanged();
     void nickNameChanged();
     void groupChanged();
@@ -280,6 +286,7 @@ private:
     QByteArray lastSentAvatarHash_;
     QByteArray expectedAvatarHash_;
     UserInfo peerUserInfo_;
+    bool have_peer_preferences_ = false;
     quint64 pendingConnectionRequestId_ = 0;
     quint64 outgoingConnectionRequestId_ = 0;
     bool addMeDispatchQueued_ = false;

@@ -1,4 +1,5 @@
-﻿
+#include "ds/textpolicy.h"
+
 #include <memory>
 #include <iterator>
 
@@ -45,6 +46,11 @@ Contact::Contact(const int dbId,
                  data_t data)
     : id_{dbId}, online_{online}, data_{move(data)}
 {
+    connect(getIdentity(), &Identity::securityPreferencesChanged, this, [this] {
+        emit nickNameChanged();
+        emit bioChanged();
+    });
+    connect(this, &Contact::blockedChanged, this, &Contact::peerPreferencesChanged);
     connect(this, &Contact::sendAddMeLater,
             this, &Contact::onSendAddMeLater,
             Qt::QueuedConnection);
@@ -189,7 +195,9 @@ void Contact::setName(QString name) {
 }
 
 QString Contact::getNickName() const noexcept  {
-    return data_->nickName;
+    const auto *identity = getIdentity();
+    return identity && !identity->getAllowUtf8() && !text_policy::permittedAscii(data_->nickName, false)
+        ? tr("Name hidden by text security preference") : data_->nickName;
 }
 
 void Contact::setNickName(QString name) {
@@ -220,7 +228,12 @@ QString Contact::getNotes() const noexcept {
     return data_->notes;
 }
 
-QString Contact::getBio() const noexcept { return data_->bio; }
+QString Contact::getBio() const noexcept
+{
+    const auto *identity = getIdentity();
+    return identity && !identity->getAllowUtf8() && !text_policy::permittedAscii(data_->bio)
+        ? tr("Bio hidden by text security preference") : data_->bio;
+}
 
 bool Contact::hasBio() const noexcept { return !data_->bio.isEmpty(); }
 
@@ -280,6 +293,7 @@ void Contact::setOnline(const bool value) {
     if (value != online_) {
         online_ = value;
         emit onlineChanged();
+        emit peerPreferencesChanged();
     }
 }
 
@@ -352,6 +366,7 @@ void Contact::setState(const ContactState state)
         // Just to make sure the icons and states are updated in the UI
         emit blockedChanged();
         emit onlineChanged();
+        emit peerPreferencesChanged();
     }
 }
 
@@ -707,6 +722,8 @@ void Contact::onConnectedToPeer(const std::shared_ptr<PeerConnection>& peer)
     setManuallyDisconnected(false); // No longer relevant
     sentAvatarPendingAck_ = false; // No longer relevant
     userInfoSentOnConnection_ = false;
+    have_peer_preferences_ = false;
+    emit peerPreferencesChanged();
     lastSentAvatarHash_.clear();
 
     // A request ID belongs to one connection.  If a new connection replaces
@@ -1267,6 +1284,7 @@ void Contact::legacyAckAdapterRemoved(const LegacyAck &ack)
 bool Contact::procesMessageQueue()
 {
     if (isOnline() && !messageQueue_.empty()) {
+        if (!have_peer_preferences_) return false;
         if (messageQueue_.front()->getData().encoding == Message::UTF8
                 && !peerUserInfo_.allowUtf8) {
             LFLOG_WARN << "Rejecting outgoing UTF-8 message because the peer disallows UTF-8";
@@ -1296,6 +1314,7 @@ bool Contact::procesMessageQueue()
 bool Contact::processFilesQueue()
 {
     if (isOnline() && !fileQueue_.empty()) {
+        if (!have_peer_preferences_) return false;
         // TODO: Check ready status on socket
         // TODO: Offer up to /n/ files in one message, to pipeline them
         //       and to make metadata leaks less lileky to idnetify file numbers
@@ -1661,6 +1680,9 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
         uinfo.peer->close();
         return;
     }
+    have_peer_preferences_ = true;
+    emit peerPreferencesChanged();
+
     if (peerUserInfo_.bioHash != data_->bioHash) {
         try {
             // UserInfo contains only the hash. The separate pull is bounded
@@ -1696,6 +1718,9 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
                        << getName() << ": " << ex.what();
         }
     }
+    procesMessageQueue();
+    processFilesQueue();
+
 }
 
 void Contact::onReceivedBio(const PeerBio &bio)
@@ -1740,6 +1765,22 @@ void Contact::onReceivedBioRequest(const PeerReq &request)
         return;
     }
     request.peer->sendBioResponse(request.requestId, identity->getBio());
+}
+
+bool Contact::canSendFiles() const
+{
+    return have_peer_preferences_ && peerUserInfo_.allowFiles && !peerUserInfo_.allowMimeTypes.isEmpty() && !iBlocked() && getState() == ACCEPTED;
+}
+
+bool Contact::canSendFileType(const QString &mime_type, const QString &filename) const
+{
+    return canSendFiles() && peerAllowsMimeType(mime_type)
+        && (peerUserInfo_.allowUtf8 || text_policy::permittedAscii(filename, false));
+}
+
+bool Contact::canSendText(const QString &text) const
+{
+    return !isBlocked() && (!have_peer_preferences_ || peerUserInfo_.allowUtf8 || text_policy::permittedAscii(text));
 }
 
 bool Contact::peerAllowsMimeType(const QString& mimeType) const
@@ -1979,6 +2020,8 @@ void Contact::clearFileQueues()
 
 void Contact::prepareForNewConnection()
 {
+    have_peer_preferences_ = false;
+    emit peerPreferencesChanged();
     addMeDispatchQueued_ = false;
     outgoingConnectionRequestId_ = 0;
 

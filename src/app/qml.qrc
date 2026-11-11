@@ -9,15 +9,7 @@
         <file alias="icons/darkspeak-64.png">../../icons/darkspeak-64.png</file>
         <file alias="icons/darkspeak-128.png">../../icons/darkspeak-128.png</file>
         <file alias="icons/darkspeak-256.png">../../icons/darkspeak-256.png</file>
-        <file>main.qml</file>
-        <file>AboutDialog.qml</file>
-        <file>Log.qml</file>
-        <file>Home.qml</file>
         <file>qtquickcontrols2.conf</file>
-        <file>Contacts.qml</file>
-        <file>Conversations.qml</file>
-        <file>Chat.qml</file>
-        <file>Identities.qml</file>
         <file>images/Connected-32.png</file>
         <file>images/Connecting-32.png</file>
         <file>images/Disconnected-32.png</file>
@@ -29,15 +21,10 @@
         <file>images/network_offline.svg</file>
         <file>images/network_online.svg</file>
         <file>images/Secured_Global_Network_Cartoon.svg</file>
-        <file>MainToolBar.qml</file>
-        <file>EditIdentityDialog.qml</file>
         <file>images/anonymous.svg</file>
         <file>images/onion.svg</file>
         <file>images/onion-bw.svg</file>
         <file>images/user.svg</file>
-        <file>EditContactDialog.qml</file>
-        <file>AcceptContactDialog.qml</file>
-        <file>BioDialog.qml</file>
         <file>images/add-user.svg</file>
         <file>images/Sent-32.png</file>
         <file>images/FileDownload.svg</file>
@@ -49,25 +36,8 @@
         <file>images/FileUploadFailed.svg</file>
         <file>images/FileUploadOk.svg</file>
         <file>images/Tor-logo-2011-shaded.svg</file>
-        <file>EditUploadFileDialog.qml</file>
-        <file>TorSettings.qml</file>
-        <file>SettingsDialog.qml</file>
-        <file>PathsSettings.qml</file>
-        <file>LogSettings.qml</file>
-        <file>RoundedImage.qml</file>
-        <file>Header.qml</file>
-        <file>FileSelecter.qml</file>
-        <file>MessageComponent.qml</file>
-        <file>FileComponent.qml</file>
-        <file>FormattedTime.qml</file>
-        <file>GeneralSettings.qml</file>
-        <file>ResourceLimitsSettings.qml</file>
-        <file>ResourceLimitRow.qml</file>
-        <file>ImportTorServiceDialog.qml</file>
         <file>images/blocked.svg</file>
         <file>images/qr-code.svg</file>
         <file alias="fonts/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf">../../fonts/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf</file>
-        <file alias="fonts/MaterialSymbolsOutlined[FILL,GRAD,opsz,wght].ttf">../../fonts/MaterialSymbolsOutlined[FILL,GRAD,opsz,wght].ttf</file>
-        <file alias="fonts/MaterialSymbolsSharp[FILL,GRAD,opsz,wght].ttf">../../fonts/MaterialSymbolsSharp[FILL,GRAD,opsz,wght].ttf</file>
     </qresource>
 </RCC>

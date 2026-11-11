@@ -39,6 +39,20 @@ ContactsModel::ContactsModel(QObject& parent)
             this, &ContactsModel::onContactDeleted);
 }
 
+void ContactsModel::setSearch(const QString &text)
+{
+    const auto search = text.left(128).trimmed();
+    if (search == search_) return;
+    const auto previous = search_;
+    search_ = search;
+    try { reload(); }
+    catch (const std::exception &) {
+        search_ = previous;
+        DsEngine::instance().reportStatus(tr("Unable to search contacts."), DsEngine::ERROR);
+    }
+    emit searchChanged();
+}
+
 void ContactsModel::setIdentity(const QUuid &uuid)
 {
     try {
@@ -54,14 +68,10 @@ void ContactsModel::setIdentity(const QUuid &uuid)
 
 void ContactsModel::reload()
 {
+    rows_t next;
+    if (identity_ != nullptr) queryRows(next);
     beginResetModel();
-
-    rows_.clear();
-
-    if (identity_ != nullptr) {
-        queryRows(rows_);
-    }
-
+    rows_ = std::move(next);
     endResetModel();
 }
 
@@ -150,8 +160,16 @@ void ContactsModel::queryRows(rows_t &rows)
         return;
     }
     QSqlQuery query;
-    query.prepare("SELECT uuid FROM contact WHERE identity=:identity ORDER BY LOWER(NAME)");
+    QString sql = QStringLiteral("SELECT uuid FROM contact WHERE identity=:identity");
+    // A default QString binds as SQL NULL, not ''. With no search, omit the
+    // predicate entirely so both null and empty input show every contact.
+    if (!search_.isEmpty()) {
+        sql += QStringLiteral(" AND (instr(lower(name),lower(:search)) > 0 OR instr(lower(nickname),lower(:search)) > 0)");
+    }
+    sql += QStringLiteral(" ORDER BY LOWER(name)");
+    query.prepare(sql);
     query.bindValue(":identity", identity_->getId());
+    if (!search_.isEmpty()) query.bindValue(":search", search_);
 
     if(!query.exec()) {
         throw Error(QStringLiteral("Failed to query contacts: %1").arg(

@@ -8,18 +8,18 @@ Page {
     id: root
     clip: true
 
-    property color primaryText: "#243447"
-    property color secondaryText: "#475569"
-    property color labelText: "#64748b"
-    property color selectedFill: "#294d70"
-    property color selectedBorder: "#79c2f2"
+    property color primaryText: appearance.text
+    property color secondaryText: appearance.secondaryText
+    property color labelText: appearance.secondaryText
+    property color selectedFill: appearance.selected
+    property color selectedBorder: appearance.accent
 
     header: Label {
+        textFormat: Text.PlainText
         text: qsTr("Your Identities")
-        font.pixelSize: Qt.application.font.pixelSize * 2
-        padding: 10
+        font.pixelSize: appearance.fontPixels * 2
+        padding: 10 * appearance.factor
     }
-
 
     ListView {
         id: list
@@ -31,128 +31,88 @@ Page {
         property bool online: currentIdentity ? currentIdentity.online : false
         // The identity manager starts with no selected row. Select the first
         // identity so contacts and conversations are initialized on startup.
-        currentIndex: identities.currentRow >= 0
-                      ? identities.currentRow
-                      : (count > 0 ? 0 : -1)
+        currentIndex: identities.currentRow >= 0 ? identities.currentRow : (count > 0 ? 0 : -1)
 
-        onCurrentItemChanged: {
-            identities.setCurrentIdentity(currentIndex)
-
-            // This is where we synchronize the Contacts and conversations with the current selected identity
-            if (currentIdentity) {
-                contacts.setIdentity(currentIdentity.uuid)
-                conversations.setIdentity(currentIdentity.uuid)
-            }
+        onCurrentIndexChanged: {
+            if (currentIndex !== identities.currentRow)
+                identities.setCurrentIdentity(currentIndex);
         }
 
-        delegate: Item {
+        delegate: ItemDelegate {
             id: itemDelegate
+            required property int index
+            required property var identity
+            property var cid: identity
             width: list.width
-            height: 112
-            property Identity cid : identity
-
-            Row {
-                id: row1
-                anchors.fill: parent
-                spacing: 8
-
-                Column {
-                    padding: 5
-                    anchors.verticalCenter: parent.verticalCenter
-
-                    Rectangle {
-                        id: avatarFrame
-                        height: 100
-                        width: 100
-                        radius: 5
-                        border.color: cid.online ? "lime" : "firebrick"
-                        color: "black"
-
-                        Image {
-                            id: avatar
-                            fillMode: Image.PreserveAspectFit
-                            height: 96
-                            width: 96
-                            x: 2
-                            y: 2
-                            source: cid.avatarUrl
-                            cache: false
-
-                            Rectangle {
-                                height: parent.width / 3
-                                color: cid.online ? "lime" : "firebrick"
-                                width: height
-                                anchors.right: parent.right
-                                anchors.top: parent.top
-                                anchors.topMargin: 0
-                                radius: width*0.5
-
-                                Image {
-                                    id: torStatus
-                                    anchors.fill: parent
-                                    source: "qrc:///images/onion-bw.svg"
-                                }
-                            }
+            height: card.implicitHeight + 24 * appearance.factor
+            highlighted: ListView.isCurrentItem
+            onClicked: list.currentIndex = index
+            Accessible.name: cid ? cid.name : ""
+            contentItem: ColumnLayout {
+                id: card
+                spacing: 6 * appearance.factor
+                RowLayout {
+                    Layout.fillWidth: true
+                    RoundedImage {
+                        source: cid ? cid.avatarUrl : ""
+                        Layout.preferredWidth: 42 * appearance.factor
+                        Layout.preferredHeight: 42 * appearance.factor
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Label {
+                            Layout.fillWidth: true
+                            text: cid ? cid.name : ""
+                            textFormat: Text.PlainText
+                            font.bold: true
+                            color: itemDelegate.highlighted ? appearance.selectedText : appearance.text
+                            elide: Text.ElideRight
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            text: cid && cid.online ? qsTr("Onion service running") : qsTr("Onion service stopped")
+                            textFormat: Text.PlainText
+                            color: itemDelegate.highlighted ? appearance.selectedText : appearance.secondaryText
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                    ToolButton {
+                        text: qsTr("Actions…")
+                        Accessible.name: qsTr("Actions for %1").arg(cid ? cid.name : "")
+                        onClicked: {
+                            list.currentIndex = index;
+                            contextMenu.popup();
                         }
                     }
                 }
-
-                Column {
-                    spacing: 10
-                    Text {
-                        font.pointSize: 14
-                        color: itemDelegate.ListView.isCurrentItem ? "#ffffff" : root.primaryText
-                        text: cid.name
-                        font.bold: itemDelegate.ListView.isCurrentItem
-                    }
-
-                    GridLayout {
-                        rowSpacing: 0
-                        rows: 3
-                        flow: GridLayout.TopToBottom
-
-                        Label { font.pointSize: 9; color: root.labelText; text: qsTr("Created")}
-                        Label { font.pointSize: 9; color: root.labelText; text: qsTr("handle")}
-                        Label { font.pointSize: 9; color: root.labelText; text: qsTr("Onion")}
-
-                        FormattedTime {
-                            font.pointSize: 9;
-                            color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
-                            value: cid.created
-                        }
-
-                        Text {
-                            font.pointSize: 9;
-                            color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
-                            text: cid.handle
-                        }
-
-                        Text {
-                            font.pointSize: 9;
-                            color: itemDelegate.ListView.isCurrentItem ? "#e6f1fb" : root.secondaryText
-                            text: cid.address
-                        }
-                    }
+                Label {
+                    Layout.fillWidth: true
+                    text: cid ? Qt.formatDateTime(cid.created, Qt.DefaultLocaleShortDate) : ""
+                    textFormat: Text.PlainText
+                    color: itemDelegate.highlighted ? appearance.selectedText : appearance.secondaryText
+                    wrapMode: Text.WordWrap
                 }
-            }
-
-            MouseArea {
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                anchors.fill: parent
-                onClicked: function(mouse) {
-                    list.currentIndex = index
-                    if (mouse.button === Qt.RightButton) {
-                        contextMenu.x = mouse.x;
-                        contextMenu.y = mouse.y;
-                        contextMenu.open();
-                    }
+                TextEdit {
+                    Layout.fillWidth: true
+                    text: cid ? cid.handle : ""
+                    textFormat: TextEdit.PlainText
+                    font: appearance.font
+                    color: itemDelegate.highlighted ? appearance.selectedText : appearance.text
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: TextEdit.WrapAnywhere
+                    Accessible.name: qsTr("Contact identifier")
                 }
-
-                onPressAndHold: function(mouse) {
-                    list.currentIndex = index
-                    contextMenu.x = mouse.x;
-                    contextMenu.y = mouse.y;
-                    contextMenu.open();
+                TextEdit {
+                    Layout.fillWidth: true
+                    text: cid ? cid.address : ""
+                    textFormat: TextEdit.PlainText
+                    font: appearance.font
+                    color: itemDelegate.highlighted ? appearance.selectedText : appearance.secondaryText
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: TextEdit.WrapAnywhere
+                    Accessible.name: qsTr("Onion address")
                 }
             }
         }
@@ -163,60 +123,57 @@ Page {
 
         function toggleOnline() {
             if (currentIdentity.online) {
-                currentIdentity.stopService()
+                currentIdentity.stopService();
             } else {
-                currentIdentity.startService()
+                currentIdentity.startService();
             }
         }
 
         function copyHandle() {
-            manager.textToClipboard(currentIdentity.handle)
+            manager.textToClipboard(currentIdentity.handle);
         }
 
         function copyIdentity() {
-            manager.textToClipboard(manager.getIdentityText(currentIdentity.name,
-                                                            currentIdentity.b58identity))
+            manager.textToClipboard(manager.getIdentityText(currentIdentity.name, currentIdentity.b58identity));
         }
 
         function createIdentityQrCode() {
-            manager.createIdentityQrCode(currentIdentity.name,
-                                         currentIdentity.b58identity)
+            manager.createIdentityQrCode(currentIdentity.name, currentIdentity.b58identity);
         }
 
         function createNewTransport() {
-            currentIdentity.changeTransport()
+            currentIdentity.changeTransport();
         }
 
         function editCurrent() {
-            var component = Qt.createComponent("qrc:/EditIdentityDialog.qml")
-            var dlg = component.createObject(mainWindow, {"parent" : mainWindow,
-                                              "identity" : currentIdentity});
-            dlg.open()
+            var component = Qt.createComponent("qrc:/EditIdentityDialog.qml");
+            var dlg = component.createObject(mainWindow, {
+                "parent": mainWindow,
+                "identity": currentIdentity
+            });
+            dlg.open();
         }
 
         function importTorService() {
-            var component = Qt.createComponent("qrc:/ImportTorServiceDialog.qml")
-            var dlg = component.createObject(mainWindow, {"parent" : mainWindow,
-                                              "identity" : currentIdentity});
-            dlg.open()
+            var component = Qt.createComponent("qrc:/ImportTorServiceDialog.qml");
+            var dlg = component.createObject(mainWindow, {
+                "parent": mainWindow,
+                "identity": currentIdentity
+            });
+            dlg.open();
         }
     }
 
-    ImportTorServiceDialog {
-        id: gakke
-    }
-
     Component {
-         id: highlightBar
-         Rectangle {
-             radius: 5
-             opacity: 1
-             y: list.currentItem ? list.currentItem.y : 0;
-             color: root.selectedFill
-             border.color: root.selectedBorder
-             Behavior on y { SpringAnimation { spring: 1; damping: 0.1 } }
-         }
-     }
+        id: highlightBar
+        Rectangle {
+            radius: 5 * appearance.factor
+            opacity: 1
+            y: list.currentItem ? list.currentItem.y : 0
+            color: root.selectedFill
+            border.color: root.selectedBorder
+        }
+    }
 
     Menu {
         id: contextMenu
@@ -224,7 +181,7 @@ Page {
         onAboutToShow: prepare()
 
         function prepare() {
-            //online.text = list.online ? qsTr("Stop Tor service") : qsTr("Start Tor service")
+        //online.text = list.online ? qsTr("Stop Tor service") : qsTr("Start Tor service")
         }
 
         MenuItem {
@@ -238,7 +195,7 @@ Page {
         MenuItem {
             text: qsTr("Copy identity")
             icon.name: "edit-copy"
-            onTriggered: list.copyIdentity();
+            onTriggered: list.copyIdentity()
         }
 
         MenuItem {
@@ -285,8 +242,9 @@ Page {
         text: qsTr("Do you really want to delete this identity?")
         buttons: MessageDialog.Yes | MessageDialog.Cancel
         detailedText: qsTr("If you delete this identity, all its related contacts and messages will also be deleted.")
-        onButtonClicked: function(button) {
-            if (button === MessageDialog.Yes) list.deleteCurrent()
+        onButtonClicked: function (button) {
+            if (button === MessageDialog.Yes)
+                list.deleteCurrent();
         }
     }
 
@@ -296,8 +254,9 @@ Page {
         text: qsTr("Do you really want to change the Transport address?")
         buttons: MessageDialog.Yes | MessageDialog.Cancel
         detailedText: qsTr("If you change your transport address, none of your current contacts or anyone else will be able to contact you on your current address.")
-        onButtonClicked: function(button) {
-            if (button === MessageDialog.Yes) list.createNewTransport()
+        onButtonClicked: function (button) {
+            if (button === MessageDialog.Yes)
+                list.createNewTransport();
         }
     }
 }

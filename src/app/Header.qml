@@ -4,30 +4,27 @@ import QtQuick.Layouts
 
 Item {
     id: root
-    height: 50
     property var whom
-    property var text
-
-    Label {
-        id: label
-        text: root.text + (root.whom ? root.whom.name : "")
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.topMargin: 4
-        font.pixelSize: Qt.application.font.pixelSize * 2
-        anchors.leftMargin: 4
-    }
-
-    RoundedImage {
-        id: headerImage
-        source: root.whom ? root.whom.avatarUrl : null
-        height: root.height - 2
-        width: root.height -2
-        border.width: 2
-        border.color: (root.whom && root.whom.online) ? "lime" : "firebrick"
-        anchors.left: label.right
-        anchors.leftMargin: 6
-        anchors.verticalCenter: parent.verticalCenter
+    property string text: ""
+    implicitHeight: appearance.headerHeight
+    height: implicitHeight
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: appearance.spacing
+        spacing: 10 * appearance.factor
+        RoundedImage {
+            visible: !!root.whom
+            source: root.whom ? root.whom.avatarUrl : ""
+            Layout.preferredWidth: 36 * appearance.factor
+            Layout.preferredHeight: 36 * appearance.factor
+        }
+        Label {
+            Layout.fillWidth: true
+            text: root.text + (root.whom ? root.whom.name : "")
+            textFormat: Text.PlainText
+            color: appearance.text
+            font: appearance.headingFont
+            elide: Text.ElideRight
+        }
     }
 }

@@ -107,18 +107,10 @@ void ConversationsModel::setConversationById(const int id)
 void ConversationsModel::setCurrent(Conversation *conversation)
 {
     try {
+    if (!conversation) { setCurrentRow(-1); return; }
     int row = 0;
-    for(auto& r : rows_) {
-        // Lazy loading
-        if (!r.conversation) {
-            r.conversation = conversationManager_.getConversation(r.uuid);
-        }
-
-        if (r.conversation.get() == conversation) {
-            setCurrentRow(row);
-            return;
-        }
-
+    for (const auto &entry : rows_) {
+        if (entry.uuid == conversation->getUuid()) { setCurrentRow(row); return; }
         ++row;
     }
     } catch (const std::exception& ex) {
@@ -134,6 +126,7 @@ int ConversationsModel::getCurrentRow() const noexcept
 
 void ConversationsModel::setCurrentRow(int row)
 {
+    if (row < -1 || row >= static_cast<int>(rows_.size())) return;
     if (row != currentRow_) {
         currentRow_ = row;
 
@@ -169,13 +162,12 @@ void ConversationsModel::onConversationAdded(const Conversation::ptr_t &conversa
         return;
     }
 
-    rows_t r;
-    queryRows(r);
-
     // Always add at top
     beginInsertRows({}, 0, 0);
     rows_.emplace(rows_.begin(), conversation->getUuid());
+    if (currentRow_ >= 0) ++currentRow_;
     endInsertRows();
+    emit currentRowChanged();
 }
 
 // Move to top of list
@@ -187,9 +179,13 @@ void ConversationsModel::onConversationTouched(const Conversation::ptr_t &conver
         if (it->uuid == uuid) {
             if (rowid) {
                 beginMoveRows({}, rowid, rowid, {}, 0);
-                rows_.push_front(move(*it));
+                auto moved = std::move(*it);
                 rows_.erase(it);
+                rows_.push_front(std::move(moved));
+                if (currentRow_ == rowid) currentRow_ = 0;
+                else if (currentRow_ >= 0 && currentRow_ < rowid) ++currentRow_;
                 endMoveRows();
+                emit currentRowChanged();
             }
             return;
         }
@@ -198,14 +194,16 @@ void ConversationsModel::onConversationTouched(const Conversation::ptr_t &conver
 
 void ConversationsModel::onConversationDeleted(const QUuid &uuid)
 {
-    int rowid = 0;
-    for(auto it = rows_.begin(); it != rows_.end(); ++it, ++rowid) {
-        if (it->uuid == uuid) {
-            beginRemoveRows({}, rowid, rowid);
-            rows_.erase(it);
-            endRemoveRows();
-            return;
-        }
+    int row = 0;
+    for (auto it = rows_.begin(); it != rows_.end(); ++it, ++row) {
+        if (it->uuid != uuid) continue;
+        if (currentRow_ == row) setCurrentRow(-1);
+        beginRemoveRows({}, row, row);
+        rows_.erase(it);
+        if (currentRow_ > row) --currentRow_;
+        endRemoveRows();
+        emit currentRowChanged();
+        return;
     }
 }
 

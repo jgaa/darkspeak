@@ -7,20 +7,21 @@ import org.darkspeak 1.0
 ToolBar {
     id: root
 
-    Flow {
+    implicitHeight: appearance.toolbarHeight
+
+    RowLayout {
         anchors.fill: parent
-        spacing: 6
+        spacing: 6 * appearance.factor
 
         ToolButton {
             text: (manager.onlineState === 0 || manager.onlineState === 4) ? qsTr("Connect") : qsTr("Disconnect")
-            height: parent.height
+            Layout.fillHeight: true
 
             onClicked: {
-                console.log("Online status is " + manager.onlineState)
                 if (manager.onlineState === 0 || manager.onlineState === 4) {
-                    manager.goOnline()
+                    manager.goOnline();
                 } else {
-                    manager.goOffline()
+                    manager.goOffline();
                 }
             }
         }
@@ -28,90 +29,82 @@ ToolBar {
         ToolButton {
             text: qsTr("Identity")
             icon.name: "document-new"
-            height: parent.height
+            Layout.fillHeight: true
             visible: manager.currentPage === Manager.IDENTITIES
             enabled: manager.online
 
             onClicked: {
                 manager.clearTmpImage();
-                var component = Qt.createComponent("qrc:/EditIdentityDialog.qml")
+                var component = Qt.createComponent("qrc:/EditIdentityDialog.qml");
                 if (component.status !== Component.Ready) {
-                    if(component.status === Component.Error )
-                        console.debug("Error:"+ component.errorString() );
+                    if (component.status === Component.Error)
+                        console.debug("Error:" + component.errorString());
                     return;
                 }
                 var dlg = component.createObject(mainWindow, {});
-                dlg.open()
+                dlg.open();
             }
         }
 
         ToolButton {
             text: qsTr("Paste new contact")
             icon.name: "content-paste"
-            height: parent.height
+            Layout.fillHeight: true
             visible: manager.currentPage === Manager.CONTACTS
             enabled: manager.hasValidContactInClipboard
 
             onClicked: {
                 manager.clearTmpImage();
-                var clip = manager.getIdenityFromClipboard()
+                var clip = manager.getIdenityFromClipboard();
                 if (!clip || !clip.identity)
                     return;
-                var component = Qt.createComponent("qrc:/EditContactDialog.qml")
+                var component = Qt.createComponent("qrc:/EditContactDialog.qml");
                 if (component.status !== Component.Ready) {
-                    if(component.status === Component.Error )
-                        console.debug("Error:"+ component.errorString() );
+                    if (component.status === Component.Error)
+                        console.debug("Error:" + component.errorString());
                     return;
                 }
                 var dlg = component.createObject(mainWindow, {
-                    "clipboardData" : clip,
-                    "identity" : identities.getCurrentIdentity()
+                    "clipboardData": clip,
+                    "identity": identities.getCurrentIdentity()
                 });
-                dlg.open()
+                dlg.open();
             }
         }
 
         ToolButton {
             text: qsTr("Send File")
-            icon.source: "qrc:/images/FileUpload.svg"
-            height: parent.height
-            visible: manager.currentPage === Manager.CONVERSATIONS
-                     && conversations.current
+            icon.source: appearance.asset("sendFile")
+            icon.color: enabled ? appearance.text : appearance.disabled
+            Layout.fillHeight: true
+            visible: manager.currentPage === Manager.CONVERSATIONS && conversations.current && conversations.current.participant && conversations.current.participant.canSendFiles
 
             onClicked: {
-                var component = Qt.createComponent("qrc:/EditUploadFileDialog.qml")
+                var component = Qt.createComponent("qrc:/EditUploadFileDialog.qml");
                 if (component.status !== Component.Ready) {
-                    if(component.status === Component.Error )
-                        console.debug("Error:"+ component.errorString() );
+                    if (component.status === Component.Error)
+                        console.debug("Error:" + component.errorString());
                     return;
                 }
                 var dlg = component.createObject(mainWindow, {
-                    "parent"   : mainWindow,
-                    "conversation" : conversations.current
+                    "parent": mainWindow,
+                    "conversation": conversations.current
                 });
-                dlg.open()
+                dlg.open();
             }
         }
 
         ToolButton {
             text: qsTr("Settings")
             icon.name: "document-properties"
-            height: parent.height
+            Layout.fillHeight: true
             visible: (manager.currentPage === Manager.HOME)
 
-            onClicked: {
-                var component = Qt.createComponent("qrc:/SettingsDialog.qml")
-                if (component.status !== Component.Ready) {
-                    if(component.status === Component.Error )
-                        console.debug("Error:"+ component.errorString() );
-                    return;
-                }
-                var dlg = component.createObject(mainWindow, {
-                    "parent"   : mainWindow,
-                    "conversation" : conversations.current
-                });
-                dlg.open()
-            }
+            onClicked: mainWindow.openSettings()
         }
+        Item {
+            Layout.fillWidth: true
+        }
+        ScaleControl {}
     }
 }

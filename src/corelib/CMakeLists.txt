@@ -20,6 +20,8 @@ add_library(${PROJECT_NAME} STATIC
     include/ds/conversationmanager.h
     include/ds/bytes.h
     include/ds/filemanager.h
+    include/ds/textpolicy.h
+    include/ds/mimepreferences.h
     include/ds/identitymanager.h
     include/ds/file.h
     include/ds/database.h

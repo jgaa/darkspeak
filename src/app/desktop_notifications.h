@@ -26,6 +26,8 @@ private:
     void queryCapabilities();
 
     bool capabilitiesQueried_ = false;
+    bool capabilities_ready_ = false;
+    int pending_notifications_ = 0;
     QStringList capabilities_;
 };
 

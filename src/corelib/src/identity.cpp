@@ -42,6 +42,8 @@ Identity::Identity(QObject& parent,
     const auto prefix = QStringLiteral("identity/%1/").arg(
         data_.uuid.toString(QUuid::WithoutBraces));
     auto& settings = DsEngine::instance().settings();
+    settings.setValue(prefix + QStringLiteral("previewImages"), data_.previewImages);
+    settings.setValue(prefix + QStringLiteral("previewVideo"), data_.previewVideo);
     settings.setValue(prefix + QStringLiteral("allowUtf8"), data_.allowUtf8);
     settings.setValue(prefix + QStringLiteral("allowFiles"), data_.allowFiles);
     settings.setValue(prefix + QStringLiteral("allowMimeTypes"), data_.allowMimeTypes);
@@ -726,6 +728,24 @@ void Identity::setAutoConnect(bool value)
     updateIf("auto_connect", value, data_.autoConnect, this, &Identity::autoConnectChanged);
 }
 
+void Identity::setPreviewImages(bool enabled)
+{
+    if (data_.previewImages == enabled) return;
+    data_.previewImages = enabled;
+    DsEngine::instance().settings().setValue(
+        QStringLiteral("identity/%1/previewImages").arg(data_.uuid.toString(QUuid::WithoutBraces)), enabled);
+    emit securityPreferencesChanged();
+}
+
+void Identity::setPreviewVideo(bool enabled)
+{
+    if (data_.previewVideo == enabled) return;
+    data_.previewVideo = enabled;
+    DsEngine::instance().settings().setValue(
+        QStringLiteral("identity/%1/previewVideo").arg(data_.uuid.toString(QUuid::WithoutBraces)), enabled);
+    emit securityPreferencesChanged();
+}
+
 void Identity::setAllowUtf8(bool value)
 {
     if (value == data_.allowUtf8) return;
@@ -748,7 +768,7 @@ void Identity::setAllowFiles(bool value)
 
 void Identity::setAllowMimeTypes(QStringList value)
 {
-    if (value == data_.allowMimeTypes) return;
+    if (!validIdentityMimePreferences(value) || value == data_.allowMimeTypes) return;
     data_.allowMimeTypes = std::move(value);
     DsEngine::instance().settings().setValue(
         QStringLiteral("identity/%1/allowMimeTypes").arg(data_.uuid.toString(QUuid::WithoutBraces)),

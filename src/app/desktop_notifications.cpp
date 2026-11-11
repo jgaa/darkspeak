@@ -2,15 +2,17 @@
 
 #include <QCoreApplication>
 #include <QDBusConnection>
-#include <QDBusInterface>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QDBusMessage>
-#include <QDBusReply>
+
 #include <QVariantMap>
 
 #include "ds/dsengine.h"
 #include "ds/file.h"
 #include "ds/identity.h"
 #include "ds/message.h"
+#include "logfault/logfault.h"
 
 namespace ds::app {
 
@@ -23,9 +25,13 @@ constexpr auto applicationName = "DarkSpeak";
 constexpr auto applicationIcon = "org.darkspeak.DarkSpeak";
 constexpr auto fallbackSound = "message-new-instant";
 
-QDBusInterface notificationInterface()
+constexpr int notificationTimeoutMs = 1500;
+constexpr int maximumPendingNotifications = 8;
+
+QDBusMessage notificationCall(const QString &method)
 {
-    return {service, objectPath, interfaceName, QDBusConnection::sessionBus()};
+    return QDBusMessage::createMethodCall(QString::fromLatin1(service),
+        QString::fromLatin1(objectPath), QString::fromLatin1(interfaceName), method);
 }
 
 }
@@ -65,7 +71,7 @@ DesktopNotifications::DesktopNotifications(QObject *parent)
                     ? conversation->getFirstParticipant()->getName()
                     : tr("Incoming file");
             showNotification(NotificationType::IncomingFile,
-                             sender, tr("Incoming file: %1").arg(file->getName()));
+                             sender, tr("Incoming file: %1").arg(file->getDisplayName()));
         } catch (...) {
             // Desktop notifications are optional and must not affect transfers.
         }
@@ -93,17 +99,24 @@ void DesktopNotifications::queryCapabilities()
     }
     capabilitiesQueried_ = true;
 
-    const auto reply = notificationInterface().call(QStringLiteral("GetCapabilities"));
-    if (reply.type() == QDBusMessage::ReplyMessage
-            && !reply.arguments().isEmpty()) {
-        capabilities_ = reply.arguments().constFirst().toStringList();
-    }
+    auto *watcher = new QDBusPendingCallWatcher(
+        QDBusConnection::sessionBus().asyncCall(notificationCall(QStringLiteral("GetCapabilities")), notificationTimeoutMs), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *finished) {
+        const QDBusPendingReply<QStringList> reply = *finished;
+        if (!reply.isError()) { capabilities_ = reply.value(); capabilities_ready_ = true; }
+        else LFLOG_DEBUG << "Desktop notification capabilities unavailable";
+        finished->deleteLater();
+    });
 }
 
 void DesktopNotifications::showNotification(const NotificationType type,
                                              const QString& title,
                                              const QString& body)
 {
+    if (pending_notifications_ >= maximumPendingNotifications) {
+        LFLOG_DEBUG << "Desktop notification skipped: pending limit reached";
+        return;
+    }
     const auto category = type == NotificationType::IncomingMessage
             ? QStringLiteral("im.received")
             : type == NotificationType::IncomingFile
@@ -117,20 +130,20 @@ void DesktopNotifications::showNotification(const NotificationType type,
         hints.insert(QStringLiteral("sound-name"), QString::fromLatin1(fallbackSound));
     }
 
-    auto interface = notificationInterface();
-    if (!interface.isValid()) {
-        return;
-    }
-
-    interface.call(QStringLiteral("Notify"),
-                   QString::fromLatin1(applicationName),
-                   quint32{0},
-                   QString::fromLatin1(applicationIcon),
-                   title,
-                   body,
-                   QStringList{},
-                   hints,
-                   qint32{-1});
+    auto request = notificationCall(QStringLiteral("Notify"));
+    const auto summary = title.left(128);
+    const auto text = capabilities_ready_ ? body.left(512) : tr("Open DarkSpeak to view the notification.");
+    request.setArguments({QString::fromLatin1(applicationName), QVariant::fromValue(quint32{0}),
+        QString::fromLatin1(applicationIcon), summary,
+        capabilities_.contains(QStringLiteral("body-markup")) ? text.toHtmlEscaped() : text,
+        QStringList{}, hints, qint32{-1}});
+    ++pending_notifications_;
+    auto *watcher = new QDBusPendingCallWatcher(
+        QDBusConnection::sessionBus().asyncCall(request, notificationTimeoutMs), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *finished) {
+        --pending_notifications_;
+        finished->deleteLater();
+    });
 }
 
 } // namespace ds::app

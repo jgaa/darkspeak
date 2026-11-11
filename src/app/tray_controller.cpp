@@ -39,8 +39,8 @@ TrayController::TrayController(QWindow *window,
     trayIcon_->setToolTip(QStringLiteral("DarkSpeak"));
 
     menu_ = new QMenu;
-    toggleVisibilityAction_ = menu_->addAction(QStringLiteral("Hide DarkSpeak"));
-    quitAction_ = menu_->addAction(QStringLiteral("Quit"));
+    toggleVisibilityAction_ = menu_->addAction(tr("Hide DarkSpeak"));
+    quitAction_ = menu_->addAction(tr("Quit"));
     trayIcon_->setContextMenu(menu_);
 
     connect(toggleVisibilityAction_, &QAction::triggered,
@@ -57,8 +57,8 @@ TrayController::TrayController(QWindow *window,
     connect(window_, &QWindow::visibilityChanged, this, [this]() {
         if (toggleVisibilityAction_ != nullptr && window_ != nullptr) {
             toggleVisibilityAction_->setText(window_->isVisible()
-                ? QStringLiteral("Hide DarkSpeak")
-                : QStringLiteral("Show DarkSpeak"));
+                ? tr("Hide DarkSpeak")
+                : tr("Show DarkSpeak"));
         }
     });
     window_->installEventFilter(this);

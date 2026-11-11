@@ -111,6 +111,8 @@ void Database::exec(const char *sql)
 
 void Database::prepareData()
 {
+    exec("CREATE INDEX IF NOT EXISTS ix_message_history ON message(conversation_id, composed_time, id)");
+    exec("CREATE INDEX IF NOT EXISTS ix_file_history ON file(conversation_id, created_time, id)");
     // MessageId is globally scoped in protocol v3. Enforce that invariant in
     // persistence as well as in the application duplicate check.
     exec("CREATE UNIQUE INDEX IF NOT EXISTS ix_message_global_id ON message(message_id)");

@@ -65,6 +65,7 @@ modules:
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=/app \
           -DDARKSPEAK_FLATPAK_BUILD=ON \
+          -DDARKSPEAK_KDE_COLOR_SCHEME=ON \
           -DFETCHCONTENT_SOURCE_DIR_SAFEKEEPING="$(pwd)/third_party/safekeeping" \
           -DFETCHCONTENT_SOURCE_DIR_NAYUKI_QR_GENERATOR="$(pwd)/third_party/nayuki_qr_generator" \
           -DBUILD_TESTING=OFF
