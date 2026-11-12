@@ -340,6 +340,11 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("conversations", manager->conversationsModel());
     engine.rootContext()->setContextProperty("messages", manager->messagesModel());
     engine.rootContext()->setContextProperty("files", manager->filesModel());
+    auto& events = DsEngine::instance().events();
+    engine.rootContext()->setContextProperty("events", &events);
+    settingsSession.setEventsConfigurator([&events](bool enabled, int precision, bool record_filenames) {
+        return events.configure(enabled, precision, record_filenames);
+    });
 
     auto tmpProvider = new ImageProvider{"temp", [&manager](const QString& id) {
             Q_UNUSED(id)

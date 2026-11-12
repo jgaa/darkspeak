@@ -81,6 +81,9 @@ Message::ptr_t MessageManager::sendMessage(Conversation &conversation, MessageDa
     registry_.add(message->getId(), message);
     touch(message);
 
+    DsEngine::instance().events().append(EventJournal::Message, conversation.getIdentity()->getId(),
+        conversation.getFirstParticipant() ? conversation.getFirstParticipant()->getId() : 0,
+        EventJournal::Outgoing, EventJournal::Pending, data.messageId);
     emit messageAdded(message);
 
     if (auto contact = conversation.getFirstParticipant()) {
@@ -134,6 +137,9 @@ Message::ptr_t MessageManager::receivedMessage(Conversation &conversation, Messa
     registry_.add(message->getId(), message);
     touch(message);
 
+    DsEngine::instance().events().append(EventJournal::Message, conversation.getIdentity()->getId(),
+        conversation.getFirstParticipant() ? conversation.getFirstParticipant()->getId() : 0,
+        EventJournal::Incoming, EventJournal::Success, data.messageId);
     emit messageAdded(message);
     return message;
 }

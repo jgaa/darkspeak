@@ -43,7 +43,8 @@ public:
         CONTACTS,
         HOME,
         CONVERSATIONS,
-        CHAT
+        CHAT,
+        EVENTS
     };
 
     Q_ENUM(Pages)

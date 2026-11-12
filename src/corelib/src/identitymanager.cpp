@@ -8,6 +8,7 @@
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QTimer>
+#include <QCryptographicHash>
 
 #include "logfault/logfault.h"
 
@@ -212,6 +213,8 @@ void IdentityManager::relayNewContactRequest(Identity *identity, const PeerAddme
         LFLOG_TRACE << "Relaying contact request for identity " << identity->getName()
                     << " to notification listeners; handle " << req.handle
                     << ", request id " << req.requestId;
+        DsEngine::instance().events().append(EventJournal::ContactRequest, identity->getId(), 0, EventJournal::Incoming, EventJournal::Pending,
+            QCryptographicHash::hash(req.handle.left(128).toUtf8(), QCryptographicHash::Sha256));
         emit newContactRequest(identity, req);
         LFLOG_TRACE << "Finished relaying contact request for identity "
                     << identity->getName();
@@ -339,6 +342,7 @@ Identity *IdentityManager::addIdentity(const IdentityData &data)
     }
 
     addIndex(identity, true);
+    DsEngine::instance().events().append(EventJournal::IdentityCreated, identity->getId());
     return identity;
 }
 
@@ -356,6 +360,7 @@ void IdentityManager::removeIdentity(const QUuid &uuid)
             return;
         }
 
+        DsEngine::instance().events().append(EventJournal::IdentityDeleted, identity->getId());
         removeIndex(identity, true);
         delete identity;
         endRemoveRows();

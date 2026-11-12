@@ -264,6 +264,11 @@ ApplicationWindow {
                             page: Manager.CONVERSATIONS
                         },
                         {
+                            label: qsTr("Events"),
+                            glyph: "history",
+                            page: Manager.EVENTS
+                        },
+                        {
                             label: qsTr("Log"),
                             glyph: "description",
                             page: Manager.LOG
@@ -332,6 +337,11 @@ ApplicationWindow {
                 anchors.fill: parent
                 pageNumber: Manager.CONVERSATIONS
                 pageSource: "Conversations.qml"
+            }
+            PrimaryPage {
+                anchors.fill: parent
+                pageNumber: Manager.EVENTS
+                pageSource: "Events.qml"
             }
             PrimaryPage {
                 anchors.fill: parent

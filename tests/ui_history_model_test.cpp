@@ -1,5 +1,6 @@
 #include <QtTest>
 #include <QSqlQuery>
+#include <QSqlRecord>
 #include <QTemporaryDir>
 #include "ds/crypto.h"
 #include "ds/dsengine.h"
@@ -131,6 +132,56 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!model_->loading(), 5000);
         QCOMPARE(content(model_->rowCount() - 1), QStringLiteral("message 860"));
         QVERIFY(!model_->hasNewer());
+    }
+    void event_hooks_record_lifecycle_messages_and_transfers_without_payloads() {
+        using E = ds::core::EventJournal;
+        QCoreApplication::processEvents();
+        auto& journal = engine_->events();
+        QVERIFY(!journal.enabled());
+        QVERIFY(journal.configure(true, 60));
+        ds::core::IdentityData data;
+        data.uuid = QUuid::createUuid();
+        data.name = QStringLiteral("Disposable event identity");
+        data.cert = ds::crypto::DsCert::create();
+        data.hash = data.cert->getHash().toByteArray(); data.autoConnect = false;
+        auto* identity = engine_->getIdentityManager()->addIdentity(data);
+        QVERIFY(identity);
+        const auto id = identity->getId();
+        identity->setName(QStringLiteral("Changed event identity"));
+        identity->setNotes(QStringLiteral("DO-NOT-JOURNAL-PRIVATE-NOTES"));
+        QCoreApplication::processEvents();
+        auto contact = std::make_unique<ds::core::ContactData>();
+        contact->identity = id; contact->name = QStringLiteral("Event fixture peer");
+        contact->cert = ds::crypto::DsCert::create();
+        contact->address = "fixture-not-used-for-network"; contact->autoConnect = false;
+        auto* peer = engine_->getContactManager()->addContact(std::move(contact));
+        QVERIFY(peer);
+        auto conversation = engine_->getConversationManager()->getConversation(peer);
+        QVERIFY(conversation->sendMessage(QStringLiteral("DO-NOT-JOURNAL-MESSAGE-CONTENTS")));
+        auto file_data = std::make_unique<ds::core::FileData>();
+        file_data->identity = id; file_data->contact = peer->getId();
+        file_data->conversation = conversation->getId();
+        file_data->direction = ds::core::File::INCOMING;
+        file_data->state = ds::core::File::FS_OFFERED;
+        file_data->fileId = QByteArray(16, 'f');
+        file_data->name = QStringLiteral("fixture-file.txt");
+        auto file = engine_->getFileManager()->addFile(std::move(file_data));
+        file->setState(ds::core::File::FS_REJECTED);
+        file.reset(); conversation.reset();
+        engine_->getIdentityManager()->removeIdentity(data.uuid);
+        QSqlQuery query(engine_->getDb());
+        for (const auto kind : {E::IdentityCreated, E::IdentityModified, E::IdentityDeleted, E::Message, E::FileOffer, E::TransferState}) {
+            query.prepare("SELECT COUNT(*) FROM event WHERE kind=:kind AND identity=:identity");
+            query.bindValue(":kind", int(kind)); query.bindValue(":identity", id);
+            QVERIFY(query.exec()); QVERIFY(query.next()); QVERIFY(query.value(0).toInt() > 0); query.finish();
+        }
+        QVERIFY(query.exec("SELECT * FROM event"));
+        while (query.next()) for (int column = 0; column < query.record().count(); ++column)
+            QVERIFY(!query.value(column).toByteArray().contains("DO-NOT-JOURNAL"));
+        query.finish();
+        journal.verify(); QTRY_VERIFY(!journal.verifying());
+        QVERIFY2(journal.verification().contains("internally consistent"), qPrintable(journal.verification()));
+        QVERIFY(journal.configure(false, 60));
     }
     void cleanupTestCase() {
         model_.reset();

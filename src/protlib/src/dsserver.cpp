@@ -4,6 +4,7 @@
 #include <sodium.h>
 
 #include "ds/handshake.h"
+#include "ds/eventjournal.h"
 #include "logfault/logfault.h"
 
 namespace ds::prot {
@@ -12,6 +13,7 @@ DsServer::DsServer(ConnectionSocket::ptr_t connection, core::ConnectData connect
     : Peer{std::move(connection), std::move(connectionData)}
 {
     if (!handshakeBudget_.acquire()) {
+        core::recordSecurityLimit(core::EventJournal::Incoming);
         if (const auto count = handshake::recordFloodEvent()) {
             LFLOG_WARN << "Handshake flood protection rejected " << *count
                        << " connection attempts in the last interval";
@@ -174,6 +176,7 @@ void DsServer::getClientFinish(const data_t& data)
     sodium_memzero(serverTx_.data(), serverTx_.size());
 
     if (!claimUnapprovedBudget()) {
+        core::recordSecurityLimit(core::EventJournal::Incoming);
         LFLOG_WARN << "Rejecting encrypted unapproved connection: global limit reached";
         failHandshake();
         return;

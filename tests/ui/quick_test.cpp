@@ -11,10 +11,24 @@
 #include "mock_ui_model.h"
 #include "desktop_integration.h"
 #include "settings_session.h"
+#include "ds/eventjournal.h"
 
 class UiSetup final : public QObject {
     Q_OBJECT
 public slots:
+    void cleanupTestCase() {
+        events_.reset();
+        const auto name = event_db_.connectionName();
+        event_db_.close(); event_db_ = {}; QSqlDatabase::removeDatabase(name);
+    }
+    void populateEvents() {
+        events_->configure(true, 60);
+        events_->append(ds::core::EventJournal::Message, 1, 2, ds::core::EventJournal::Incoming,
+            ds::core::EventJournal::Success, QByteArray(32, 'x'));
+        events_->append(ds::core::EventJournal::FileOffer, 1, 2, ds::core::EventJournal::Incoming,
+            ds::core::EventJournal::Pending, QByteArray(16, 'f'), QStringLiteral("<fixture>.txt"));
+        events_->latest();
+    }
     bool captureWindow(QObject *object, const QString &path) {
         auto *window = qobject_cast<QQuickWindow *>(object);
         if (auto *item = qobject_cast<QQuickItem *>(object)) window = item->window();
@@ -37,8 +51,15 @@ public slots:
         backend_.message_type = MockEntity::MESSAGE;
         appearance_ = new Appearance(this);
         settings_ = new SettingsSession(*appearance_, desktop_, this);
+        event_db_ = QSqlDatabase::addDatabase("QSQLITE", "ui-event-fixture");
+        event_db_.setDatabaseName(":memory:");
+        if (!event_db_.open()) qFatal("Unable to open disposable event fixture");
+        event_settings_ = std::make_unique<QSettings>();
+        events_ = std::make_unique<ds::core::EventJournal>(event_db_, *event_settings_);
+        settings_->setEventsConfigurator([this](bool enabled, int precision, bool record_filenames) { return events_->configure(enabled, precision, record_filenames); });
     }
     void qmlEngineAvailable(QQmlEngine *engine) {
+        engine->rootContext()->setContextProperty("events", events_.get());
         engine->rootContext()->setContextProperty("appearance", appearance_);
         engine->rootContext()->setContextProperty("uiTest", this);
         engine->rootContext()->setContextProperty("mockMessages", &messages_);
@@ -50,6 +71,9 @@ public slots:
             engine->rootContext()->setContextProperty(name, &backend_);
     }
 private:
+    QSqlDatabase event_db_;
+    std::unique_ptr<QSettings> event_settings_;
+    std::unique_ptr<ds::core::EventJournal> events_;
     QTemporaryDir directory_;
     Appearance *appearance_ = nullptr;
     MockUiModel messages_;

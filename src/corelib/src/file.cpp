@@ -93,6 +93,7 @@ void File::accept()
     QString reason;
     auto fileManager = DsEngine::instance().getFileManager();
     if (!fileManager->canAcceptIncoming(*this, reason)) {
+        DsEngine::instance().events().append(EventJournal::PolicyRejection, getIdentityId(), getContactId(), EventJournal::Incoming, EventJournal::Rejected);
         DsEngine::instance().reportStatus(
             QObject::tr("Cannot receive %1: %2").arg(getName(), reason),
             DsEngine::StatusLevel::ERROR);
@@ -222,6 +223,14 @@ void File::setState(const File::State state)
 {
     if (updateIf("state", state, data_->state, this, &File::stateChanged)) {
         flushBytesAdded();
+        if (state == FS_TRANSFERRING || state == FS_DONE || state == FS_FAILED
+            || state == FS_REJECTED || state == FS_CANCELLED) {
+            DsEngine::instance().events().append(EventJournal::TransferState, data_->identity, data_->contact,
+                getDirection() == INCOMING ? EventJournal::Incoming : EventJournal::Outgoing,
+                state == FS_DONE ? EventJournal::Success : state == FS_REJECTED ? EventJournal::Rejected
+                    : (state == FS_FAILED || state == FS_CANCELLED) ? EventJournal::Failed : EventJournal::Pending,
+                getFileId(), getName());
+        }
         DsEngine::instance().getFileManager()->onFileStateChanged(this);
     }
 }

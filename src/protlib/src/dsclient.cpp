@@ -5,6 +5,7 @@
 
 #include "include/ds/dsclient.h"
 #include "ds/handshake.h"
+#include "ds/eventjournal.h"
 #include "logfault/logfault.h"
 
 namespace ds::prot {
@@ -13,6 +14,7 @@ DsClient::DsClient(ConnectionSocket::ptr_t connection, core::ConnectData connect
     : Peer{std::move(connection), std::move(connectionData)}
 {
     if (!handshakeBudget_.acquire()) {
+        core::recordSecurityLimit(core::EventJournal::Outgoing);
         if (const auto count = handshake::recordFloodEvent()) {
             LFLOG_WARN << "Handshake flood protection rejected " << *count
                        << " connection attempts in the last interval";

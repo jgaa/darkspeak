@@ -36,7 +36,7 @@ TestCase {
         manager.navigate(3);
     }
     function test_bundled_components_compile() {
-        const names = ["AboutDialog.qml", "AcceptContactDialog.qml", "AppearanceSettings.qml", "BioDialog.qml", "Chat.qml", "Contacts.qml", "Conversations.qml", "CustomWindowSizeDialog.qml", "EditContactDialog.qml", "EditIdentityDialog.qml", "EditUploadFileDialog.qml", "EmptyState.qml", "FileComponent.qml", "FileSelecter.qml", "FormattedTime.qml", "GeneralSettings.qml", "Header.qml", "Home.qml", "HomeForm.ui.qml", "Identities.qml", "ImportTorServiceDialog.qml", "Log.qml", "LogSettings.qml", "MainToolBar.qml", "MessageBubble.qml", "MessageComponent.qml", "PathsSettings.qml", "PrimaryPage.qml", "ResourceLimitRow.qml", "ResourceLimitsSettings.qml", "RoundedImage.qml", "ScaleControl.qml", "ScaleSelector.qml", "ScaledToolButton.qml", "SettingsDialog.qml", "StatusBadge.qml", "TorSettings.qml", "UiDialog.qml", "UiHarness.qml", "main.qml"];
+        const names = ["Events.qml", "EventsSettings.qml", "AboutDialog.qml", "AcceptContactDialog.qml", "AppearanceSettings.qml", "BioDialog.qml", "Chat.qml", "Contacts.qml", "Conversations.qml", "CustomWindowSizeDialog.qml", "EditContactDialog.qml", "EditIdentityDialog.qml", "EditUploadFileDialog.qml", "EmptyState.qml", "FileComponent.qml", "FileSelecter.qml", "FormattedTime.qml", "GeneralSettings.qml", "Header.qml", "Home.qml", "HomeForm.ui.qml", "Identities.qml", "ImportTorServiceDialog.qml", "Log.qml", "LogSettings.qml", "MainToolBar.qml", "MessageBubble.qml", "MessageComponent.qml", "PathsSettings.qml", "PrimaryPage.qml", "ResourceLimitRow.qml", "ResourceLimitsSettings.qml", "RoundedImage.qml", "ScaleControl.qml", "ScaleSelector.qml", "ScaledToolButton.qml", "SettingsDialog.qml", "StatusBadge.qml", "TorSettings.qml", "UiDialog.qml", "UiHarness.qml", "main.qml"];
         for (const name of names) {
             const component = Qt.createComponent(Qt.resolvedUrl("../../../src/app/" + name));
             compare(component.status, Component.Ready, name + ": " + component.errorString());
@@ -136,7 +136,7 @@ TestCase {
         compare(component.status, Component.Ready, component.errorString());
         const shell = component.createObject(testCase);
         verify(shell !== null, component.errorString());
-        for (const page of [3, 1, 2, 4, 0, 3]) {
+        for (const page of [3, 1, 2, 4, 6, 0, 3]) {
             manager.navigate(page);
             wait(40);
         }
@@ -164,7 +164,7 @@ TestCase {
         compare(component.status, Component.Ready, component.errorString());
         const shell = component.createObject(testCase);
         verify(shell !== null, component.errorString());
-        for (const page of [1, 2, 4, 0]) {
+        for (const page of [1, 2, 4, 6, 0]) {
             manager.navigate(page);
             wait(40);
         }
@@ -179,7 +179,7 @@ TestCase {
         verify(sections !== null);
         for (const scale of [20, 50, 100, 150, 200]) {
             appearance.scale = scale;
-            for (let i = 0; i < 6; ++i) {
+            for (let i = 0; i < 7; ++i) {
                 sections.currentIndex = i;
                 wait(10);
             }
@@ -196,7 +196,7 @@ TestCase {
         compare(component.status, Component.Ready, component.errorString());
         const shell = component.createObject(testCase);
         verify(shell !== null, component.errorString());
-        for (const page of [1, 2, 3, 4, 0]) {
+        for (const page of [1, 2, 3, 4, 6, 0]) {
             manager.navigate(page);
             wait(20);
         }

@@ -143,6 +143,9 @@ File::ptr_t FileManager::addFile(std::unique_ptr<FileData> data)
     file->addToDb();
     registry_.add(file->getId(), file);
     touch(file);
+    DsEngine::instance().events().append(EventJournal::FileOffer, file->getIdentityId(),
+        file->getContactId(), file->getDirection() == File::INCOMING ? EventJournal::Incoming : EventJournal::Outgoing,
+        EventJournal::Pending, file->getFileId(), file->getName());
     emit fileAdded(file);
 
     if (file->getDirection() == File::OUTGOING
@@ -179,6 +182,7 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
     const auto maxBytes = static_cast<qint64>(limits.acceptedFileBytes);
     if (offer.fileId.size() != 16 || offer.size < 0 || !safeFileName(offer.name)
             || maxBytes == 0 || offer.size > maxBytes) {
+        recordPeerEvent(*offer.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         LFLOG_WARN << "Rejecting file offer: violates local safety policy";
         DsEngine::instance().reportStatus(
             QObject::tr("Rejected file offer due to local safety limits"),
@@ -208,6 +212,7 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
     if (pendingCount >= maxPendingCount
             || offer.size > maxPendingBytes
             || pendingBytes > maxPendingBytes - offer.size) {
+        recordPeerEvent(*offer.peer, EventJournal::RateLimited, EventJournal::Incoming, EventJournal::Rejected);
         offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
         return;
     }
@@ -242,6 +247,7 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
                 DsEngine::instance().reportStatus(
                     QObject::tr("Accepted incoming file automatically: %1").arg(file->getName()));
             } else {
+                recordPeerEvent(*offer.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
                 DsEngine::instance().reportStatus(
                     QObject::tr("Incoming file was not accepted: %1").arg(reason),
                     DsEngine::StatusLevel::ERROR);

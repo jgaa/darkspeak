@@ -812,7 +812,7 @@ int Manager::getCurrentPage()
 void Manager::setCurrentPage(int page)
 {
     if (page == CHAT) page = CONVERSATIONS;
-    if (page < LOG || page > CONVERSATIONS) return;
+    if (page < LOG || page > EVENTS) return;
     if (page != page_) {
         page_ = page;
         if (page_ == CONVERSATIONS)

@@ -277,6 +277,7 @@ void Contact::setSentAvatar(const bool value)
 void Contact::setAvatar(const QImage &avatar) {
     const auto normalized = normalizeAvatar(avatar);
     if (updateIf("avatar", normalized, data_->avatar, this, &Contact::avatarChanged)) {
+        DsEngine::instance().events().append(EventJournal::AvatarChanged, data_->identity, getId(), EventJournal::Incoming, EventJournal::Success);
         ++avatarVersion_;
         avatarUrlChanging_ = true;
         emit avatarUrlChanged();
@@ -962,6 +963,7 @@ void Contact::onSendAddMeLater()
         }
 
         if (getState() == PENDING) {
+            DsEngine::instance().events().append(EventJournal::ContactRequest, identity->getId(), getId(), EventJournal::Outgoing, EventJournal::Pending);
             setState(WAITING_FOR_ACCEPTANCE);
         }
     }
@@ -1001,6 +1003,7 @@ void Contact::onSendAddmeAckLater()
             return;
         }
 
+        DsEngine::instance().events().append(EventJournal::ContactDecision, identity->getId(), getId(), EventJournal::Incoming, EventJournal::Accepted);
         setState(ACCEPTED);
         scheduleProcessOnlineLater();
     }
@@ -1449,6 +1452,9 @@ void Contact::onReceivedConnectionResponse(const PeerConnectionResponse& respons
         return;
     }
     outgoingConnectionRequestId_ = 0;
+    recordPeerEvent(*response.peer, EventJournal::ContactDecision, EventJournal::Outgoing,
+        response.status == ConnectionResponseStatus::Accepted ? EventJournal::Accepted
+            : response.status == ConnectionResponseStatus::Pending ? EventJournal::Pending : EventJournal::Rejected);
     switch (response.status) {
     case ConnectionResponseStatus::Accepted:
         setState(ACCEPTED);
@@ -1485,6 +1491,7 @@ void Contact::onReceivedMessageReceipt(const PeerMessageReceipt& receipt)
     }
     message->touchSentReceivedTime();
     message->setState(Message::MS_RECEIVED);
+    recordPeerEvent(*receipt.peer, EventJournal::MessageReceipt, EventJournal::Incoming, EventJournal::Success, receipt.messageId);
 }
 
 void Contact::onReceivedFileOfferResponse(const PeerFileOfferResponse& response)
@@ -1611,13 +1618,15 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
                    << msg.peer->getConnectionId().toString()
                    << ". Not in ACCEPTED state or blocked.";
 
-            msg.peer->close();
+        recordPeerEvent(*msg.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
+        msg.peer->close();
         return;
     }
 
     if (DsEngine::instance().getMessageManager()->hasConflictingMessage(msg.data)) {
         LFLOG_WARN << "Rejecting reused MessageId from "
                    << msg.peer->getConnectionId().toString();
+        recordPeerEvent(*msg.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         msg.peer->close();
         return;
     }
@@ -1645,6 +1654,7 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
                    << uinfo.peer->getConnectionId().toString()
                    << ". Not in ACCEPTED state or blocked.";
 
+        recordPeerEvent(*uinfo.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         uinfo.peer->close();
         return;
     }
@@ -1666,6 +1676,7 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
                    << uinfo.peer->getConnectionId().toString()
                    << ". Invaid nick-name.";
 
+        recordPeerEvent(*uinfo.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         uinfo.peer->close();
         return;
     }
@@ -1677,6 +1688,7 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
 
     if (peerUserInfo_.bioHash.size() != 0
             && peerUserInfo_.bioHash.size() != QCryptographicHash::hashLength(QCryptographicHash::Sha256)) {
+        recordPeerEvent(*uinfo.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         uinfo.peer->close();
         return;
     }
@@ -1726,17 +1738,20 @@ void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
 void Contact::onReceivedBio(const PeerBio &bio)
 {
     if (iBlocked() || (getState() != ACCEPTED && !peerUserInfo_.publicBio)) {
+        recordPeerEvent(*bio.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         bio.peer->close();
         return;
     }
     const auto sanitized = core::bio::sanitize(bio.bio);
     const auto bytes = sanitized.toUtf8();
     if (!core::bio::withinLimits(sanitized)) {
+        recordPeerEvent(*bio.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         bio.peer->close();
         return;
     }
     const auto hash = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
     if (!peerUserInfo_.bioHash.isEmpty() && hash != peerUserInfo_.bioHash) {
+        recordPeerEvent(*bio.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         bio.peer->close();
         return;
     }
@@ -1761,6 +1776,7 @@ void Contact::onReceivedBioRequest(const PeerReq &request)
     const auto identity = getIdentity();
     if (!identity || iBlocked()
             || (getState() != ACCEPTED && !identity->getPublicBio())) {
+        recordPeerEvent(*request.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         request.peer->sendBioResponse(request.requestId, {});
         return;
     }
@@ -1795,7 +1811,9 @@ void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
                    << msg.peer->getConnectionId().toString()
                    << ". Contact is blocked.";
 
+        recordPeerEvent(*msg.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         msg.peer->sendFileOfferResponse(msg.fileId, FileOfferResponseStatus::Rejected);
+        recordPeerEvent(*msg.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         msg.peer->close();
         return;
     }
@@ -1804,7 +1822,9 @@ void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
                    << msg.peer->getConnectionId().toString()
                    << ". Not in ACCEPTED state.";
 
+        recordPeerEvent(*msg.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         msg.peer->sendFileOfferResponse(msg.fileId, FileOfferResponseStatus::Rejected);
+        recordPeerEvent(*msg.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         msg.peer->close();
         return;
     }
@@ -1812,12 +1832,14 @@ void Contact::onReceivedFileOffer(const PeerFileOffer &msg)
     const auto identity = getIdentity();
     if (!identity->getAllowFiles()) {
         LFLOG_WARN << "Rejecting file offer because file transfers are disabled by local security preferences";
+        recordPeerEvent(*msg.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         msg.peer->sendFileOfferResponse(msg.fileId, FileOfferResponseStatus::Rejected);
         return;
     }
     if (!mimeAllowed(identity->getAllowMimeTypes(), msg.type)) {
         LFLOG_WARN << "Rejecting file offer because MIME type " << msg.type
                    << " is not allowed by local security preferences";
+        recordPeerEvent(*msg.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         msg.peer->sendFileOfferResponse(msg.fileId, FileOfferResponseStatus::Rejected);
         return;
     }
@@ -1842,6 +1864,7 @@ void Contact::onReceivedAvatar(const PeerSetAvatarReq &avatar)
             || (!probeOnly_ && getState() != ACCEPTED && !peerUserInfo_.publicAvatar)) {
         LFLOG_WARN << "Rejecting avatar from Contact " << getName()
                    << ": avatar is not authorized";
+        recordPeerEvent(*avatar.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         avatar.peer->close();
         return;
     }
@@ -1856,6 +1879,7 @@ void Contact::onReceivedAvatar(const PeerSetAvatarReq &avatar)
 void Contact::onReceivedAvatarRequest(const PeerReq &request)
 {
     if (iBlocked() || (getState() != ACCEPTED && !getIdentity()->getPublicAvatar())) {
+        recordPeerEvent(*request.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         request.peer->sendAvatarResponse(request.requestId, {}, false);
         return;
     }
@@ -2110,6 +2134,7 @@ void Contact::onAddmeRequest(const PeerAddmeReq &req)
         return;
     }
 
+    DsEngine::instance().events().append(EventJournal::ContactRequest, data_->identity, getId(), EventJournal::Incoming, EventJournal::Pending);
     if (!isPeerVerified()) {
         if (connection_ && isOnline()) {
             req.peer->sendConnectionResponse(req.requestId, ConnectionResponseStatus::Pending);
@@ -2119,6 +2144,7 @@ void Contact::onAddmeRequest(const PeerAddmeReq &req)
     }
 
     if (iBlocked()) {
+        DsEngine::instance().events().append(EventJournal::ContactDecision, data_->identity, getId(), EventJournal::Incoming, EventJournal::Rejected);
         req.peer->sendConnectionResponse(
             req.requestId,
             getSendBlockNotice() ? ConnectionResponseStatus::Blocked
@@ -2128,6 +2154,7 @@ void Contact::onAddmeRequest(const PeerAddmeReq &req)
     }
 
     if (getState() == REJECTED) {
+        DsEngine::instance().events().append(EventJournal::ContactDecision, data_->identity, getId(), EventJournal::Incoming, EventJournal::Rejected);
         req.peer->sendConnectionResponse(req.requestId,
                                          ConnectionResponseStatus::Rejected);
         req.peer->close();
@@ -2147,6 +2174,8 @@ void Contact::acceptIncomingRequest(const PeerAddmeReq &req)
     if (!req.peer || req.requestId == 0) {
         return;
     }
+
+    req.peer->setEventContext(data_->identity, getId());
 
     // The request was authenticated by the identity before it reached the
     // notification model.  Mark the contact verified before attaching an

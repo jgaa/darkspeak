@@ -273,6 +273,34 @@ private slots:
         QVERIFY(QSettings{}.value("autoAcceptIncomingFiles").toBool());
     }
 
+    void event_settings_defaults_save_and_configuration_failure() {
+        QSettings settings;
+        settings.setValue("events/enabled", "invalid"); settings.setValue("events/precisionSeconds", "invalid");
+        Appearance appearance;
+        DesktopIntegration desktop;
+        SettingsSession session(appearance, desktop);
+        session.begin();
+        QCOMPARE(session.values()->value("events/enabled").toBool(), false);
+        QCOMPARE(session.values()->value("events/precisionSeconds").toInt(), 60);
+        QCOMPARE(session.values()->value("events/recordFilenames").toBool(), true);
+        session.values()->insert("events/recordFilenames", false);
+        session.values()->insert("events/enabled", true);
+        session.values()->insert("events/precisionSeconds", 300);
+        bool called = false;
+        session.setEventsConfigurator([&called](bool enabled, int precision, bool record_filenames) {
+            called = enabled && precision == 300 && !record_filenames; return false;
+        });
+        QVERIFY(!session.save()); QVERIFY(called);
+        QCOMPARE(settings.value("events/enabled").toString(), QStringLiteral("invalid"));
+        QCOMPARE(settings.value("events/precisionSeconds").toString(), QStringLiteral("invalid"));
+        session.setEventsConfigurator([](bool enabled, int precision, bool record_filenames) { return enabled && precision == 300 && !record_filenames; });
+        QVERIFY2(session.save(), qPrintable(session.error()));
+        QCOMPARE(settings.value("events/recordFilenames").toBool(), false);
+        QCOMPARE(settings.value("events/enabled").toBool(), true);
+        QCOMPARE(settings.value("events/precisionSeconds").toInt(), 300);
+        settings.remove("events/enabled"); settings.remove("events/precisionSeconds"); settings.remove("events/recordFilenames");
+    }
+
 private:
     static double contrast(const QColor &first, const QColor &second) {
         const auto luminance = [](const QColor &color) {

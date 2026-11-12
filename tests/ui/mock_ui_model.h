@@ -42,7 +42,7 @@ public:
     Q_PROPERTY(QString compiler READ empty CONSTANT)
     Q_PROPERTY(QString buildDate READ empty CONSTANT)
     Q_PROPERTY(QString onlineStatusIcon READ empty CONSTANT)
-    enum Pages { LOG, IDENTITIES, CONTACTS, HOME, CONVERSATIONS, CHAT };
+    enum Pages { LOG, IDENTITIES, CONTACTS, HOME, CONVERSATIONS, CHAT, EVENTS };
     Q_ENUM(Pages)
     enum Levels { INFO, WARNING, ERROR };
     Q_ENUM(Levels)

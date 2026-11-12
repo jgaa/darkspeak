@@ -28,6 +28,7 @@
 #include <QJsonObject>
 #include <QBuffer>
 #include <QtEndian>
+#include <QThread>
 
 #include "logfault/logfault.h"
 
@@ -39,6 +40,33 @@ namespace ds {
 namespace core {
 
 DsEngine *DsEngine::instance_;
+
+void recordPeerEvent(const PeerConnection& peer, EventJournal::Kind kind,
+                     EventJournal::Direction direction, EventJournal::Outcome outcome,
+                     const QByteArray& object) {
+    auto* engine = DsEngine::tryInstance();
+    if (!engine || QThread::currentThread() != engine->thread() || !engine->getIdentityManager()
+        || !engine->events().enabled()) return;
+    if (!peer.eventContext().resolved) {
+        auto* identity = engine->getIdentityManager()->identityFromUuid(peer.getIdentityId());
+        qint64 contact_id = 0;
+        if (identity && peer.getPeerCert()) {
+            QSqlQuery query(engine->getDb());
+            query.prepare("SELECT id FROM contact WHERE identity=:identity AND hash=:hash LIMIT 1");
+            query.bindValue(":identity", identity->getId());
+            query.bindValue(":hash", peer.getPeerCert()->getHash().toByteArray());
+            if (query.exec() && query.next()) contact_id = query.value(0).toLongLong();
+            peer.setEventContext(identity->getId(), contact_id);
+        }
+    }
+    const auto& context = peer.eventContext();
+    engine->events().append(kind, context.identity, context.contact, direction, outcome, object);
+}
+void recordSecurityLimit(EventJournal::Direction direction) {
+    auto* engine = DsEngine::tryInstance();
+    if (engine && QThread::currentThread() == engine->thread())
+        engine->events().append(EventJournal::RateLimited, 0, 0, direction, EventJournal::Rejected);
+}
 
 DsEngine::DsEngine()
     : settings_{std::make_unique<QSettings>()}
@@ -67,6 +95,7 @@ DsEngine::DsEngine(std::unique_ptr<QSettings> settings)
 
 DsEngine::~DsEngine()
 {
+    events_.reset(); // Flush summaries while the database is still alive.
     if (secretStore_) {
         secretStore_->lock();
     }
@@ -505,6 +534,7 @@ void DsEngine::initialize()
 
     secretStore_ = std::make_unique<SecretStore>(settings_->value("dbpath").toString());
     database_ = std::make_unique<Database>(*settings_);
+    events_ = std::make_unique<EventJournal>(getDb(), *settings_);
 
     identityManager_ = new IdentityManager(*this);
     contactManager_ = new ContactManager(*this);

@@ -43,6 +43,8 @@ qt_add_qml_module(${PROJECT_NAME}
     QML_FILES
         main.qml
         AboutDialog.qml
+        Events.qml
+        EventsSettings.qml
         Log.qml
         Home.qml
         Contacts.qml

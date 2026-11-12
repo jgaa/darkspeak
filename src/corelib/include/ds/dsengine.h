@@ -8,6 +8,7 @@
 #include <QMap>
 
 #include "ds/message.h"
+#include "ds/eventjournal.h"
 //#include "ds/database.h"
 #include "ds/identity.h"
 #include "ds/contact.h"
@@ -63,9 +64,11 @@ public:
     ~DsEngine();
 
     static DsEngine& instance();
+    static DsEngine* tryInstance() noexcept { return instance_; }
     State getState() const;
     QSqlDatabase& getDb();
     SecretStore& secretStore();
+    EventJournal& events() { return *events_; }
     IdentityManager *getIdentityManager();
     ContactManager *getContactManager();
     ConversationManager *getConversationManager();
@@ -123,6 +126,7 @@ protected:
 
     std::unique_ptr<QSettings> settings_;
     std::unique_ptr<Database> database_;
+    std::unique_ptr<EventJournal> events_;
     std::unique_ptr<SecretStore> secretStore_;
     static DsEngine *instance_;
     ProtocolManager::ptr_t tor_mgr_;

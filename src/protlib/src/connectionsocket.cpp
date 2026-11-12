@@ -1,3 +1,4 @@
+#include "ds/eventjournal.h"
 
 #include "include/ds/connectionsocket.h"
 #include "ds/handshake.h"
@@ -118,6 +119,7 @@ void ConnectionSocket::processInput()
 
     // This should never happen, but just in case...
     if (static_cast<size_t>(inData.size()) > maxInDataSize) {
+        core::recordSecurityLimit(core::EventJournal::Incoming);
         if (const auto count = handshake::recordFloodEvent()) {
             LFLOG_WARN << "Input flood protection closed " << *count
                        << " over-limit input buffers in the last interval";

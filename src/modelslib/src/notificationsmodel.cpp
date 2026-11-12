@@ -1,3 +1,4 @@
+#include <QCryptographicHash>
 #include "include/ds/notificationsmodel.h"
 #include "ds/crypto.h"
 
@@ -640,9 +641,28 @@ void NotificationsModel::acceptContact(const int row, bool accept)
             LFLOG_ERROR << "Error adding contact: " << ex.what();
         }
 
-        deleteRow(row);
+        if (added) {
+            DsEngine::instance().events().append(core::EventJournal::ContactDecision,
+                added->getIdentity()->getId(), added->getId(), core::EventJournal::Incoming, core::EventJournal::Accepted,
+                QCryptographicHash::hash(d.value("handle").toByteArray().left(128), QCryptographicHash::Sha256));
+            deleteRow(row);
+        }
     } else {
-        // TODO: Send reject message and delete the notification
+        const auto identity_id = data(index(row, H_IDENTITY), Qt::DisplayRole).toInt();
+        QString hash;
+        crypto::createHash(hash, {d.value("handle").toString(), d.value("address").toString(), QString::number(identity_id)});
+        if (const auto it = pendingContactRequests_.find(hash); it != pendingContactRequests_.end()) {
+            try {
+                it->second.peer->sendConnectionResponse(it->second.requestId, core::ConnectionResponseStatus::Rejected);
+            } catch (const std::exception&) {
+                LFLOG_DEBUG << "Could not send rejected contact decision on expired request connection";
+            }
+            pendingContactRequests_.erase(it);
+        }
+        DsEngine::instance().events().append(core::EventJournal::ContactDecision,
+            identity_id, 0, core::EventJournal::Incoming, core::EventJournal::Rejected,
+            QCryptographicHash::hash(d.value("handle").toByteArray().left(128), QCryptographicHash::Sha256));
+        deleteRow(row);
     }
 }
 

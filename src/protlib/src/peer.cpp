@@ -675,6 +675,7 @@ uint64_t Peer::nextRequestId(const RequestType type)
 {
     expireOutstandingRequests();
     if (outstandingRequests_.size() >= resourceLimits_.outstandingRequests) {
+        core::recordPeerEvent(*this, core::EventJournal::RateLimited, core::EventJournal::Outgoing, core::EventJournal::Rejected);
         throw Error("Outstanding request limit reached");
     }
 
@@ -760,6 +761,7 @@ uint64_t Peer::send(const ds::protocol::Envelope& envelope)
     if (connection_->queuedBytes() > resourceLimits_.socketOutputBytes
             || wireBytes > resourceLimits_.socketOutputBytes
             - connection_->queuedBytes()) {
+        core::recordPeerEvent(*this, core::EventJournal::RateLimited, core::EventJournal::Outgoing, core::EventJournal::Rejected);
         throw runtime_error("Connection output queue limit exceeded");
     }
     QByteArray ciphertext(plain.size() + crypt_bytes, Qt::Uninitialized);
@@ -775,6 +777,14 @@ uint64_t Peer::send(const ds::protocol::Envelope& envelope)
     memcpy(wireFrame.data(), &length, sizeof(length));
     wireFrame += ciphertext;
     connection_->write(wireFrame);
+    using E = core::EventJournal;
+    if (envelope.hasMessage()) core::recordPeerEvent(*this, E::Message, E::Outgoing, E::Success, envelope.message().messageId());
+    else if (envelope.hasBioRequest()) core::recordPeerEvent(*this, E::BioRequest, E::Outgoing, E::Success);
+    else if (envelope.hasBioResponse()) core::recordPeerEvent(*this, E::BioResponse, E::Outgoing, E::Success);
+    else if (envelope.hasAvatarRequest()) core::recordPeerEvent(*this, E::AvatarRequest, E::Outgoing, E::Success);
+    else if (envelope.hasAvatar() || envelope.hasAvatarResponse()) core::recordPeerEvent(*this, E::AvatarTransfer, E::Outgoing, E::Success);
+    else if (envelope.hasUserInfo()) core::recordPeerEvent(*this, E::UserInfo, E::Outgoing, E::Success);
+    else if (envelope.hasMessageReceipt()) core::recordPeerEvent(*this, E::MessageReceipt, E::Outgoing, E::Success, envelope.messageReceipt().messageId());
     return ++frame_id_;
 }
 
@@ -1182,6 +1192,7 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         if (!envelope.hasRequestId() || requestId == 0) {
             protocolError(QStringLiteral("Avatar request requires request_id"));
         }
+        core::recordPeerEvent(*this, core::EventJournal::AvatarRequest, core::EventJournal::Incoming);
         emit receivedAvatarRequest(PeerReq{shared_from_this(), getConnectionId(), requestId});
         return;
     }
@@ -1327,6 +1338,7 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
                               || info.bio().bioText().toUtf8().size() > 4096)) {
             protocolError(QStringLiteral("Bio exceeds the v3 size limit"));
         }
+        core::recordPeerEvent(*this, core::EventJournal::UserInfo, core::EventJournal::Incoming);
         emit receivedUserInfo(incoming);
         return;
     }
@@ -1363,6 +1375,7 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
                 }
             }
         }
+        core::recordPeerEvent(*this, core::EventJournal::AvatarTransfer, core::EventJournal::Incoming);
         emit receivedAvatarResponse(PeerSetAvatarReq{shared_from_this(), getConnectionId(),
                                                       requestId, std::move(image)});
         return;
@@ -1522,6 +1535,7 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         }
         PeerSetAvatarReq incoming{shared_from_this(), getConnectionId(), requestId,
                                   std::move(image)};
+        core::recordPeerEvent(*this, core::EventJournal::AvatarTransfer, core::EventJournal::Incoming);
         emit receivedAvatar(incoming);
         return;
     }
@@ -1529,6 +1543,7 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         if (!envelope.hasRequestId() || requestId == 0) {
             protocolError(QStringLiteral("Bio request lacks correlation"));
         }
+        core::recordPeerEvent(*this, core::EventJournal::BioRequest, core::EventJournal::Incoming);
         emit receivedBioRequest(PeerReq{shared_from_this(), getConnectionId(), requestId});
         return;
     }
@@ -1542,6 +1557,7 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
                     core::bio::sanitize(response.bio().bioText()))) {
             protocolError(QStringLiteral("Bio exceeds the v3 size limit"));
         }
+        core::recordPeerEvent(*this, core::EventJournal::BioResponse, core::EventJournal::Incoming);
         emit receivedBio(PeerBio{shared_from_this(), getConnectionId(), requestId,
                                  response.hasBio() ? response.bio().bioText() : QString{}});
         return;
@@ -1558,6 +1574,7 @@ void Peer::sendCapabilities()
 
 [[noreturn]] void Peer::protocolError(const QString& reason)
 {
+    core::recordPeerEvent(*this, core::EventJournal::ProtocolRejection, core::EventJournal::Incoming, core::EventJournal::Rejected);
     LFLOG_ERROR << "Protocol error on connection " << getConnectionId().toString()
                 << ": " << reason;
     close();
@@ -1698,6 +1715,7 @@ void Peer::processStream(const Peer::data_t &ciphertext)
         const auto *local_identity = DsEngine::instance().getIdentityManager()->identityFromUuid(getIdentityId());
         if (local_identity && !local_identity->getAllowUtf8()
             && !core::text_policy::permittedAsciiEnvelope(QByteArrayView{transport.payload()})) {
+            core::recordPeerEvent(*this, core::EventJournal::PolicyRejection, core::EventJournal::Incoming, core::EventJournal::Rejected);
             throw runtime_error("Application text violates the local ASCII policy");
         }
         ds::protocol::Envelope envelope;

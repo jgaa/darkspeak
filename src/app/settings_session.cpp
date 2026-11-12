@@ -12,6 +12,7 @@ QVariantMap defaults()
 {
     using Limits = ds::core::ResourceLimits;
     return {
+        {"events/enabled", false}, {"events/recordFilenames", true}, {"events/precisionSeconds", 60},
         {"appAutoConnect", true}, {"autostart", false}, {"useDarkSpeakFolder", true},
         {"autoAcceptIncomingFiles", false}, {"includeConversationNameInDownloadPath", false},
         {"torMode", 1}, {"torCmd", "tor"}, {"torCtlHost", "127.0.0.1"}, {"torCtlPort", 9051},
@@ -45,7 +46,16 @@ void SettingsSession::begin()
     original_.clear();
     const auto initial = defaults();
     for (auto it = initial.cbegin(); it != initial.cend(); ++it) {
-        const auto value = settings.value(it.key(), it.value());
+        auto value = settings.value(it.key(), it.value());
+        if (it.key() == QStringLiteral("events/enabled") || it.key() == QStringLiteral("events/recordFilenames")) {
+            const auto text = value.toString().trimmed().toLower();
+            value = text == QStringLiteral("true") || text == QStringLiteral("1");
+        } else if (it.key() == QStringLiteral("events/precisionSeconds")) {
+            bool ok = false;
+            const auto seconds = value.toInt(&ok);
+            value = ok && (seconds == 0 || seconds == 60 || seconds == 300 || seconds == 1800 || seconds == 3600)
+                ? seconds : 60;
+        }
         original_.insert(it.key(), value);
         values_.insert(it.key(), value);
     }
@@ -82,6 +92,10 @@ bool SettingsSession::save()
         return fail(tr("Specify the Tor command."));
     for (const auto *key : {"logLevelFile", "logLevelStdout", "logLevelApp"})
         if (!integer(key, 0, 6)) return fail(tr("Select a valid logging level."));
+    const auto precision = values_.value("events/precisionSeconds").toInt();
+    if (!integer("events/precisionSeconds", 0, 3600)
+        || (precision != 0 && precision != 60 && precision != 300 && precision != 1800 && precision != 3600))
+        return fail(tr("Select a valid event timestamp precision."));
     using Limits = ds::core::ResourceLimits;
     const struct { const char *key; quint64 minimum; quint64 maximum; } limits[] = {
         {"resourceUnapprovedConnections", 1, Limits::hardUnapprovedConnections},
@@ -145,6 +159,11 @@ bool SettingsSession::save()
         restore_settings();
         return fail(restored ? tr("Unable to write settings. Check configuration directory permissions.")
                              : tr("Unable to write settings or restore automatic startup. Check configuration permissions and desktop startup settings."));
+    }
+    if (events_configurator_ && !events_configurator_(values_.value("events/enabled").toBool(), precision, values_.value("events/recordFilenames").toBool())) {
+        restore_settings();
+        if (autostart != old_autostart) desktop_.setAutostartEnabled(old_autostart);
+        return fail(tr("Unable to update event recording. Check the Events page for the database error."));
     }
     appearance_.savePreview();
     return true;

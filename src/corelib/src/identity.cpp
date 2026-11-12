@@ -52,6 +52,23 @@ Identity::Identity(QObject& parent,
     settings.setValue(prefix + QStringLiteral("bio"), data_.bio);
     settings.setValue(prefix + QStringLiteral("publicAvatar"), data_.publicAvatar);
 
+    auto* changed = new QTimer(this);
+    changed->setSingleShot(true);
+    changed->setInterval(0);
+    connect(changed, &QTimer::timeout, this, [this] {
+        if (id_ > 0) DsEngine::instance().events().append(EventJournal::IdentityModified, id_);
+    });
+    const auto schedule = [changed] { if (!changed->isActive()) changed->start(); };
+    connect(this, &Identity::nameChanged, changed, schedule);
+    connect(this, &Identity::notesChanged, changed, schedule);
+    connect(this, &Identity::addressChanged, changed, schedule);
+    connect(this, &Identity::autoConnectChanged, changed, schedule);
+    connect(this, &Identity::bioChanged, changed, schedule);
+    connect(this, &Identity::securityPreferencesChanged, changed, schedule);
+    connect(this, &Identity::avatarChanged, this, [this, schedule] {
+        schedule();
+        if (id_ > 0) DsEngine::instance().events().append(EventJournal::AvatarChanged, id_);
+    });
     connect(this, &Identity::processOnlineLater,
             this, &Identity::onProcessOnlineLater,
             Qt::QueuedConnection);

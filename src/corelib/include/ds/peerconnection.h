@@ -275,6 +275,16 @@ public:
 
     PeerConnection() = default;
 
+    struct EventContext {
+        qint64 identity = 0, contact = 0;
+        bool resolved = false;
+    };
+    const EventContext& eventContext() const noexcept { return event_context_; }
+    void setEventContext(qint64 identity, qint64 contact) const noexcept {
+        event_context_ = {identity, contact, true};
+    }
+
+
     enum Direction { INCOMING, OUTGOING };
 
     virtual QUuid getConnectionId() const = 0;
@@ -336,6 +346,9 @@ signals:
     void receivedBioRequest(const PeerReq& request);
     void receivedBio(const PeerBio& bio);
     void outputBufferEmptied();
+private:
+    // Logical metadata cache: no SQL lookup for each suppressed flood event.
+    mutable EventContext event_context_;
 };
 
 }}

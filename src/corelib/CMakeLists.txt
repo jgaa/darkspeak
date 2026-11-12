@@ -1,6 +1,8 @@
 project(core LANGUAGES CXX)
 
 add_library(${PROJECT_NAME} STATIC
+    src/eventjournal.cpp
+    include/ds/eventjournal.h
     src/filemanager.cpp
     src/identitymanager.cpp
     src/contactmanager.cpp
