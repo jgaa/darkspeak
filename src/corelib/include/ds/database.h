@@ -41,7 +41,7 @@ protected:
     void exec(const char *sql);
     void prepareData();
 
-    static constexpr int currentVersion = 1;
+    static constexpr int currentVersion = 2;
     QSqlDatabase db_;
     QSettings& settings_;
 };

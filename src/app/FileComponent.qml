@@ -121,7 +121,7 @@ Item {
             onTriggered: {
                 contextFileSendMenu.file.openFolder();
             }
-            text: qsTr("Open Folder")
+            text: qsTr("Open exported copy’s folder")
         }
     }
 
@@ -177,7 +177,7 @@ Item {
             onTriggered: {
                 contextFileReceiveMenu.file.openFolder();
             }
-            text: qsTr("Open Folder")
+            text: qsTr("Open exported copy’s folder")
             enabled: contextFileReceiveMenu.file && contextFileReceiveMenu.file.state === File.FS_DONE
         }
     }

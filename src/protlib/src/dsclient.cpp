@@ -42,7 +42,7 @@ void DsClient::advance()
 }
 
 void DsClient::advance(const data_t& data)
-{
+try {
     if (state_ == State::ENCRYPTED_STREAM) {
         const bool hadCapabilities = capabilitiesReceived_;
         processStream(data);
@@ -64,6 +64,12 @@ void DsClient::advance(const data_t& data)
     } else if (state_ == State::GET_SERVER_HELLO) {
         getServerHello(data);
     }
+} catch (const std::exception& ex) {
+    LFLOG_ERROR << "Handshake/protocol processing failed: " << ex.what();
+    failHandshake();
+} catch (...) {
+    LFLOG_ERROR << "Handshake/protocol processing failed with an unknown error";
+    failHandshake();
 }
 
 void DsClient::sayHello()

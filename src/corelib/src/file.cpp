@@ -1,27 +1,18 @@
 #include "ds/textpolicy.h"
 
 #include <chrono>
-#include <array>
 
 #include "ds/errors.h"
 #include "ds/dsengine.h"
 #include "ds/update_helper.h"
 #include "ds/crypto.h"
 #include "ds/file.h"
-#include "ds/hashtask.h"
-
-#include <sodium.h>
 
 
-#include <QFile>
+
 #include <QFileInfo>
-#include <QThreadPool>
 #include <QUrl>
 #include <QDesktopServices>
-#include <QMimeDatabase>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonParseError>
 #include <QObject>
 //#include <QStringLiteral>
 
@@ -32,13 +23,13 @@ using namespace std;
 namespace ds {
 namespace core {
 
-File::File(QObject &parent)
-    : QObject (&parent), data_{make_unique<FileData>()}
+File::File(QObject &)
+    : QObject (nullptr), data_{make_unique<FileData>()}
 {
 }
 
-File::File(QObject &parent, std::unique_ptr<FileData> data)
-    : QObject (&parent), data_{std::move(data)}
+File::File(QObject &, std::unique_ptr<FileData> data)
+    : QObject (nullptr), data_{std::move(data)}
 {
     if (auto *identity = DsEngine::instance().getIdentityManager()->identityFromId(data_->identity))
         connect(identity, &Identity::securityPreferencesChanged, this, &File::nameChanged);
@@ -52,14 +43,14 @@ void File::cancel()
     }
 
     if (getState() == FS_TRANSFERRING) {
-        if (getDirection() == INCOMING) {
-            QFile::remove(getDownloadPath());
-            QFile::remove(getDownloadPath() + QStringLiteral(".meta"));
-        }
+        storage_cancel_.cancel();
+        if (getDirection() == INCOMING) abortIncoming();
         transferFailed("Cancelled");
         return;
     }
 
+    storage_cancel_.cancel();
+    if (getDirection() == INCOMING) abortIncoming();
     setState(FS_CANCELLED);
 
     LFLOG_DEBUG << "Cancelled file #" << getId();
@@ -160,16 +151,7 @@ void File::resume()
         return;
     }
 
-    quint64 offset = {};
-    QString reason;
-    if (!rebuildDurableResumeState(offset, reason)) {
-        DsEngine::instance().reportStatus(
-            QObject::tr("Cannot resume %1: %2").arg(getName(), reason),
-            DsEngine::StatusLevel::ERROR);
-        return;
-    }
-    setBytesTransferred(static_cast<qlonglong>(offset));
-    contact->resumeFile(*this);
+    resumeIncoming(shared_from_this());
     } catch (const std::exception& ex) {
         LFLOG_ERROR << "Failed to resume file #" << getId() << ": " << ex.what();
         DsEngine::instance().reportStatus(
@@ -182,27 +164,22 @@ void File::resume()
 
 void File::openInDefaultApplication()
 {
-    try {
-    auto url = QUrl::fromLocalFile(getPath());
-    QDesktopServices::openUrl(url);
-    } catch (const std::exception& ex) {
-        LFLOG_ERROR << "Failed to open file #" << getId() << ": " << ex.what();
-    } catch (...) {
-        LFLOG_ERROR << "Failed to open file #" << getId() << ": unknown exception";
-    }
+    openExternal(shared_from_this(), false);
 }
-
 void File::openFolder()
 {
-    try {
-    const auto path = getPath();
-    auto url = QUrl::fromLocalFile(path.left(path.lastIndexOf("/")));
-    QDesktopServices::openUrl(url);
-    } catch (const std::exception& ex) {
-        LFLOG_ERROR << "Failed to open folder for file #" << getId() << ": " << ex.what();
-    } catch (...) {
-        LFLOG_ERROR << "Failed to open folder for file #" << getId() << ": unknown exception";
+    openExternal(shared_from_this(), true);
+}
+QCoro::Task<void> File::openExternal(File::ptr_t self, bool folder)
+{
+    if ((getDirection() == INCOMING && getState() != FS_DONE) || storageId().isNull()) co_return;
+    auto& storage = DsEngine::instance().getFileManager()->storage();
+    auto exported = co_await storage.exportFile(storageNamespace(), storageId(), getName());
+    if (!exported) {
+        DsEngine::instance().reportStatus(tr("Unable to export the file for an external application."), DsEngine::ERROR);
+        co_return;
     }
+    QDesktopServices::openUrl(QUrl::fromLocalFile(folder ? QFileInfo(exported.value()).absolutePath() : exported.value()));
 }
 int File::getId() const noexcept
 {
@@ -256,29 +233,12 @@ QString File::getDisplayName() const
 
 QString File::getMimeType() const
 {
-    const auto type = QMimeDatabase{}.mimeTypeForFile(
-        getPath(), QMimeDatabase::MatchContent).name();
-    return type.isEmpty() ? QStringLiteral("application/octet-stream") : type;
+    return data_->mime_type.isEmpty() ? QStringLiteral("application/octet-stream") : data_->mime_type;
 }
 
 void File::setName(const QString &name)
 {
     updateIf("name", name, data_->name, this, &File::nameChanged);
-}
-
-QString File::getPath() const noexcept
-{
-    return data_->path;
-}
-
-QString File::getDownloadPath() const noexcept
-{
-    return getPath() + ".part";
-}
-
-void File::setPath(const QString &path)
-{
-    updateIf("path", path, data_->path, this, &File::pathChanged);
 }
 
 QByteArray File::getHash() const noexcept
@@ -420,133 +380,144 @@ float File::getProgress() const noexcept
     return status;
 }
 
-bool File::rebuildDurableResumeState(quint64& offset, QString& reason) const
-{
-    offset = {};
-    if (getDirection() != INCOMING || getHash().size() != crypto_hash_sha256_BYTES
-            || getSize() < 0) {
-        reason = QObject::tr("Invalid incoming transfer metadata");
-        return false;
-    }
-
-    const QString partialPath = getDownloadPath();
-    const QString metadataPath = partialPath + QStringLiteral(".meta");
-    const QFileInfo partialInfo{partialPath};
-    const QFileInfo metadataInfo{metadataPath};
-    const QFileInfo parentInfo{partialInfo.absolutePath()};
-    if (partialInfo.isSymLink() || metadataInfo.isSymLink() || parentInfo.isSymLink()) {
-        reason = QObject::tr("Refusing to resume through a symbolic link");
-        return false;
-    }
-    if (!partialInfo.exists()) {
-        if (metadataInfo.exists()) {
-            reason = QObject::tr("Resume metadata has no matching partial file");
-            return false;
-        }
-        return true;
-    }
-    if (!partialInfo.isFile() || partialInfo.size() < 0
-            || partialInfo.size() > getSize()
-            || partialInfo.size() % static_cast<qint64>(8 * 1024) != 0) {
-        reason = QObject::tr("The durable partial file is invalid");
-        return false;
-    }
-
-    QFile metadataFile{metadataPath};
-    if (!metadataFile.open(QIODevice::ReadOnly)) {
-        reason = QObject::tr("Unable to read resume metadata");
-        return false;
-    }
-    QJsonParseError parseError;
-    const auto metadata = QJsonDocument::fromJson(metadataFile.readAll(), &parseError);
-    if (parseError.error != QJsonParseError::NoError || !metadata.isObject()) {
-        reason = QObject::tr("Resume metadata is invalid");
-        return false;
-    }
-    const auto object = metadata.object();
-    bool offsetOk = false;
-    const auto savedOffset = object.value(QStringLiteral("offset")).toString()
-            .toULongLong(&offsetOk);
-    if (!offsetOk || savedOffset != static_cast<quint64>(partialInfo.size())
-            || object.value(QStringLiteral("fileId")).toString()
-                != QString::fromLatin1(getFileId().toBase64())
-            || object.value(QStringLiteral("size")).toString()
-                != QString::number(getSize())
-            || object.value(QStringLiteral("hash")).toString()
-                != QString::fromLatin1(getHash().toBase64())) {
-        reason = QObject::tr("Resume metadata does not match the transfer");
-        return false;
-    }
-
-    QFile partial{partialPath};
-    if (!partial.open(QIODevice::ReadOnly)) {
-        reason = QObject::tr("Unable to read the durable partial file");
-        return false;
-    }
-    crypto_hash_sha256_state state;
-    crypto_hash_sha256_init(&state);
-    std::array<unsigned char, 8 * 1024> buffer{};
-    while (!partial.atEnd()) {
-        const auto count = partial.read(reinterpret_cast<char *>(buffer.data()),
-                                        static_cast<qint64>(buffer.size()));
-        if (count <= 0) {
-            reason = QObject::tr("Unable to rebuild the durable SHA-256 prefix");
-            return false;
-        }
-        crypto_hash_sha256_update(&state, buffer.data(),
-                                  static_cast<unsigned long long>(count));
-    }
-    QByteArray prefixHash(static_cast<int>(crypto_hash_sha256_BYTES), Qt::Uninitialized);
-    crypto_hash_sha256_final(&state,
-                             reinterpret_cast<unsigned char *>(prefixHash.data()));
-    if (object.value(QStringLiteral("prefixHash")).toString()
-            != QString::fromLatin1(prefixHash.toBase64())) {
-        reason = QObject::tr("The durable SHA-256 prefix does not match metadata");
-        return false;
-    }
-    offset = savedOffset;
-    return true;
+dsfm::NamespaceId File::storageNamespace() const { return data_->storage_namespace; }
+dsfm::FileId File::storageId() const { return data_->storage_id; }
+dsfm::PendingId File::pendingId() const { return data_->pending_id; }
+void File::saveStorage() {
+    QSqlQuery query;
+    query.prepare("UPDATE file SET storage_namespace=:ns,storage_id=:file,pending_id=:pending,mime_type=:mime,path=NULL WHERE id=:id");
+    query.bindValue(":ns", data_->storage_namespace.isNull() ? QVariant{} : QVariant(data_->storage_namespace));
+    query.bindValue(":file", data_->storage_id.isNull() ? QVariant{} : QVariant(data_->storage_id));
+    query.bindValue(":pending", data_->pending_id.isNull() ? QVariant{} : QVariant(data_->pending_id));
+    query.bindValue(":mime", data_->mime_type);
+    query.bindValue(":id", getId());
+    if (!query.exec()) throw Error("Cannot persist managed file references");
 }
-
-bool File::validateSourceSnapshot(QString& reason) const
-{
-    if (getDirection() != OUTGOING || getSize() < 0
-            || getHash().size() != crypto_hash_sha256_BYTES) {
-        reason = QObject::tr("Invalid outgoing transfer metadata");
-        return false;
-    }
-    const QFileInfo info{getPath()};
-    if (!info.exists() || !info.isFile() || info.isSymLink()
-            || info.size() != getSize() || info.lastModified() != getFileTime()) {
-        reason = QObject::tr("The source file changed or is unavailable");
-        return false;
-    }
-    QFile source{getPath()};
-    if (!source.open(QIODevice::ReadOnly)) {
-        reason = QObject::tr("The source file cannot be opened");
-        return false;
-    }
-    crypto_hash_sha256_state state;
-    crypto_hash_sha256_init(&state);
-    std::array<unsigned char, 8 * 1024> buffer{};
-    while (!source.atEnd()) {
-        const auto count = source.read(reinterpret_cast<char *>(buffer.data()),
-                                       static_cast<qint64>(buffer.size()));
-        if (count <= 0) {
-            reason = QObject::tr("The source file cannot be read");
-            return false;
+QCoro::Task<dsfm::Result<quint64>> File::prepareIncoming() {
+    auto self = shared_from_this();
+    auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
+    using dsfm::Error; using dsfm::ErrorCode;
+    if (storage_busy_ || writer_) co_return Error{ErrorCode::Busy};
+    if (getDirection() != INCOMING || getSize() < 0 || getHash().size() != 32) co_return Error{ErrorCode::InvalidArgument};
+    storage_busy_ = true;
+    struct Guard { File* file; ~Guard() { file->storage_busy_ = false; } } guard{this};
+    storage_cancel_ = {};
+    auto& storage = DsEngine::instance().getFileManager()->storage();
+    auto ready = co_await storage.ready();
+    if (!ready) co_return ready.error();
+    if (storage_cancel_.cancelled()) co_return Error{ErrorCode::Cancelled};
+    quint64 offset = 0;
+    if (!pendingId().isNull()) {
+        if (!storage.isDownloadNamespace(storageNamespace())) co_return Error{ErrorCode::InvalidArgument};
+        auto opened = co_await storage.manager().openPending(storageNamespace(), pendingId());
+        if (!opened) co_return opened.error();
+        auto pending = std::move(opened).value();
+        if (pending.info.file_id != storageId() || pending.info.content.expected_sha256 != getHash()
+            || pending.info.content.expected_size != std::optional<quint64>(quint64(getSize()))) co_return Error{ErrorCode::Corruption};
+        writer_ = std::move(pending.writer);
+        // Resume only an acknowledged, durable contiguous prefix, never sparse-file length.
+        dsfm::PageRequest page;
+        do {
+            auto ranges = co_await storage.manager().listRanges(storageNamespace(), pendingId(), dsfm::RangeKind::StorageValid, page);
+            if (!ranges) { writer_.reset(); co_return ranges.error(); }
+            for (const auto range : ranges.value().entries) {
+                if (range.offset != offset) { writer_.reset(); co_return Error{ErrorCode::IncompleteContent}; }
+                offset += range.length;
+            }
+            page.cursor = ranges.value().next_cursor;
+        } while (!page.cursor.isEmpty());
+        offset = qMin(offset, quint64(qMax<qlonglong>(0, getBytesTransferred())));
+        offset -= offset % (8 * 1024);
+    } else {
+        auto directory = storage.root(ManagedStorage::Downloads);
+        if (DsEngine::instance().settings().value("includeConversationNameInDownloadPath", false).toBool()) {
+            const auto name = QStringLiteral("conversation-%1").arg(getConversationId());
+            auto found = co_await storage.manager().lookup(storage.namespaceId(ManagedStorage::Downloads), name);
+            if (found) directory = found.value().id;
+            else if (found.error().code == ErrorCode::MissingEntry) {
+                auto made = co_await storage.manager().mkdir(storage.namespaceId(ManagedStorage::Downloads), directory, name);
+                if (!made && made.error().code == ErrorCode::Conflict) {
+                    auto existing = co_await storage.manager().lookup(storage.namespaceId(ManagedStorage::Downloads), name);
+                    if (!existing) co_return existing.error();
+                    directory = existing.value().id;
+                } else if (!made) co_return made.error();
+                else directory = made.value();
+            } else co_return found.error();
         }
-        crypto_hash_sha256_update(&state, buffer.data(),
-                                  static_cast<unsigned long long>(count));
+        dsfm::CreateOptions options{directory, getName()};
+        options.content = {quint64(getSize()), getHash()};
+        auto created = co_await storage.manager().createFile(storage.namespaceId(ManagedStorage::Downloads), options);
+        if (!created) co_return created.error();
+        auto pending = std::move(created).value();
+        data_->storage_namespace = storage.namespaceId(ManagedStorage::Downloads);
+        data_->storage_id = pending.info.file_id;
+        data_->pending_id = pending.info.id;
+        writer_ = std::move(pending.writer);
+        bool saved = true;
+        try { saveStorage(); } catch (...) { saved = false; }
+        if (!saved) { co_await writer_->abort(); writer_.reset(); co_return Error{ErrorCode::IoError}; }
     }
-    QByteArray hash(static_cast<int>(crypto_hash_sha256_BYTES), Qt::Uninitialized);
-    crypto_hash_sha256_final(&state,
-                             reinterpret_cast<unsigned char *>(hash.data()));
-    if (hash != getHash()) {
-        reason = QObject::tr("The source file contents changed");
-        return false;
+    if (storage_cancel_.cancelled()) {
+        if (getState() == FS_CANCELLED) co_await abortIncoming();
+        co_return Error{ErrorCode::Cancelled};
     }
-    return true;
+    setBytesTransferred(qlonglong(offset));
+    co_return offset;
+}
+QCoro::Task<dsfm::Result<qsizetype>> File::writeIncoming(quint64 offset, QByteArray bytes) {
+    auto self = shared_from_this();
+    auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
+    if (!writer_) co_return dsfm::Error{dsfm::ErrorCode::MissingEntry};
+    co_return co_await writer_->writeAt(offset, std::move(bytes), storage_cancel_);
+}
+QCoro::Task<dsfm::Result<void>> File::checkpointIncoming() {
+    auto self = shared_from_this();
+    auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
+    if (!writer_) co_return dsfm::Error{dsfm::ErrorCode::MissingEntry};
+    co_return co_await writer_->checkpoint(storage_cancel_);
+}
+QCoro::Task<dsfm::Result<void>> File::suspendIncoming() {
+    auto self = shared_from_this();
+    auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
+    if (storage_busy_) co_return dsfm::Error{dsfm::ErrorCode::Busy};
+    if (!writer_) co_return dsfm::Result<void>{};
+    storage_busy_ = true;
+    struct Guard { File* file; ~Guard() { file->storage_busy_ = false; } } guard{this};
+    auto result = co_await writer_->suspend();
+    if (result) writer_.reset();
+    co_return result;
+}
+QCoro::Task<dsfm::Result<void>> File::abortIncoming() {
+    auto self = shared_from_this();
+    auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
+    if (writer_) {
+        auto result = co_await writer_->abort();
+        if (result) writer_.reset();
+        co_return result;
+    }
+    if (pendingId().isNull()) co_return dsfm::Result<void>{};
+    auto& storage = DsEngine::instance().getFileManager()->storage();
+    auto ready = co_await storage.ready();
+    if (!ready) co_return ready.error();
+    co_return co_await storage.manager().abortPending(storageNamespace(), pendingId());
+}
+QCoro::Task<dsfm::Result<void>> File::validateSourceSnapshot() {
+    auto self = shared_from_this();
+    auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
+    auto& storage = DsEngine::instance().getFileManager()->storage();
+    auto ready = co_await storage.ready();
+    if (!ready) co_return ready.error();
+    auto info = co_await storage.manager().stat(storageNamespace(), storageId());
+    if (!info) co_return info.error();
+    if (info.value().sha256 != getHash() || info.value().size != quint64(getSize())) co_return dsfm::Error{dsfm::ErrorCode::IntegrityError};
+    co_return dsfm::Result<void>{};
+}
+QCoro::Task<void> File::resumeIncoming(File::ptr_t self) {
+    auto offset = co_await prepareIncoming();
+    if (!offset) { DsEngine::instance().reportStatus(tr("Unable to reopen the pending transfer."), DsEngine::ERROR); co_return; }
+    auto suspended = co_await suspendIncoming();
+    if (!suspended) co_return;
+    if (auto* contact = getContact(); contact && contact->isOnline()) contact->resumeFile(*this);
 }
 
 Contact *File::getContact() const
@@ -558,25 +529,13 @@ void File::addToDb()
 {
     QSqlQuery query;
     query.prepare("INSERT INTO file ("
-                  "state, direction, identity_id, conversation_id, contact_id, hash, file_id, name, path, size, file_time, created_time, ack_time, bytes_transferred"
+                  "state, direction, identity_id, conversation_id, contact_id, hash, file_id, name, path, size, file_time, created_time, ack_time, bytes_transferred, storage_namespace, storage_id, pending_id, mime_type"
                   ") VALUES ("
-                  ":state, :direction, :identity_id, :conversation_id, :contact_id, :hash, :file_id, :name, :path, :size, :file_time, :created_time, :ack_time, :bytes_transferred"
+                  ":state, :direction, :identity_id, :conversation_id, :contact_id, :hash, :file_id, :name, :path, :size, :file_time, :created_time, :ack_time, :bytes_transferred, :storage_namespace, :storage_id, :pending_id, :mime_type"
                   ")");
 
     if (!data_->createdTime.isValid()) {
         data_->createdTime = DsEngine::getSafeNow();
-    }
-
-    if (data_->direction == File::OUTGOING) {
-        QFile file{data_->path};
-        if (data_->size == 0) {
-            data_->size = file.size();
-        }
-
-        if (!data_->fileTime.isValid()) {
-            QFileInfo fi{file};
-            data_->fileTime = fi.lastModified();
-        }
     }
 
     if (data_->fileId.isEmpty()) {
@@ -591,7 +550,11 @@ void File::addToDb()
     query.bindValue(":hash", data_->hash);
     query.bindValue(":file_id", data_->fileId);
     query.bindValue(":name", data_->name);
-    query.bindValue(":path", data_->path);
+    query.bindValue(":path", QVariant{});
+    query.bindValue(":storage_namespace", data_->storage_namespace.isNull() ? QVariant{} : QVariant(data_->storage_namespace));
+    query.bindValue(":storage_id", data_->storage_id.isNull() ? QVariant{} : QVariant(data_->storage_id));
+    query.bindValue(":pending_id", data_->pending_id.isNull() ? QVariant{} : QVariant(data_->pending_id));
+    query.bindValue(":mime_type", data_->mime_type);
     query.bindValue(":size", data_->size);
     query.bindValue(":file_time", data_->fileTime);
     query.bindValue(":created_time", data_->createdTime);
@@ -604,9 +567,7 @@ void File::addToDb()
 
     id_ = query.lastInsertId().toInt();
 
-    LFLOG_INFO << "Added File \"" << getName()
-               << "\" with hash " << getHash().toHex()
-               << " to the database with id " << id_;
+    LFLOG_DEBUG << "Added managed file metadata";
 }
 
 void File::deleteFromDb()
@@ -639,35 +600,35 @@ File::ptr_t File::load(QObject &parent, int conversation, const QByteArray &hash
     });
 }
 
-void File::asynchCalculateHash(File::hash_cb_t callback)
+void File::importIntoStorage(File::hash_cb_t callback)
 {
-    setState(File::FS_HASHING);
-
-    auto self = DsEngine::instance().getFileManager()->getFile(getId());
-    auto task = make_unique<HashTask>(this, self);
-
-    // Prevent the file from going out of scope while hashing
-    // put a smartpointer to it in the lambda
-    connect(task.get(), &HashTask::hashed,
-            this, [self=move(self), callback=move(callback)](const QByteArray& hash, const QString& failReason) {
-        if (callback) {
-            try {
-                callback(hash, failReason);
-            } catch(const std::exception& ex) {
-                LFLOG_ERROR << "Caught exeption from hashing callback: " << ex.what();
-            }
-        }
-
-        // Make sure the file remains in scope a little longer
-        DsEngine::instance().getFileManager()->touch(self);
-    }, Qt::QueuedConnection);
-
-    QThreadPool::globalInstance()->start(task.release());
+    setState(FS_HASHING);
+    importSource(shared_from_this(), std::move(callback));
+}
+QCoro::Task<void> File::importSource(File::ptr_t self, hash_cb_t callback) {
+    auto& storage = DsEngine::instance().getFileManager()->storage();
+    auto imported = co_await storage.importFile(data_->source_path, getName(), storage_cancel_, [this, &storage](dsfm::PendingInfo pending) {
+        data_->storage_namespace = storage.namespaceId(ManagedStorage::Private);
+        data_->storage_id = pending.file_id;
+        data_->pending_id = pending.id;
+        try { saveStorage(); return true; } catch (...) { return false; }
+    });
+    data_->source_path.clear();
+    if (!imported) { if (callback) callback({}, tr("Unable to import the selected file into managed storage.")); co_return; }
+    data_->storage_namespace = imported.value().namespace_id;
+    data_->storage_id = imported.value().file.id;
+    data_->pending_id = {};
+    data_->mime_type = imported.value().mime_type;
+    try {
+        saveStorage();
+        setSize(qlonglong(imported.value().file.size));
+        if (callback) callback(imported.value().file.sha256, {});
+    } catch (...) { transferFailed(tr("Unable to save managed file metadata."), FS_FAILED); }
 }
 
 QString File::getSelectStatement(const QString &where)
 {
-    return QStringLiteral("SELECT id, file_id, state, direction, identity_id, conversation_id, contact_id, hash, name, path, size, file_time, created_time, ack_time, bytes_transferred FROM file WHERE %1")
+    return QStringLiteral("SELECT id, file_id, state, direction, identity_id, conversation_id, contact_id, hash, name, path, size, file_time, created_time, ack_time, bytes_transferred, storage_namespace, storage_id, pending_id, mime_type FROM file WHERE %1")
             .arg(where);
 }
 
@@ -676,7 +637,7 @@ File::ptr_t File::load(QObject &parent, const std::function<void (QSqlQuery &)> 
     QSqlQuery query;
 
     enum Fields {
-        id, file_id, state, direction, identity_id, conversation_id, contact_id, hash, name, path, size, file_time, created_time, ack_time, bytes_transferred
+        id, file_id, state, direction, identity_id, conversation_id, contact_id, hash, name, path, size, file_time, created_time, ack_time, bytes_transferred, storage_namespace, storage_id, pending_id, mime_type
     };
 
     prepare(query);
@@ -702,7 +663,10 @@ File::ptr_t File::load(QObject &parent, const std::function<void (QSqlQuery &)> 
     ptr->data_->contact = query.value(contact_id).toInt();
     ptr->data_->hash = query.value(hash).toByteArray();
     ptr->data_->name = query.value(name).toString();
-    ptr->data_->path = query.value(path).toString();
+    ptr->data_->storage_namespace = query.value(storage_namespace).toUuid();
+    ptr->data_->storage_id = query.value(storage_id).toUuid();
+    ptr->data_->pending_id = query.value(pending_id).toUuid();
+    ptr->data_->mime_type = query.value(mime_type).toString();
     ptr->data_->size = query.value(size).toLongLong();
     ptr->data_->fileTime = query.value(file_time).toDateTime();
     ptr->data_->createdTime = query.value(created_time).toDateTime();
@@ -724,7 +688,26 @@ File::ptr_t File::load(QObject &parent, const std::function<void (QSqlQuery &)> 
         }
     }
 
+    if (!ptr->pendingId().isNull()) ptr->recoverStorage(ptr);
     return ptr;
+}
+QCoro::Task<void> File::recoverStorage(File::ptr_t self) {
+    auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
+    auto& storage = DsEngine::instance().getFileManager()->storage();
+    auto ready = co_await storage.ready();
+    if (!ready) co_return;
+    // The library resolves its durable publication first; then repair the application reference.
+    auto info = co_await storage.manager().stat(storageNamespace(), storageId());
+    if (!info) co_return; // Still pending, or inconsistent: resume/reconciliation remains explicit.
+    if (getDirection() == INCOMING && (info.value().sha256 != getHash() || info.value().size != quint64(getSize()))) co_return;
+    data_->pending_id = {};
+    try {
+        saveStorage();
+        setSize(qlonglong(info.value().size));
+        setHash(info.value().sha256);
+        if (getDirection() == INCOMING) { setBytesTransferred(getSize()); setState(FS_DONE); }
+        else if (getState() == FS_FAILED || getState() == FS_HASHING) setState(FS_WAITING);
+    } catch (...) { LFLOG_WARN << "Cannot repair application reference to recovered managed file"; }
 }
 
 void File::flushBytesAdded()
@@ -750,41 +733,12 @@ void File::queueForTransfer()
 
 void File::transferComplete()
 {
-    assert (getState() == FS_TRANSFERRING || getState() == FS_HASHING);
-
-    if (getDirection() == INCOMING) {
-        QFile tmpFile{getDownloadPath()};
-        if (!tmpFile.exists()) {
-            transferFailed(QStringLiteral("Temporary file disappeared: ") + getDownloadPath(),
-                           FS_FAILED);
-            return;
-        }
-
-        const QFileInfo destination{getPath()};
-        const QFileInfo destinationParent{destination.absolutePath()};
-        if (destination.isSymLink() || destinationParent.isSymLink()
-                || destination.exists() || !tmpFile.rename(getPath())) {
-            transferFailed(QStringLiteral("Failed to rename: ")
-                           + getDownloadPath()
-                           + " to " + getPath(),
-                           FS_FAILED);
-            return;
-        }
-        QFile::remove(getDownloadPath() + QStringLiteral(".meta"));
-
-        LFLOG_INFO << "File #" << getId()
-                   << " at path \"" << getPath()
-                   << " was successfulle received from Contact " << getContact()->getName()
-                   << " to Identity "
-                   << getContact()->getIdentity()->getName();
-    } else {
-        LFLOG_INFO << "File #" << getId()
-                   << " at path \"" << getPath()
-                   << " was successfully sent to Contact " << getContact()->getName()
-                   << " from Identity "
-                   << getContact()->getIdentity()->getName();
+    if (getDirection() == INCOMING && (!pendingId().isNull() || storageId().isNull())) {
+        transferFailed(tr("Incoming content has not been published."), FS_FAILED);
+        return;
     }
 
+    LFLOG_DEBUG << "Managed file transfer completed";
     // Make sure we don't go out of scope during the state change
     DsEngine::instance().getFileManager()->touch(
                 DsEngine::instance().getFileManager()->getFile(getId()));
@@ -799,21 +753,9 @@ void File::transferFailed(const QString &reason, const File::State state)
         return;
     }
 
-    if (getDirection() == OUTGOING) {
-        LFLOG_ERROR << "File #" << getId()
-                   << " at path \"" << getPath()
-                   << " to Contact " << getContact()->getName()
-                   << " from Identity "
-                   << getContact()->getIdentity()->getName()
-                   << " failed: " << reason;
-    } else {
-        LFLOG_ERROR << "File #" << getId()
-                   << " at path \"" << getPath()
-                   << " from Contact " << getContact()->getName()
-                   << " to Identity "
-                   << getContact()->getIdentity()->getName()
-                   << " failed: " << reason;
-    }
+    LFLOG_DEBUG << "Managed transfer failed: " << reason;
+    storage_cancel_.cancel();
+    if (getDirection() == INCOMING && !storage_busy_) suspendIncoming();
 
     DsEngine::instance().reportStatus(
         reason,
@@ -847,63 +789,26 @@ void File::transferFailed(const QString &reason, const File::State state)
 
 void File::validateHash()
 {
-    assert(getDirection() == INCOMING);
-    assert(getState() == FS_TRANSFERRING);
-    assert(!data_->hash.isEmpty());
-
-    LFLOG_DEBUG << "Validating hash for file #" << getId();
-
+    if (getDirection() != INCOMING || getState() != FS_TRANSFERRING || !writer_) return;
     setState(FS_HASHING);
-
-    // asynchCalculateHash will keep a shared_ptr to the File until it's done
-    asynchCalculateHash([this](const QByteArray& hash, const QString& failReason) {
-        if (hash.isEmpty()) {
-            LFLOG_DEBUG << "Failed to hash file #" << getId() << ":  " << failReason;
-            if (getState() == FS_HASHING) {
-                QFile::remove(getDownloadPath());
-                QFile::remove(getDownloadPath() + QStringLiteral(".meta"));
-                transferFailed(failReason, FS_FAILED);
-            }
-        } else if (getState() == FS_HASHING) {
-            // Binary compare hashes
-            if ((hash.size() == data_->hash.size())
-                    && (memcmp(hash.constData(), data_->hash.constData(),
-                               static_cast<size_t>(hash.size())) == 0)) {
-                transferComplete();
-            } else {
-                QFile::remove(getDownloadPath());
-                QFile::remove(getDownloadPath() + QStringLiteral(".meta"));
-                transferFailed("Hash from peer and hash from received file mismatch",
-                               FS_FAILED);
-            }
-        }
-    });
+    commitIncoming(shared_from_this());
 }
-
-bool File::findUnusedName(const QString &path, QString& unusedPath)
-{
-    QFileInfo target(path);
-    if (!target.exists()) {
-        unusedPath = path;
-        return true;
+QCoro::Task<void> File::commitIncoming(File::ptr_t self) {
+    auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
+    storage_busy_ = true;
+    auto result = co_await writer_->commit(storage_cancel_);
+    if (!result) {
+        LFLOG_WARN << "Incoming file commit failed (code=" << int(result.error().code) << ")";
+        transferFailed(tr("The received file could not be verified or published."), FS_FAILED);
+        storage_busy_ = false;
+        co_await suspendIncoming();
+        co_return;
     }
-
-    for(int i = 1; i <= 500; ++i) {
-        const auto tryTarget = QString{target.absolutePath()}
-                    + "/"
-                    + target.completeBaseName()
-                    + "(" + QString::number(i) + ")"
-                    + (target.suffix().isEmpty() ? QString{} : "." + target.suffix());
-
-        LFLOG_TRACE << "Trying alternative name: " << tryTarget;
-        const QFileInfo alt{tryTarget};
-        if (!alt.exists()) {
-            unusedPath = alt.absoluteFilePath();
-            return true;
-        }
-    }
-
-    return false;
+    storage_busy_ = false;
+    writer_.reset();
+    data_->pending_id = {};
+    try { saveStorage(); } catch (...) { transferFailed(tr("Unable to save completed transfer metadata."), FS_FAILED); co_return; }
+    transferComplete(); // A definite publication wins a simultaneous cancellation.
 }
 
 }} // namespaces

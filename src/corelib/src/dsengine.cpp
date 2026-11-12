@@ -536,11 +536,11 @@ void DsEngine::initialize()
     database_ = std::make_unique<Database>(*settings_);
     events_ = std::make_unique<EventJournal>(getDb(), *settings_);
 
+    fileManager_ = new FileManager(*this, *settings_);
     identityManager_ = new IdentityManager(*this);
     contactManager_ = new ContactManager(*this);
     conversationManager_ = new ConversationManager(*this);
     messageManager_ = new MessageManager(*this);
-    fileManager_ = new FileManager(*this, *settings_);
 }
 
 void DsEngine::setState(DsEngine::State state)

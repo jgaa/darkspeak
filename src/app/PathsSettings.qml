@@ -8,6 +8,7 @@ ColumnLayout {
     function commit() {
         settings.dbpath = database.text;
         settings.downloadLocation = download.text;
+        settings["storage/originalFilenames"] = originalNames.checked;
     }
     Label {
         text: qsTr("Database")
@@ -30,7 +31,7 @@ ColumnLayout {
         }
     }
     Label {
-        text: qsTr("Downloads")
+        text: qsTr("Managed downloads")
     }
     RowLayout {
         Layout.fillWidth: true
@@ -48,5 +49,16 @@ ColumnLayout {
                     download.text = selected;
             }
         }
+    }
+    CheckBox {
+        id: originalNames
+        text: qsTr("Use original filenames for managed downloads")
+        checked: settings["storage/originalFilenames"]
+        enabled: !settings["storage/downloadsInitialized"] || download.text !== settings.downloadLocation
+    }
+    Label {
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        text: qsTr("Downloads use a Managed-v1 folder inside this directory. Filename policy is fixed when that storage is first created. Changing the location creates a separate store. Previously managed files remain accessible in their existing stores. Restart to apply storage changes.")
     }
 }

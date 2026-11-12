@@ -21,6 +21,7 @@
 #include <QWindow>
 #include <QQuickWindow>
 #include <QElapsedTimer>
+#include <QEventLoop>
 
 #include "ds/manager.h"
 #include "ds/logmodel.h"
@@ -60,10 +61,12 @@ namespace {
 
 bool earlyProfileArgument(int argc, char *argv[], QString &profile, QString &error)
 {
-    QStringView custom_profile;
     for (int i = 1; i < argc; ++i) {
         const QString argument = QString::fromLocal8Bit(argv[i]);
-        if (argument == QStringLiteral("--profile")) {
+        if (argument == QStringLiteral("--")) {
+            break;
+        }
+        if (argument == QStringLiteral("--profile") || argument == QStringLiteral("-p")) {
             if (i + 1 == argc) {
                 error = QStringLiteral("--profile requires a directory");
                 return false;
@@ -423,6 +426,14 @@ int main(int argc, char *argv[])
     LFLOG_INFO << "DarkSpeak is ready";
 
     const auto rval = QGuiApplication::exec();
+    QEventLoop storage_cleanup;
+    bool storage_finished = false;
+    manager->shutdownStorage().then([&](dsfm::Result<void> result) {
+        if (!result) LFLOG_ERROR << "Managed storage shutdown failed (code=" << int(result.error().code) << ")";
+        storage_finished = true;
+        storage_cleanup.quit();
+    });
+    if (!storage_finished) storage_cleanup.exec();
 
     LFLOG_NOTICE << "Darkspeak is done. So Long, and Thanks for All the Fish.";
 

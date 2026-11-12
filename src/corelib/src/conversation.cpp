@@ -103,9 +103,9 @@ void Conversation::sendFile(const QVariantMap &args)
 
     // Accept both native paths from QFileDialog and file URLs from QML.
     const auto url = QUrl::fromUserInput(path);
-    data->path = url.isLocalFile() ? url.toLocalFile() : path;
+    data->source_path = url.isLocalFile() ? url.toLocalFile() : path;
 
-    if (data->path.isEmpty()) {
+    if (data->source_path.isEmpty()) {
         DsEngine::instance().reportStatus(
             tr("Failed to send file: invalid path"),
             DsEngine::StatusLevel::ERROR);
@@ -113,16 +113,16 @@ void Conversation::sendFile(const QVariantMap &args)
     }
 
     if (data->name.isEmpty()) {
-        QFileInfo fi{data->path};
+        QFileInfo fi{data->source_path};
         data->name = fi.fileName();
     }
 
     const auto *participant = getFirstParticipant();
-    const auto mime_type = QMimeDatabase{}.mimeTypeForFile(data->path, QMimeDatabase::MatchContent).name();
-    if (!participant || !participant->canSendFileType(mime_type, data->name)) {
-        DsEngine::instance().reportStatus(tr("The contact does not currently accept this file type or filename."), DsEngine::WARNING);
+    if (!participant || !participant->canSendFiles()) {
+        DsEngine::instance().reportStatus(tr("The contact does not currently accept files."), DsEngine::WARNING);
         return;
     }
+    // Content type and peer preferences are checked against the imported snapshot before offering it.
 
     data->conversation = getId();
     data->contact = getFirstParticipant()->getId();
@@ -277,45 +277,6 @@ bool Conversation::haveParticipant(const Contact &contact) const
         LFLOG_ERROR << "Failed to check participant: " << ex.what();
     }
     return false;
-}
-
-QString Conversation::getFilesLocation() const
-{
-    auto home = DsEngine::instance().settings().value("downloadLocation").toString();
-
-    if (home.isEmpty()) {
-        throw Error("No download location specified in settings");
-    }
-
-    if (!home.endsWith('/')) {
-        home += "/";
-    }
-
-    // Keep the configured download directory user-facing and predictable.
-    // File-name collision handling is performed by Contact before a receive
-    // starts, so per-identity/conversation UUID directories are unnecessary.
-    QDir path(home);
-    if (DsEngine::instance().settings().value(
-                "includeConversationNameInDownloadPath", false).toBool()) {
-        auto folderName = getName().trimmed();
-        folderName.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9 _.-]")),
-                           QStringLiteral("_"));
-        folderName.replace(QStringLiteral(".."), QStringLiteral("_"));
-        folderName = folderName.trimmed();
-        if (folderName.isEmpty() || folderName == QStringLiteral(".")) {
-            folderName = QStringLiteral("conversation");
-        }
-        path = QDir(path.filePath(folderName));
-    }
-
-    path.makeAbsolute();
-    if (!path.exists()) {
-        LFLOG_DEBUG << "Creating download directory \""
-                    << path.path() << "\" for incoming files";
-        path.mkpath(path.path());
-    }
-
-    return path.path();
 }
 
 void Conversation::addToDb()

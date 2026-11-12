@@ -91,6 +91,7 @@ public:
                                       StatusLevel level = INFO);
 
     explicit Manager(const QString& logFile = {}, const QString& logLevel = {});
+    QCoro::Task<dsfm::Result<void>> shutdownStorage();
 
     static Manager& instance() noexcept {
         assert(instance_);

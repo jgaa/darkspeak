@@ -12,7 +12,7 @@ QVariantMap defaults()
 {
     using Limits = ds::core::ResourceLimits;
     return {
-        {"events/enabled", false}, {"events/recordFilenames", true}, {"events/precisionSeconds", 60},
+        {"storage/originalFilenames", true}, {"storage/downloadsInitialized", false}, {"events/enabled", false}, {"events/recordFilenames", true}, {"events/precisionSeconds", 60},
         {"appAutoConnect", true}, {"autostart", false}, {"useDarkSpeakFolder", true},
         {"autoAcceptIncomingFiles", false}, {"includeConversationNameInDownloadPath", false},
         {"torMode", 1}, {"torCmd", "tor"}, {"torCtlHost", "127.0.0.1"}, {"torCtlPort", 9051},

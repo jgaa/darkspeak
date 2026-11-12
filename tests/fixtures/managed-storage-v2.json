@@ -1,0 +1,13 @@
+{
+  "application_schema_version": 2,
+  "tables": {
+    "file": ["storage_namespace", "storage_id", "pending_id", "mime_type"],
+    "managed_namespace": ["id", "storage_root", "naming", "area", "created"],
+    "media_asset": ["asset_key", "file_id", "pending_id", "deleted", "owner_identity", "owner_contact", "owner_notification"],
+    "storage_gc": ["storage_namespace", "storage_id", "pending_id"]
+  },
+  "legacy_payloads_adopted": false,
+  "incoming_digest": "SHA-256",
+  "download_directory": "Managed-v1",
+  "private_directory": "managed-private-v1"
+}

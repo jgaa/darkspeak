@@ -7,6 +7,7 @@
 #include <QUuid>
 #include <QObject>
 #include <chrono>
+#include <dsfilemanager/filemanager.h>
 
 #include "ds/conversation.h"
 #include "ds/contact.h"
@@ -17,7 +18,7 @@ namespace core {
 
 struct FileData;
 
-class File : public QObject, std::enable_shared_from_this<File>
+class File : public QObject, public std::enable_shared_from_this<File>
 {
     Q_OBJECT
 public:
@@ -67,7 +68,6 @@ public:
     Q_PROPERTY(bool active READ isActive NOTIFY isActiveChanged)
     Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
     Q_PROPERTY(QString displayName READ getDisplayName NOTIFY nameChanged)
-    Q_PROPERTY(QString path READ getPath WRITE setPath NOTIFY pathChanged)
     Q_PROPERTY(QString hash READ getPrintableHash NOTIFY hashChanged)
     Q_PROPERTY(QDateTime created READ getCreated CONSTANT)
     Q_PROPERTY(QDateTime ackTime READ getAckTime NOTIFY ackTimeChanged)
@@ -93,9 +93,6 @@ public:
     QString getDisplayName() const;
     QString getMimeType() const;
     void setName(const QString& name);
-    QString getPath() const noexcept;
-    QString getDownloadPath() const noexcept;
-    void setPath(const QString& path);
     QByteArray getHash() const noexcept;
     QString getPrintableHash() const noexcept;
     void setHash(const QByteArray& hash);
@@ -119,8 +116,16 @@ public:
     quint32 getChannel() const noexcept;
     void setChannel(quint32 channel);
     float getProgress() const noexcept;
-    bool rebuildDurableResumeState(quint64& offset, QString& reason) const;
-    bool validateSourceSnapshot(QString& reason) const;
+    dsfm::NamespaceId storageNamespace() const;
+    dsfm::FileId storageId() const;
+    dsfm::PendingId pendingId() const;
+    QCoro::Task<dsfm::Result<quint64>> prepareIncoming();
+    QCoro::Task<dsfm::Result<qsizetype>> writeIncoming(quint64 offset, QByteArray bytes);
+    QCoro::Task<dsfm::Result<void>> checkpointIncoming();
+    QCoro::Task<dsfm::Result<void>> suspendIncoming();
+    QCoro::Task<dsfm::Result<void>> abortIncoming();
+    QCoro::Task<dsfm::Result<void>> validateSourceSnapshot();
+
 
     /*! Add the new File to the database. */
     void addToDb();
@@ -133,7 +138,7 @@ public:
 
     const char *getTableName() const noexcept { return "file"; }
 
-    void asynchCalculateHash(hash_cb_t callback = {});
+    void importIntoStorage(hash_cb_t callback = {});
 
     // Start an incoming transfer in state FS_QUEUED or FS_OFFERED
     void queueForTransfer();
@@ -146,13 +151,11 @@ public:
     // the state is changed to FS_DONE
     void validateHash();
 
-    static bool findUnusedName(const QString& path, QString& unusedPath);
 
 signals:
     void stateChanged();
     void isActiveChanged();
     void nameChanged();
-    void pathChanged();
     void hashChanged();
     void ackTimeChanged();
     void fileTimeChanged();
@@ -164,6 +167,16 @@ private:
     static QString getSelectStatement(const QString& where);
     static ptr_t load(QObject& parent, const std::function<void(QSqlQuery&)>& prepare);
     void flushBytesAdded();
+    QCoro::Task<void> importSource(File::ptr_t self, hash_cb_t callback);
+    QCoro::Task<void> commitIncoming(File::ptr_t self);
+    QCoro::Task<void> resumeIncoming(File::ptr_t self);
+    QCoro::Task<void> openExternal(File::ptr_t self, bool folder);
+    void saveStorage();
+    QCoro::Task<void> recoverStorage(File::ptr_t self);
+    std::unique_ptr<dsfm::IFileWriter> writer_;
+    dsfm::CancellationToken storage_cancel_;
+    bool storage_busy_ = false;
+
 
     int id_ = 0;
     std::unique_ptr<FileData> data_;
@@ -181,7 +194,11 @@ struct FileData {
     QByteArray fileId;
     QByteArray hash;
     QString name; // The adverticed name, may be something else than then the real name
-    QString path; // Full path with actual name
+    QString source_path; // Transient explicit import source; never persisted.
+    dsfm::NamespaceId storage_namespace;
+    dsfm::FileId storage_id;
+    dsfm::PendingId pending_id;
+    QString mime_type;
     qlonglong size = {};
     qlonglong bytesTransferred = {}; // REST offset
     QDateTime fileTime;

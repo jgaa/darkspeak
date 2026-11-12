@@ -9,7 +9,8 @@ add_library(${PROJECT_NAME} STATIC
     src/identity.cpp
     src/conversation.cpp
     src/file.cpp
-    src/hashtask.cpp
+    src/managedstorage.cpp
+    include/ds/managedstorage.h
     src/logutil.cpp
     src/conversationmanager.cpp
     src/message.cpp
@@ -37,7 +38,6 @@ add_library(${PROJECT_NAME} STATIC
     include/ds/avatarhash.h
     include/ds/avatarutil.h
     include/ds/transporthandle.h
-    include/ds/hashtask.h
     include/ds/peerconnection.h
     include/ds/task.h
     include/ds/contactmanager.h
@@ -54,4 +54,4 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
     PRIVATE ${CMAKE_SOURCE_DIR}/dependencies/logfault/include)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
-target_link_libraries(${PROJECT_NAME} PUBLIC crypto safekeeping Qt6::Core Qt6::Gui Qt6::Network Qt6::Quick Qt6::Sql Qt6::Svg Qt6::Widgets)
+target_link_libraries(${PROJECT_NAME} PUBLIC DSFileManager::FileManager crypto safekeeping Qt6::Core Qt6::Gui Qt6::Network Qt6::Quick Qt6::Sql Qt6::Svg Qt6::Widgets)

@@ -39,6 +39,23 @@ add_test(NAME qml_smoke COMMAND ${CMAKE_COMMAND} -E env
     --log-level error)
 set_tests_properties(qml_smoke PROPERTIES TIMEOUT 20)
 
+# Exercise the short alias before QApplication initializes settings/platform paths.
+# A relative directory reproduces `darkspeak -p glad` without touching real profiles.
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/short-profile-smoke")
+add_test(NAME qml_smoke_short_profile COMMAND ${CMAKE_COMMAND} -E env
+    QT_QPA_PLATFORM=offscreen
+    QT_QUICK_CONTROLS_STYLE=org.kde.desktop
+    XDG_CONFIG_HOME=${CMAKE_CURRENT_BINARY_DIR}/short-profile-smoke/fallback-config
+    XDG_DATA_HOME=${CMAKE_CURRENT_BINARY_DIR}/short-profile-smoke/fallback-data
+    XDG_CACHE_HOME=${CMAKE_CURRENT_BINARY_DIR}/short-profile-smoke/fallback-cache
+    DARKSPEAK_TEST_SECRETSTORE_PASSPHRASE=darkspeak-short-profile-smoke-only
+    $<TARGET_FILE:darkspeak>
+    --qml-smoke-test
+    -p glad
+    --log-level error)
+set_tests_properties(qml_smoke_short_profile PROPERTIES TIMEOUT 20
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/short-profile-smoke")
+
 # Tor is an integration dependency, not a configure-time requirement. The
 # workflow invokes this target only when a Tor daemon is available.
 if(DS_ENABLE_TOR_TESTS)
@@ -55,3 +72,10 @@ target_compile_features(ui_history_model_test PRIVATE cxx_std_20)
 target_link_libraries(ui_history_model_test PRIVATE models Qt6::Test)
 add_test(NAME ui_history_model COMMAND ui_history_model_test)
 set_tests_properties(ui_history_model PROPERTIES TIMEOUT 30)
+
+add_executable(managed_storage_test managed_storage_test.cpp)
+target_compile_features(managed_storage_test PRIVATE cxx_std_20)
+target_link_libraries(managed_storage_test PRIVATE models prot Qt6::Test)
+target_compile_definitions(managed_storage_test PRIVATE DS_STORAGE_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+add_test(NAME managed_storage COMMAND managed_storage_test)
+set_tests_properties(managed_storage PROPERTIES TIMEOUT 120 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

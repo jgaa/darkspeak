@@ -12,6 +12,7 @@
 #include "ds/file.h"
 #include "ds/registry.h"
 #include "ds/lru_cache.h"
+#include "ds/managedstorage.h"
 
 namespace ds {
 namespace core {
@@ -22,6 +23,7 @@ class FileManager : public QObject
 public:
     explicit FileManager(QObject &parent, QSettings& settings);
 
+    ManagedStorage& storage() { return storage_; }
     File::ptr_t getFile(const int dbId);
     File::ptr_t getFile(const QByteArray& hash, Conversation& conversation);
     File::ptr_t getFileFromId(const QByteArray& fileId, Conversation& conversation);
@@ -47,12 +49,13 @@ signals:
 public slots:
 
 private:
-    void hashIt(const File::ptr_t& file);
+    void importOutgoingFile(const File::ptr_t& file);
 
     Registry<int, File> registry_;
     LruCache<File::ptr_t> lru_cache_{3};
     //std::set<File::ptr_t> hashing_;
     QSettings &settings_;
+    ManagedStorage storage_;
 };
 
 }}

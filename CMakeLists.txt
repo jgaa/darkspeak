@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.24)
 project (ds VERSION 0.3.0 LANGUAGES CXX)
 
 string(TIMESTAMP DARKSPEAK_BUILD_DATE "%Y-%m-%d %H:%M:%S UTC" UTC)
@@ -65,6 +65,9 @@ endif()
 include(cmake/KdeColorScheme.cmake)
 
 add_subdirectory(src/cryptolib)
+option(DSFM_BUILD_TESTS "Build standalone file manager tests" OFF)
+option(DSFM_BUILD_EXAMPLE "Build the standalone file manager example" OFF)
+add_subdirectory(src/filemanager)
 add_subdirectory(src/corelib)
 add_subdirectory(src/torlib)
 add_subdirectory(src/protlib)

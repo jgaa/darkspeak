@@ -110,6 +110,10 @@ private:
                                    const QString& hash);
     bool isContactHeader(const QModelIndex& index) const;
     void updateNotificationState();
+    QString avatarUrl(QString key) const;
+    QCoro::Task<void> persistAvatar(QString hash, QByteArray received_hash, QImage image);
+    mutable QHash<QString, QString> avatar_urls_;
+    mutable QSet<QString> loading_avatars_;
 
     // Keep the authenticated request alive while the user decides whether to
     // accept it.  The database notification remains the durable fallback.

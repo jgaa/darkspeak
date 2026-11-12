@@ -57,7 +57,7 @@ void IdentityManager::load()
         data.address = query.value(address).toByteArray();
         data.addressData = query.value(address_data).toByteArray();
         data.notes = query.value(notes).toString();
-        data.avatar = QImage::fromData(query.value(avatar).toByteArray(), "PNG");
+
         data.cert = cert;
         data.autoConnect = query.value(auto_connect).toBool();
 

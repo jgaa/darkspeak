@@ -283,7 +283,7 @@ QVariant NotificationsModel::data(const QModelIndex &ix, int role) const
                         return contact->getAvatarUrl();
                     }
                 }
-                return data.value("avatarUrl").toString();
+                return avatarUrl(data.value("avatarAsset").toString());
             case H_REQUESTER_ID: {
                 try {
                     const auto cert = crypto::DsCert::createFromPubkey(
@@ -535,14 +535,7 @@ void NotificationsModel::requestNotificationAvatar(core::Identity *identity,
         const auto receivedHash = received.isNull()
                 ? QByteArray{} : core::avatarHash(core::normalizeAvatar(received));
         if (!received.isNull() && receivedHash == expected) {
-            QByteArray encoded;
-            QBuffer buffer(&encoded);
-            buffer.open(QIODevice::WriteOnly);
-            received.save(&buffer, "PNG");
-            data.insert("avatar", encoded);
-            data.insert("avatarReceivedHash", receivedHash);
-            data.insert("avatarUrl", QStringLiteral("data:image/png;base64,")
-                        + QString::fromLatin1(encoded.toBase64()));
+            persistAvatar(hash, receivedHash, core::normalizeAvatar(received));
         }
         data.insert("avatarResolved", true);
         query.prepare("UPDATE notification SET data=:data WHERE hash=:hash");
@@ -619,11 +612,17 @@ void NotificationsModel::acceptContact(const int row, bool accept)
 
         cr->cert = crypto::DsCert::createFromPubkey(crypto::b58tobin_check<QByteArray>(handle_str, 32, {249, 50}));
         cr->address = d.value("address").toByteArray();
-        cr->avatar = QImage::fromData(d.value("avatar").toByteArray(), "PNG");
+
 
         Contact *added = nullptr;
         try {
             added = DsEngine::instance().getContactManager()->addContact(move(cr));
+            if (added && !d.value("avatarAsset").toString().isEmpty()) {
+                QPointer<Contact> target(added);
+                DsEngine::instance().getFileManager()->storage().loadAvatar(d.value("avatarAsset").toString(), added, [target](QImage image) {
+                    if (target) target->setAvatar(image);
+                });
+            }
 
             const auto identityId = QString::number(
                 data(index(row, H_IDENTITY), Qt::DisplayRole).toInt());
@@ -689,5 +688,43 @@ void NotificationsModel::acceptFile(const int row, bool accept)
     }
 }
 
+
+QString NotificationsModel::avatarUrl(QString key) const {
+    if (key.isEmpty() || key.size() > 256) return {};
+    if (avatar_urls_.contains(key)) return avatar_urls_.value(key);
+    if (loading_avatars_.size() >= 64 || loading_avatars_.contains(key)) return {};
+    loading_avatars_.insert(key);
+    auto* self = const_cast<NotificationsModel*>(this);
+    DsEngine::instance().getFileManager()->storage().loadAvatar(key, self, [self, key](QImage image) {
+        self->loading_avatars_.remove(key);
+        QByteArray bytes; QBuffer buffer(&bytes); buffer.open(QIODevice::WriteOnly); image.save(&buffer, "PNG");
+        if (self->avatar_urls_.size() >= 64) self->avatar_urls_.erase(self->avatar_urls_.begin());
+        self->avatar_urls_.insert(key, QStringLiteral("data:image/png;base64,") + QString::fromLatin1(bytes.toBase64()));
+        if (self->rowCount() > 0) emit self->dataChanged(self->index(0,0), self->index(self->rowCount()-1, self->columnCount()-1), {H_AVATAR_URL});
+    });
+    return {};
+}
+QCoro::Task<void> NotificationsModel::persistAvatar(QString hash, QByteArray received_hash, QImage image) {
+    QPointer<NotificationsModel> self(this);
+    QByteArray bytes; QBuffer buffer(&bytes); buffer.open(QIODevice::WriteOnly);
+    if (!image.save(&buffer, "PNG")) co_return;
+    const auto key = QStringLiteral("request/") + hash;
+    auto stored = co_await DsEngine::instance().getFileManager()->storage().writeAsset(key, bytes);
+    if (!self || !stored) co_return;
+    QSqlQuery query;
+    query.prepare("SELECT data FROM notification WHERE hash=:hash"); query.bindValue(":hash", hash);
+    if (!query.exec() || !query.next()) {
+        DsEngine::instance().getFileManager()->storage().removeAsset(key);
+        co_return;
+    }
+    auto data = DsEngine::fromJson(query.value(0).toByteArray());
+    data.remove("avatar"); data.remove("avatarUrl");
+    data.insert("avatarAsset", key); data.insert("avatarReceivedHash", received_hash);
+    query.prepare("UPDATE notification SET data=:data WHERE hash=:hash");
+    query.bindValue(":data", DsEngine::toJson(data)); query.bindValue(":hash", hash);
+    if (!query.exec()) co_return;
+    loading_avatars_.remove(key);
+    refresh();
+}
 
 }} // namespaces

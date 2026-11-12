@@ -41,7 +41,7 @@ public:
         CLOSING
     };
 
-    class Channel {
+    class Channel : public std::enable_shared_from_this<Channel> {
     public:
         using ptr_t = std::shared_ptr<Channel>;
 
@@ -69,6 +69,7 @@ public:
     Peer(ConnectionSocket::ptr_t connection,
          core::ConnectData connectionData);
     ~Peer() override;
+    QCoro::Task<void> prepareReceive(core::File::ptr_t file, std::shared_ptr<Peer> self);
 
     ConnectionSocket& getConnection() {
         if (!connection_) {

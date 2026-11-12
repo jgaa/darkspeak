@@ -275,8 +275,14 @@ void Contact::setSentAvatar(const bool value)
 }
 
 void Contact::setAvatar(const QImage &avatar) {
+    avatar_edited_ = true;
     const auto normalized = normalizeAvatar(avatar);
-    if (updateIf("avatar", normalized, data_->avatar, this, &Contact::avatarChanged)) {
+    if (normalized.isNull() && data_->avatar.isNull() && id_ > 0)
+        DsEngine::instance().getFileManager()->storage().saveAvatar(ManagedStorage::contactAvatar(getUuid()), {});
+    if (normalized != data_->avatar) {
+        data_->avatar = normalized;
+        if (id_ > 0) DsEngine::instance().getFileManager()->storage().saveAvatar(ManagedStorage::contactAvatar(getUuid()), normalized);
+        emit avatarChanged();
         DsEngine::instance().events().append(EventJournal::AvatarChanged, data_->identity, getId(), EventJournal::Incoming, EventJournal::Success);
         ++avatarVersion_;
         avatarUrlChanging_ = true;
@@ -563,7 +569,7 @@ Contact::ptr_t Contact::load(const QUuid &key)
     // records that contain private certificate material.
     data->cert = DsCert::createFromPubkey(query.value(cert).toByteArray());
     data->address = query.value(address).toByteArray();
-    data->avatar = QImage::fromData(query.value(avatar).toByteArray());
+
     data->created = query.value(created).toDateTime();
     data->whoInitiated = static_cast<InitiatedBy>(query.value(initiated_by).toInt());
     data->lastSeen = query.value(last_seen).toDateTime();
@@ -579,9 +585,15 @@ Contact::ptr_t Contact::load(const QUuid &key)
     data->bio = query.value(bio).toString();
     data->bioHash = query.value(bio_hash).toByteArray();
 
-    return make_shared<Contact>(query.value(id).toInt(),
-                               false, //Contacts that are connected are always in memory
-                               move(data));
+    auto contact = make_shared<Contact>(query.value(id).toInt(), false, move(data));
+    std::weak_ptr<Contact> weak = contact;
+    DsEngine::instance().getFileManager()->storage().loadAvatar(ManagedStorage::contactAvatar(contact->getUuid()), contact.get(), [weak](QImage image) {
+        if (auto contact = weak.lock(); contact && !contact->avatar_edited_ && contact->data_->avatar.isNull() && contact->avatarVersion_ == 0) {
+            contact->data_->avatar = std::move(image); ++contact->avatarVersion_;
+            emit contact->avatarChanged(); emit contact->avatarUrlChanged();
+        }
+    });
+    return contact;
 }
 
 void Contact::addToDb()
@@ -614,7 +626,7 @@ void Contact::addToDb()
     query.bindValue(":address", data_->address);
     query.bindValue(":notes", data_->notes);
     query.bindValue(":contact_group", data_->group);
-    query.bindValue(":avatar", data_->avatar);
+    query.bindValue(":avatar", QVariant{});
     query.bindValue(":created", data_->created);
     query.bindValue(":initiated_by", data_->whoInitiated);
     query.bindValue(":last_seen", data_->lastSeen);
@@ -636,6 +648,7 @@ void Contact::addToDb()
     }
 
     id_ = query.lastInsertId().toInt();
+    if (!data_->avatar.isNull()) DsEngine::instance().getFileManager()->storage().saveAvatar(ManagedStorage::contactAvatar(getUuid()), data_->avatar);
 
     LFLOG_INFO << "Added contact " << data_->name
                << " with uuid " << data_->uuid.toString()
@@ -1520,11 +1533,15 @@ void Contact::onReceivedFileOfferResponse(const PeerFileOfferResponse& response)
 
 void Contact::onReceivedFileResume(const PeerFileResume& resume)
 {
+    processFileResume(resume, shared_from_this());
+}
+QCoro::Task<void> Contact::processFileResume(PeerFileResume resume, Contact::ptr_t self)
+{
     touchLastSeen();
     if (getState() != ACCEPTED || resume.fileId.size() != 16
             || resume.sha256.size() != crypto_hash_sha256_BYTES) {
         resume.peer->close();
-        return;
+        co_return;
     }
     const auto file = DsEngine::instance().getFileManager()->getFileFromId(
         resume.fileId, File::OUTGOING);
@@ -1537,17 +1554,14 @@ void Contact::onReceivedFileResume(const PeerFileResume& resume)
         resume.peer->sendFileResumeResult(resume.requestId, resume.fileId,
                                           FileResumeStatus::Rejected, 0,
                                           FileCancelReason::UserAction);
-        return;
+        co_return;
     }
 
-    QString reason;
-    if (!file->validateSourceSnapshot(reason)) {
-        LFLOG_WARN << "Cancelling file resume because the source changed: " << reason;
-        resume.peer->sendFileResumeResult(resume.requestId, resume.fileId,
-                                          FileResumeStatus::Cancelled, 0,
-                                          FileCancelReason::SourceChanged);
-        file->setState(File::FS_FAILED);
-        return;
+    const auto valid = co_await file->validateSourceSnapshot();
+    if (!resume.peer->isConnected() || !connection_ || connection_->peer != resume.peer) co_return;
+    if (!valid || !isOnline() || getState() != ACCEPTED || file->getState() != File::FS_FAILED) {
+        resume.peer->sendFileResumeResult(resume.requestId, resume.fileId, FileResumeStatus::Cancelled, 0, FileCancelReason::SourceChanged);
+        co_return;
     }
 
     file->setBytesTransferred(static_cast<qlonglong>(resume.nextOffset));
@@ -1994,29 +2008,6 @@ void Contact::queueTransfer(const std::shared_ptr<File> &file)
             }
         });
 
-        if (file->getDirection() == File::INCOMING) {
-            QString path;
-            if (!File::findUnusedName(file->getPath(), path)) {
-                LFLOG_ERROR << "Rejecting file #" << file->getId()
-                            << " from peer " << file->getContact()->getName()
-                            << " on identity " << file->getConversation()->getIdentity()->getName()
-                            << ": Failes to deduce unused file-name!";
-
-                file->transferFailed("Failed to deduce unused file-name!");
-                return;
-            }
-
-            if (file->getPath() != path) {
-                LFLOG_NOTICE << "Renaming incoming file #" << file->getId()
-                             << " from Concact " << file->getContact()->getName()
-                             << " to Identity " << file->getConversation()->getIdentity()
-                             << " from \"" << file->getPath()
-                             << "\" to \"" << path << "\"";
-
-                file->setPath(path);
-            }
-        }
-
         connection_->peer->startTransfer(*file);
 
     }
@@ -2035,6 +2026,9 @@ void Contact::clearFileQueues()
             // The sender will advertise the acknowledged offset again.
             file->setState(file->getDirection() == File::OUTGOING
                            ? File::FS_WAITING : File::FS_OFFERED);
+            if (file->getDirection() == File::INCOMING) {
+                file->suspendIncoming();
+            }
         }
     }
 

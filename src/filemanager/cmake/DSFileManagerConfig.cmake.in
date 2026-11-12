@@ -1,0 +1,12 @@
+@PACKAGE_INIT@
+include(CMakeFindDependencyMacro)
+find_dependency(Qt6 6.8 COMPONENTS Core Sql)
+find_dependency(QCoro6Core)
+find_dependency(logfault CONFIG)
+# Some logfault releases install an empty config alongside their targets file.
+if(NOT TARGET logfault::logfault AND EXISTS "${logfault_DIR}/logfaultTargets.cmake")
+    include("${logfault_DIR}/logfaultTargets.cmake")
+endif()
+find_dependency(Threads)
+find_dependency(SQLite3)
+include("${CMAKE_CURRENT_LIST_DIR}/DSFileManagerTargets.cmake")

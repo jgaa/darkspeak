@@ -56,6 +56,31 @@ Database::Database(QSettings& settings)
                    << " while I expected " << currentVersion;
     }
 
+    if (dbver < 2) {
+        if (!db_.transaction()) throw Error("Cannot upgrade managed storage metadata");
+        try {
+            exec("ALTER TABLE file ADD COLUMN storage_namespace BLOB");
+            exec("ALTER TABLE file ADD COLUMN storage_id BLOB");
+            exec("ALTER TABLE file ADD COLUMN pending_id BLOB");
+            exec("ALTER TABLE file ADD COLUMN mime_type TEXT");
+            exec("UPDATE file SET state=7, path=NULL WHERE storage_id IS NULL");
+            exec("UPDATE identity SET avatar=NULL");
+            exec("UPDATE contact SET avatar=NULL");
+            exec("UPDATE ds SET version=2");
+            if (!db_.commit()) throw Error("Cannot commit managed storage metadata upgrade");
+        } catch (...) { db_.rollback(); throw; }
+    }
+    exec("CREATE TABLE IF NOT EXISTS managed_namespace (id TEXT PRIMARY KEY NOT NULL, storage_root TEXT UNIQUE NOT NULL, naming INTEGER NOT NULL, area INTEGER NOT NULL, created INTEGER NOT NULL DEFAULT 0)");
+    exec("CREATE TABLE IF NOT EXISTS media_asset (asset_key TEXT PRIMARY KEY NOT NULL, file_id BLOB NOT NULL, pending_id BLOB, deleted INTEGER NOT NULL DEFAULT 0, owner_identity INTEGER, owner_contact INTEGER, owner_notification INTEGER)");
+    exec("CREATE TABLE IF NOT EXISTS storage_gc (storage_namespace BLOB NOT NULL, storage_id BLOB NOT NULL, pending_id BLOB, PRIMARY KEY(storage_namespace,storage_id))");
+    exec("CREATE TRIGGER IF NOT EXISTS file_storage_delete AFTER DELETE ON file WHEN OLD.storage_id IS NOT NULL BEGIN INSERT OR IGNORE INTO storage_gc VALUES(OLD.storage_namespace,OLD.storage_id,OLD.pending_id); END");
+    exec("CREATE TRIGGER IF NOT EXISTS contact_avatar_delete AFTER DELETE ON contact BEGIN UPDATE media_asset SET deleted=1 WHERE owner_contact=OLD.id; END");
+    exec("CREATE TRIGGER IF NOT EXISTS identity_avatar_delete AFTER DELETE ON identity BEGIN UPDATE media_asset SET deleted=1 WHERE owner_identity=OLD.id; END");
+    exec("CREATE TRIGGER IF NOT EXISTS notification_avatar_delete AFTER DELETE ON notification BEGIN UPDATE media_asset SET deleted=1 WHERE owner_notification=OLD.id; END");
+    exec("CREATE INDEX IF NOT EXISTS ix_media_owner_identity ON media_asset(owner_identity)");
+    exec("CREATE INDEX IF NOT EXISTS ix_media_owner_contact ON media_asset(owner_contact)");
+    exec("CREATE INDEX IF NOT EXISTS ix_media_owner_notification ON media_asset(owner_notification)");
+    exec("CREATE INDEX IF NOT EXISTS ix_file_storage ON file(storage_namespace, storage_id)");
     prepareData();
 
 }
@@ -87,7 +112,7 @@ void Database::createDatabase()
         exec(R"(CREATE UNIQUE INDEX `ix_message_global_id` ON `message` (`message_id` ))");
         QSqlQuery query(db_);
         query.prepare("INSERT INTO ds (version) VALUES (:version)");
-        query.bindValue(":version", currentVersion);
+        query.bindValue(":version", 1);
         if(!query.exec()) {
             throw Error("Failed to initialize database");
         }

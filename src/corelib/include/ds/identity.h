@@ -299,6 +299,7 @@ private slots:
     void onProcessOnlineLater();
 
 private:
+    bool avatar_edited_ = false;
     void connectContacts();
     static int getRandomConnectDelay();
     void disconnectContacts();

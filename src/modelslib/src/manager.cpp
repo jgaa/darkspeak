@@ -854,6 +854,11 @@ void Manager::goOffline()
     engine_->close();
 }
 
+QCoro::Task<dsfm::Result<void>> Manager::shutdownStorage()
+{
+    co_return co_await engine_->getFileManager()->storage().shutdown();
+}
+
 void Manager::onQuit()
 {
     LFLOG_INFO << "Darkspeak is shutting down.";

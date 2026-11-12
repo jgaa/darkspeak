@@ -66,11 +66,13 @@ modules:
           -DCMAKE_INSTALL_PREFIX=/app \
           -DDARKSPEAK_FLATPAK_BUILD=ON \
           -DDARKSPEAK_KDE_COLOR_SCHEME=ON \
+          -DDSFM_QCORO_SOURCE_DIR="$(pwd)/third_party/qcoro" \
           -DFETCHCONTENT_SOURCE_DIR_SAFEKEEPING="$(pwd)/third_party/safekeeping" \
           -DFETCHCONTENT_SOURCE_DIR_NAYUKI_QR_GENERATOR="$(pwd)/third_party/nayuki_qr_generator" \
           -DBUILD_TESTING=OFF
       - cmake --build _build --parallel
       - install -Dm755 _build/bin/darkspeak /app/bin/darkspeak
+      - install -Dm644 src/filemanager/LICENSE.unicode.txt /app/share/licenses/DSFileManager/LICENSE.unicode.txt
       - install -Dm644 flatpak/org.darkspeak.DarkSpeak.desktop /app/share/applications/org.darkspeak.DarkSpeak.desktop
       - install -Dm644 icons/darkspeak-16.png /app/share/icons/hicolor/16x16/apps/org.darkspeak.DarkSpeak.png
       - install -Dm644 icons/darkspeak-22.png /app/share/icons/hicolor/22x22/apps/org.darkspeak.DarkSpeak.png
@@ -102,3 +104,7 @@ modules:
         url: https://github.com/jgaa/SafeKeeping.git
         commit: c53b3f5ad5ec150058e0313a856aa3ad2c68f9e1
         dest: third_party/safekeeping
+      - type: git
+        url: https://github.com/danvratil/qcoro.git
+        branch: main
+        dest: third_party/qcoro

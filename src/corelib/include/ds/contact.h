@@ -1,5 +1,6 @@
 #ifndef CONTACT_H
 #define CONTACT_H
+#include <QCoroTask>
 
 #include <memory>
 #include <deque>
@@ -255,6 +256,8 @@ private slots:
     void onOutputBufferEmptied();
 
 private:
+    bool avatar_edited_ = false;
+    QCoro::Task<void> processFileResume(PeerFileResume resume, Contact::ptr_t self);
     static void bind(QSqlQuery& query, ContactData& data);
     void loadMessageQueue();
     void loadFileQueue();

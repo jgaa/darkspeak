@@ -1,14 +1,7 @@
 
-#include <regex>
-#include <QDir>
 #include <QFileInfo>
 #include <QSqlQuery>
 #include <QStorageInfo>
-#include <QStandardPaths>
-#include <QMimeDatabase>
-#include <QRegularExpression>
-#include <QChar>
-#include <QSet>
 
 #include "include/ds/filemanager.h"
 #include "ds/dsengine.h"
@@ -16,53 +9,18 @@
 
 #include "logfault/logfault.h"
 
-#include <limits>
 
 using namespace std;
 
 namespace ds {
 namespace core {
 
-namespace {
-
-bool safeFileName(const QString& name)
-{
-    if (name.isEmpty() || name.toUtf8().size() > 255 || name == "." || name == "..") {
-        return false;
-    }
-    for (const auto character : name) {
-        if (character.category() == QChar::Other_Control) {
-            return false;
-        }
-    }
-    if (name.endsWith(' ') || name.endsWith('.')) {
-        return false;
-    }
-    const auto device = name.section('.', 0, 0).toUpper();
-    static const QSet<QString> reservedDevices{
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5",
-        "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4",
-        "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"};
-    if (reservedDevices.contains(device)) {
-        return false;
-    }
-    static const std::regex forbidden{R"(\\|/|\||\.\.)"};
-    return !std::regex_search(name.toStdString(), forbidden);
-}
-
-QString preferredExtension(const QString& mimeType)
-{
-    const auto suffix = QMimeDatabase{}.mimeTypeForName(mimeType).preferredSuffix();
-    static const QRegularExpression validSuffix{QStringLiteral("^[a-z0-9]{1,16}$")};
-    return validSuffix.match(suffix).hasMatch() ? suffix : QString{};
-}
-
-} // namespace
-
 FileManager::FileManager(QObject &parent, QSettings &settings)
-    : QObject{&parent}, settings_{settings}
+    : QObject{&parent}, settings_{settings}, storage_{settings, this}
 {
-    // TODO: Load non-hashed files and start hashing them.
+    connect(&storage_, &ManagedStorage::storageError, this, [] {
+        DsEngine::instance().reportStatus(tr("File or media storage is unavailable. Check storage permissions and limits."), DsEngine::ERROR);
+    });
 }
 
 File::ptr_t FileManager::getFile(const int dbId)
@@ -150,7 +108,7 @@ File::ptr_t FileManager::addFile(std::unique_ptr<FileData> data)
 
     if (file->getDirection() == File::OUTGOING
             && file->getState() == File::FS_CREATED) {
-        hashIt(file);
+        importOutgoingFile(file);
     }
 
     return file;
@@ -161,6 +119,11 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
     // Check if we have the file.
     try {
         if (auto file = getFileFromId(offer.fileId, conversation)) {
+            if (file->getSize() != offer.size || file->getHash() != offer.sha512 || file->getName() != offer.name) {
+                recordPeerEvent(*offer.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
+                offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
+                return;
+            }
             if (file->getState() == File::FS_REJECTED) {
                 offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
             } else if (file->getState() == File::FS_DONE) {
@@ -180,7 +143,7 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
 
     const auto limits = ResourceLimits::fromSettings(settings_);
     const auto maxBytes = static_cast<qint64>(limits.acceptedFileBytes);
-    if (offer.fileId.size() != 16 || offer.size < 0 || !safeFileName(offer.name)
+    if (offer.fileId.size() != 16 || offer.size < 0 || offer.sha512.size() != 32 || !dsfm::normalizeName(offer.name)
             || maxBytes == 0 || offer.size > maxBytes) {
         recordPeerEvent(*offer.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
         LFLOG_WARN << "Rejecting file offer: violates local safety policy";
@@ -219,11 +182,6 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
 
     data->state = File::FS_OFFERED;
     data->name = offer.name;
-    // The advertised name is display metadata. Keep storage independent of
-    // it; derive only a safe local suffix from the validated MIME type.
-    const auto suffix = preferredExtension(offer.type);
-    data->path = conversation.getFilesLocation() + "/" + offer.fileId.toHex()
-            + (suffix.isEmpty() ? QString{} : QStringLiteral(".") + suffix);
     data->direction = File::INCOMING;
     data->conversation = conversation.getId();
     data->identity = conversation.getIdentityId();
@@ -232,6 +190,7 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
     data->fileId = offer.fileId;
     data->size = offer.size;
     data->hash = offer.sha512;
+    data->mime_type = offer.type;
 
     auto file = addFile(move(data));
     if (file) {
@@ -322,7 +281,7 @@ bool FileManager::canAcceptIncoming(const File& file, QString& reason) const
         return false;
     }
 
-    const QStorageInfo storage(QFileInfo(file.getPath()).absolutePath());
+    const QStorageInfo storage(QFileInfo(storage_.downloadsRoot()).absolutePath());
     if (!storage.isValid() || !storage.isReady()) {
         reason = QObject::tr("The download storage is unavailable");
         return false;
@@ -354,9 +313,9 @@ void FileManager::onFileStateChanged(const File *file)
     emit fileStateChanged(file);
 }
 
-void FileManager::hashIt(const File::ptr_t &file)
+void FileManager::importOutgoingFile(const File::ptr_t &file)
 {
-    file->asynchCalculateHash([file](const QByteArray& hash, const QString& failReason){
+    file->importIntoStorage([file](const QByteArray& hash, const QString& failReason){
         if (hash.isEmpty()) {
             LFLOG_DEBUG << "Failed to hash file #" << file->getId()
                         << ": " << failReason;
@@ -367,6 +326,11 @@ void FileManager::hashIt(const File::ptr_t &file)
                 file->setHash(hash);
                 file->setState(File::FS_WAITING);
                 if (auto contact = file->getContact()) {
+                    if (!contact->canSendFileType(file->getMimeType(), file->getName())) {
+                        file->setState(File::FS_REJECTED);
+                        DsEngine::instance().reportStatus(tr("The contact does not accept the imported file type or filename."), DsEngine::WARNING);
+                        return;
+                    }
                     contact->queueFile(file);
                 } else {
                     LFLOG_WARN << "Failed to obtain contact for file " << file->getId();

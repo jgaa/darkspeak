@@ -39,6 +39,15 @@ Identity::Identity(QObject& parent,
     , id_{dbId}, online_{online}, data_{std::move(data)}, created_{move(created)}
 {
     data_.bio = bio::sanitize(data_.bio);
+    if (id_ > 0) QTimer::singleShot(0, this, [this] {
+        if (avatar_edited_) return;
+        const auto revision = avatarVersion_;
+        DsEngine::instance().getFileManager()->storage().loadAvatar(ManagedStorage::identityAvatar(getUuid()), this, [this, revision](QImage image) {
+            if (avatar_edited_ || avatarVersion_ != revision || !data_.avatar.isNull()) return;
+            data_.avatar = std::move(image); ++avatarVersion_;
+            emit avatarChanged(); emit avatarUrlChanged();
+        });
+    });
     const auto prefix = QStringLiteral("identity/%1/").arg(
         data_.uuid.toString(QUuid::WithoutBraces));
     auto& settings = DsEngine::instance().settings();
@@ -676,8 +685,14 @@ QString Identity::getAvatarUrl() const noexcept
 }
 
 void Identity::setAvatar(const QImage &avatar) {
+    avatar_edited_ = true;
     const auto normalized = normalizeAvatar(avatar);
-    if (updateIf("avatar", normalized, data_.avatar, this, &Identity::avatarChanged)) {
+    if (normalized.isNull() && data_.avatar.isNull() && id_ > 0)
+        DsEngine::instance().getFileManager()->storage().saveAvatar(ManagedStorage::identityAvatar(getUuid()), {});
+    if (normalized != data_.avatar) {
+        data_.avatar = normalized;
+        if (id_ > 0) DsEngine::instance().getFileManager()->storage().saveAvatar(ManagedStorage::identityAvatar(getUuid()), normalized);
+        emit avatarChanged();
         ++avatarVersion_;
         avatarUrlChanging_ = true;
         emit avatarUrlChanged();
@@ -843,13 +858,6 @@ void Identity::setPublicAvatar(bool value)
 void Identity::addToDb() {
     QSqlQuery query;
 
-    QByteArray avatar;
-    if (!data_.avatar.isNull()) {
-        QBuffer inBuffer( &avatar );
-        inBuffer.open( QIODevice::WriteOnly );
-        data_.avatar.save(&inBuffer, "PNG");
-    }
-
     query.prepare("INSERT INTO identity ("
                   "uuid, hash, name, cert, address, address_data, notes, avatar, created, auto_connect"
                   ") VALUES ("
@@ -862,7 +870,7 @@ void Identity::addToDb() {
     query.bindValue(":address", data_.address);
     query.bindValue(":address_data", data_.addressData);
     query.bindValue(":notes", data_.notes);
-    query.bindValue(":avatar", avatar);
+    query.bindValue(":avatar", QVariant{});
     query.bindValue(":created", created_);
     query.bindValue(":auto_connect", data_.autoConnect);
 
@@ -872,6 +880,7 @@ void Identity::addToDb() {
     }
 
     id_ = query.lastInsertId().toInt();
+    if (!data_.avatar.isNull()) DsEngine::instance().getFileManager()->storage().saveAvatar(ManagedStorage::identityAvatar(getUuid()), data_.avatar);
 
     LFLOG_INFO << "Added identity " << data_.name
                << " with uuid " << data_.uuid.toString()
@@ -889,17 +898,7 @@ void Identity::deleteFromDb() {
 
         try {
             QSqlQuery query(db);
-            QStringList filesToRemove;
 
-            query.prepare("SELECT path FROM file WHERE identity_id=:id");
-            query.bindValue(":id", id_);
-            if (!query.exec()) {
-                throw Error(QStringLiteral("SQL Failed to enumerate identity files: %1")
-                                .arg(query.lastError().text()));
-            }
-            while (query.next()) {
-                filesToRemove.append(query.value(0).toString());
-            }
 
             // Identity deletion is recursive, but the legacy schema does not
             // declare cascading foreign keys for all identity-owned tables.
@@ -961,11 +960,6 @@ void Identity::deleteFromDb() {
                                 .arg(db.lastError().text()));
             }
 
-            for (const auto& path : filesToRemove) {
-                (void)QFile::remove(path);
-                (void)QFile::remove(path + QStringLiteral(".part"));
-                (void)QFile::remove(path + QStringLiteral(".part.meta"));
-            }
         } catch (...) {
             db.rollback();
             throw;
