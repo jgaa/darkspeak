@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QLockFile>
 #include <QSaveFile>
 #include <QTimer>
@@ -154,28 +155,44 @@ int runTestRuntime(int argc, char* argv[]) {
         ds::models::Manager manager;
         auto& engine = core::DsEngine::instance();
         auto* identities = engine.getIdentityManager();
+        require(!config.contains("identity_count") ||
+                (config.value("identity_count").isDouble() &&
+                 config.value("identity_count").toDouble() == config.value("identity_count").toInt()));
+        require(!config.contains("public_bio") || config.value("public_bio").isBool());
+        require(!config.contains("preview_images") || config.value("preview_images").isBool());
+        require(!config.contains("preview_videos") || config.value("preview_videos").isBool());
+        const auto identity_count = config.value("identity_count").toInt(1);
+        require(identity_count >= 1 && identity_count <= 2);
+        const auto public_bio = config.value("public_bio").toBool(true);
         if (identities->rowCount({}) == 0) {
-            core::IdentityData data;
-            const auto label = config.value("label").toString();
-            data.uuid = QUuid::createUuid();
-            data.name = "Peer " + label;
-            data.bio = label == "A" ? QString::fromUtf8("Peer A — Earth observer.")
-                                    : QString::fromUtf8("Peer B — Lunar explorer.");
-            data.cert = ds::crypto::DsCert::create();
-            data.hash = data.cert->getHash().toByteArray();
-            data.avatar = core::normalizeAvatar(
-                QImage(root + "/inputs/" + (label == "A" ? "earth.jpg" : "apollo11.jpg")));
-            require(!data.avatar.isNull());
-            data.allowMimeTypes = {"image/jpeg", "audio/ogg"};
-            auto* owner = identities->addIdentity(data);
-            require(owner);
-            // Same creation and transport services as
-            // IdentityManager::createIdentity, scheduled independently from
-            // application readiness.
-            engine.whenOnline(
-                [&engine, owner] { engine.createNewTransport(owner->getName().toUtf8(), owner->getUuid()); });
+            for (int index = 0; index < identity_count; ++index) {
+                core::IdentityData data;
+                const auto label = config.value("label").toString();
+                data.uuid = QUuid::createUuid();
+                data.name = "Peer " + label + QString::number(index + 1);
+                data.publicBio = public_bio;
+                data.previewImages = config.value("preview_images").toBool(false);
+                data.previewVideo = config.value("preview_videos").toBool(false);
+                data.bio = label == "A" ? QString::fromUtf8("Peer A — Earth observer.")
+                                        : QString::fromUtf8("Peer B — Lunar explorer.");
+                if (identity_count > 1)
+                    data.bio += QStringLiteral(" Identity %1.").arg(index + 1);
+                data.cert = ds::crypto::DsCert::create();
+                data.hash = data.cert->getHash().toByteArray();
+                data.avatar = core::normalizeAvatar(
+                    QImage(root + "/inputs/" + (label == "A" ? "earth.jpg" : "apollo11.jpg")));
+                require(!data.avatar.isNull());
+                data.allowMimeTypes = {"image/jpeg", "audio/ogg", "application/x-matroska", "video/matroska", "video/x-matroska"};
+                auto* owner = identities->addIdentity(data);
+                require(owner);
+                // Same creation and transport services as
+                // IdentityManager::createIdentity, scheduled independently from
+                // application readiness.
+                engine.whenOnline(
+                    [&engine, owner] { engine.createNewTransport(owner->getName().toUtf8(), owner->getUuid()); });
+            }
         }
-        require(identities->rowCount({}) == 1);
+        require(identities->rowCount({}) == identity_count);
         auto* owner = identities->identityFromRow(0);
         Service service(engine);
         service.setContactDecision([&manager](int id, bool accept) {
@@ -185,8 +202,19 @@ int runTestRuntime(int argc, char* argv[]) {
             "scenario", {owner->getUuid().toString(QUuid::WithoutBraces)},
             {"read_status", "read_identities", "read_contacts", "read_profiles", "read_presence",
              "read_conversations", "read_message_content", "send_messages", "create_contacts", "read_events",
-             "read_diagnostics", "send_files", "read_files"});
+             "read_diagnostics", "send_files", "read_files", "remove_contacts"});
         require(!created.isEmpty());
+        QJsonArray provisioned_identities;
+        for (int index = 0; index < identity_count; ++index) {
+            auto* identity = identities->identityFromRow(index);
+            const auto id = identity->getUuid().toString(QUuid::WithoutBraces);
+            const auto key = index == 0 ? created : service.createKey(
+                "scenario", {id}, {"read_status", "read_identities", "read_contacts", "read_profiles",
+                "read_presence", "read_conversations", "read_message_content", "send_messages",
+                "create_contacts", "remove_contacts", "read_events", "read_diagnostics", "send_files", "read_files"});
+            require(!key.isEmpty());
+            provisioned_identities.append(QJsonObject{{"identity", id}, {"secret", key.value("secret").toString()}});
+        }
         auto controller_secret = secret();
         TestSupport support(engine, service, QFileInfo(root + "/inputs").canonicalFilePath(),
                             controller_secret);
@@ -195,6 +223,7 @@ int runTestRuntime(int argc, char* argv[]) {
         controller.start();
         writeProtected(root + "/provision.json",
                        {{"version", 1},
+                        {"identities", provisioned_identities},
                         {"identity", owner->getUuid().toString(QUuid::WithoutBraces)},
                         {"ordinary_secret", created.value("secret").toString()},
                         {"controller_secret", QString::fromLatin1(controller_secret)},

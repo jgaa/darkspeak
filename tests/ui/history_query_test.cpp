@@ -15,6 +15,8 @@ private slots:
         QSqlQuery query(database_);
         QVERIFY(query.exec("CREATE TABLE message(id INTEGER PRIMARY KEY,conversation_id INTEGER,composed_time TEXT,state INTEGER,direction INTEGER,received_time TEXT,content TEXT)"));
         QVERIFY(query.exec("CREATE TABLE file(id INTEGER PRIMARY KEY,conversation_id INTEGER,created_time TEXT,state INTEGER,direction INTEGER,ack_time TEXT)"));
+        QVERIFY(query.exec("CREATE TABLE message_attachment_v1(message_id INTEGER)"));
+        QVERIFY(query.exec("CREATE TABLE file_thumbnail_v1(file_id INTEGER)"));
         QVERIFY(query.exec("CREATE INDEX ix_message_history ON message(conversation_id,composed_time,id)"));
         QVERIFY(query.exec("CREATE INDEX ix_file_history ON file(conversation_id,created_time,id)"));
         QVERIFY(database_.transaction());

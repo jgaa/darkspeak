@@ -1,14 +1,40 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import QtTest
+import org.darkspeak 1.0
 import "../../../src/app" as UI
 
 TestCase {
     id: testCase
     name: "ThemeComponents"
     when: windowShown
+    visible: true
     width: 1000
     height: 700
+    property QtObject dependencySupport: QtObject {
+        property string installCommand: "sudo apt install ffmpeg"
+        property int dismissals: 0
+        property bool suppressed: false
+        function dismiss(again) { dismissals++; suppressed = again; }
+    }
+    Component {
+        id: dependencyDialog
+        UI.VideoPreviewDependencyDialog { support: testCase.dependencySupport }
+    }
+    Component {
+        id: fileCardFixture
+        Item {
+            id: fileHost
+            width: 640
+            height: 480
+            property alias cList: fileHost
+            property alias cFile: fixtureFile
+            property var cData: ({stateName: "Offered", composedTime: new Date()})
+            QmlIdentityReq { id: fixtureFile }
+            UI.FileComponent {}
+        }
+    }
     Component {
         id: gallery
         UI.UiHarness {}
@@ -28,6 +54,7 @@ TestCase {
         failOnWarning(/.*/);
     }
     function cleanup() {
+        testCase.height = 700;
         uiTest.populate(false);
         appearance.scale = 100;
         appearance.cancelPreview();
@@ -41,6 +68,55 @@ TestCase {
             const component = Qt.createComponent(Qt.resolvedUrl("../../../src/app/" + name));
             compare(component.status, Component.Ready, name + ": " + component.errorString());
         }
+        const dependency = Qt.createComponent(Qt.resolvedUrl("../../../src/app/VideoPreviewDependencyDialog.qml"));
+        compare(dependency.status, Component.Ready, dependency.errorString());
+    }
+    function test_ffmpeg_dialog_dismissal_and_opt_out_data() {
+        return [{tag: "100%", scale: 100, height: 700}, {tag: "compact 200%", scale: 200, height: 320}];
+    }
+    function test_ffmpeg_dialog_dismissal_and_opt_out(data) {
+        appearance.scale = data.scale;
+        testCase.height = data.height;
+        dependencySupport.dismissals = 0;
+        dependencySupport.suppressed = false;
+        dependencySupport.installCommand = "sudo apt install ffmpeg";
+        const dialog = createTemporaryObject(dependencyDialog, testCase);
+        dialog.open(); tryCompare(dialog, "visible", true);
+        verify(dialog.x >= 0 && dialog.y >= 0);
+        verify(dialog.x + dialog.width <= testCase.width && dialog.y + dialog.height <= testCase.height);
+        const command = findChild(dialog.contentItem, "ffmpegInstallCommand");
+        compare(command.text, "sudo apt install ffmpeg"); compare(command.readOnly, true);
+        const checkbox = findChild(dialog.contentItem, "dontShowFfmpegWarningAgain");
+        compare(checkbox.checked, false);
+        const flickable = dialog.contentItem.contentItem;
+        flickable.contentY = Math.max(0, flickable.contentHeight - flickable.height);
+        wait(10);
+        mouseClick(checkbox); compare(checkbox.checked, true);
+        dialog.accept(); tryCompare(dialog, "visible", false);
+        compare(dependencySupport.dismissals, 1); compare(dependencySupport.suppressed, true);
+        dependencySupport.installCommand = "";
+        const generic = createTemporaryObject(dependencyDialog, testCase);
+        generic.open(); tryCompare(generic, "visible", true);
+        compare(findChild(generic.contentItem, "ffmpegInstallCommand").visible, false);
+        generic.reject(); tryCompare(generic, "visible", false);
+        compare(dependencySupport.suppressed, false);
+    }
+    function test_file_card_shows_and_clears_preview_without_accepting_original() {
+        const view = createTemporaryObject(fileCardFixture, testCase);
+        verify(view !== null);
+        const preview = findChild(view, "mediaPreview");
+        verify(preview !== null);
+        compare(preview.visible, false);
+        compare(view.cFile.state, File.FS_OFFERED);
+        view.cFile.previewSource = Qt.resolvedUrl("../../assets/mcp/earth.jpg").toString();
+        tryCompare(preview, "visible", true);
+        verify(preview.width <= view.width);
+        verify(preview.sourceSize.width <= 320 && preview.sourceSize.height <= 320);
+        compare(view.cFile.state, File.FS_OFFERED);
+        view.cFile.previewSource = "";
+        tryCompare(preview, "visible", false);
+        compare(preview.Layout.preferredHeight, 0);
+        compare(view.cFile.state, File.FS_OFFERED);
     }
     function test_scale_bounds_and_cancel() {
         appearance.beginPreview();

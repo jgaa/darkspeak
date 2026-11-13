@@ -54,7 +54,7 @@ while (($#)); do
 done
 [[ "$build_jobs" =~ ^[1-9][0-9]*$ ]] || fail "--jobs must be a positive integer"
 [[ "$(uname -s)" == Linux ]] || fail "The isolated test runtime requires Linux"
-for dependency in cmake ctest tor tor-gencert "$test_python"; do
+for dependency in cmake ctest tor tor-gencert ffmpeg "$test_python"; do
     command -v "$dependency" >/dev/null || fail "Missing dependency: $dependency"
 done
 "$test_python" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)' \
@@ -95,7 +95,14 @@ run cmake -S "$project_dir" -B "$test_build_dir" -DCMAKE_BUILD_TYPE=Debug "$@" \
     -DDARKSPEAK_WITH_MCP=ON -DDARKSPEAK_WITH_TEST_MCP=ON \
     -DDS_ENABLE_TOR_TESTS=ON -DPython3_EXECUTABLE="$venv_python"
 # The default build includes every test executable and the app used by QML smoke
-# checks. No explicit target allowlist can accidentally omit a future test binary.
+# checks. Private-Tor privacy, multi-identity, resume, deletion, transfer-decision
+# and corrupted-partial scenarios
+# and database crash-recovery checks use this build and are discovered below.
+# Media-preview codec, managed-cache, and private-Tor preview scenarios use Qt's existing JPEG plugin;
+# no additional Qt module or system thumbnailer is needed for image previews.
+# Video tests require FFmpeg and a Linux kernel with Landlock and seccomp.
+# The startup dependency-dialog and persistent opt-out tests are also discovered.
+# No explicit target allowlist can accidentally omit a future test binary.
 run cmake --build "$test_build_dir" --parallel "$build_jobs"
 
 if "$dry_run"; then

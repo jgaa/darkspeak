@@ -74,3 +74,96 @@ async def test_cleanup_reaps_real_process_and_removes_isolated_root():
     await runtime.close()
     assert process.returncode is not None
     assert not runtime.root.exists()
+
+
+class TransferPeer:
+    """Bounded state snapshots for the resume-admission race regression."""
+    def __init__(self, states):
+        self.states = list(states)
+        self.controller = self
+        self.hashed = False
+
+    async def state(self):
+        state, offset = self.states[0]
+        if len(self.states) > 1:
+            self.states.pop(0)
+        return dict(transfers=[dict(transfer="a" * 32, state=state, resumed_from=offset)])
+
+    async def call(self, name, args):
+        assert name == "controller_hash" and args == dict(transfer="a" * 32)
+        self.hashed = True
+        return dict(sha256="d" * 64, size=16384)
+
+
+@pytest.mark.asyncio
+async def test_resume_admission_waits_for_remote_failed_state_to_advance():
+    from error_scenarios import completed
+    sender = TransferPeer([(7, 0), (5, 8192), (6, 8192)])
+    receiver = TransferPeer([(5, 8192), (5, 8192), (6, 8192)])
+    await completed(sender, receiver, "a" * 32, "d" * 64, 16384, resume=True)
+    assert receiver.hashed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("resume,offset", [(False, 0), (True, 8192)])
+async def test_real_transfer_failure_is_reported_immediately(resume, offset):
+    from error_scenarios import completed
+    sender = TransferPeer([(7, offset)])
+    receiver = TransferPeer([(5, 8192)])
+    with pytest.raises(CheckFailure, match="^TransferFailed$"):
+        await completed(sender, receiver, "a" * 32, "d" * 64, 16384, resume=resume)
+    assert not receiver.hashed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["valid", "running", "symlink", "hardlink", "shared_directory", "missing_marker"])
+async def test_partial_fault_is_confined_to_a_stopped_private_test_profile(kind, tmp_path):
+    import os
+    import sqlite3
+    import uuid
+    from types import SimpleNamespace
+    from file_error_scenarios import damage_stopped_partial
+    runtime = Runtime(sys.executable, Path(__file__).parent)
+    profile = runtime.root / "B"
+    directory = profile / "data/downloads/Managed-v1/.filemanager/staging"
+    try:
+        profile.mkdir(mode=0o700)
+        current = profile
+        for part in ("data", "downloads", "Managed-v1", ".filemanager", "staging"):
+            current = current / part
+            current.mkdir(mode=0o700)
+        marker = profile / ".darkspeak-test-profile-v1"
+        marker.write_text("darkspeak-mcp-test-v1\n")
+        pending = uuid.uuid4()
+        stage = directory / str(pending)
+        expected = b"x" * 8192
+        stage.write_bytes(expected)
+        stage.chmod(0o600)
+        with sqlite3.connect(profile / "data/application.sqlite") as db:
+            db.execute("CREATE TABLE file(file_id BLOB, direction INTEGER, pending_id TEXT, bytes_transferred INTEGER)")
+            db.execute("INSERT INTO file VALUES(?,?,?,?)", (bytes.fromhex("a" * 32), 1, str(pending), 8192))
+        external = tmp_path / "outside-fixture"
+        external.write_bytes(expected)
+        external.chmod(0o600)
+        peer = SimpleNamespace(profile=profile, runtime=runtime, process=SimpleNamespace(returncode=0))
+        if kind == "running":
+            peer.process.returncode = None
+        elif kind == "symlink":
+            stage.unlink()
+            stage.symlink_to(external)
+        elif kind == "hardlink":
+            os.link(stage, tmp_path / "alias")
+        elif kind == "shared_directory":
+            (profile / "data").chmod(0o750)
+        elif kind == "missing_marker":
+            marker.unlink()
+        if kind == "valid":
+            damage_stopped_partial(peer, "a" * 32)
+            assert stage.read_bytes() == bytes([ord("x") ^ 0xff]) + expected[1:]
+        else:
+            with pytest.raises(FatalFailure):
+                damage_stopped_partial(peer, "a" * 32)
+            assert stage.read_bytes() == expected
+        assert external.read_bytes() == expected
+    finally:
+        await runtime.close()

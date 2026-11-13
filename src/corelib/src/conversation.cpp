@@ -145,11 +145,11 @@ void Conversation::sendFile(const QVariantMap &args)
     }
 }
 
-void Conversation::incomingMessage(Contact *contact, const MessageData &data)
+bool Conversation::incomingMessage(Contact *contact, const MessageData &data)
 {
     // Add to the database
     if (!DsEngine::instance().getMessageManager()->receivedMessage(*this, data)) {
-        return;
+        return false;
     }
 
     if (data.messageId.size() == 32) {
@@ -158,6 +158,7 @@ void Conversation::incomingMessage(Contact *contact, const MessageData &data)
 
     incrementUnread();
     touchLastActivity();
+    return true;
 }
 
 void Conversation::incomingFileOffer(Contact *contact, const PeerFileOffer &offer)

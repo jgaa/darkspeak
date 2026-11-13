@@ -71,6 +71,49 @@ private slots:
                  ds::core::ResourceLimits::defaultMinimumFreeSpacePercent);
     }
 
+    void signedAttachmentRelationshipsAreAuthenticatedAndBounded()
+    {
+        ds::crypto::Crypto crypto;
+        const auto cert = ds::crypto::DsCert::create();
+        ds::core::MessageData data;
+        data.conversation = QByteArray(32, 'c'); data.messageId = QByteArray(32, 'm');
+        data.composedTime = QDateTime::fromSecsSinceEpoch(
+            (QDateTime::currentSecsSinceEpoch() / 60) * 60, QTimeZone::UTC);
+        data.encoding = ds::core::Message::US_ACSII;
+        data.attachments = {
+            {QByteArray(16, 'a'), "photo.png", 10000, QByteArray(32, 'h'), "image/png", {}},
+            {QByteArray(16, 'b'), "preview.jpg", 2048, QByteArray(32, 't'), "image/jpeg", quint32{0}}};
+        QObject parent;
+        ds::core::Message message(parent, data, ds::core::Message::OUTGOING, 1);
+        message.sign(*cert); QVERIFY(message.validate(*cert));
+        const auto signed_data = message.getData();
+        for (int field = 0; field < 5; ++field) {
+            auto changed = signed_data;
+            switch (field) {
+            case 0: changed.attachments[0].name = "other.png"; break;
+            case 1: changed.attachments[0].size++; break;
+            case 2: changed.attachments[0].sha256[0] ^= 1; break;
+            case 3: changed.attachments[0].mime_type = "image/jpeg"; break;
+            case 4: changed.attachments[1].thumbnail_for.reset(); break;
+            }
+            ds::core::Message tampered(parent, changed, ds::core::Message::INCOMING, 1);
+            QVERIFY(!tampered.validate(*cert));
+        }
+        // Relays may replace transport-local file IDs, while preserving all
+        // signed attachment metadata and the relationship.
+        auto relayed = signed_data; relayed.attachments[0].file_id = QByteArray(16, 'r');
+        ds::core::Message relay(parent, relayed, ds::core::Message::OUTGOING, 1);
+        QVERIFY(relay.validate(*cert));
+        for (int invalid = 0; invalid < 4; ++invalid) {
+            auto changed = signed_data;
+            if (invalid == 0) changed.attachments[1].thumbnail_for = 2;
+            if (invalid == 1) changed.attachments[0].thumbnail_for = 1;
+            if (invalid == 2) changed.attachments[1].file_id = changed.attachments[0].file_id;
+            if (invalid == 3) changed.attachments.resize(17, changed.attachments.front());
+            ds::core::Message unsupported(parent, changed, ds::core::Message::OUTGOING, 1);
+            QVERIFY(!unsupported.validate(*cert));
+        }
+    }
     void messageValidationRejectsInvalidEncodingContentAndTime()
     {
         ds::crypto::Crypto crypto;

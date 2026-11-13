@@ -8,6 +8,7 @@
 #include <QPointer>
 #include <QTemporaryDir>
 #include <utility>
+#include <stop_token>
 
 namespace ds::core {
 
@@ -43,6 +44,10 @@ public:
     QCoro::Task<dsfm::Result<QString>> exportFile(dsfm::NamespaceId ns, dsfm::FileId id, QString name, dsfm::CancellationToken cancel = {});
     QCoro::Task<dsfm::Result<QByteArray>> readAsset(QString key);
     QCoro::Task<dsfm::Result<void>> writeAsset(QString key, QByteArray bytes);
+    // Bounded, on-demand cache of a complete managed image snapshot. The file
+    // row is revalidated before publishing; no physical source path is used.
+    QCoro::Task<dsfm::Result<QByteArray>> imagePreview(int file_id);
+    static QString filePreview(int file_id, QByteArray sha256);
     void saveAvatar(QString key, QImage image);
     void loadAvatar(QString key, QObject* context, std::function<void(QImage)> apply);
     void removeAsset(QString key);
@@ -55,6 +60,7 @@ signals:
     void drained();
     void storageError();
 private:
+    QCoro::Task<dsfm::Result<void>> writeAssetImpl(QString key, QByteArray bytes, bool preview_lane);
     QCoro::Task<void> saveAvatars(QString key);
     QCoro::Task<void> restoreAvatar(QString key, QPointer<QObject> context, std::function<void(QImage)> apply);
     QCoro::Task<void> eraseAsset(QString key);
@@ -73,6 +79,9 @@ private:
     QHash<QString, QByteArray> avatar_queue_;
     QSet<QString> asset_writers_;
     quint32 active_ = 0;
+    quint32 preview_calls_ = 0;
+    bool preview_busy_ = false;
+    std::stop_source preview_stop_;
     QSet<dsfm::NamespaceId> download_namespaces_;
     quint64 export_bytes_ = 0;
     quint32 export_slots_ = 0;

@@ -1,6 +1,9 @@
 #include "ds/managedstorage.h"
 #include "ds/resourcelimits.h"
 #include "ds/avatarutil.h"
+#include "ds/mediapreview.h"
+#include "ds/ffmpeg.h"
+#include "ds/file.h"
 #include "logfault/logfault.h"
 #include <QCoroSignal>
 #include <QBuffer>
@@ -20,7 +23,7 @@
 
 namespace ds::core {
 namespace {
-using dsfm::Error;
+using StorageError = dsfm::Error;
 using dsfm::ErrorCode;
 template<class T> using Result = dsfm::Result<T>;
 constexpr qsizetype io_bytes = 64 * 1024;
@@ -42,14 +45,14 @@ template<class T> struct DiskCall {
         while (current < 32) {
             if (count.compare_exchange_weak(current, current + 1)) { return false; }
         }
-        state->result.emplace(Error{ErrorCode::QueueFull});
+        state->result.emplace(StorageError{ErrorCode::QueueFull});
         return true;
     }
     void await_suspend(std::coroutine_handle<> continuation) {
         auto* context = new QObject;
         executor().pool.start([state = state, context, continuation] {
             try { state->result.emplace(state->run()); }
-            catch (...) { state->result.emplace(Error{ErrorCode::IoError}); }
+            catch (...) { state->result.emplace(StorageError{ErrorCode::IoError}); }
             --executor().outstanding;
             QMetaObject::invokeMethod(context, [context, continuation] {
                 context->deleteLater();
@@ -94,7 +97,7 @@ ManagedStorage::ManagedStorage(QSettings& settings, QObject* parent)
         QSqlQuery query;
         query.prepare("SELECT id,naming FROM managed_namespace WHERE storage_root=:root");
         query.bindValue(":root", config.storage_root);
-        if (!query.exec()) { initialization_error_ = Error{ErrorCode::IoError}; break; }
+        if (!query.exec()) { initialization_error_ = StorageError{ErrorCode::IoError}; break; }
         if (query.next()) {
             config.id = query.value(0).toUuid();
             config.naming = dsfm::PhysicalNaming(query.value(1).toInt());
@@ -119,7 +122,7 @@ ManagedStorage::ManagedStorage(QSettings& settings, QObject* parent)
     gc->start();
 }
 QCoro::Task<Result<void>> ManagedStorage::ready() {
-    if (stopping_) co_return Error{ErrorCode::ShuttingDown};
+    if (stopping_) co_return StorageError{ErrorCode::ShuttingDown};
     if (ready_) co_return Result<void>{};
     if (initializing_) co_await qCoro(this, &ManagedStorage::initialized);
     if (ready_) co_return Result<void>{};
@@ -129,28 +132,28 @@ QCoro::Task<Result<void>> ManagedStorage::ready() {
     for (int area = 0; area < 2; ++area) {
         query.prepare("SELECT COUNT(*),COALESCE(MAX(id=:id),0) FROM managed_namespace");
         query.bindValue(":id", uuid(configs_[area].id));
-        if (!query.exec() || !query.next()) { initialization_error_ = Error{ErrorCode::IoError}; break; }
-        if (query.value(0).toInt() >= 32 && !query.value(1).toBool()) { initialization_error_ = Error{ErrorCode::QuotaExceeded}; break; }
+        if (!query.exec() || !query.next()) { initialization_error_ = StorageError{ErrorCode::IoError}; break; }
+        if (query.value(0).toInt() >= 32 && !query.value(1).toBool()) { initialization_error_ = StorageError{ErrorCode::QuotaExceeded}; break; }
         query.finish();
         query.prepare("INSERT OR IGNORE INTO managed_namespace(id,storage_root,naming,area) VALUES(:id,:root,:naming,:area)");
         query.bindValue(":id", uuid(configs_[area].id)); query.bindValue(":root", configs_[area].storage_root);
         query.bindValue(":naming", int(configs_[area].naming)); query.bindValue(":area", area);
-        if (!query.exec()) { initialization_error_ = Error{ErrorCode::IoError}; break; }
+        if (!query.exec()) { initialization_error_ = StorageError{ErrorCode::IoError}; break; }
     }
     struct Registered { dsfm::NamespaceConfig config; int area; bool created; };
     QVector<Registered> registered;
     if (!initialization_error_) {
-        if (!query.exec("SELECT id,storage_root,naming,area,created FROM managed_namespace ORDER BY id LIMIT 33")) initialization_error_ = Error{ErrorCode::IoError};
+        if (!query.exec("SELECT id,storage_root,naming,area,created FROM managed_namespace ORDER BY id LIMIT 33")) initialization_error_ = StorageError{ErrorCode::IoError};
         else while (query.next()) {
             const auto area = query.value(3).toInt();
-            if (area < 0 || area > 1) { initialization_error_ = Error{ErrorCode::Corruption}; break; }
+            if (area < 0 || area > 1) { initialization_error_ = StorageError{ErrorCode::Corruption}; break; }
             auto config = configs_[area];
             config.id = query.value(0).toUuid(); config.storage_root = query.value(1).toString();
             config.naming = dsfm::PhysicalNaming(query.value(2).toInt());
             registered.push_back({config, area, query.value(4).toBool()});
         }
         query.finish();
-        if (registered.size() > 32) initialization_error_ = Error{ErrorCode::QuotaExceeded};
+        if (registered.size() > 32) initialization_error_ = StorageError{ErrorCode::QuotaExceeded};
     }
     for (const auto& item : registered) {
         if (initialization_error_) break;
@@ -177,7 +180,7 @@ QCoro::Task<Result<void>> ManagedStorage::ready() {
         if (item.area == Downloads) download_namespaces_.insert(config.id);
         if (config.id == configs_[item.area].id) roots_[item.area] = opened.value().root;
         query.prepare("UPDATE managed_namespace SET created=1 WHERE id=:id"); query.bindValue(":id", uuid(config.id));
-        if (!query.exec()) { initialization_error_ = Error{ErrorCode::IoError}; break; }
+        if (!query.exec()) { initialization_error_ = StorageError{ErrorCode::IoError}; break; }
     }
     if (!initialization_error_) { settings_.setValue("storage/downloadsInitialized", true); settings_.sync(); }
     ready_ = !initialization_error_;
@@ -196,7 +199,7 @@ QCoro::Task<Result<void>> ManagedStorage::ready() {
 QCoro::Task<Result<ManagedStorage::Imported>> ManagedStorage::importFile(QString path, QString name, dsfm::CancellationToken cancel, std::function<bool(dsfm::PendingInfo)> reserved) {
     auto initialized = co_await ready();
     if (!initialized) co_return initialized.error();
-    if (active_ >= 16) co_return Error{ErrorCode::QueueFull};
+    if (active_ >= 16) co_return StorageError{ErrorCode::QueueFull};
     ++active_;
     struct Guard { ManagedStorage* self; ~Guard() { --self->active_; emit self->drained(); } } guard{this};
     const auto max_size = configs_[Private].limits.max_file_size;
@@ -205,7 +208,7 @@ QCoro::Task<Result<ManagedStorage::Imported>> ManagedStorage::importFile(QString
         file->fd = ::open(QFile::encodeName(path).constData(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
         if (file->fd < 0 || ::fstat(file->fd, &file->snapshot) || !S_ISREG(file->snapshot.st_mode)
             || file->snapshot.st_size < 0 || quint64(file->snapshot.st_size) > max_size)
-            return Result<std::shared_ptr<LocalFile>>{Error{ErrorCode::InvalidArgument}};
+            return Result<std::shared_ptr<LocalFile>>{StorageError{ErrorCode::InvalidArgument}};
         return Result<std::shared_ptr<LocalFile>>{file};
     });
     if (!opened) co_return opened.error();
@@ -215,18 +218,18 @@ QCoro::Task<Result<ManagedStorage::Imported>> ManagedStorage::importFile(QString
     auto created = co_await manager_.createFile(namespaceId(Private), options);
     if (!created) co_return created.error();
     auto pending = std::move(created).value();
-    if (reserved && !reserved(pending.info)) { co_await pending.writer->abort(); co_return Error{ErrorCode::IoError}; }
-    Error failure{ErrorCode::Cancelled};
+    if (reserved && !reserved(pending.info)) { co_await pending.writer->abort(); co_return StorageError{ErrorCode::IoError}; }
+    StorageError failure{ErrorCode::Cancelled};
     bool failed = false;
     quint64 offset = 0;
     QString mime_type;
     while (offset < *options.content.expected_size && !cancel.cancelled()) {
         auto read = co_await disk<QByteArray>([source, offset] {
             struct stat current{};
-            if (::fstat(source->fd, &current) || !same(current, source->snapshot)) return Result<QByteArray>{Error{ErrorCode::ExternalModification}};
+            if (::fstat(source->fd, &current) || !same(current, source->snapshot)) return Result<QByteArray>{StorageError{ErrorCode::ExternalModification}};
             QByteArray bytes(io_bytes, Qt::Uninitialized);
             const auto count = ::pread(source->fd, bytes.data(), bytes.size(), off_t(offset));
-            if (count <= 0) return Result<QByteArray>{Error{ErrorCode::IoError}};
+            if (count <= 0) return Result<QByteArray>{StorageError{ErrorCode::IoError}};
             bytes.resize(count);
             return Result<QByteArray>{std::move(bytes)};
         });
@@ -244,7 +247,7 @@ QCoro::Task<Result<ManagedStorage::Imported>> ManagedStorage::importFile(QString
                 mime_type = detected.name();
         }
         auto written = co_await pending.writer->writeAt(offset, read.value(), cancel);
-        if (!written || written.value() != read.value().size()) { failure = written ? Error{ErrorCode::IoError} : written.error(); failed = true; break; }
+        if (!written || written.value() != read.value().size()) { failure = written ? StorageError{ErrorCode::IoError} : written.error(); failed = true; break; }
         offset += quint64(written.value());
     }
     auto unchanged = co_await disk<bool>([source] {
@@ -253,7 +256,7 @@ QCoro::Task<Result<ManagedStorage::Imported>> ManagedStorage::importFile(QString
     });
     if (cancel.cancelled() || failed || !unchanged || !unchanged.value()) {
         co_await pending.writer->abort();
-        co_return failed ? failure : Error{cancel.cancelled() ? ErrorCode::Cancelled : ErrorCode::ExternalModification};
+        co_return failed ? failure : StorageError{cancel.cancelled() ? ErrorCode::Cancelled : ErrorCode::ExternalModification};
     }
     auto committed = co_await pending.writer->commit(cancel);
     if (!committed) {
@@ -268,7 +271,7 @@ QCoro::Task<Result<ManagedStorage::Imported>> ManagedStorage::importFile(QString
 QCoro::Task<Result<QString>> ManagedStorage::exportFile(dsfm::NamespaceId ns, dsfm::FileId id, QString name, dsfm::CancellationToken cancel) {
     auto initialized = co_await ready();
     if (!initialized) co_return initialized.error();
-    if (export_slots_ >= 32 || active_ >= 16) co_return Error{ErrorCode::QuotaExceeded};
+    if (export_slots_ >= 32 || active_ >= 16) co_return StorageError{ErrorCode::QuotaExceeded};
     auto normalized = dsfm::normalizeName(name);
     if (!normalized) co_return normalized.error();
     ++active_;
@@ -276,7 +279,7 @@ QCoro::Task<Result<QString>> ManagedStorage::exportFile(dsfm::NamespaceId ns, ds
     auto info = co_await manager_.stat(ns, id);
     if (!info) co_return info.error();
     constexpr quint64 export_budget = 64ULL << 30;
-    if (info.value().size > export_budget - export_bytes_ || export_slots_ >= 32) co_return Error{ErrorCode::QuotaExceeded};
+    if (info.value().size > export_budget - export_bytes_ || export_slots_ >= 32) co_return StorageError{ErrorCode::QuotaExceeded};
     export_bytes_ += info.value().size; ++export_slots_;
     struct Reservation { ManagedStorage* self; quint64 bytes; bool retained = false; ~Reservation() { if (!retained) { self->export_bytes_ -= bytes; --self->export_slots_; } } } reservation{this, info.value().size};
     auto opened = co_await manager_.openRead(ns, id);
@@ -284,26 +287,26 @@ QCoro::Task<Result<QString>> ManagedStorage::exportFile(dsfm::NamespaceId ns, ds
     auto reader = std::move(opened).value();
     // Exported copies are a bounded, explicit external-application boundary, never managed paths.
     auto directory = std::make_unique<QTemporaryDir>(QDir::tempPath() + "/darkspeak-open-XXXXXX");
-    if (!directory->isValid()) co_return Error{ErrorCode::StorageUnavailable};
+    if (!directory->isValid()) co_return StorageError{ErrorCode::StorageUnavailable};
     const auto path = directory->filePath(normalized.value());
     auto sink = std::make_shared<LocalFile>();
     auto created = co_await disk<void>([sink, path] {
         sink->fd = ::open(QFile::encodeName(path).constData(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
-        return sink->fd < 0 ? Result<void>{Error{ErrorCode::IoError}} : Result<void>{};
+        return sink->fd < 0 ? Result<void>{StorageError{ErrorCode::IoError}} : Result<void>{};
     });
     if (!created) co_return created.error();
     auto hash = std::make_shared<QCryptographicHash>(QCryptographicHash::Sha256);
     quint64 offset = 0;
-    std::optional<Error> failure;
+    std::optional<StorageError> failure;
     while (offset < info.value().size && !cancel.cancelled()) {
         auto read = co_await reader->readAt(offset, io_bytes, cancel);
-        if (!read || read.value().isEmpty()) { failure = read ? Error{ErrorCode::IoError} : read.error(); break; }
+        if (!read || read.value().isEmpty()) { failure = read ? StorageError{ErrorCode::IoError} : read.error(); break; }
         auto written = co_await disk<void>([sink, hash, bytes = read.value(), offset] {
             hash->addData(bytes);
             qsizetype done = 0;
             while (done < bytes.size()) {
                 const auto count = ::pwrite(sink->fd, bytes.constData() + done, size_t(bytes.size() - done), off_t(offset + done));
-                if (count <= 0) return Result<void>{Error{ErrorCode::IoError}};
+                if (count <= 0) return Result<void>{StorageError{ErrorCode::IoError}};
                 done += count;
             }
             return Result<void>{};
@@ -313,11 +316,11 @@ QCoro::Task<Result<QString>> ManagedStorage::exportFile(dsfm::NamespaceId ns, ds
     }
     co_await reader->close();
     if (failure) co_return *failure;
-    if (cancel.cancelled()) co_return Error{ErrorCode::Cancelled};
+    if (cancel.cancelled()) co_return StorageError{ErrorCode::Cancelled};
     const auto digest = info.value().sha256;
     auto synced = co_await disk<void>([sink, hash, digest] {
-        if (hash->result() != digest) return Result<void>{Error{ErrorCode::IntegrityError}};
-        return ::fsync(sink->fd) ? Result<void>{Error{ErrorCode::IoError}} : Result<void>{};
+        if (hash->result() != digest) return Result<void>{StorageError{ErrorCode::IntegrityError}};
+        return ::fsync(sink->fd) ? Result<void>{StorageError{ErrorCode::IoError}} : Result<void>{};
     });
     if (!synced) co_return synced.error();
     exports_.push_back(std::move(directory));
@@ -327,7 +330,7 @@ QCoro::Task<Result<QString>> ManagedStorage::exportFile(dsfm::NamespaceId ns, ds
 QCoro::Task<Result<QByteArray>> ManagedStorage::readAsset(QString key) {
     auto initialized = co_await ready();
     if (!initialized) co_return initialized.error();
-    if (active_ >= 64) co_return Error{ErrorCode::QueueFull};
+    if (active_ >= 64) co_return StorageError{ErrorCode::QueueFull};
     ++active_;
     struct Guard { ManagedStorage* self; QString key; bool owns = false; ~Guard() { if (owns) self->asset_writers_.remove(key); --self->active_; emit self->drained(); } } guard{this, key};
     while (asset_writers_.contains(key)) co_await qCoro(this, &ManagedStorage::drained);
@@ -335,39 +338,47 @@ QCoro::Task<Result<QByteArray>> ManagedStorage::readAsset(QString key) {
     QSqlQuery query;
     query.prepare("SELECT file_id FROM media_asset WHERE asset_key=:key AND deleted=0");
     query.bindValue(":key", key);
-    if (!query.exec()) co_return Error{ErrorCode::IoError};
-    if (!query.next()) co_return Error{ErrorCode::MissingEntry};
+    if (!query.exec()) co_return StorageError{ErrorCode::IoError};
+    if (!query.next()) co_return StorageError{ErrorCode::MissingEntry};
     const auto id = query.value(0).toUuid();
     query.finish();
     auto info = co_await manager_.stat(namespaceId(Private), id);
     if (!info) co_return info.error();
-    if (info.value().size > quint64(avatar_bytes)) co_return Error{ErrorCode::QuotaExceeded};
+    if (info.value().size > quint64(avatar_bytes)) co_return StorageError{ErrorCode::QuotaExceeded};
     auto opened = co_await manager_.openRead(namespaceId(Private), id);
     if (!opened) co_return opened.error();
     auto reader = std::move(opened).value();
     QByteArray bytes;
     while (quint64(bytes.size()) < info.value().size) {
         auto chunk = co_await reader->readAt(quint64(bytes.size()), io_bytes);
-        if (!chunk || chunk.value().isEmpty()) { co_await reader->close(); co_return chunk ? Error{ErrorCode::IoError} : chunk.error(); }
+        if (!chunk || chunk.value().isEmpty()) { co_await reader->close(); co_return chunk ? StorageError{ErrorCode::IoError} : chunk.error(); }
         bytes.append(chunk.value());
     }
     co_await reader->close();
-    if (QCryptographicHash::hash(bytes, QCryptographicHash::Sha256) != info.value().sha256) co_return Error{ErrorCode::IntegrityError};
+    if (QCryptographicHash::hash(bytes, QCryptographicHash::Sha256) != info.value().sha256) co_return StorageError{ErrorCode::IntegrityError};
     co_return bytes;
 }
 QCoro::Task<Result<void>> ManagedStorage::writeAsset(QString key, QByteArray bytes) {
-    if (bytes.size() > avatar_bytes || key.size() > 256) co_return Error{ErrorCode::QuotaExceeded};
+    co_return co_await writeAssetImpl(std::move(key), std::move(bytes), false);
+}
+QCoro::Task<Result<void>> ManagedStorage::writeAssetImpl(QString key, QByteArray bytes, bool preview_lane) {
+    if (bytes.size() > avatar_bytes || key.size() > 256) co_return StorageError{ErrorCode::QuotaExceeded};
+    if (preview_lane && (!key.startsWith("preview/v1/") || bytes.size() > media_preview::max_encoded_bytes))
+        co_return StorageError{ErrorCode::InvalidArgument};
     auto initialized = co_await ready();
     if (!initialized) co_return initialized.error();
     while (asset_writers_.contains(key)) co_await qCoro(this, &ManagedStorage::drained);
-    if (active_ >= 16) co_return Error{ErrorCode::QueueFull};
+    // Preview waiters hold lifetime leases. They must not consume all ordinary
+    // avatar-write admission slots and prevent the one serialized preview job
+    // from draining. The private lane still has an absolute operation bound.
+    if (active_ >= (preview_lane ? 64u : 16u)) co_return StorageError{ErrorCode::QueueFull};
     asset_writers_.insert(key);
     ++active_;
     struct Guard { ManagedStorage* self; QString key; ~Guard() { self->asset_writers_.remove(key); --self->active_; emit self->drained(); } } guard{this, key};
     QSqlQuery query;
     query.prepare("SELECT file_id, pending_id FROM media_asset WHERE asset_key=:key");
     query.bindValue(":key", key);
-    if (!query.exec()) co_return Error{ErrorCode::IoError};
+    if (!query.exec()) co_return StorageError{ErrorCode::IoError};
     QUuid old_id, old_pending;
     if (query.next()) { old_id = query.value(0).toUuid(); old_pending = query.value(1).toUuid(); }
     query.finish();
@@ -378,18 +389,18 @@ QCoro::Task<Result<void>> ManagedStorage::writeAsset(QString key, QByteArray byt
     if (bytes.isEmpty()) {
         query.prepare("UPDATE media_asset SET deleted=1 WHERE asset_key=:key");
         query.bindValue(":key", key);
-        if (!query.exec()) co_return Error{ErrorCode::IoError};
+        if (!query.exec()) co_return StorageError{ErrorCode::IoError};
         if (!old_id.isNull()) {
             auto removed = co_await manager_.remove(namespaceId(Private), old_id);
             if (!removed && removed.error().code != ErrorCode::MissingEntry) co_return removed.error();
         }
         query.prepare("DELETE FROM media_asset WHERE asset_key=:key");
         query.bindValue(":key", key);
-        if (!query.exec()) co_return Error{ErrorCode::IoError};
+        if (!query.exec()) co_return StorageError{ErrorCode::IoError};
         co_return Result<void>{};
     }
     dsfm::ContentConstraints content{quint64(bytes.size()), QCryptographicHash::hash(bytes, QCryptographicHash::Sha256)};
-    auto exists = old_id.isNull() ? Result<dsfm::FileInfo>{Error{ErrorCode::MissingEntry}} : co_await manager_.stat(namespaceId(Private), old_id);
+    auto exists = old_id.isNull() ? Result<dsfm::FileInfo>{StorageError{ErrorCode::MissingEntry}} : co_await manager_.stat(namespaceId(Private), old_id);
     if (!exists && exists.error().code != ErrorCode::MissingEntry) co_return exists.error();
     dsfm::CreateOptions options{root(Private), QStringLiteral("avatar-%1.png").arg(QString::fromLatin1(QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha256).toHex())), dsfm::ConflictPolicy::Fail, content};
     auto created = exists ? co_await manager_.replaceFile(namespaceId(Private), old_id, content) : co_await manager_.createFile(namespaceId(Private), options);
@@ -397,7 +408,23 @@ QCoro::Task<Result<void>> ManagedStorage::writeAsset(QString key, QByteArray byt
     auto pending = std::move(created).value();
     QVariant owner_identity, owner_contact, owner_notification;
     const bool identity_asset = key.startsWith("identity/"), contact_asset = key.startsWith("contact/"), request_asset = key.startsWith("request/");
-    if (identity_asset || contact_asset || request_asset) {
+    const bool preview_asset = key.startsWith("preview/v1/");
+    if (preview_asset) {
+        const auto parts = key.split('/');
+        bool valid_id = false;
+        const auto file_id = parts.size() == 4 ? parts.at(2).toInt(&valid_id) : 0;
+        if (!valid_id || file_id <= 0 || parts.at(3).size() != 64
+            || bytes.size() > media_preview::max_encoded_bytes) {
+            co_await pending.writer->abort(); co_return StorageError{ErrorCode::InvalidArgument};
+        }
+        query.prepare("SELECT identity_id,contact_id,hash FROM file WHERE id=:id");
+        query.bindValue(":id", file_id);
+        if (!query.exec() || !query.next()
+            || parts.at(3).toLatin1() != query.value(2).toByteArray().toHex()) {
+            co_await pending.writer->abort(); co_return StorageError{ErrorCode::Cancelled};
+        }
+        owner_identity = query.value(0); owner_contact = query.value(1);
+    } else if (identity_asset || contact_asset || request_asset) {
         if (request_asset) {
             query.prepare("SELECT id,identity FROM notification WHERE hash=:key AND type=0");
             query.bindValue(":key", key.sliced(8));
@@ -405,7 +432,7 @@ QCoro::Task<Result<void>> ManagedStorage::writeAsset(QString key, QByteArray byt
             query.prepare(identity_asset ? "SELECT id,id FROM identity WHERE uuid=:key" : "SELECT id,identity FROM contact WHERE uuid=:key");
             query.bindValue(":key", QUuid(key.sliced(identity_asset ? 9 : 8)));
         }
-        if (!query.exec() || !query.next()) { co_await pending.writer->abort(); co_return Error{ErrorCode::Cancelled}; }
+        if (!query.exec() || !query.next()) { co_await pending.writer->abort(); co_return StorageError{ErrorCode::Cancelled}; }
         owner_identity = query.value(1);
         if (contact_asset) owner_contact = query.value(0);
         if (request_asset) owner_notification = query.value(0);
@@ -416,24 +443,153 @@ QCoro::Task<Result<void>> ManagedStorage::writeAsset(QString key, QByteArray byt
     query.bindValue(":file", pending.info.file_id);
     query.bindValue(":pending", pending.info.id);
     query.bindValue(":identity", owner_identity); query.bindValue(":contact", owner_contact); query.bindValue(":notification", owner_notification);
-    if (!query.exec()) { co_await pending.writer->abort(); co_return Error{ErrorCode::IoError}; }
+    if (!query.exec()) { co_await pending.writer->abort(); co_return StorageError{ErrorCode::IoError}; }
     for (qsizetype offset = 0; offset < bytes.size(); offset += io_bytes) {
         const auto chunk = bytes.mid(offset, io_bytes);
         auto written = co_await pending.writer->writeAt(quint64(offset), chunk);
-        if (!written || written.value() != chunk.size()) co_return written ? Error{ErrorCode::IoError} : written.error();
+        if (!written || written.value() != chunk.size()) co_return written ? StorageError{ErrorCode::IoError} : written.error();
     }
     query.prepare("SELECT deleted FROM media_asset WHERE asset_key=:key"); query.bindValue(":key", key);
-    if (!query.exec() || !query.next() || query.value(0).toBool()) { co_await pending.writer->abort(); co_return Error{ErrorCode::Cancelled}; }
+    if (!query.exec() || !query.next() || query.value(0).toBool()) { co_await pending.writer->abort(); co_return StorageError{ErrorCode::Cancelled}; }
     query.finish();
     auto committed = co_await pending.writer->commit();
     if (!committed) co_return committed.error();
     query.prepare("UPDATE media_asset SET pending_id=NULL WHERE asset_key=:key");
     query.bindValue(":key", key);
-    if (!query.exec()) co_return Error{ErrorCode::IoError};
+    if (!query.exec()) co_return StorageError{ErrorCode::IoError};
     co_return Result<void>{};
 }
 QString ManagedStorage::identityAvatar(QUuid id) { return "identity/" + uuid(id); }
 QString ManagedStorage::contactAvatar(QUuid id) { return "contact/" + uuid(id); }
+QString ManagedStorage::filePreview(int file_id, QByteArray sha256) {
+    return QStringLiteral("preview/v1/%1/%2").arg(file_id).arg(QString::fromLatin1(sha256.toHex()));
+}
+
+QCoro::Task<Result<QByteArray>> ManagedStorage::imagePreview(int file_id) {
+    if (file_id <= 0 || shutdown_requested_ || preview_calls_ >= 16)
+        co_return StorageError{ErrorCode::QueueFull};
+    auto operation = holdOperation();
+    ++preview_calls_;
+    struct Guard {
+        ManagedStorage* self; bool owns = false;
+        ~Guard() {
+            if (owns) self->preview_busy_ = false;
+            --self->preview_calls_; emit self->drained();
+        }
+    } guard{this};
+    while (preview_busy_) co_await qCoro(this, &ManagedStorage::drained);
+    if (shutdown_requested_) co_return StorageError{ErrorCode::Cancelled};
+    preview_busy_ = true; guard.owns = true;
+    auto initialized = co_await ready();
+    if (!initialized) co_return initialized.error();
+    QSqlQuery query;
+    query.prepare("SELECT storage_namespace,storage_id,hash,size,direction,state,mime_type FROM file WHERE id=:id");
+    query.bindValue(":id", file_id);
+    if (!query.exec()) co_return StorageError{ErrorCode::IoError};
+    if (!query.next()) co_return StorageError{ErrorCode::MissingEntry};
+    auto ns = query.value(0).toUuid(), id = query.value(1).toUuid();
+    const auto sha256 = query.value(2).toByteArray();
+    auto source_sha256 = sha256;
+    auto size = query.value(3).toLongLong();
+    const auto incoming = query.value(4).toInt() == File::INCOMING;
+    const auto state = query.value(5).toInt();
+    const auto mime_type = query.value(6).toString();
+    const auto video = media_preview::isVideoCandidate(mime_type);
+    if (sha256.size() != 32 || (!mime_type.startsWith("image/") && !video))
+        co_return StorageError{ErrorCode::InvalidArgument};
+    query.finish();
+    bool thumbnail = false;
+    if (incoming) {
+        query.prepare("SELECT f.storage_namespace,f.storage_id,f.hash,f.size,f.mime_type FROM file_thumbnail_v1 t JOIN file f ON f.id=t.file_id JOIN file p ON p.id=t.primary_id WHERE t.primary_id=? AND f.direction=1 AND f.state=6 AND f.contact_id=p.contact_id AND f.identity_id=p.identity_id AND f.conversation_id=p.conversation_id");
+        query.addBindValue(file_id);
+        if (!query.exec()) co_return StorageError{ErrorCode::IoError};
+        if (query.next()) {
+            ns = query.value(0).toUuid(); id = query.value(1).toUuid(); source_sha256 = query.value(2).toByteArray();
+            size = query.value(3).toLongLong();
+            if (query.value(4).toString() != "image/jpeg" || size > media_preview::max_encoded_bytes)
+                co_return StorageError{ErrorCode::InvalidArgument};
+            thumbnail = true;
+        }
+        query.finish();
+    }
+    if (ns.isNull() || id.isNull() || source_sha256.size() != 32
+        || size <= 0 || size > (video && !thumbnail ? media_preview::max_video_source_bytes : media_preview::max_source_bytes)
+        || (!thumbnail && incoming && state != File::FS_DONE))
+        co_return StorageError{ErrorCode::InvalidArgument};
+    const auto key = filePreview(file_id, sha256);
+    auto cached = co_await readAsset(key);
+    if (cached) {
+        auto valid = co_await disk<bool>([bytes = cached.value()] {
+            return Result<bool>{!media_preview::decode(bytes).isNull()};
+        });
+        if (valid && valid.value()) {
+            LFLOG_DEBUG << "Using cached media preview";
+            co_return cached.value();
+        }
+        auto removed = co_await writeAssetImpl(key, {}, true);
+        if (!removed) co_return removed.error();
+    } else if (cached.error().code == ErrorCode::IntegrityError) {
+        auto removed = co_await writeAssetImpl(key, {}, true);
+        if (!removed) co_return removed.error();
+    } else if (cached.error().code != ErrorCode::MissingEntry) co_return cached.error();
+    if (video && !thumbnail && media_preview::ffmpegExecutable().isEmpty())
+        co_return StorageError{ErrorCode::InvalidArgument};
+    auto info = co_await manager_.stat(ns, id);
+    if (!info) co_return info.error();
+    if (info.value().size != quint64(size) || info.value().sha256 != source_sha256)
+        co_return StorageError{ErrorCode::IntegrityError};
+    auto opened = co_await manager_.openRead(ns, id);
+    if (!opened) co_return opened.error();
+    auto reader = std::move(opened).value();
+    QByteArray source;
+    source.reserve(qsizetype(size));
+    while (source.size() < size) {
+        if (preview_stop_.stop_requested()) { co_await reader->close(); co_return StorageError{ErrorCode::Cancelled}; }
+        const auto requested = qMin<qint64>(io_bytes, size - source.size());
+        auto chunk = co_await reader->readAt(quint64(source.size()), requested);
+        if (!chunk || chunk.value().isEmpty() || chunk.value().size() > requested) {
+            co_await reader->close();
+            co_return chunk ? StorageError{ErrorCode::IoError} : chunk.error();
+        }
+        source.append(chunk.value());
+    }
+    auto closed = co_await reader->close();
+    if (!closed) co_return closed.error();
+    auto generated = co_await disk<QByteArray>([source = std::move(source), source_sha256, thumbnail, incoming, mime_type, video, stop = preview_stop_.get_token()]() mutable {
+        if (stop.stop_requested()) return Result<QByteArray>{StorageError{ErrorCode::Cancelled}};
+        if (QCryptographicHash::hash(source, QCryptographicHash::Sha256) != source_sha256)
+            return Result<QByteArray>{StorageError{ErrorCode::IntegrityError}};
+        if (thumbnail && media_preview::decode(source).isNull())
+            return Result<QByteArray>{StorageError{ErrorCode::InvalidArgument}};
+        if (incoming && !thumbnail) {
+            const QMimeDatabase database;
+            if (database.mimeTypeForData(source).name() != database.mimeTypeForName(mime_type).name())
+                return Result<QByteArray>{StorageError{ErrorCode::InvalidArgument}};
+        }
+        auto bytes = video && !thumbnail ? media_preview::generateVideo(std::move(source), stop) : media_preview::generate(std::move(source));
+        return bytes.isEmpty() ? Result<QByteArray>{StorageError{ErrorCode::InvalidArgument}}
+                               : Result<QByteArray>{std::move(bytes)};
+    });
+    if (!generated) co_return generated.error();
+    // Generation is serialized, including eviction/publication. Even many
+    // concurrent views cannot exceed the persistent preview count bound.
+    if (!query.exec("SELECT asset_key FROM media_asset WHERE asset_key>='preview/v1/' AND asset_key<'preview/v10' ORDER BY rowid LIMIT 513"))
+        co_return StorageError{ErrorCode::IoError};
+    QStringList keys;
+    while (query.next()) {
+        if (keys.size() >= media_preview::max_cached_previews) co_return StorageError{ErrorCode::QuotaExceeded};
+        keys.push_back(query.value(0).toString());
+    }
+    query.finish();
+    if (keys.size() >= media_preview::max_cached_previews) {
+        auto removed = co_await writeAssetImpl(keys.front(), {}, true);
+        if (!removed) co_return removed.error();
+    }
+    auto saved = co_await writeAssetImpl(key, generated.value(), true);
+    if (!saved) co_return saved.error();
+    LFLOG_DEBUG << "Generated and cached media preview; version=" << media_preview::version;
+    co_return generated.value();
+}
 void ManagedStorage::saveAvatar(QString key, QImage image) {
     if (shutdown_requested_ || stopping_ || (avatar_queue_.size() >= 64 && !avatar_queue_.contains(key))) { emit storageError(); return; }
     QByteArray bytes;
@@ -486,7 +642,7 @@ QCoro::Task<Result<void>> ManagedStorage::collectGarbage() {
     struct Item { QUuid ns, id, pending; };
     QVector<Item> items;
     QSqlQuery query;
-    if (!query.exec("SELECT storage_namespace,storage_id,pending_id FROM storage_gc LIMIT 32")) co_return Error{ErrorCode::IoError};
+    if (!query.exec("SELECT storage_namespace,storage_id,pending_id FROM storage_gc LIMIT 32")) co_return StorageError{ErrorCode::IoError};
     while (query.next()) items.push_back({query.value(0).toUuid(),query.value(1).toUuid(),query.value(2).toUuid()});
     query.finish();
     for (const auto item : items) {
@@ -499,10 +655,10 @@ QCoro::Task<Result<void>> ManagedStorage::collectGarbage() {
         if (!removed && removed.error().code != ErrorCode::MissingEntry) continue;
         query.prepare("DELETE FROM storage_gc WHERE storage_namespace=:ns AND storage_id=:id");
         query.bindValue(":ns", item.ns); query.bindValue(":id", item.id);
-        if (!query.exec()) co_return Error{ErrorCode::IoError};
+        if (!query.exec()) co_return StorageError{ErrorCode::IoError};
     }
     QStringList deleted;
-    if (!query.exec("SELECT asset_key FROM media_asset WHERE deleted=1 LIMIT 32")) co_return Error{ErrorCode::IoError};
+    if (!query.exec("SELECT asset_key FROM media_asset WHERE deleted=1 LIMIT 32")) co_return StorageError{ErrorCode::IoError};
     while (query.next()) deleted.push_back(query.value(0).toString());
     query.finish();
     for (const auto& key : deleted) {
@@ -523,7 +679,7 @@ QCoro::Task<Result<void>> ManagedStorage::collectGarbage() {
             query.prepare("SELECT 1 FROM file WHERE storage_namespace=:ns AND pending_id=:pending "
                           "UNION ALL SELECT 1 FROM media_asset WHERE pending_id=:pending AND :ns=:private LIMIT 1");
             query.bindValue(":ns", space.config.id); query.bindValue(":private", namespaceId(Private)); query.bindValue(":pending", item.id);
-            if (!query.exec()) co_return Error{ErrorCode::IoError};
+            if (!query.exec()) co_return StorageError{ErrorCode::IoError};
             const bool referenced = query.next(); query.finish();
             if (!referenced) { --orphan_budget; co_await manager_.abortPending(space.config.id, item.id); }
         }
@@ -536,6 +692,7 @@ QCoro::Task<Result<void>> ManagedStorage::shutdown() {
         co_return shutdown_error_ ? Result<void>{*shutdown_error_} : Result<void>{};
     }
     shutdown_requested_ = true;
+    preview_stop_.request_stop();
     while (active_ || !avatar_queue_.isEmpty() || initializing_) co_await qCoro(this, &ManagedStorage::drained);
     if (ready_) co_await collectGarbage();
     stopping_ = true;

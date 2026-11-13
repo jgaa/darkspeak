@@ -763,8 +763,9 @@ verified media transfers in both directions. Its checked-in
 [public-domain fixtures](../tests/assets/mcp/README.md) require no runtime internet
 downloads. The [test infrastructure](../tests/mcp/README.md) now implements this
 scenario using isolated real application services, a separate controller, private
-Tor and a Python runner with fatal/recoverable failure classification. The wider
-Phase 2 matrix remains to be implemented.
+Tor and a Python runner with fatal/recoverable failure classification. Additional [privacy, multiple-identity, interrupted-transfer and contact-deletion
+scenarios](../tests/mcp/scenarios/002-error-and-isolation.md) extend this suite.
+The wider Phase 2 matrix remains to be implemented.
 
 Implement these first:
 
@@ -807,8 +808,22 @@ Implement these first:
 Extend coverage as implementation progresses:
 
 **File transfers:** Basic offer/acceptance, completion and checksum verification
-are required by P2-001 in Phase 2. Extend them with rejection, cancellation,
-progress behavior, resume and persistence in subsequent scenarios.
+are required by P2-001 in Phase 2. P2-003/004 cover interrupted-transfer resume,
+persistence and contact deletion. [P2-005/006](../tests/mcp/scenarios/003-file-decisions-and-corruption.md)
+add explicit rejection, cancellation and corrupted-partial checks. Extend them
+further with source-change, resource-limit and adversarial-wire scenarios.
+
+[P2-007/008 image previews](../tests/mcp/scenarios/004-image-previews.md) add
+signed thumbnail manifests, opt-in transfer before primary acceptance, opt-out,
+independent original integrity and private-cache restart checks. These are
+registered as `mcp_peer_image_previews` and `mcp_peer_image_previews_disabled`.
+
+[P2-009/010 video previews](../tests/mcp/scenarios/005-video-previews.md) exercise
+the same consent, pre-acceptance transfer, integrity and restart guarantees for
+video, with FFmpeg as an explicit test dependency. Kernel-isolation and helper
+resource-limit checks live in `media_preview`; native dependency advice and
+persistent notification suppression are covered by `video_preview_support`
+and the existing Qt Quick suite.
 
 **File integrity:** Corrupted files never become available. Resumed transfers recalculate and verify the complete file checksum before publication.
 
@@ -974,7 +989,7 @@ accompany Phase 1 rather than waiting for the regression framework. See
 Deferred backlog (not a third implementation phase):
 
 - Extended file-transfer MCP operations and corruption, resume, and recovery tests
-  beyond the basic P2-001 transfer/integrity requirements.
+  beyond the implemented P2-001 transfer/integrity and P2-003/004 resume/deletion requirements.
 - Additional identity, profile, contact, and file-manager operations.
 - Independent adversarial protocol tests and extended GUI coverage.
 

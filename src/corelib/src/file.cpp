@@ -7,12 +7,14 @@
 #include "ds/update_helper.h"
 #include "ds/crypto.h"
 #include "ds/file.h"
+#include "ds/mediapreview.h"
 
 
 
 #include <QFileInfo>
 #include <QUrl>
 #include <QDesktopServices>
+#include <QScopeGuard>
 #include <QObject>
 //#include <QStringLiteral>
 
@@ -33,6 +35,73 @@ File::File(QObject &, std::unique_ptr<FileData> data)
 {
     if (auto *identity = DsEngine::instance().getIdentityManager()->identityFromId(data_->identity))
         connect(identity, &Identity::securityPreferencesChanged, this, &File::nameChanged);
+    observePreviewPolicy();
+}
+
+bool File::previewAllowed() const {
+    const auto* identity = DsEngine::instance().getIdentityManager()->identityFromId(data_->identity);
+    return identity && !isThumbnail()
+        && ((identity->getPreviewImages() && getMimeType().startsWith("image/"))
+            || (identity->getPreviewVideo() && media_preview::isVideoCandidate(getMimeType())));
+}
+
+QByteArray File::dataThumbnailFor() const { return data_->thumbnail_for; }
+void File::refreshPreview() { preview_attempted_ = false; emit previewChanged(); }
+
+void File::observePreviewPolicy() {
+    if (auto* identity = DsEngine::instance().getIdentityManager()->identityFromId(data_->identity)) {
+        connect(identity, &Identity::securityPreferencesChanged, this, [this] {
+            if (!previewAllowed()) preview_source_.clear();
+            preview_attempted_ = false;
+            emit previewChanged();
+        });
+    }
+    connect(this, &File::stateChanged, this, [this] {
+        if (getState() == FS_DONE || getState() == FS_WAITING) {
+            preview_attempted_ = false;
+            emit previewChanged();
+        }
+    });
+    connect(this, &File::hashChanged, this, [this] {
+        preview_source_.clear(); refreshPreview();
+    });
+}
+
+QString File::previewSource() {
+    if (!previewAllowed()) return {};
+    const auto complete = getDirection() == OUTGOING
+        ? getState() != FS_CREATED && getState() != FS_HASHING
+        : getState() == FS_DONE;
+    if (preview_source_.isEmpty() && !preview_loading_ && !preview_attempted_
+        && !isThumbnail() && (complete || getDirection() == INCOMING) && getHash().size() == 32) {
+        preview_loading_ = true;
+        preview_attempted_ = true;
+        loadPreview(shared_from_this());
+    }
+    return preview_source_;
+}
+
+QCoro::Task<void> File::loadPreview(File::ptr_t self) {
+    auto& storage = DsEngine::instance().getFileManager()->storage();
+    auto operation = storage.holdOperation();
+    const auto expected_hash = getHash();
+    auto bytes = co_await storage.imagePreview(getId());
+    preview_loading_ = false;
+    if (expected_hash != getHash()) { refreshPreview(); co_return; }
+    QSqlQuery exists;
+    exists.prepare("SELECT 1 FROM file WHERE id=:id AND hash=:hash");
+    exists.bindValue(":id", getId()); exists.bindValue(":hash", expected_hash);
+    if (!previewAllowed() || !exists.exec() || !exists.next()) co_return;
+    if (bytes) {
+        preview_source_ = QStringLiteral("data:image/jpeg;base64,")
+            + QString::fromLatin1(bytes.value().toBase64());
+        emit previewChanged();
+    } else {
+        LFLOG_DEBUG << "Media preview unavailable (storage code=" << int(bytes.error().code) << ")";
+        // Admission pressure is temporary; a later view can retry. Invalid or
+        // unsupported files are attempted only once per loaded file/policy.
+        if (bytes.error().code == dsfm::ErrorCode::QueueFull) preview_attempted_ = false;
+    }
 }
 
 void File::cancel()
@@ -512,6 +581,38 @@ QCoro::Task<dsfm::Result<void>> File::validateSourceSnapshot() {
     if (info.value().sha256 != getHash() || info.value().size != quint64(getSize())) co_return dsfm::Error{dsfm::ErrorCode::IntegrityError};
     co_return dsfm::Result<void>{};
 }
+QCoro::Task<dsfm::Result<void>> File::importThumbnail(QByteArray jpeg) {
+    auto self = shared_from_this();
+    auto& storage = DsEngine::instance().getFileManager()->storage();
+    auto operation = storage.holdOperation();
+    if (!isThumbnail() || getDirection() != OUTGOING || getState() != FS_HASHING
+        || jpeg.isEmpty() || jpeg.size() > media_preview::max_encoded_bytes)
+        co_return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
+    auto initialized = co_await storage.ready();
+    if (!initialized) co_return initialized.error();
+    dsfm::CreateOptions options{storage.root(ManagedStorage::Private), QStringLiteral("preview.jpg")};
+    options.content = {quint64(jpeg.size()), getHash()};
+    auto created = co_await storage.manager().createFile(storage.namespaceId(ManagedStorage::Private), options);
+    if (!created) co_return created.error();
+    auto pending = std::move(created).value();
+    data_->storage_namespace = storage.namespaceId(ManagedStorage::Private);
+    data_->storage_id = pending.info.file_id; data_->pending_id = pending.info.id;
+    bool saved = true;
+    try { saveStorage(); } catch (...) { saved = false; }
+    if (!saved) { co_await pending.writer->abort(); co_return dsfm::Error{dsfm::ErrorCode::IoError}; }
+    auto written = co_await pending.writer->writeAt(0, jpeg, storage_cancel_);
+    if (!written || written.value() != jpeg.size()) {
+        co_await pending.writer->abort();
+        co_return written ? dsfm::Error{dsfm::ErrorCode::IoError} : written.error();
+    }
+    auto committed = co_await pending.writer->commit(storage_cancel_);
+    if (!committed) co_return committed.error();
+    data_->pending_id = {};
+    try { saveStorage(); } catch (...) { co_return dsfm::Error{dsfm::ErrorCode::IoError}; }
+    setState(FS_OFFERED);
+    co_return dsfm::Result<void>{};
+}
+
 QCoro::Task<void> File::resumeIncoming(File::ptr_t self) {
     auto offset = co_await prepareIncoming();
     if (!offset) { DsEngine::instance().reportStatus(tr("Unable to reopen the pending transfer."), DsEngine::ERROR); co_return; }
@@ -528,6 +629,11 @@ Contact *File::getContact() const
 void File::addToDb()
 {
     QSqlQuery query;
+    if (!query.exec("SAVEPOINT file_insert_v1")) throw Error("Cannot begin file insertion");
+    auto rollback = qScopeGuard([this] {
+        QSqlQuery cleanup; cleanup.exec("ROLLBACK TO file_insert_v1"); cleanup.exec("RELEASE file_insert_v1");
+        id_ = 0;
+    });
     query.prepare("INSERT INTO file ("
                   "state, direction, identity_id, conversation_id, contact_id, hash, file_id, name, path, size, file_time, created_time, ack_time, bytes_transferred, storage_namespace, storage_id, pending_id, mime_type"
                   ") VALUES ("
@@ -566,6 +672,17 @@ void File::addToDb()
     }
 
     id_ = query.lastInsertId().toInt();
+    if (isThumbnail()) {
+        query.prepare("INSERT INTO file_thumbnail_v1(file_id,primary_id,manifest_id) SELECT :id,id,:manifest FROM file WHERE file_id=:primary AND contact_id=:contact AND conversation_id=:conversation AND direction=:direction");
+        query.bindValue(":id", id_); query.bindValue(":manifest", data_->manifest_id);
+        query.bindValue(":primary", data_->thumbnail_for); query.bindValue(":contact", data_->contact);
+        query.bindValue(":conversation", data_->conversation); query.bindValue(":direction", int(data_->direction));
+        if (!query.exec() || query.numRowsAffected() != 1) {
+            throw Error("Cannot link file thumbnail to its primary attachment");
+        }
+    }
+    if (!query.exec("RELEASE file_insert_v1")) throw Error("Cannot commit file insertion");
+    rollback.dismiss();
 
     LFLOG_DEBUG << "Added managed file metadata";
 }
@@ -580,6 +697,8 @@ void File::deleteFromDb()
             throw Error(QStringLiteral("SQL Failed to delete file: %1").arg(
                             query.lastError().text()));
         }
+        preview_source_.clear(); preview_attempted_ = true;
+        emit previewChanged();
     }
 }
 
@@ -676,6 +795,15 @@ File::ptr_t File::load(QObject &parent, const std::function<void (QSqlQuery &)> 
     ptr->data_->createdTime = query.value(created_time).toDateTime();
     ptr->data_->ackTime = query.value(ack_time).toDateTime();
     ptr->data_->bytesTransferred = query.value(bytes_transferred).toLongLong();
+    query.finish();
+    query.prepare("SELECT f.file_id,t.manifest_id FROM file_thumbnail_v1 t JOIN file f ON f.id=t.primary_id WHERE t.file_id=?");
+    query.addBindValue(ptr->getId());
+    if (!query.exec()) throw Error("Cannot load thumbnail relationship");
+    if (query.next()) {
+        ptr->data_->thumbnail_for = query.value(0).toByteArray();
+        ptr->data_->manifest_id = query.value(1).toByteArray();
+    }
+    ptr->observePreviewPolicy();
 
     // A live channel cannot survive a process restart. Preserve the durable
     // prefix and expose the transfer as manually resumable instead of leaving

@@ -41,6 +41,7 @@
 #include "ds/avatarutil.h"
 #include "filedialogmodel.h"
 #include "desktop_integration.h"
+#include "video_preview_support.h"
 #include "tray_controller.h"
 #include "appearance.h"
 #include "controls_style.h"
@@ -359,7 +360,9 @@ int main(int argc, char *argv[])
         settingsSession.setMcpConfigurator([](bool enabled, const QString&, int, int) { return !enabled; });
     }
 #endif
+    VideoPreviewSupport videoPreviewSupport(DsEngine::instance().settings());
     QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty("videoPreviewSupport", &videoPreviewSupport);
 #ifdef DARKSPEAK_WITH_MCP
     engine.rootContext()->setContextProperty("mcp", mcp_service.get());
 #else

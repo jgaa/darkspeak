@@ -74,6 +74,7 @@ Database::Database(QSettings& settings)
     exec("CREATE TABLE IF NOT EXISTS media_asset (asset_key TEXT PRIMARY KEY NOT NULL, file_id BLOB NOT NULL, pending_id BLOB, deleted INTEGER NOT NULL DEFAULT 0, owner_identity INTEGER, owner_contact INTEGER, owner_notification INTEGER)");
     exec("CREATE TABLE IF NOT EXISTS storage_gc (storage_namespace BLOB NOT NULL, storage_id BLOB NOT NULL, pending_id BLOB, PRIMARY KEY(storage_namespace,storage_id))");
     exec("CREATE TRIGGER IF NOT EXISTS file_storage_delete AFTER DELETE ON file WHEN OLD.storage_id IS NOT NULL BEGIN INSERT OR IGNORE INTO storage_gc VALUES(OLD.storage_namespace,OLD.storage_id,OLD.pending_id); END");
+    exec("CREATE TRIGGER IF NOT EXISTS file_preview_delete AFTER DELETE ON file BEGIN UPDATE media_asset SET deleted=1 WHERE asset_key>='preview/v1/' || OLD.id || '/' AND asset_key<'preview/v1/' || OLD.id || '0'; END");
     exec("CREATE TRIGGER IF NOT EXISTS contact_avatar_delete AFTER DELETE ON contact BEGIN UPDATE media_asset SET deleted=1 WHERE owner_contact=OLD.id; END");
     exec("CREATE TRIGGER IF NOT EXISTS identity_avatar_delete AFTER DELETE ON identity BEGIN UPDATE media_asset SET deleted=1 WHERE owner_identity=OLD.id; END");
     exec("CREATE TRIGGER IF NOT EXISTS notification_avatar_delete AFTER DELETE ON notification BEGIN UPDATE media_asset SET deleted=1 WHERE owner_notification=OLD.id; END");
@@ -81,6 +82,10 @@ Database::Database(QSettings& settings)
     exec("CREATE INDEX IF NOT EXISTS ix_media_owner_contact ON media_asset(owner_contact)");
     exec("CREATE INDEX IF NOT EXISTS ix_media_owner_notification ON media_asset(owner_notification)");
     exec("CREATE INDEX IF NOT EXISTS ix_file_storage ON file(storage_namespace, storage_id)");
+    exec("CREATE TABLE IF NOT EXISTS message_attachment_v1 (message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,position INTEGER NOT NULL CHECK(position>=0 AND position<16),file_id BLOB NOT NULL,name TEXT NOT NULL,size INTEGER NOT NULL,sha256 BLOB NOT NULL,mime_type TEXT NOT NULL,thumbnail_for INTEGER,PRIMARY KEY(message_id,position))");
+    exec("CREATE TABLE IF NOT EXISTS file_thumbnail_v1 (file_id INTEGER PRIMARY KEY REFERENCES file(id) ON DELETE CASCADE,primary_id INTEGER NOT NULL UNIQUE REFERENCES file(id) ON DELETE CASCADE,manifest_id BLOB NOT NULL)");
+    exec("CREATE INDEX IF NOT EXISTS ix_thumbnail_manifest_v1 ON file_thumbnail_v1(manifest_id)");
+    exec("CREATE TRIGGER IF NOT EXISTS primary_thumbnail_delete_v1 BEFORE DELETE ON file BEGIN DELETE FROM file WHERE id IN(SELECT file_id FROM file_thumbnail_v1 WHERE primary_id=OLD.id); END");
     prepareData();
 
 }
@@ -142,28 +147,22 @@ void Database::prepareData()
     // persistence as well as in the application duplicate check.
     exec("CREATE UNIQUE INDEX IF NOT EXISTS ix_message_global_id ON message(message_id)");
 
-    {   // Set outgoing files that was being transferred, when we last quit, to waiting state
+    {
+        // Live channels cannot survive restart. Preserve active/queued transfers
+        // for an explicit FileResume exchange; re-offering a partial transfer
+        // would reset the sender to zero. An unaccepted outgoing offer may be
+        // advertised again without claiming a resumed channel.
         QSqlQuery query(db_);
-        query.prepare("UPDATE file SET state=:waiting WHERE direction=:out AND state IN(:transferring, :offered, :queued)");
+        query.prepare("UPDATE file SET state=CASE WHEN direction=:out AND state=:offered "
+                      "THEN :waiting ELSE :failed END WHERE state IN(:transferring,:queued) "
+                      "OR (direction=:out AND state=:offered)");
         query.bindValue(":waiting", static_cast<int>(File::FS_WAITING));
+        query.bindValue(":failed", static_cast<int>(File::FS_FAILED));
         query.bindValue(":out", static_cast<int>(File::OUTGOING));
         query.bindValue(":transferring", static_cast<int>(File::FS_TRANSFERRING));
-        query.bindValue(":queued", static_cast<int>(File::FS_TRANSFERRING));
-        query.bindValue(":offered", static_cast<int>(File::FS_OFFERED));
-        query.exec();
-        if (query.lastError().type() != QSqlError::NoError) {
-            throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
-        }
-    }
-
-    {   // Set incoming files that was being transferred, when we last quit, to queued state
-        QSqlQuery query(db_);
-        query.prepare("UPDATE file SET state=:queued WHERE direction=:in AND state=:transferring");
         query.bindValue(":queued", static_cast<int>(File::FS_QUEUED));
-        query.bindValue(":in", static_cast<int>(File::INCOMING));
-        query.bindValue(":transferring", static_cast<int>(File::FS_TRANSFERRING));
-        query.exec();
-        if (query.lastError().type() != QSqlError::NoError) {
+        query.bindValue(":offered", static_cast<int>(File::FS_OFFERED));
+        if (!query.exec()) {
             throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
         }
     }

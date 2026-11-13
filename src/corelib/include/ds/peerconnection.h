@@ -234,6 +234,8 @@ struct PeerFileOffer : public PeerReq
     qlonglong size;
     QString type;
     QByteArray sha512;
+    QByteArray thumbnail_for;
+    QByteArray manifest_id;
 };
 
 struct PeerUserInfo : public PeerReq

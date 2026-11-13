@@ -143,6 +143,7 @@ class MockEntity : public MockBackendTypes {
     Q_PROPERTY(int id MEMBER id CONSTANT)
     Q_PROPERTY(QString name MEMBER name NOTIFY changed)
     Q_PROPERTY(QString displayName MEMBER name NOTIFY changed)
+    Q_PROPERTY(QString previewSource MEMBER preview_source NOTIFY changed)
     Q_PROPERTY(QString nickName MEMBER name NOTIFY changed)
     Q_PROPERTY(QString topic MEMBER topic NOTIFY changed)
     Q_PROPERTY(QString notes MEMBER notes NOTIFY changed)
@@ -184,6 +185,7 @@ public:
     qreal progress = .5;
     QString name = QStringLiteral("Alice <b>plain text</b>"), topic = QStringLiteral("A conversation with long translated labels"), notes;
     QString bio = QStringLiteral("A disposable bio fixture."), handle = QString(64, QChar('x'));
+    QString preview_source;
     QString address = QString(56, QChar('a')) + QStringLiteral(".onion");
     QStringList mime_types{QStringLiteral("*")};
     QImage avatar;

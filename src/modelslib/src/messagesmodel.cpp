@@ -196,6 +196,7 @@ Qt::ItemFlags MessagesModel::flags(const QModelIndex&) const
 
 void MessagesModel::onMessageAdded(const Message::ptr_t &message)
 {
+    if (message->getContent().isEmpty() && !message->getData().attachments.empty()) return;
     if (!conversation_ || (conversation_->getId() != message->getConversationId())) {
         return; // Irrelevant
     }
@@ -237,6 +238,7 @@ void MessagesModel::onMessageStateChanged(const Message::ptr_t &message)
 
 void MessagesModel::onFileAdded(const File::ptr_t &file)
 {
+    if (file->isThumbnail()) return;
     if (!conversation_ || (conversation_->getId() != file->getConversationId())) {
         return; // Irrelevant
     }

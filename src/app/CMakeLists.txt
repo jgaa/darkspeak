@@ -14,6 +14,8 @@ add_executable(${PROJECT_NAME}
     filedialogmodel.h
     tray_controller.cpp
     tray_controller.h
+    video_preview_support.cpp
+    video_preview_support.h
     qml.qrc
     )
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/dependencies/logfault/include)
@@ -47,6 +49,7 @@ qt_add_qml_module(${PROJECT_NAME}
     NO_RESOURCE_TARGET_PATH
     QML_FILES
         main.qml
+        VideoPreviewDependencyDialog.qml
         AboutDialog.qml
         Events.qml
         EventsSettings.qml

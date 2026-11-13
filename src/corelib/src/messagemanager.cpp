@@ -3,6 +3,7 @@
 #include "ds/database.h"
 
 #include <QSqlError>
+#include <tuple>
 
 #include "logfault/logfault.h"
 
@@ -10,6 +11,20 @@ namespace ds {
 namespace core {
 
 using namespace std;
+
+namespace {
+bool sameAuthoredAttachments(const std::vector<MessageAttachment>& left,
+                             const std::vector<MessageAttachment>& right) {
+    if (left.size() != right.size() || left.size() > 16) return false;
+    for (size_t index = 0; index < left.size(); ++index) {
+        const auto& a = left[index]; const auto& b = right[index];
+        // Transfer-local IDs are deliberately outside the authorship signature.
+        if (std::tie(a.name, a.size, a.sha256, a.mime_type, a.thumbnail_for)
+            != std::tie(b.name, b.size, b.sha256, b.mime_type, b.thumbnail_for)) return false;
+    }
+    return true;
+}
+}
 
 MessageManager::MessageManager(QObject &parent)
 : QObject{&parent}
@@ -139,7 +154,7 @@ Message::ptr_t MessageManager::receivedMessage(Conversation &conversation, Messa
                     == data.composedTime.toUTC().toSecsSinceEpoch() / 60
                 && old.content == data.content
                 && old.sender == data.sender
-                && old.encoding == data.encoding;
+                && old.encoding == data.encoding && sameAuthoredAttachments(old.attachments, data.attachments);
         if (!same) {
             throw Error("MessageId was reused with different signed contents");
         }
@@ -173,7 +188,7 @@ bool MessageManager::hasConflictingMessage(const MessageData& data)
                 != data.composedTime.toUTC().toSecsSinceEpoch() / 60
             || old.content != data.content
             || old.sender != data.sender
-            || old.encoding != data.encoding;
+            || old.encoding != data.encoding || !sameAuthoredAttachments(old.attachments, data.attachments);
 }
 
 void MessageManager::touch(const Message::ptr_t &message)

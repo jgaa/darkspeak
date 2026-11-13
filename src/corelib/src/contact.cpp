@@ -46,6 +46,21 @@ Contact::Contact(const int dbId,
                  data_t data)
     : id_{dbId}, online_{online}, data_{move(data)}
 {
+    resume_readiness_timer_.setInterval(1000);
+    connect(&resume_readiness_timer_, &QTimer::timeout, this, [this] {
+        QList<QByteArray> expired;
+        for (const auto& [id, pending] : pending_resume_receivers_)
+            if (pending.deadline.hasExpired()) expired.append(id);
+        for (const auto& id : expired) {
+            const auto pending = pending_resume_receivers_.find(id);
+            if (pending == pending_resume_receivers_.end()) continue;
+            const auto file = pending->second.file;
+            pending_resume_receivers_.erase(pending);
+            if (file->getState() == File::FS_QUEUED) file->setState(File::FS_FAILED);
+            LFLOG_DEBUG << "File resume receiver readiness expired";
+        }
+        if (pending_resume_receivers_.empty()) resume_readiness_timer_.stop();
+    });
     connect(getIdentity(), &Identity::securityPreferencesChanged, this, [this] {
         emit nickNameChanged();
         emit bioChanged();
@@ -1525,11 +1540,16 @@ void Contact::onReceivedConnectionResponse(const PeerConnectionResponse& respons
 
 void Contact::onReceivedMessageReceipt(const PeerMessageReceipt& receipt)
 {
+    if (!connection_ || connection_->peer != receipt.peer) return;
     touchLastSeen();
     if (getState() != ACCEPTED || receipt.messageId.size() != 32) {
         receipt.peer->close();
         return;
     }
+    QSqlQuery manifest;
+    manifest.prepare("SELECT 1 FROM file_thumbnail_v1 t JOIN file f ON f.id=t.primary_id WHERE t.manifest_id=? AND f.contact_id=? AND f.direction=0");
+    manifest.addBindValue(receipt.messageId); manifest.addBindValue(getId());
+    if (manifest.exec() && manifest.next()) return;
     const auto message = DsEngine::instance().getMessageManager()->getMessage(
         receipt.messageId, Message::OUTGOING);
     if (!message || !message->getConversation()
@@ -1544,6 +1564,7 @@ void Contact::onReceivedMessageReceipt(const PeerMessageReceipt& receipt)
 
 void Contact::onReceivedFileOfferResponse(const PeerFileOfferResponse& response)
 {
+    if (!connection_ || connection_->peer != response.peer) return;
     touchLastSeen();
     if (getState() != ACCEPTED || response.fileId.size() != 16) {
         response.peer->close();
@@ -1556,7 +1577,22 @@ void Contact::onReceivedFileOfferResponse(const PeerFileOfferResponse& response)
         return;
     }
     if (response.status == FileOfferResponseStatus::Rejected) {
+        pending_resume_receivers_.erase(response.fileId);
+        if (pending_resume_receivers_.empty()) resume_readiness_timer_.stop();
         file->setState(File::FS_REJECTED);
+        return;
+    }
+    if (const auto pending = pending_resume_receivers_.find(response.fileId);
+            pending != pending_resume_receivers_.end()) {
+        const auto expected = pending->second.file;
+        pending_resume_receivers_.erase(pending);
+        if (pending_resume_receivers_.empty()) resume_readiness_timer_.stop();
+        if (expected == file && file->getState() == File::FS_QUEUED) {
+            // The receiver has now opened storage and installed its channel.
+            // Preserve the offset negotiated in FileResumeResult and use the
+            // normal concurrency-limited transfer queue.
+            queueFile(file);
+        }
         return;
     }
     if (file->getState() == File::FS_OFFERED) {
@@ -1599,17 +1635,26 @@ QCoro::Task<void> Contact::processFileResume(PeerFileResume resume, Contact::ptr
         co_return;
     }
 
+    if (pending_resume_receivers_.size() + transferringFileQueue_.size() >= maxConcurrentTransfers_) {
+        resume.peer->sendFileResumeResult(resume.requestId, resume.fileId,
+                                         FileResumeStatus::Rejected, 0, FileCancelReason::UserAction);
+        co_return;
+    }
+    // FileResumeResult authorizes the offset, but is not receiver readiness:
+    // the receiver reopens storage asynchronously before acknowledging it.
     file->setBytesTransferred(static_cast<qlonglong>(resume.nextOffset));
+    pending_resume_receivers_.emplace(resume.fileId, PendingResume{file});
+    if (!resume_readiness_timer_.isActive()) resume_readiness_timer_.start();
+    file->setState(File::FS_QUEUED);
     resume.peer->sendFileResumeResult(resume.requestId, resume.fileId,
                                       FileResumeStatus::Accepted,
                                       resume.nextOffset,
                                       FileCancelReason::UserAction);
-    file->setState(File::FS_QUEUED);
-    queueTransfer(file);
 }
 
 void Contact::onReceivedFileResumeResult(const PeerFileResumeResult& result)
 {
+    if (!connection_ || connection_->peer != result.peer) return;
     touchLastSeen();
     if (getState() != ACCEPTED || result.fileId.size() != 16) {
         result.peer->close();
@@ -1642,6 +1687,7 @@ void Contact::onReceivedFileResumeResult(const PeerFileResumeResult& result)
 
 void Contact::onReceivedFileCancel(const PeerFileCancel& cancel)
 {
+    if (!connection_ || connection_->peer != cancel.peer) return;
     touchLastSeen();
     if (getState() != ACCEPTED || cancel.fileId.size() != 16) {
         cancel.peer->close();
@@ -1653,15 +1699,22 @@ void Contact::onReceivedFileCancel(const PeerFileCancel& cancel)
         cancel.peer->close();
         return;
     }
-    if (file->getState() == File::FS_TRANSFERRING) {
-        file->setState(File::FS_CANCELLED);
-    } else {
-        file->setState(File::FS_CANCELLED);
+    if (file->getState() == File::FS_DONE || file->getState() == File::FS_REJECTED ||
+        file->getState() == File::FS_CANCELLED) return;
+    pending_resume_receivers_.erase(cancel.fileId);
+    if (pending_resume_receivers_.empty()) resume_readiness_timer_.stop();
+    file->setState(File::FS_CANCELLED);
+    if (file->getDirection() == File::INCOMING) {
+        // A remote cancellation has the same storage cleanup semantics as a
+        // local cancellation. Suspending the channel would retain an orphaned
+        // partial that cannot be resumed from the cancelled state.
+        file->abortIncoming();
     }
 }
 
 void Contact::onReceivedMessage(const PeerMessage &msg)
 {
+    if (!connection_ || connection_->peer != msg.peer) return;
     if (iBlocked() || (getState() != ACCEPTED)) {
         LFLOG_WARN << "Rejecting message on connection "
                    << msg.peer->getConnectionId().toString()
@@ -1693,7 +1746,23 @@ void Contact::onReceivedMessage(const PeerMessage &msg)
                 << " to " << getName()
                 << " for local delivery to conversation " << conversation->getName();
 
-    conversation->incomingMessage(this, msg.data);
+    if (!conversation->incomingMessage(this, msg.data)) {
+        msg.peer->close();
+        return;
+    }
+    // Authenticate the complete manifest before dispatch, then admit primary
+    // offers first. Thumbnail relationships can reference any primary index.
+    for (const bool thumbnails : {false, true}) {
+        for (const auto& attachment : msg.data.attachments) {
+            if (attachment.thumbnail_for.has_value() != thumbnails) continue;
+            PeerFileOffer offer{msg.peer, msg.connectionId, 0, msg.data.conversation,
+                attachment.file_id, attachment.name, qlonglong(attachment.size), attachment.mime_type, attachment.sha256};
+            offer.manifest_id = msg.data.messageId;
+            if (attachment.thumbnail_for)
+                offer.thumbnail_for = msg.data.attachments[*attachment.thumbnail_for].file_id;
+            onReceivedFileOffer(offer);
+        }
+    }
 }
 
 void Contact::onReceivedUserInfo(const PeerUserInfo &uinfo)
@@ -1997,7 +2066,7 @@ void Contact::loadFileQueue()
     }
 
     QSqlQuery query;
-    query.prepare("SELECT id FROM file WHERE contact_id=:cid AND ((direction=:out AND state=:waiting) OR (direction=:in AND state=:queued))");
+    query.prepare("SELECT id FROM file WHERE contact_id=:cid AND ((direction=:out AND state=:waiting AND NOT EXISTS(SELECT 1 FROM file_thumbnail_v1 t WHERE t.file_id=file.id)) OR (direction=:in AND state=:queued))");
     query.bindValue(":cid", getId());
     query.bindValue(":out", static_cast<int>(File::OUTGOING));
     query.bindValue(":in", static_cast<int>(File::INCOMING));
@@ -2052,16 +2121,22 @@ void Contact::queueTransfer(const std::shared_ptr<File> &file)
 void Contact::clearFileQueues()
 {
     fileQueue_.clear();
+    auto pending_resumes = std::move(pending_resume_receivers_);
+    pending_resume_receivers_.clear();
+    resume_readiness_timer_.stop();
+    for (const auto& [id, pending] : pending_resumes) {
+        if (pending.file->getState() == File::FS_QUEUED) pending.file->setState(File::FS_FAILED);
+    }
 
     // transferringFileQueue_ may be modified by file state change events
     auto tmpTransfers = transferringFileQueue_;
 
     for(auto& file : tmpTransfers) {
         if (file->getState() == File::FS_TRANSFERRING) {
-            // Preserve the verified prefix for the next offer/accept exchange.
-            // The sender will advertise the acknowledged offset again.
-            file->setState(file->getDirection() == File::OUTGOING
-                           ? File::FS_WAITING : File::FS_OFFERED);
+            // Preserve both ends for the authenticated FileResume exchange.
+            // A fresh offer acceptance starts the sender at zero and cannot
+            // represent the receiver's durable nonzero prefix.
+            file->setState(File::FS_FAILED);
             if (file->getDirection() == File::INCOMING) {
                 file->suspendIncoming();
             }
@@ -2074,6 +2149,7 @@ void Contact::clearFileQueues()
 
 void Contact::prepareForNewConnection()
 {
+    clearFileQueues();
     have_peer_preferences_ = false;
     emit peerPreferencesChanged();
     addMeDispatchQueued_ = false;

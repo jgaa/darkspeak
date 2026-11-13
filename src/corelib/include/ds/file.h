@@ -75,6 +75,7 @@ public:
     Q_PROPERTY(qlonglong size READ getSize NOTIFY sizeChanged)
     Q_PROPERTY(float progress READ getProgress NOTIFY bytesTransferredChanged)
     Q_PROPERTY(qlonglong bytesTransferred READ getBytesTransferred NOTIFY bytesTransferredChanged)
+    Q_PROPERTY(QString previewSource READ previewSource NOTIFY previewChanged)
 
     Q_INVOKABLE void cancel();
     Q_INVOKABLE void accept();
@@ -92,6 +93,10 @@ public:
     QString getName() const noexcept;
     QString getDisplayName() const;
     QString getMimeType() const;
+    QString previewSource();
+    bool isThumbnail() const { return !dataThumbnailFor().isEmpty(); }
+    QByteArray dataThumbnailFor() const;
+    void refreshPreview();
     void setName(const QString& name);
     QByteArray getHash() const noexcept;
     QString getPrintableHash() const noexcept;
@@ -125,6 +130,7 @@ public:
     QCoro::Task<dsfm::Result<void>> suspendIncoming();
     QCoro::Task<dsfm::Result<void>> abortIncoming();
     QCoro::Task<dsfm::Result<void>> validateSourceSnapshot();
+    QCoro::Task<dsfm::Result<void>> importThumbnail(QByteArray jpeg);
 
 
     /*! Add the new File to the database. */
@@ -162,6 +168,7 @@ signals:
     void sizeChanged();
     void bytesTransferredChanged();
     void transferDone(File *file, bool succeess);
+    void previewChanged();
 
 private:
     static QString getSelectStatement(const QString& where);
@@ -172,10 +179,16 @@ private:
     QCoro::Task<void> resumeIncoming(File::ptr_t self);
     QCoro::Task<void> openExternal(File::ptr_t self, bool folder);
     void saveStorage();
+    void observePreviewPolicy();
+    bool previewAllowed() const;
+    QCoro::Task<void> loadPreview(File::ptr_t self);
     QCoro::Task<void> recoverStorage(File::ptr_t self);
     std::unique_ptr<dsfm::IFileWriter> writer_;
     dsfm::CancellationToken storage_cancel_;
     bool storage_busy_ = false;
+    bool preview_loading_ = false;
+    bool preview_attempted_ = false;
+    QString preview_source_;
 
 
     int id_ = 0;
@@ -199,6 +212,8 @@ struct FileData {
     dsfm::FileId storage_id;
     dsfm::PendingId pending_id;
     QString mime_type;
+    QByteArray thumbnail_for;
+    QByteArray manifest_id;
     qlonglong size = {};
     qlonglong bytesTransferred = {}; // REST offset
     QDateTime fileTime;

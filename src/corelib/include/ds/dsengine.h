@@ -107,6 +107,11 @@ private slots:
     void onServiceStopped(const QUuid& id);
 
 signals:
+#ifdef DARKSPEAK_WITH_TEST_MCP
+    // Wire metadata only; no bio text, hashes or credentials cross this signal.
+    void testBioWireQueued(const ds::core::PeerConnection* peer, bool response,
+                           bool contains_content, bool contains_hash);
+#endif
     void ready();
     void notReady(); // If the transport goes offline
     void closing();

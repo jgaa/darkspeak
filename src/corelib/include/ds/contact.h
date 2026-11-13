@@ -5,8 +5,11 @@
 #include <memory>
 #include <deque>
 #include <set>
+#include <map>
 
 #include <QDateTime>
+#include <QDeadlineTimer>
+#include <QTimer>
 #include <QString>
 #include <QUuid>
 #include <QVariant>
@@ -306,6 +309,12 @@ private:
     std::set<std::shared_ptr<File>> transferringFileQueue_; // Currently transferring, (we have slots)
     std::weak_ptr<File> lastFileBlock_;
 
+    struct PendingResume {
+        std::shared_ptr<File> file;
+        QDeadlineTimer deadline{30000};
+    };
+    std::map<QByteArray, PendingResume> pending_resume_receivers_;
+    QTimer resume_readiness_timer_;
     static constexpr size_t maxConcurrentTransfers_ = 2;
 };
 

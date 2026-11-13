@@ -11,6 +11,7 @@
 #include "mock_ui_model.h"
 #include "desktop_integration.h"
 #include "settings_session.h"
+#include "video_preview_support.h"
 #include "ds/eventjournal.h"
 
 class UiSetup final : public QObject {
@@ -55,6 +56,7 @@ public slots:
         event_db_.setDatabaseName(":memory:");
         if (!event_db_.open()) qFatal("Unable to open disposable event fixture");
         event_settings_ = std::make_unique<QSettings>();
+        video_support_ = new VideoPreviewSupport(*event_settings_, {false, true, {}}, this);
         events_ = std::make_unique<ds::core::EventJournal>(event_db_, *event_settings_);
         settings_->setEventsConfigurator([this](bool enabled, int precision, bool record_filenames) { return events_->configure(enabled, precision, record_filenames); });
     }
@@ -67,6 +69,7 @@ public slots:
         engine->rootContext()->setContextProperty("manager", &navigation_);
         engine->rootContext()->setContextProperty("settingsSession", settings_);
         engine->rootContext()->setContextProperty("desktopIntegration", &desktop_);
+        engine->rootContext()->setContextProperty("videoPreviewSupport", video_support_);
         engine->rootContext()->setContextProperty("mainWindow", &window_);
         for (const auto *name : {"identities", "contacts", "notifications", "conversations", "messages", "files", "log", "filteredLog"})
             engine->rootContext()->setContextProperty(name, &backend_);
@@ -77,6 +80,7 @@ private:
     std::unique_ptr<ds::core::EventJournal> events_;
     QTemporaryDir directory_;
     Appearance *appearance_ = nullptr;
+    VideoPreviewSupport* video_support_ = nullptr;
     MockUiModel messages_;
     MockNavigation navigation_;
     MockWindow window_;

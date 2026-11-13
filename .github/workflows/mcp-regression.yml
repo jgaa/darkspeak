@@ -50,7 +50,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq cmake ninja-build g++ pkg-config libsodium-dev \
-            libssl-dev libsqlite3-dev zlib1g-dev libboost-all-dev tor \
+            libssl-dev libsqlite3-dev zlib1g-dev libboost-all-dev tor ffmpeg \
             libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0
       - uses: jurplel/install-qt-action@v4
         with:
@@ -68,7 +68,7 @@ jobs:
       - name: Build test runtimes and focused checks
         run: |
           cmake --build /tmp/darkspeak-mcp-ci --parallel 2 --target \
-            mcp_test_instance mcp_service_test mcp_policy_test mcp_ui_test managed_storage_test
+            mcp_test_instance mcp_service_test mcp_policy_test mcp_ui_test managed_storage_test database_recovery_test media_preview_test protocol_v3_test video_preview_support_test
       - name: Run sequential regression suite
         env:
           QT_QPA_PLATFORM: offscreen
@@ -76,7 +76,7 @@ jobs:
         run: |
           export DARKSPEAK_MCP_TEST_PYTHON="$(command -v python)"
           ctest --test-dir /tmp/darkspeak-mcp-ci --parallel 1 --output-on-failure \
-            -R '^(mcp_.*|managed_storage)$'
+            -R '^(mcp_.*|managed_storage|database_recovery|media_preview|protocol_v3|video_preview_support)$'
       - name: Retain sanitized scenario reports
         if: always()
         uses: actions/upload-artifact@v7

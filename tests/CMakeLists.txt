@@ -119,3 +119,33 @@ if(DARKSPEAK_WITH_TEST_MCP)
         --artifacts ${CMAKE_CURRENT_BINARY_DIR}/mcp-artifacts)
     set_tests_properties(mcp_peer_happy_path PROPERTIES TIMEOUT 630 RUN_SERIAL TRUE LABELS "mcp;integration;tor")
 endif()
+
+if(DARKSPEAK_WITH_TEST_MCP)
+    foreach(scenario privacy_multi resume_crash receiver_crash delete_contacts delete_sender file_decisions corrupt_partial image_previews image_previews_disabled video_previews video_previews_disabled)
+        add_test(NAME mcp_peer_${scenario} COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/mcp/run_scenario.py --scenario ${scenario}
+            --instance $<TARGET_FILE:mcp_test_instance> --chutney ${chutney_SOURCE_DIR}
+            --artifacts ${CMAKE_CURRENT_BINARY_DIR}/mcp-artifacts)
+        set_tests_properties(mcp_peer_${scenario} PROPERTIES TIMEOUT 630 RUN_SERIAL TRUE LABELS "mcp;integration;tor")
+    endforeach()
+endif()
+
+add_executable(database_recovery_test database_recovery_test.cpp)
+target_compile_features(database_recovery_test PRIVATE cxx_std_20)
+target_link_libraries(database_recovery_test PRIVATE core Qt6::Test)
+add_test(NAME database_recovery COMMAND database_recovery_test)
+set_tests_properties(database_recovery PROPERTIES TIMEOUT 30)
+
+add_executable(media_preview_test media_preview_test.cpp ../src/corelib/src/mediapreview.cpp ../src/corelib/src/videopreview.cpp)
+target_compile_features(media_preview_test PRIVATE cxx_std_20)
+target_include_directories(media_preview_test PRIVATE ../src/corelib/include ../dependencies/logfault/include)
+target_link_libraries(media_preview_test PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+target_compile_definitions(media_preview_test PRIVATE DS_VIDEO_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/media-preview-v1/blue.mkv")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(video_preview_probe video_preview_probe.cpp)
+    target_compile_features(video_preview_probe PRIVATE cxx_std_20)
+    target_compile_definitions(media_preview_test PRIVATE DS_VIDEO_PROBE="$<TARGET_FILE:video_preview_probe>")
+    add_dependencies(media_preview_test video_preview_probe)
+endif()
+add_test(NAME media_preview COMMAND media_preview_test)
+set_tests_properties(media_preview PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

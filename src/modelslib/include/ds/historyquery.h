@@ -35,9 +35,9 @@ inline HistoryPage readHistoryPage(QSqlDatabase &database, int conversation_id,
         "SELECT * FROM ("
         "SELECT 0 AS type,id,composed_time AS created,state,direction,received_time,"
         "CASE WHEN length(CAST(content AS BLOB))<=65536 THEN content ELSE '' END AS content "
-        "FROM message WHERE conversation_id=:cid "
+        "FROM message WHERE conversation_id=:cid AND (content<>'' OR NOT EXISTS(SELECT 1 FROM message_attachment_v1 a WHERE a.message_id=message.id)) "
         "UNION ALL SELECT 1 AS type,id,created_time AS created,state,direction,ack_time AS received_time,'' AS content "
-        "FROM file WHERE conversation_id=:cid) ");
+        "FROM file WHERE conversation_id=:cid AND NOT EXISTS(SELECT 1 FROM file_thumbnail_v1 t WHERE t.file_id=file.id)) ");
     if (direction != 0) sql += QStringLiteral("WHERE (created,type,id) %1 (:created,:type,:id) ").arg(comparator);
     sql += QStringLiteral("ORDER BY created%1,type%1,id%1 LIMIT 101").arg(order);
     QSqlQuery query(database);

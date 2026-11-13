@@ -2,6 +2,8 @@
 #define MESSAGE_H
 
 #include <memory>
+#include <optional>
+#include <vector>
 
 #include <QObject>
 #include <QByteArray>
@@ -13,6 +15,15 @@ namespace ds {
 namespace core {
 
 struct MessageData;
+struct MessageAttachment {
+    QByteArray file_id;
+    QString name;
+    quint64 size = 0;
+    QByteArray sha256;
+    QString mime_type;
+    std::optional<quint32> thumbnail_for;
+    bool operator==(const MessageAttachment&) const = default;
+};
 class Conversation;
 
 class Message : public QObject, public std::enable_shared_from_this<Message>
@@ -109,6 +120,7 @@ struct MessageData {
     QByteArray sender;
     Message::Encoding encoding = Message::Encoding::US_ACSII;
     QByteArray signature;
+    std::vector<MessageAttachment> attachments;
 };
 
 struct MessageContent {

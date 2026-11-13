@@ -30,6 +30,7 @@
 #include "ds/imageutil.h"
 #include "ds/textpolicy.h"
 #include "ds/bytes.h"
+#include "ds/mediapreview.h"
 
 #include "logfault/logfault.h"
 
@@ -536,6 +537,18 @@ uint64_t Peer::send(const ds::protocol::Envelope& envelope)
     else if (envelope.hasAvatar() || envelope.hasAvatarResponse()) core::recordPeerEvent(*this, E::AvatarTransfer, E::Outgoing, E::Success);
     else if (envelope.hasUserInfo()) core::recordPeerEvent(*this, E::UserInfo, E::Outgoing, E::Success);
     else if (envelope.hasMessageReceipt()) core::recordPeerEvent(*this, E::MessageReceipt, E::Outgoing, E::Success, envelope.messageReceipt().messageId());
+#ifdef DARKSPEAK_WITH_TEST_MCP
+    if (envelope.hasBioResponse() || envelope.hasUserInfo()) {
+        const bool response = envelope.hasBioResponse();
+        const bool content = response
+            ? envelope.bioResponse().hasBio() && !envelope.bioResponse().bio().bioText().isEmpty()
+            : envelope.userInfo().hasBio() && !envelope.userInfo().bio().bioText().isEmpty();
+        const bool hash = !response && !envelope.userInfo().bioHash().isEmpty();
+        if (auto* engine = core::DsEngine::tryInstance())
+            emit engine->testBioWireQueued(this, response, content, hash);
+    }
+#endif
+
     return ++frame_id_;
 }
 
@@ -961,7 +974,7 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
                 || message.senderId().size() != crypto_sign_PUBLICKEYBYTES
                 || message.signature().size() != crypto_sign_BYTES
                 || !message.hasComposedAt()
-                || !message.attachments().isEmpty()
+                || message.attachments().size() > 16
                 || !validMessageTimestamp(composedMinutes)
                 || contentBytes.size() > 65'536
                 || (message.encoding() != ds::protocol::EncodingGadget::Encoding::UTF8
@@ -987,6 +1000,17 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         signedData.sender = message.senderId();
         signedData.encoding = encoding;
         signedData.signature = message.signature();
+        for (const auto& entry : message.attachments()) {
+            if (!entry.hasFileOffer() || !entry.fileOffer().hasMessageId()
+                || entry.fileOffer().messageId() != message.messageId())
+                protocolError(QStringLiteral("Invalid attachment source"));
+            const auto& offer = entry.fileOffer();
+            core::MessageAttachment attachment{offer.fileId(), offer.name(), offer.size(),
+                offer.sha256(), offer.mimeType(), {}};
+            if (entry.hasThumbnailForAttachmentIndex())
+                attachment.thumbnail_for = entry.thumbnailForAttachmentIndex();
+            signedData.attachments.push_back(std::move(attachment));
+        }
         const auto senderCert = crypto::DsCert::createFromPubkey(message.senderId());
         core::Message signedMessage{*this, signedData, Message::INCOMING, -1};
         if (!signedMessage.validate(*senderCert)) {
@@ -998,6 +1022,7 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
                                                             QTimeZone::UTC),
                              message.content(), message.senderId(), encoding,
                              message.signature()};
+        incoming.data.attachments = std::move(signedData.attachments);
         emit receivedMessage(incoming);
         return;
     }
@@ -1847,6 +1872,18 @@ uint64_t Peer::sendMessage(const core::Message &message)
                      ? ds::protocol::EncodingGadget::Encoding::UTF8
                      : ds::protocol::EncodingGadget::Encoding::US_ASCII);
     wire.setSignature(message.getData().signature);
+    QList<ds::protocol::MessageAttachment> attachments;
+    for (const auto& attachment : message.getData().attachments) {
+        ds::protocol::FileOffer offer;
+        offer.setFileId(attachment.file_id); offer.setMessageId(message.getData().messageId);
+        offer.setName(attachment.name); offer.setSize(attachment.size);
+        offer.setSha256(attachment.sha256); offer.setMimeType(attachment.mime_type);
+        ds::protocol::MessageAttachment entry;
+        entry.setFileOffer(std::move(offer));
+        if (attachment.thumbnail_for) entry.setThumbnailForAttachmentIndex(*attachment.thumbnail_for);
+        attachments.push_back(std::move(entry));
+    }
+    wire.setAttachments(std::move(attachments));
     ds::protocol::Envelope envelope;
     envelope.setProtocolVersion(codec::protocolVersion);
     envelope.setMessage(std::move(wire));
@@ -1992,6 +2029,29 @@ uint64_t Peer::offerFile(const File &file)
     if (file.getName().isEmpty()) reject("filename is empty");
     if (file.getName().toUtf8().size() > 255) reject("filename exceeds 255 UTF-8 bytes");
     if (!validMimeType(mimeType)) reject("MIME type is invalid");
+    auto* files = DsEngine::instance().getFileManager();
+    if (!file.isThumbnail()) {
+        const auto thumbnail = files->thumbnailFor(file);
+        auto* contact = file.getContact();
+        if (thumbnail && contact && connectionData_.identitysCert
+            && thumbnail->getSize() > 0 && thumbnail->getSize() <= core::media_preview::max_encoded_bytes
+            && thumbnail->getHash().size() == 32 && thumbnail->getFileId().size() == 16
+            && thumbnail->pendingId().isNull() && !thumbnail->storageId().isNull()
+            && (thumbnail->getState() == File::FS_OFFERED || thumbnail->getState() == File::FS_WAITING || thumbnail->getState() == File::FS_DONE)
+            && contact->canSendFileType("image/jpeg", "preview.jpg")) {
+            core::MessageData data;
+            data.conversation = file.getConversation()->getHash();
+            data.messageId = files->thumbnailManifest(file);
+            data.composedTime = file.getCreated(); data.encoding = core::Message::US_ACSII;
+            data.attachments = {
+                {file.getFileId(), file.getName(), quint64(file.getSize()), file.getHash(), mimeType, {}},
+                {thumbnail->getFileId(), "preview.jpg", quint64(thumbnail->getSize()), thumbnail->getHash(), "image/jpeg", quint32{0}}};
+            core::Message manifest{*this, std::move(data), core::Message::OUTGOING, file.getConversationId()};
+            manifest.sign(*connectionData_.identitysCert);
+            if (thumbnail->getState() == File::FS_WAITING) thumbnail->setState(File::FS_OFFERED);
+            return sendMessage(manifest);
+        }
+    }
     ds::protocol::FileOffer offer;
     offer.setFileId(file.getFileId());
     offer.setConversationId(file.getConversation()->getHash());

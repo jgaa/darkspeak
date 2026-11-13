@@ -19,7 +19,9 @@ add_library(darkspeak_ui_test_support STATIC
     ${DS_UI_ROOT}/src/app/settings_session.cpp
     ${DS_UI_ROOT}/src/app/settings_session.h
     ${DS_UI_ROOT}/src/app/desktop_integration.cpp
-    ${DS_UI_ROOT}/src/app/desktop_integration.h)
+    ${DS_UI_ROOT}/src/app/desktop_integration.h
+    ${DS_UI_ROOT}/src/app/video_preview_support.cpp
+    ${DS_UI_ROOT}/src/app/video_preview_support.h)
 target_compile_features(darkspeak_ui_test_support PUBLIC cxx_std_20)
 target_include_directories(darkspeak_ui_test_support PUBLIC ${DS_UI_ROOT}/src/app ${DS_UI_ROOT}/src/corelib/include ${DS_UI_ROOT}/dependencies/logfault/include)
 target_link_libraries(darkspeak_ui_test_support PUBLIC Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Qml Qt6::Network Qt6::Sql)
@@ -50,3 +52,9 @@ target_compile_features(event_journal_test PRIVATE cxx_std_20)
 target_link_libraries(event_journal_test PRIVATE darkspeak_ui_test_support Qt6::Test)
 add_test(NAME event_journal COMMAND event_journal_test)
 set_tests_properties(event_journal PROPERTIES TIMEOUT 30)
+
+add_executable(video_preview_support_test video_preview_support_test.cpp)
+target_compile_features(video_preview_support_test PRIVATE cxx_std_20)
+target_link_libraries(video_preview_support_test PRIVATE darkspeak_ui_test_support Qt6::Test)
+add_test(NAME video_preview_support COMMAND video_preview_support_test)
+set_tests_properties(video_preview_support PROPERTIES TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

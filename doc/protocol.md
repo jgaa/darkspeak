@@ -1009,6 +1009,16 @@ image or video. Thumbnails are ordinary hostile file content and are subject
 to the same MIME policy, file-size limits, hashing, transfer quotas, and user
 security preferences as any other offered file.
 
+The desktop image-preview implementation uses metadata-free JPEG thumbnails,
+at most 48 KiB encoded and 320 pixels per edge. The local identity's image/video
+preview preference controls automatic thumbnail acceptance and rendering;
+the primary file remains independently offered. Generic file/MIME policies,
+quotas, channel concurrency and integrity checks still apply. The application
+authenticates and atomically persists the signed manifest before admitting its
+primary offers and then its thumbnail offers. See `specs/media_previews.md` for
+generation/cache limits and the versioned local manifest tables. The wire format
+remains protocol v3.
+
 File data is carried in typed `FileChunk` protobuf messages. A chunk
 contains an unsigned 64-bit sequence, an unsigned 64-bit byte offset,
 the chunk bytes, and a final indicator. The receiver accepts only the
@@ -1073,8 +1083,9 @@ message FileCancel {
 ```
 
 When a connection carrying an active transfer is disconnected, the
-receiver may initiate resume after a new authenticated, approved
-connection is established. It sends one `FileResume` message for each
+application retains both transfer records as failed/resumable rather than
+automatically re-offering the file. The receiver may initiate resume after a
+new authenticated, approved connection is established. It sends one `FileResume` message for each
 transfer it wishes to continue:
 
 ``` proto
@@ -1097,7 +1108,13 @@ hash with the immutable metadata for the offered source file. It must
 validate the offset before resuming. If all metadata matches and the
 source file is still available, the sender replies with an accepted
 `FileResumeResult` and resumes with the chunk beginning at
-`next_offset`. If the hash or any other immutable metadata differs, the
+`next_offset`. Before sending chunks, the sender waits for the receiver's
+`FileOfferResponse(ACCEPTED)` readiness acknowledgement, which the receiver
+sends only after reopening storage and installing its receive channel. This
+acknowledgement preserves the negotiated resume offset; it does not start a new
+offer at byte zero. There are at most two readiness waits per contact, matching
+the concurrent-transfer budget. Each has a monotonic 30-second deadline; expiry
+or disconnection returns it to failed/resumable without sending chunks. If the hash or any other immutable metadata differs, the
 sender replies with a cancelled result whose reason is `SOURCE_CHANGED`
 and sends no further chunks for that transfer. If the source file has
 been deleted or is otherwise unavailable, the sender uses the same
@@ -1127,6 +1144,11 @@ and `error` to `SOURCE_CHANGED`. It sends no further chunks for that
 transfer. The same `FileCancel` message and `SOURCE_CHANGED` reason are
 used when the sender detects a source change during an active transfer.
 
+A cancellation is acted on only for the current authenticated connection.
+Cancelling an incoming transfer discards its unpublished partial. Duplicate
+cancellations and cancellations for completed or rejected files do not change
+those terminal states or remove published content.
+
 `USER_ACTION` is used when the local user explicitly cancels a transfer.
 The enum is shared by active-transfer cancellation and resume results; the
 protobuf schema defines the message-specific valid uses of each value.
@@ -1141,8 +1163,8 @@ SHA-256 hash, and file-id metadata. Resume is allowed only when the
 receiver has a matching transfer metadata record and a partial file with
 the expected persisted contiguous prefix; otherwise the partial file is
 discarded and the transfer restarts at offset zero. On disconnect,
-acknowledged sender offsets are preserved and active transfers return to
-the offer/accept state for a verified resume. A transfer that cannot be
+acknowledged sender offsets are preserved and active transfers become
+failed/resumable for a verified `FileResume` exchange. A transfer that cannot be
 resumed returns to the offer/accept state or is cancelled according to
 the result status.
 

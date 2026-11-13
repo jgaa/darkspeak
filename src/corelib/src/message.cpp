@@ -3,6 +3,7 @@
 #include <QDate>
 #include <QTimeZone>
 #include <QtEndian>
+#include <QScopeGuard>
 
 #include "ds/crypto.h"
 #include "ds/message.h"
@@ -10,6 +11,8 @@
 #include "ds/errors.h"
 #include "ds/update_helper.h"
 #include "ds/dsengine.h"
+#include "ds/mimepreferences.h"
+#include "ds/resourcelimits.h"
 
 #include "logfault/logfault.h"
 
@@ -39,6 +42,26 @@ bool validMessageTime(const QDateTime& time)
 
 bool validMessageContent(const MessageData& data)
 {
+    if (data.attachments.size() > 16) return false;
+    QSet<QByteArray> file_ids;
+    QSet<quint32> thumbnails;
+    int primary_count = 0;
+    for (size_t index = 0; index < data.attachments.size(); ++index) {
+        const auto& attachment = data.attachments[index];
+        if (attachment.file_id.size() != 16 || file_ids.contains(attachment.file_id)
+            || attachment.name.isEmpty() || attachment.name.toUtf8().size() > 255
+            || attachment.sha256.size() != 32
+            || attachment.size > ResourceLimits::hardAcceptedFileBytes
+            || attachment.mime_type == "*"
+            || !validIdentityMimePreferences({attachment.mime_type})) return false;
+        file_ids.insert(attachment.file_id);
+        if (attachment.thumbnail_for) {
+            const auto target = *attachment.thumbnail_for;
+            if (target >= data.attachments.size() || target == index
+                || data.attachments[target].thumbnail_for || thumbnails.contains(target)) return false;
+            thumbnails.insert(target);
+        } else if (++primary_count > 8) return false;
+    }
     const auto content = data.content.toUtf8();
     if (content.size() > 65'536) {
         return false;
@@ -84,7 +107,17 @@ QByteArray messageSignatureBytes(const MessageData& data)
     appendU32(bytes, static_cast<quint32>(data.encoding == Message::UTF8 ? 2 : 1));
     appendU32(bytes, static_cast<quint32>(content.size()));
     bytes += content;
-    appendU32(bytes, 0); // attachment count; attachments are not in the current UI model
+    appendU32(bytes, static_cast<quint32>(data.attachments.size()));
+    for (size_t index = 0; index < data.attachments.size(); ++index) {
+        const auto& attachment = data.attachments[index];
+        appendU32(bytes, static_cast<quint32>(index));
+        const auto name = attachment.name.toUtf8(), mime = attachment.mime_type.toUtf8();
+        appendU32(bytes, static_cast<quint32>(name.size())); bytes += name;
+        appendU64(bytes, attachment.size); bytes += attachment.sha256;
+        appendU32(bytes, static_cast<quint32>(mime.size())); bytes += mime;
+        bytes.append(attachment.thumbnail_for ? char{1} : char{0});
+        if (attachment.thumbnail_for) appendU32(bytes, *attachment.thumbnail_for);
+    }
     return bytes;
 }
 
@@ -194,7 +227,8 @@ void Message::init()
 
 void Message::sign(const DsCert &cert)
 {
-    if (!data_ || data_->messageId.isEmpty() || !data_->composedTime.isValid()) {
+    if (!data_ || data_->messageId.isEmpty() || !data_->composedTime.isValid()
+        || data_->attachments.size() > 16) {
         throw Error("Cannot sign an incomplete message");
     }
 
@@ -216,6 +250,12 @@ bool Message::validate(const DsCert &cert) const
 void Message::addToDb()
 {
     QSqlQuery query;
+    if (!query.exec("SAVEPOINT message_insert_v1")) throw Error("Cannot begin message insertion");
+    auto rollback = qScopeGuard([this] {
+        QSqlQuery cleanup;
+        cleanup.exec("ROLLBACK TO message_insert_v1"); cleanup.exec("RELEASE message_insert_v1");
+        id_ = -1;
+    });
 
     query.prepare("INSERT INTO message ("
                   "direction, state, conversation_id, conversation, message_id, composed_time, received_time, content, signature, sender, encoding"
@@ -232,7 +272,9 @@ void Message::addToDb()
     query.bindValue(":message_id", data_->messageId);
     query.bindValue(":composed_time", data_->composedTime);
     query.bindValue(":received_time", sentReceivedTime_);
-    query.bindValue(":content", data_->content);
+    // Qt distinguishes a null QString from an empty string. A manifest-only
+    // message has empty text, while the database deliberately forbids NULL.
+    query.bindValue(":content", data_->content.isNull() ? QStringLiteral("") : data_->content);
     query.bindValue(":signature", data_->signature);
     query.bindValue(":sender", data_->sender);
     query.bindValue(":encoding", data_->encoding);
@@ -244,7 +286,19 @@ void Message::addToDb()
     }
 
     id_ = query.lastInsertId().toInt();
+    for (size_t index = 0; index < data_->attachments.size(); ++index) {
+        const auto& attachment = data_->attachments[index];
+        query.prepare("INSERT INTO message_attachment_v1(message_id,position,file_id,name,size,sha256,mime_type,thumbnail_for) VALUES(?,?,?,?,?,?,?,?)");
+        query.addBindValue(id_); query.addBindValue(static_cast<int>(index));
+        query.addBindValue(attachment.file_id); query.addBindValue(attachment.name);
+        query.addBindValue(QVariant::fromValue(attachment.size)); query.addBindValue(attachment.sha256);
+        query.addBindValue(attachment.mime_type);
+        query.addBindValue(attachment.thumbnail_for ? QVariant(*attachment.thumbnail_for) : QVariant{});
+        if (!query.exec()) throw Error("Cannot persist signed message attachment");
+    }
 
+    if (!query.exec("RELEASE message_insert_v1")) throw Error("Cannot commit message insertion");
+    rollback.dismiss();
     LFLOG_INFO << "Added message " << data_->messageId.toHex()
                << " to the database with id " << id_;
 }
@@ -297,6 +351,19 @@ Message::ptr_t Message::load(QObject &parent, int dbId)
     ptr->data_->signature = query.value(signature).toByteArray();
     ptr->data_->sender = query.value(sender).toByteArray();
     ptr->data_->encoding = static_cast<Encoding>(query.value(encoding).toInt());
+    query.finish();
+    query.prepare("SELECT position,file_id,name,size,sha256,mime_type,thumbnail_for FROM message_attachment_v1 WHERE message_id=? ORDER BY position LIMIT 17");
+    query.addBindValue(dbId);
+    if (!query.exec()) throw Error("Cannot load signed message attachments");
+    while (query.next()) {
+        if (ptr->data_->attachments.size() >= 16
+            || query.value(0).toUInt() != ptr->data_->attachments.size())
+            throw Error("Invalid stored message attachment manifest");
+        MessageAttachment attachment{query.value(1).toByteArray(), query.value(2).toString(),
+            query.value(3).toULongLong(), query.value(4).toByteArray(), query.value(5).toString(), {}};
+        if (!query.value(6).isNull()) attachment.thumbnail_for = query.value(6).toUInt();
+        ptr->data_->attachments.push_back(std::move(attachment));
+    }
 
     return ptr;
 }

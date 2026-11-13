@@ -71,3 +71,24 @@ async def test_unsafe_bootstrap_is_rejected_before_services(kind, tmp_path):
         assert not (profile / "data").exists()
     finally:
         await runtime.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("options", [
+    {"identity_count": 0}, {"identity_count": 3}, {"identity_count": 1.5},
+    {"identity_count": "2"}, {"public_bio": "false"}, {"preview_images": "false"},
+    {"preview_videos": "false"},
+])
+async def test_fixture_configuration_is_bounded_and_typed(options):
+    from harness import FatalFailure
+    secure_process()
+    runtime = Runtime(instance_path(), Path(__file__).parent)
+    peer = Peer(runtime, "A", dict(control=runtime.port(), socks=runtime.port()))
+    peer.bootstrap_options = options
+    runtime.peers.append(peer)
+    try:
+        with pytest.raises(FatalFailure, match="ApplicationExitedDuringBootstrap"):
+            await peer.start()
+        assert peer.process.returncode == 2
+    finally:
+        await runtime.close()

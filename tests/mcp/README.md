@@ -85,7 +85,7 @@ The controller has a separate authenticated loopback listener and frozen catalog
 | `controller_pending` | Complete immutable approval arguments; sensitive, never log |
 | `controller_decide` | Production approval manager decisions/scopes for any key in this instance |
 | `controller_online` | Start normal Tor application services |
-| `controller_hash` | Read a completed incoming fixture through managed storage; return only SHA-256 and size, at most 1 MiB |
+| `controller_hash` | Read a completed incoming fixture through managed storage; return only SHA-256 and size, at most 32 MiB |
 | `controller_shutdown` | Stop networking and drain storage |
 
 The explicitly activated controller is the simulated operator. It cannot override
@@ -102,11 +102,13 @@ production authorization, approvals, durable operation handling and domain servi
 | `bio_probe` | `read_profiles` | Approved outbound public-bio probe using `sharing_id` |
 | `bio_preview` | `read_profiles` | Approved read of the local probe result, bound to `sharing_id` |
 | `file_offer` | `send_files` | Import/offer a provisioned `asset` to `contact` |
+| `file_resume` | `read_files` | Resume a failed incoming transfer through normal domain services |
 | `file_accept` | `read_files` | Accept incoming `transfer` for `contact`, subject to local policy |
 | `files` | `read_files` | Approved sensitive inspection, at most 64 records for `contact` |
 
 Each requires `identity` and `idempotency_key`. Assets are restricted to
-`earth.jpg`, `apollo11.jpg`, `sos.ogg`; transfer references are 32 lowercase hex
+`earth.jpg`, `apollo11.jpg`, `sos.ogg`, generated `resume.jpg`, and the selectively
+provisioned `blue.mkv` video fixture; transfer references are 32 lowercase hex
 characters. There are no caller paths, SQL statements or media bytes in MCP.
 All extensions/controller/bootstrap code is excluded when the test flag is OFF.
 These are not new production tools; general production schemas still require
@@ -135,7 +137,7 @@ are recorded and independent checks continue, including the opposite direction.
 Three consecutive failures abort; success resets the streak. A failed/cancelled
 call resolves only its own exact pending approval before continuing.
 
-Each run retains a versioned `p2-001-<random>.json` report with safe check labels,
+Each run retains a versioned `<scenario>-<random>.json` report with safe check labels,
 outcomes, codes, durations, exit status and a bounded state projection. A bounded
 in-memory diagnostic ring keeps fixed kinds/levels and recognized numeric storage
 codes. Free-form application/Qt/Tor logs are discarded. No raw local capture is
@@ -148,3 +150,62 @@ and lifetime ceilings protect against a lost harness. Only JSON reports survive.
 The GitHub workflow uploads those reports for seven days, uses source path filters
 and runs sequentially on master. Remote workflow execution has not been verified
 locally. The wider Phase 2 matrix remains future work.
+
+The additional [error and isolation scenarios](scenarios/002-error-and-isolation.md)
+are registered as `mcp_peer_privacy_multi`, `mcp_peer_resume_crash`,
+`mcp_peer_receiver_crash`, `mcp_peer_delete_contacts` and `mcp_peer_delete_sender`.
+For example:
+
+```sh
+ctest --test-dir <build> -R '^mcp_peer_resume_crash$' --output-on-failure
+```
+
+Alternatively pass `--scenario resume_crash` to `run_scenario.py` with the same
+instance, Chutney and artifact arguments as P2-001. `privacy_multi`,
+`delete_contacts` and `delete_sender` create two identities per process.
+Each identity receives an independently scoped ordinary key through the protected
+provisioning file; controller credentials remain separate. Optional protected
+bootstrap fields `identity_count` (1–2) and `public_bio` (boolean) select fixtures.
+The optional fields do not change defaults for the original happy path.
+
+Test-only `file_resume` calls the ordinary incoming failed-file resume action,
+with the same contact scope, approval and idempotency requirements as acceptance.
+The fixed input allowlist additionally permits generated `resume.jpg`; imports
+and controller hash verification are bounded to 32 MiB. Controller state includes
+identity/contact ownership, persisted transfer byte counts and observed nonzero
+resume offsets. `bio_preview` includes a public-avatar receipt milestone. All extensions remain excluded from
+production builds and inactive outside explicit isolated bootstrap.
+
+The private-bio scenario also inspects test-build-only counters at the encrypted
+wire queue. They retain only response/content/hash presence counts and forbidden
+frame counts (saturated at one million), separately for the two bootstrapped
+identities. They retain no bio text, bio hashes, peer keys or wire bytes. This
+checks outbound disclosure even if the receiver would reject/discard a forbidden
+bio. The producer and observer are excluded when the test build flag is OFF.
+
+[Transfer decisions and corrupted-resume scenarios](scenarios/003-file-decisions-and-corruption.md)
+are registered as `mcp_peer_file_decisions` and `mcp_peer_corrupt_partial` and
+can be selected with the corresponding `--scenario` value. The ordinary test
+catalog adds `file_reject` and `file_cancel_incoming` (`read_files`) and
+`file_cancel_outgoing` (`send_files`), each requiring contact policy permission,
+exact-argument approval and an idempotency key. The separate controller adds
+`controller_storage(transfer)` for bounded publication/pending metadata inspection;
+it reads no file contents and opens no writer. Cancellation/rejection use normal
+domain services. External corruption requires a stopped marked profile, private
+owned nonsymlink directories, and a singly linked regular staging file.
+
+Image-preview scenarios can be selected with `--scenario image_previews` or
+`--scenario image_previews_disabled`. They enable the strict isolated-bootstrap
+`preview_images` option selectively and verify signed offers, independent
+thumbnail transfer before original acceptance, opt-out, original integrity,
+messaging and restart. Controller and ordinary file inspection expose only the
+`thumbnail_for` transfer reference and `preview_available` boolean for this
+purpose; reports retain no image content, URI or managed path.
+
+The video equivalents are `--scenario video_previews` and
+`--scenario video_previews_disabled`, using the strict optional `preview_videos`
+bootstrap boolean. They provision only the checked-in generated FFV1 fixture,
+verify previews without downloading the original, independent original integrity,
+opt-out and restart. FFmpeg is a test prerequisite; Linux Landlock and seccomp
+must be available. The production application treats missing decoder support as
+an optional-preview failure and continues ordinary transfers.

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "format": "JPEG",
+  "mime_type": "image/jpeg",
+  "maximum_edge": 320,
+  "maximum_encoded_bytes": 49152,
+  "maximum_source_bytes": 33554432,
+  "maximum_video_source_bytes": 134217728,
+  "video_deadline_ms": 10000,
+  "maximum_source_pixels": 16777216,
+  "maximum_cached_previews": 512,
+  "tables": {
+    "message_attachment_v1": ["message_id", "position", "file_id", "name", "size", "sha256", "mime_type", "thumbnail_for"],
+    "file_thumbnail_v1": ["file_id", "primary_id", "manifest_id"]
+  }
+}

@@ -2,10 +2,13 @@
 #include <QFileInfo>
 #include <QSqlQuery>
 #include <QStorageInfo>
+#include <QCryptographicHash>
 
 #include "include/ds/filemanager.h"
 #include "ds/dsengine.h"
 #include "ds/resourcelimits.h"
+#include "ds/mediapreview.h"
+#include "ds/crypto.h"
 
 #include "logfault/logfault.h"
 
@@ -116,10 +119,25 @@ File::ptr_t FileManager::addFile(std::unique_ptr<FileData> data)
 
 void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOffer &offer)
 {
+    if (!offer.thumbnail_for.isEmpty()) {
+        auto primary = getFileFromId(offer.thumbnail_for, conversation);
+        const auto* identity = conversation.getIdentity();
+        const auto allowed = primary && !primary->isThumbnail() && primary->getDirection() == File::INCOMING
+            && primary->getState() != File::FS_REJECTED && primary->getState() != File::FS_CANCELLED
+            && ((primary->getMimeType().startsWith("image/") && identity->getPreviewImages())
+                || (media_preview::isVideoCandidate(primary->getMimeType()) && identity->getPreviewVideo()));
+        if (!allowed || offer.type != "image/jpeg" || offer.size <= 0
+            || offer.size > media_preview::max_encoded_bytes || offer.manifest_id.size() != 32) {
+            offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
+            return;
+        }
+    }
+
     // Check if we have the file.
     try {
         if (auto file = getFileFromId(offer.fileId, conversation)) {
-            if (file->getSize() != offer.size || file->getHash() != offer.sha512 || file->getName() != offer.name) {
+            if (file->getSize() != offer.size || file->getHash() != offer.sha512 || file->getName() != offer.name
+                || file->getMimeType() != offer.type || file->dataThumbnailFor() != offer.thumbnail_for) {
                 recordPeerEvent(*offer.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
                 offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
                 return;
@@ -191,9 +209,14 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
     data->size = offer.size;
     data->hash = offer.sha512;
     data->mime_type = offer.type;
+    data->thumbnail_for = offer.thumbnail_for; data->manifest_id = offer.manifest_id;
 
     auto file = addFile(move(data));
     if (file) {
+        if (file->isThumbnail()) {
+            file->accept(); // Explicit per-identity preview consent; never accepts the primary.
+            return;
+        }
 
         const auto message = QObject::tr("Incoming file: %1 (%2 bytes) — waiting for approval")
                 .arg(file->getName()).arg(file->getSize());
@@ -311,6 +334,27 @@ void FileManager::touch(const File::ptr_t &file)
 void FileManager::onFileStateChanged(const File *file)
 {
     emit fileStateChanged(file);
+    if (file->isThumbnail() && file->getState() == File::FS_DONE) {
+        if (auto* conversation = file->getConversation()) {
+            if (auto primary = getFileFromId(file->dataThumbnailFor(), *conversation)) primary->refreshPreview();
+        }
+    }
+}
+
+File::ptr_t FileManager::thumbnailFor(const File& primary) {
+    QSqlQuery query;
+    query.prepare("SELECT t.file_id FROM file_thumbnail_v1 t JOIN file f ON f.id=t.file_id WHERE t.primary_id=? AND f.contact_id=? AND f.direction=?");
+    query.addBindValue(primary.getId()); query.addBindValue(primary.getContactId()); query.addBindValue(int(primary.getDirection()));
+    if (!query.exec()) throw Error("Cannot look up file thumbnail");
+    if (query.next()) return getFile(query.value(0).toInt());
+    return {};
+}
+QByteArray FileManager::thumbnailManifest(const File& primary) {
+    QSqlQuery query;
+    query.prepare("SELECT manifest_id FROM file_thumbnail_v1 WHERE primary_id=?");
+    query.addBindValue(primary.getId());
+    if (!query.exec()) throw Error("Cannot look up thumbnail manifest");
+    return query.next() ? query.value(0).toByteArray() : QByteArray{};
 }
 
 void FileManager::importOutgoingFile(const File::ptr_t &file)
@@ -324,17 +368,7 @@ void FileManager::importOutgoingFile(const File::ptr_t &file)
             if (file->getState() == File::FS_HASHING) {
                 LFLOG_DEBUG << "Calculated hash for file #" << file->getId();
                 file->setHash(hash);
-                file->setState(File::FS_WAITING);
-                if (auto contact = file->getContact()) {
-                    if (!contact->canSendFileType(file->getMimeType(), file->getName())) {
-                        file->setState(File::FS_REJECTED);
-                        DsEngine::instance().reportStatus(tr("The contact does not accept the imported file type or filename."), DsEngine::WARNING);
-                        return;
-                    }
-                    contact->queueFile(file);
-                } else {
-                    LFLOG_WARN << "Failed to obtain contact for file " << file->getId();
-                }
+                DsEngine::instance().getFileManager()->prepareOutgoingOffer(file);
             } else {
                 LFLOG_WARN << "Calculated hash for file #" << file->getId()
                            << " but the state was not FS_HASHING but " << file->getState();
@@ -344,5 +378,47 @@ void FileManager::importOutgoingFile(const File::ptr_t &file)
 }
 
 
+
+QCoro::Task<void> FileManager::prepareOutgoingOffer(File::ptr_t file) {
+    auto operation = storage_.holdOperation();
+    const auto still_present = [&] {
+        QSqlQuery query;
+        query.prepare("SELECT 1 FROM file WHERE id=? AND identity_id=? AND contact_id=?");
+        query.addBindValue(file->getId()); query.addBindValue(file->getIdentityId()); query.addBindValue(file->getContactId());
+        return query.exec() && query.next();
+    };
+    try {
+        auto contact = DsEngine::instance().getContactManager()->getContact(file->getContactId());
+        if (!contact || !contact->canSendFileType(file->getMimeType(), file->getName())) {
+            file->setState(File::FS_REJECTED); co_return;
+        }
+        QPointer<Identity> identity = contact->getIdentity();
+        const auto enabled = [&] {
+            return identity && ((identity->getPreviewImages() && file->getMimeType().startsWith("image/"))
+                || (identity->getPreviewVideo() && media_preview::isVideoCandidate(file->getMimeType())));
+        };
+        if (enabled()
+            && contact->canSendFileType("image/jpeg", "preview.jpg")) {
+            auto jpeg = co_await storage_.imagePreview(file->getId());
+            if (jpeg && still_present() && file->getState() == File::FS_HASHING && enabled()) {
+                auto data = std::make_unique<FileData>();
+                data->state = File::FS_HASHING; data->name = "preview.jpg"; data->mime_type = "image/jpeg";
+                data->identity = file->getIdentityId(); data->contact = file->getContactId(); data->conversation = file->getConversationId();
+                data->size = jpeg.value().size(); data->hash = QCryptographicHash::hash(jpeg.value(), QCryptographicHash::Sha256);
+                data->thumbnail_for = file->getFileId(); data->manifest_id = ds::crypto::Crypto::getRandomBytes(32);
+                auto thumbnail = addFile(std::move(data));
+                auto imported = co_await thumbnail->importThumbnail(jpeg.value());
+                if (!imported || file->getState() != File::FS_HASHING) {
+                    thumbnail->deleteFromDb();
+                    co_await storage_.collectGarbage();
+                }
+            }
+        }
+    } catch (...) { LFLOG_WARN << "Optional file thumbnail preparation failed"; }
+    if (still_present() && file->getState() == File::FS_HASHING) {
+        file->setState(File::FS_WAITING);
+        if (auto* contact = file->getContact()) contact->queueFile(file);
+    }
+}
 
 }} // namespaces

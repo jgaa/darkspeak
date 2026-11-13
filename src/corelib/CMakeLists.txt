@@ -10,6 +10,10 @@ add_library(${PROJECT_NAME} STATIC
     src/conversation.cpp
     src/file.cpp
     src/managedstorage.cpp
+    src/mediapreview.cpp
+    src/videopreview.cpp
+    include/ds/ffmpeg.h
+    include/ds/mediapreview.h
     include/ds/managedstorage.h
     src/logutil.cpp
     src/conversationmanager.cpp

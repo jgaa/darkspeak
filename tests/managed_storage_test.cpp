@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <algorithm>
 #include <QCryptographicHash>
 #include <QEventLoop>
 #include <QFile>
@@ -9,6 +10,7 @@
 #include <QSqlRecord>
 #include <QSqlQuery>
 #include <QTemporaryDir>
+#include <QScopeGuard>
 #include <QtEndian>
 #include <QTcpServer>
 #include "ds/dsclient.h"
@@ -17,6 +19,7 @@
 #include "ds/crypto.h"
 #include "ds/dsengine.h"
 #include "ds/managedstorage.h"
+#include "ds/mediapreview.h"
 #include "ds/resourcelimits.h"
 
 using namespace ds::core;
@@ -52,6 +55,30 @@ public:
     }
     quint64 acknowledged = 0;
     bool completed = false;
+};
+class ResumePeer final : public ds::prot::Peer {
+public:
+    ResumePeer() : Peer(std::make_shared<ds::prot::ConnectionSocket>(), {}) {}
+    Direction getDirection() const noexcept override { return OUTGOING; }
+    bool isConnected() const noexcept override { return true; }
+    uint64_t sendUserInfo(const UserInfo&) override { return 0; }
+    uint64_t sendFileResumeResult(quint64, const QByteArray&, FileResumeStatus status,
+                                 quint64 offset, FileCancelReason) override {
+        accepted = status == FileResumeStatus::Accepted;
+        negotiated_offset = offset;
+        ++responses;
+        return 0;
+    }
+    uint64_t startTransfer(File& file) override {
+        ++starts;
+        started_offset = file.getBytesTransferred();
+        file.setState(File::FS_TRANSFERRING);
+        return 0;
+    }
+    int responses = 0, starts = 0;
+    bool accepted = false;
+    quint64 negotiated_offset = 0;
+    qlonglong started_offset = -1;
 };
 class LoopbackListener final : public QTcpServer {
 public:
@@ -120,6 +147,23 @@ private slots:
         for (auto area : {ManagedStorage::Downloads, ManagedStorage::Private}) {
             auto info = waitTask(storage().manager().namespaceInfo(storage().namespaceId(area)));
             QVERIFY(info); QVERIFY(info.value().config.repair_permissions);
+        }
+    }
+    void media_preview_schema_and_limits_match_versioned_fixture() {
+        QFile fixture(QStringLiteral(DS_STORAGE_FIXTURES) + "/media-preview-v1.json"); QVERIFY(fixture.open(QIODevice::ReadOnly));
+        const auto data = QJsonDocument::fromJson(fixture.readAll()).object();
+        QCOMPARE(data.value("version").toInt(), media_preview::version);
+        QCOMPARE(data.value("maximum_edge").toInt(), media_preview::edge);
+        QCOMPARE(data.value("maximum_encoded_bytes").toInt(), media_preview::max_encoded_bytes);
+        QCOMPARE(data.value("maximum_source_bytes").toInt(), media_preview::max_source_bytes);
+        QCOMPARE(data.value("maximum_video_source_bytes").toInt(), media_preview::max_video_source_bytes);
+        QCOMPARE(data.value("video_deadline_ms").toInt(), media_preview::video_deadline_ms);
+        QCOMPARE(data.value("maximum_source_pixels").toInteger(), media_preview::max_source_pixels);
+        QCOMPARE(data.value("maximum_cached_previews").toInt(), media_preview::max_cached_previews);
+        const auto tables = data.value("tables").toObject();
+        for (auto it = tables.begin(); it != tables.end(); ++it) {
+            QSqlQuery query("SELECT * FROM " + it.key() + " LIMIT 0");
+            for (const auto column : it.value().toArray()) QVERIFY(query.record().indexOf(column.toString()) >= 0);
         }
     }
     void desktop_notification_preferences_are_private_per_identity() {
@@ -375,6 +419,220 @@ private slots:
         identity_->setAvatar({});
         QTRY_VERIFY_WITH_TIMEOUT(([&] { auto asset = waitTask(storage().readAsset(key)); return !asset && asset.error().code == dsfm::ErrorCode::MissingEntry; })(), 10000);
     }
+    void generic_matroska_video_preview_is_cached_and_opt_in() {
+        auto imported = waitTask(storage().importFile(QStringLiteral(DS_STORAGE_FIXTURES) + "/media-preview-v1/blue.mkv", "blue.mkv"));
+        QVERIFY(imported); QVERIFY(media_preview::isVideoCandidate(imported.value().mime_type));
+        QVERIFY(media_preview::isVideoCandidate(QStringLiteral("application/x-matroska")));
+        auto data = std::make_unique<FileData>();
+        data->state = File::FS_DONE; data->name = "blue.mkv"; data->mime_type = imported.value().mime_type;
+        data->identity = identity_->getId(); data->contact = contact_->getId(); data->conversation = conversation_->getId();
+        data->storage_namespace = imported.value().namespace_id; data->storage_id = imported.value().file.id;
+        data->hash = imported.value().file.sha256; data->size = qlonglong(imported.value().file.size);
+        auto file = engine_->getFileManager()->addFile(std::move(data));
+        QVERIFY(!identity_->getPreviewImages()); QVERIFY(!identity_->getPreviewVideo());
+        QVERIFY(file->previewSource().isEmpty());
+        identity_->setPreviewVideo(true);
+        auto reset = qScopeGuard([this] { identity_->setPreviewVideo(false); });
+        file->previewSource();
+        QTRY_VERIFY_WITH_TIMEOUT(!file->previewSource().isEmpty(), 10000);
+        auto cache = waitTask(storage().readAsset(ManagedStorage::filePreview(file->getId(), file->getHash()))); QVERIFY(cache);
+        const auto frame = media_preview::decode(cache.value()); QCOMPARE(frame.size(), QSize(320, 180));
+        QVERIFY(frame.pixelColor(100, 100).blue() > 200);
+        identity_->setPreviewVideo(false); QVERIFY(file->previewSource().isEmpty());
+        file->deleteFromDb(); QVERIFY(waitTask(storage().collectGarbage()));
+    }
+    void previews_use_the_snapshot_cache_and_follow_identity_policy() {
+        const auto path = directory_.filePath("preview-source.png");
+        QImage image(960, 480, QImage::Format_RGB32); image.fill(Qt::green);
+        image.setText("Private", "thumbnail metadata must not survive");
+        QVERIFY(image.save(path, "PNG"));
+        auto imported = waitTask(storage().importFile(path, "preview-source.png")); QVERIFY(imported);
+        auto data = std::make_unique<FileData>();
+        data->state = File::FS_WAITING;
+        data->name = "preview-source.png";
+        data->identity = identity_->getId(); data->contact = contact_->getId(); data->conversation = conversation_->getId();
+        data->storage_namespace = imported.value().namespace_id; data->storage_id = imported.value().file.id;
+        data->hash = imported.value().file.sha256; data->size = qlonglong(imported.value().file.size);
+        data->mime_type = imported.value().mime_type;
+        auto file = engine_->getFileManager()->addFile(std::move(data));
+        const auto key = ManagedStorage::filePreview(file->getId(), file->getHash());
+        QVERIFY(!identity_->getPreviewImages());
+        QVERIFY(file->previewSource().isEmpty());
+        auto absent = waitTask(storage().readAsset(key)); QVERIFY(!absent);
+        identity_->setPreviewImages(true);
+        // Changing the external source cannot change the imported snapshot.
+        image.fill(Qt::red); QVERIFY(image.save(path, "PNG"));
+        file->previewSource();
+        QTRY_VERIFY_WITH_TIMEOUT(!file->previewSource().isEmpty(), 10000);
+        const auto uri = file->previewSource();
+        auto cached = waitTask(storage().readAsset(key)); QVERIFY(cached);
+        const auto decoded = media_preview::decode(cached.value());
+        QCOMPARE(decoded.size(), QSize(320, 160));
+        QVERIFY(decoded.pixelColor(100, 100).green() > 200);
+        QSqlQuery query;
+        query.prepare("SELECT file_id,owner_identity,owner_contact FROM media_asset WHERE asset_key=:key");
+        query.bindValue(":key", key); QVERIFY(query.exec()); QVERIFY(query.next());
+        const auto cache_id = query.value(0).toUuid();
+        QCOMPARE(query.value(1).toInt(), identity_->getId()); QCOMPARE(query.value(2).toInt(), contact_->getId()); query.finish();
+        // A new File object reloads the same persistent JPEG, without writing a
+        // duplicate asset or retaining an exported physical path.
+        auto reloaded = File::load(*engine_->getFileManager(), file->getId());
+        reloaded->previewSource();
+        QTRY_COMPARE_WITH_TIMEOUT(reloaded->previewSource(), uri, 10000);
+        query.prepare("SELECT file_id FROM media_asset WHERE asset_key=:key");
+        query.bindValue(":key", key); QVERIFY(query.exec()); QVERIFY(query.next()); QCOMPARE(query.value(0).toUuid(), cache_id); query.finish();
+        identity_->setPreviewImages(false);
+        QVERIFY(file->previewSource().isEmpty()); QVERIFY(reloaded->previewSource().isEmpty());
+        file->deleteFromDb();
+        QVERIFY(waitTask(storage().collectGarbage()));
+        absent = waitTask(storage().readAsset(key)); QVERIFY(!absent);
+        QVERIFY(!waitTask(storage().manager().stat(storage().namespaceId(ManagedStorage::Private), cache_id)));
+    }
+    void unfinished_incoming_images_are_never_decoded() {
+        QImage image(64, 64, QImage::Format_RGB32); image.fill(Qt::blue);
+        QByteArray bytes; QBuffer buffer(&bytes); QVERIFY(buffer.open(QIODevice::WriteOnly)); QVERIFY(image.save(&buffer, "PNG"));
+        auto file = incoming(bytes, "unaccepted.png");
+        QSqlQuery query;
+        query.prepare("UPDATE file SET mime_type='image/png' WHERE id=:id"); query.bindValue(":id", file->getId()); QVERIFY(query.exec());
+        file = File::load(*engine_->getFileManager(), file->getId());
+        identity_->setPreviewImages(true);
+        auto restore = qScopeGuard([this] { identity_->setPreviewImages(false); });
+        QVERIFY(file->previewSource().isEmpty());
+        auto preview = waitTask(storage().imagePreview(file->getId())); QVERIFY(!preview);
+        QVERIFY(waitTask(file->prepareIncoming()));
+        QVERIFY(waitTask(file->writeIncoming(0, bytes)));
+        QVERIFY(waitTask(file->suspendIncoming()));
+        preview = waitTask(storage().imagePreview(file->getId())); QVERIFY(!preview);
+        QVERIFY(file->previewSource().isEmpty());
+        QVERIFY(waitTask(file->abortIncoming()));
+    }
+    void queued_preview_requests_drain_under_lifetime_lease_pressure() {
+        QImage image(64, 32, QImage::Format_RGB32); image.fill(Qt::yellow);
+        const auto path = directory_.filePath("concurrent-preview.png"); QVERIFY(image.save(path, "PNG"));
+        auto imported = waitTask(storage().importFile(path, "concurrent-preview.png")); QVERIFY(imported);
+        auto data = std::make_unique<FileData>();
+        data->state = File::FS_DONE; data->name = "concurrent-preview.png"; data->mime_type = "image/png";
+        data->identity = identity_->getId(); data->contact = contact_->getId(); data->conversation = conversation_->getId();
+        data->storage_namespace = imported.value().namespace_id; data->storage_id = imported.value().file.id;
+        data->hash = imported.value().file.sha256; data->size = qlonglong(imported.value().file.size);
+        auto file = engine_->getFileManager()->addFile(std::move(data));
+        struct Batch {
+            std::vector<std::optional<dsfm::Result<QByteArray>>> replies{16};
+            std::optional<dsfm::Result<QByteArray>> overload;
+            int completed = 0;
+        };
+        auto batch = std::make_shared<Batch>();
+        std::vector<ManagedStorage::Operation> leases;
+        for (int i = 0; i < 16; ++i) leases.push_back(storage().holdOperation());
+        for (int i = 0; i < 16; ++i) {
+            storage().imagePreview(file->getId()).then([batch, i](auto reply) {
+                batch->replies.at(i).emplace(std::move(reply)); ++batch->completed;
+            });
+        }
+        storage().imagePreview(file->getId()).then([batch](auto reply) { batch->overload.emplace(std::move(reply)); });
+        QVERIFY(batch->overload); QVERIFY(!*batch->overload);
+        QCOMPARE(batch->overload->error().code, dsfm::ErrorCode::QueueFull);
+        QTRY_COMPARE_WITH_TIMEOUT(batch->completed, 16, 10000);
+        for (const auto& reply : batch->replies) {
+            QVERIFY(reply && *reply); QVERIFY(!media_preview::decode(reply->value()).isNull());
+        }
+        leases.clear();
+        file->deleteFromDb(); QVERIFY(waitTask(storage().collectGarbage()));
+    }
+    void received_thumbnail_is_visible_before_primary_acceptance_and_is_deleted_with_it() {
+        QImage image(320, 160, QImage::Format_RGB32); image.fill(Qt::cyan);
+        QByteArray source; QBuffer buffer(&source); QVERIFY(buffer.open(QIODevice::WriteOnly)); QVERIFY(image.save(&buffer, "PNG"));
+        const auto jpeg = media_preview::generate(source); QVERIFY(!jpeg.isEmpty());
+        auto primary_data = std::make_unique<FileData>();
+        primary_data->state = File::FS_OFFERED; primary_data->direction = File::INCOMING;
+        primary_data->identity = identity_->getId(); primary_data->contact = contact_->getId(); primary_data->conversation = conversation_->getId();
+        primary_data->name = "large-photo.jpg"; primary_data->size = 512 * 1024 * 1024;
+        primary_data->mime_type = "image/jpeg"; primary_data->hash = QByteArray(32, 'h');
+        auto primary = engine_->getFileManager()->addFile(std::move(primary_data));
+        auto thumbnail_data = std::make_unique<FileData>();
+        thumbnail_data->state = File::FS_OFFERED; thumbnail_data->direction = File::INCOMING;
+        thumbnail_data->identity = identity_->getId(); thumbnail_data->contact = contact_->getId(); thumbnail_data->conversation = conversation_->getId();
+        thumbnail_data->name = "preview.jpg"; thumbnail_data->size = jpeg.size(); thumbnail_data->mime_type = "image/jpeg";
+        thumbnail_data->hash = QCryptographicHash::hash(jpeg, QCryptographicHash::Sha256);
+        thumbnail_data->thumbnail_for = primary->getFileId(); thumbnail_data->manifest_id = QByteArray(32, 'm');
+        auto thumbnail = engine_->getFileManager()->addFile(std::move(thumbnail_data));
+        QVERIFY(thumbnail->isThumbnail());
+        QVERIFY(waitTask(thumbnail->prepareIncoming())); thumbnail->setState(File::FS_TRANSFERRING);
+        auto peer = std::make_shared<ReceivingPeer>();
+        peer->receive(peer->attach(thumbnail), 0, 0, jpeg, true);
+        QTRY_COMPARE_WITH_TIMEOUT(thumbnail->getState(), File::FS_DONE, 10000);
+        const auto thumbnail_ns = thumbnail->storageNamespace(), thumbnail_id = thumbnail->storageId();
+        QVERIFY(primary->previewSource().isEmpty());
+        identity_->setPreviewImages(true);
+        auto restore = qScopeGuard([this] { identity_->setPreviewImages(false); });
+        primary->previewSource();
+        QTRY_VERIFY_WITH_TIMEOUT(!primary->previewSource().isEmpty(), 10000);
+        QCOMPARE(primary->getState(), File::FS_OFFERED); QCOMPARE(primary->getBytesTransferred(), qlonglong(0));
+        QVERIFY(primary->storageId().isNull());
+        QVERIFY(thumbnail->previewSource().isEmpty()); // Never a separate media card.
+        auto reloaded = File::load(*engine_->getFileManager(), thumbnail->getId());
+        QVERIFY(reloaded->isThumbnail()); QCOMPARE(reloaded->dataThumbnailFor(), primary->getFileId());
+        primary->deleteFromDb();
+        QSqlQuery exists; exists.prepare("SELECT 1 FROM file WHERE id=?"); exists.addBindValue(thumbnail->getId());
+        QVERIFY(exists.exec()); QVERIFY(!exists.next());
+        QVERIFY(waitTask(storage().collectGarbage()));
+        QVERIFY(!waitTask(storage().manager().stat(thumbnail_ns, thumbnail_id)));
+        QVERIFY(!waitTask(storage().readAsset(ManagedStorage::filePreview(primary->getId(), primary->getHash()))));
+    }
+    void incoming_original_preview_rejects_a_false_mime_claim() {
+        QImage image(64, 32, QImage::Format_RGB32); image.fill(Qt::blue);
+        QByteArray bytes; QBuffer buffer(&bytes); QVERIFY(buffer.open(QIODevice::WriteOnly)); QVERIFY(image.save(&buffer, "PNG"));
+        auto file = incoming(bytes, "false-jpeg.jpg", "image/jpeg");
+        QVERIFY(waitTask(file->prepareIncoming())); file->setState(File::FS_TRANSFERRING);
+        auto peer = std::make_shared<ReceivingPeer>();
+        peer->receive(peer->attach(file), 0, 0, bytes, true);
+        QTRY_COMPARE_WITH_TIMEOUT(file->getState(), File::FS_DONE, 10000);
+        auto preview = waitTask(storage().imagePreview(file->getId()));
+        QVERIFY(!preview); QCOMPARE(preview.error().code, dsfm::ErrorCode::InvalidArgument);
+        file->deleteFromDb(); QVERIFY(waitTask(storage().collectGarbage()));
+    }
+    void signed_manifest_persistence_is_atomic_and_round_trips() {
+        MessageData data;
+        data.conversation = conversation_->getHash(); data.messageId = ds::crypto::Crypto::getRandomBytes(32);
+        data.composedTime = DsEngine::getSafeNow();
+        data.attachments = {{QByteArray(16, 'a'), "photo.png", 10000, QByteArray(32, 'h'), "image/png", {}},
+                            {QByteArray(16, 'b'), "preview.jpg", 1000, QByteArray(32, 't'), "image/jpeg", quint32{0}}};
+        Message message(*engine_, data, Message::OUTGOING, conversation_->getId());
+        message.sign(*identity_->getCert()); message.addToDb();
+        auto restored = Message::load(*engine_, message.getId());
+        QVERIFY(restored->validate(*identity_->getCert()));
+        QCOMPARE(restored->getData().attachments.size(), size_t(2));
+        QVERIFY(restored->getData().attachments == message.getData().attachments);
+        auto relayed = message.getData(); relayed.attachments[0].file_id = QByteArray(16, 'r');
+        QVERIFY(!engine_->getMessageManager()->hasConflictingMessage(relayed));
+        relayed.attachments[0].name = "tampered.png";
+        QVERIFY(engine_->getMessageManager()->hasConflictingMessage(relayed));
+        QSqlQuery fault;
+        QVERIFY(fault.exec("CREATE TEMP TRIGGER fail_second_attachment BEFORE INSERT ON message_attachment_v1 WHEN NEW.position=1 BEGIN SELECT RAISE(ABORT,'fixture'); END"));
+        auto drop = qScopeGuard([] { QSqlQuery cleanup; cleanup.exec("DROP TRIGGER fail_second_attachment"); });
+        data.messageId = ds::crypto::Crypto::getRandomBytes(32);
+        Message failing(*engine_, data, Message::OUTGOING, conversation_->getId());
+        failing.sign(*identity_->getCert());
+        QVERIFY_EXCEPTION_THROWN(failing.addToDb(), ds::core::Error);
+        fault.prepare("SELECT 1 FROM message WHERE message_id=?"); fault.addBindValue(data.messageId);
+        QVERIFY(fault.exec()); QVERIFY(!fault.next());
+    }
+    void failed_thumbnail_relationship_does_not_leave_a_file_row() {
+        auto primary = incoming("primary", "primary.bin");
+        QSqlQuery fault;
+        QVERIFY(fault.exec("CREATE TEMP TRIGGER fail_thumbnail_link BEFORE INSERT ON file_thumbnail_v1 BEGIN SELECT RAISE(ABORT,'fixture'); END"));
+        auto drop = qScopeGuard([] { QSqlQuery cleanup; cleanup.exec("DROP TRIGGER fail_thumbnail_link"); });
+        auto data = std::make_unique<FileData>();
+        data->direction = File::INCOMING; data->state = File::FS_OFFERED;
+        data->identity = identity_->getId(); data->contact = contact_->getId(); data->conversation = conversation_->getId();
+        data->name = "preview.jpg"; data->mime_type = "image/jpeg";
+        data->fileId = QByteArray(16, 't'); data->hash = QByteArray(32, 'h'); data->size = 1000;
+        data->thumbnail_for = primary->getFileId(); data->manifest_id = QByteArray(32, 'm');
+        QVERIFY_EXCEPTION_THROWN(engine_->getFileManager()->addFile(std::move(data)), ds::core::Error);
+        fault.prepare("SELECT 1 FROM file WHERE file_id=?"); fault.addBindValue(QByteArray(16, 't'));
+        QVERIFY(fault.exec()); QVERIFY(!fault.next());
+        primary->deleteFromDb();
+    }
     void clearing_avatar_during_restore_does_not_restore_old_content() {
         QImage image(16, 16, QImage::Format_RGB32); image.fill(Qt::blue);
         QByteArray encoded; QBuffer buffer(&encoded); QVERIFY(buffer.open(QIODevice::WriteOnly)); QVERIFY(image.save(&buffer, "PNG"));
@@ -423,6 +681,116 @@ private slots:
         QVERIFY(waitTask(created.value().writer->suspend()));
         QVERIFY(waitTask(storage().collectGarbage()));
         auto missing = waitTask(storage().manager().openPending(storage().namespaceId(ManagedStorage::Private), id)); QVERIFY(!missing);
+    }
+    void peer_cancellation_discards_the_incoming_partial() {
+        auto peer_data = std::make_unique<ContactData>();
+        peer_data->identity = identity_->getId(); peer_data->name = "Remote cancellation peer";
+        const auto cert = ds::crypto::DsCert::create();
+        peer_data->cert = ds::crypto::DsCert::createFromPubkey(cert->getSigningPubKey().toByteArray());
+        peer_data->address = "fixture-cancel-not-networked"; peer_data->autoConnect = false;
+        peer_data->state = Contact::ACCEPTED;
+        auto* created = engine_->getContactManager()->addContact(std::move(peer_data));
+        auto contact = engine_->getContactManager()->getContact(created->getUuid());
+        auto conversation = engine_->getConversationManager()->getConversation(contact.get());
+        const QByteArray bytes(16384, 'c');
+        auto data = std::make_unique<FileData>();
+        data->direction = File::INCOMING; data->state = File::FS_OFFERED;
+        data->identity = identity_->getId(); data->contact = contact->getId();
+        data->conversation = conversation->getId(); data->name = "remote-cancel.bin";
+        data->size = bytes.size(); data->hash = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
+        auto file = engine_->getFileManager()->addFile(std::move(data));
+        const auto cleanup = qScopeGuard([&] {
+            waitTask(file->abortIncoming());
+            contact->disconnectFromContact(true);
+            engine_->getContactManager()->deleteContact(contact->getUuid());
+        });
+        QVERIFY(waitTask(file->prepareIncoming()));
+        QVERIFY(waitTask(file->writeIncoming(0, bytes.left(8192))));
+        QVERIFY(waitTask(file->checkpointIncoming())); file->setBytesTransferred(8192);
+        file->setState(File::FS_TRANSFERRING);
+        auto peer = std::make_shared<ResumePeer>();
+        contact->onConnectedToPeer(peer);
+        auto stale = std::make_shared<ResumePeer>();
+        emit peer->receivedFileCancel(PeerFileCancel(stale, stale->getConnectionId(), 0,
+            file->getFileId(), FileCancelReason::UserAction));
+        QCOMPARE(file->getState(), File::FS_TRANSFERRING);
+        emit peer->receivedFileCancel(PeerFileCancel(peer, peer->getConnectionId(), 0,
+            file->getFileId(), FileCancelReason::UserAction));
+        QCOMPARE(file->getState(), File::FS_CANCELLED);
+        QTRY_VERIFY_WITH_TIMEOUT(([&] {
+            auto pending = waitTask(storage().manager().listPending(file->storageNamespace()));
+            return pending && std::none_of(pending.value().entries.begin(), pending.value().entries.end(),
+                [&](const auto& entry) { return entry.file_id == file->storageId(); });
+        })(), 5000);
+        QVERIFY(!waitTask(storage().manager().openRead(file->storageNamespace(), file->storageId())));
+        // A delayed cancellation cannot revoke a completed received file.
+        auto finished_data = std::make_unique<FileData>();
+        finished_data->direction = File::INCOMING; finished_data->state = File::FS_OFFERED;
+        finished_data->identity = identity_->getId(); finished_data->contact = contact->getId();
+        finished_data->conversation = conversation->getId(); finished_data->name = "finished-before-cancel.bin";
+        finished_data->size = bytes.size();
+        finished_data->hash = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
+        auto finished = engine_->getFileManager()->addFile(std::move(finished_data));
+        QVERIFY(waitTask(finished->prepareIncoming()));
+        QVERIFY(waitTask(finished->writeIncoming(0, bytes)));
+        finished->setState(File::FS_TRANSFERRING); finished->validateHash();
+        QTRY_COMPARE_WITH_TIMEOUT(finished->getState(), File::FS_DONE, 5000);
+        emit peer->receivedFileCancel(PeerFileCancel(peer, peer->getConnectionId(), 0,
+            finished->getFileId(), FileCancelReason::UserAction));
+        QCOMPARE(finished->getState(), File::FS_DONE);
+        auto readable = waitTask(storage().manager().openRead(finished->storageNamespace(), finished->storageId()));
+        QVERIFY(readable);
+        auto content = waitTask(readable.value()->readAt(0, bytes.size()));
+        QVERIFY(content); QCOMPARE(content.value(), bytes);
+        QVERIFY(waitTask(readable.value()->close()));
+    }
+    void resumed_sender_waits_for_receiver_channel_readiness() {
+        auto peer_data = std::make_unique<ContactData>();
+        peer_data->identity = identity_->getId(); peer_data->name = "Resume readiness peer";
+        const auto cert = ds::crypto::DsCert::create();
+        peer_data->cert = ds::crypto::DsCert::createFromPubkey(cert->getSigningPubKey().toByteArray());
+        peer_data->address = "fixture-resume-not-networked"; peer_data->autoConnect = false;
+        peer_data->state = Contact::ACCEPTED;
+        auto* created = engine_->getContactManager()->addContact(std::move(peer_data));
+        auto contact = engine_->getContactManager()->getContact(created->getUuid());
+        auto conversation = engine_->getConversationManager()->getConversation(contact.get());
+        const auto cleanup = qScopeGuard([&] {
+            contact->disconnectFromContact(true);
+            engine_->getContactManager()->deleteContact(contact->getUuid());
+        });
+        auto data = std::make_unique<FileData>();
+        data->identity = identity_->getId(); data->contact = contact->getId();
+        data->conversation = conversation->getId(); data->name = "resume-readiness.jpg";
+        data->source_path = QStringLiteral(DS_STORAGE_FIXTURES) + "/../assets/mcp/earth.jpg";
+        auto file = engine_->getFileManager()->addFile(std::move(data));
+        QTRY_COMPARE_WITH_TIMEOUT(file->getState(), File::FS_WAITING, 10000);
+        file->setState(File::FS_FAILED);
+        contact->setState(Contact::ACCEPTED);
+        auto peer = std::make_shared<ResumePeer>();
+        contact->onConnectedToPeer(peer);
+        UserInfo info;
+        info.nickName = "Fixture peer"; info.allowFiles = true; info.allowMimeTypes = {"image/jpeg"};
+        emit peer->receivedUserInfo(PeerUserInfo(peer, peer->getConnectionId(), 0, info));
+        emit peer->receivedFileResume(PeerFileResume(peer, peer->getConnectionId(), 1,
+            file->getFileId(), 8192, file->getHash(), quint64(file->getSize())));
+        QTRY_COMPARE_WITH_TIMEOUT(peer->responses, 1, 5000);
+        QVERIFY(peer->accepted); QCOMPARE(peer->negotiated_offset, quint64(8192));
+        QCOMPARE(peer->starts, 0); QCOMPARE(file->getState(), File::FS_QUEUED);
+        // The receiver may still be awaiting asynchronous disk I/O here.
+        QCoreApplication::processEvents();
+        QCOMPARE(peer->starts, 0);
+        auto stale = std::make_shared<ResumePeer>();
+        emit peer->receivedFileOfferResponse(PeerFileOfferResponse(stale, stale->getConnectionId(), 0,
+            file->getFileId(), FileOfferResponseStatus::Accepted));
+        QCOMPARE(peer->starts, 0);
+        emit peer->receivedFileOfferResponse(PeerFileOfferResponse(peer, peer->getConnectionId(), 0,
+            file->getFileId(), FileOfferResponseStatus::Accepted));
+        QTRY_COMPARE_WITH_TIMEOUT(peer->starts, 1, 5000);
+        QCOMPARE(peer->started_offset, qlonglong(8192));
+        contact->disconnectFromContact(true);
+        QCOMPARE(file->getState(), File::FS_FAILED);
+        contact->setState(Contact::PENDING);
+        file->deleteFromDb();
     }
     void queued_sends_reconnect_without_connection_churn() {
         auto protocol = std::make_shared<QueueProtocol>();
@@ -515,11 +883,12 @@ private slots:
     }
 private:
     ManagedStorage& storage() { return engine_->getFileManager()->storage(); }
-    File::ptr_t incoming(QByteArray bytes, QString name) {
+    File::ptr_t incoming(QByteArray bytes, QString name, QString mime_type = {}) {
         auto data = std::make_unique<FileData>();
         data->direction = File::INCOMING; data->state = File::FS_OFFERED;
         data->identity = identity_->getId(); data->contact = contact_->getId(); data->conversation = conversation_->getId();
         data->size = bytes.size(); data->name = std::move(name); data->hash = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
+        data->mime_type = std::move(mime_type);
         return engine_->getFileManager()->addFile(std::move(data));
     }
     QTemporaryDir directory_;

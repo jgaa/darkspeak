@@ -231,13 +231,17 @@ UiDialog {
                     }
                     CheckBox {
                         id: previewImages
-                        text: qsTr("Preview received images locally")
+                        text: qsTr("Enable image previews")
                         checked: value.previewImages
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("Generate small previews for images you send and download offered previews for received images. Original files still require separate acceptance.")
                     }
                     CheckBox {
                         id: previewVideo
-                        text: qsTr("Preview received video locally")
+                        text: qsTr("Enable video previews")
                         checked: value.previewVideo
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("Generate small previews for videos you send and download offered video previews. Generating a video frame requires FFmpeg.")
                     }
                     Label {
                         textFormat: Text.PlainText

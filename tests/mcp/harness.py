@@ -102,7 +102,7 @@ class Client:
                 text = " ".join(getattr(item, "text", "") for item in result.content)
                 for code in ("PersistenceFailed", "InvalidArguments", "InvalidSharingId", "ContactCreationFailed",
                              "ApprovalUnavailable", "AccessDenied", "RateLimited", "PeerPolicyDenied",
-                             "TestUnavailable", "OperationNotCompleted", "InvalidTransferState", "ResultLimit"):
+                             "TestUnavailable", "OperationNotCompleted", "InvalidTransferState", "StorageInspectionFailed", "ResultLimit"):
                     if code in text:
                         raise CheckFailure(code)
                 raise CheckFailure("McpToolRejected")
@@ -122,6 +122,8 @@ class Peer:
         self.process = None
         self.ordinary = self.controller = None
         self.number = 0
+        self.bootstrap_options = {}
+        self.identity_clients = []
 
     async def start(self):
         self.profile.mkdir(mode=0o700, exist_ok=True)
@@ -133,6 +135,7 @@ class Peer:
         config = dict(version=1, label=self.label, mcp_port=self.runtime.port(),
                       controller_port=self.runtime.port(), tor_control_port=self.node["control"],
                       tor_socks_port=self.node["socks"], vault_passphrase=secrets.token_hex(32))
+        config.update(self.bootstrap_options)
         if (self.profile / "bootstrap.json").exists():
             config["vault_passphrase"] = json.loads((self.profile / "bootstrap.json").read_text())["vault_passphrase"]
         (self.profile / "bootstrap.json").write_text(json.dumps(config))
@@ -155,12 +158,26 @@ class Peer:
         self.provision_fields = set(data)
         self.identity = data["identity"]
         self.ordinary = await Client(data["mcp_port"], data["ordinary_secret"]).open()
+        self.identities = [item["identity"] for item in data["identities"]]
+        self.identity_clients = [self.ordinary]
+        for item in data["identities"][1:]:
+            self.identity_clients.append(await Client(data["mcp_port"], item["secret"]).open())
         self.controller = await Client(data["controller_port"], data["controller_secret"]).open()
         async def application_ready():
             return (await self.controller.call("controller_state"))["application_ready"]
         await wait_for(application_ready, 30)
         self.epoch = (await self.call("status"))["retry_epoch"]
         return self
+
+    async def crash(self):
+        # Kill only the owned application, preserving its isolated profile/Tor.
+        self.process.kill()
+        await asyncio.wait_for(self.process.wait(), 5)
+        for client in (self.controller, *reversed(self.identity_clients)):
+            if client:
+                await client.close()
+        self.controller = self.ordinary = None
+        self.identity_clients = []
 
     async def restart(self):
         await self.stop()
@@ -173,10 +190,11 @@ class Peer:
             except Exception:
                 pass
         # Async context stacks must be closed in reverse order in their owning task.
-        for client in (self.controller, self.ordinary):
+        for client in (self.controller, *reversed(self.identity_clients)):
             if client:
                 await client.close()
         self.controller = self.ordinary = None
+        self.identity_clients = []
         if self.process:
             try:
                 await asyncio.wait_for(self.process.wait(), 2)
@@ -184,13 +202,17 @@ class Peer:
                 pass
             await self.runtime.stop_process(self.process)
 
-    async def call(self, name, **args):
-        return await self.ordinary.call(name, dict(identity=self.identity, **args))
+    async def call(self, name, *, identity=None, **args):
+        identity = identity or self.identity
+        client = self.identity_clients[self.identities.index(identity)]
+        return await client.call(name, dict(identity=identity, **args))
 
-    async def approved(self, tool, *, expected_request_handle=None, **args):
+    async def approved(self, tool, *, expected_request_handle=None, identity=None, **args):
         self.number += 1
-        expected = dict(identity=self.identity, idempotency_key=f"{self.epoch}:{self.number}", **args)
-        task = asyncio.create_task(self.ordinary.call(tool, expected))
+        identity = identity or self.identity
+        client = self.identity_clients[self.identities.index(identity)]
+        expected = dict(identity=identity, idempotency_key=f"{self.epoch}:{self.number}", **args)
+        task = asyncio.create_task(client.call(tool, expected))
         completed = False
         try:
             async def pending():

@@ -104,10 +104,17 @@ ApplicationWindow {
     }
     Component.onCompleted: {
         appearance.restoreWindow(mainWindow);
+        if (videoPreviewSupport.warningRequired)
+            Qt.callLater(ffmpegDependencyDialog.open);
         if (appSettings.appAutoConnect)
             Qt.callLater(manager.goOnline);
     }
     onClosing: appearance.saveWindow(mainWindow)
+    VideoPreviewDependencyDialog {
+        id: ffmpegDependencyDialog
+        parent: Overlay.overlay
+        support: videoPreviewSupport
+    }
     Shortcut {
         sequences: ["Ctrl++", "Ctrl+="]
         onActivated: appearance.zoom(1)

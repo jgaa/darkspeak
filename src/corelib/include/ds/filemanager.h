@@ -40,6 +40,8 @@ public:
     void touch(const File::ptr_t& file);
 
     void onFileStateChanged(const File *file);
+    File::ptr_t thumbnailFor(const File& primary);
+    QByteArray thumbnailManifest(const File& primary);
 
 signals:
     void fileAdded(const File::ptr_t& file);
@@ -50,6 +52,7 @@ public slots:
 
 private:
     void importOutgoingFile(const File::ptr_t& file);
+    QCoro::Task<void> prepareOutgoingOffer(File::ptr_t file);
 
     Registry<int, File> registry_;
     LruCache<File::ptr_t> lru_cache_{3};

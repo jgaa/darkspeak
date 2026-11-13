@@ -48,6 +48,20 @@ Item {
                 selectByMouse: true
                 wrapMode: TextEdit.WrapAnywhere
             }
+            Image {
+                objectName: "mediaPreview"
+                readonly property string preview: cFile ? (cFile.previewSource || "") : ""
+                source: preview
+                visible: preview.length > 0 && status === Image.Ready
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? Math.min(200 * appearance.factor, sourceSize.height) : 0
+                sourceSize.width: 320
+                sourceSize.height: 320
+                fillMode: Image.PreserveAspectFit
+                cache: false
+                mipmap: true
+                Accessible.name: qsTr("Media preview")
+            }
             Label {
                 text: cFile ? qsTr("%1 bytes").arg(Number(cFile.size).toLocaleString(Qt.locale(), 'f', 0)) : ""
                 textFormat: Text.PlainText
