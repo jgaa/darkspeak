@@ -411,15 +411,86 @@ void backpressure() {
     }
     CHECK(accepted > 0 && rejected > 0); get(file.writer->commit());
 }
+void permissionRepair() {
+    Fixture f;
+    const auto id = f.publish("repair.bin", "preserved bytes");
+    const auto file_path = f.path(id);
+    get(f.manager.shutdown());
+    const QStringList directories{f.config.storage_root, f.config.storage_root + "/.filemanager"};
+    const QStringList files{f.config.storage_root + "/.filemanager/catalog.db",
+                            f.config.storage_root + "/.filemanager/owner.lock", file_path};
+    for (const auto& path : directories) CHECK(::chmod(path.toUtf8(), 0770) == 0);
+    for (const auto& path : files) CHECK(::chmod(path.toUtf8(), 0660) == 0);
+    NativeFileManager strict;
+    error(strict.openNamespace(f.config), ErrorCode::PermissionDenied);
+    f.config.repair_permissions = true;
+    const auto root_alias = f.directory.path() + "/root-alias";
+    CHECK(::symlink(f.config.storage_root.toUtf8(), root_alias.toUtf8()) == 0);
+    auto symlink_config = f.config; symlink_config.storage_root = root_alias;
+    NativeFileManager symlinks;
+    error(symlinks.openNamespace(symlink_config), ErrorCode::ExternalModification);
+    struct stat original{}; CHECK(::stat(f.config.storage_root.toUtf8(), &original) == 0);
+    CHECK((original.st_mode & 0777) == 0770);
+    NativeFileManager repairing;
+    get(repairing.openNamespace(f.config));
+    auto reader = get(repairing.openRead(f.config.id, id));
+    CHECK(get(reader->readAt(0, 100)) == "preserved bytes");
+    get(reader->close());
+    for (const auto& path : directories + files) {
+        struct stat st{}; CHECK(::stat(path.toUtf8(), &st) == 0);
+        CHECK((st.st_mode & 0777) == (S_ISDIR(st.st_mode) ? 0700 : 0600));
+        CHECK(st.st_uid == ::geteuid());
+    }
+    // Runtime access uses the same policy, including catalog/VFS checks.
+    CHECK(::chmod(f.config.storage_root.toUtf8(), 0750) == 0);
+    get(repairing.namespaceInfo(f.config.id));
+    get(repairing.shutdown());
+    // The worker-local policy must not leak into another namespace/job.
+    CHECK(::chmod(f.config.storage_root.toUtf8(), 0750) == 0);
+    f.config.repair_permissions = false;
+    error(strict.openNamespace(f.config), ErrorCode::PermissionDenied);
+    CHECK(::chmod(f.config.storage_root.toUtf8(), 0700) == 0);
+    // Never chmod a multiply-linked file, even when both names are local.
+    const auto alias = f.directory.path() + "/alias";
+    CHECK(::link(file_path.toUtf8(), alias.toUtf8()) == 0);
+    CHECK(::chmod(file_path.toUtf8(), 0660) == 0);
+    f.config.repair_permissions = true;
+    NativeFileManager links;
+    get(links.openNamespace(f.config));
+    auto linked = QCoro::waitFor(links.openRead(f.config.id, id)); CHECK(!linked);
+    struct stat st{}; CHECK(::stat(alias.toUtf8(), &st) == 0); CHECK((st.st_mode & 0777) == 0660);
+    get(links.shutdown());
+    CHECK(::unlink(alias.toUtf8()) == 0);
+    if (::geteuid() != 0) {
+        NamespaceConfig foreign{QUuid::createUuid(), "/tmp"}; foreign.repair_permissions = true;
+        struct stat before{}, after{}; CHECK(::stat("/tmp", &before) == 0);
+        NativeFileManager other;
+        error(other.openNamespace(foreign), ErrorCode::PermissionDenied);
+        CHECK(::stat("/tmp", &after) == 0); CHECK(before.st_mode == after.st_mode);
+    }
+}
 void diagnostics() {
     std::ostringstream output;
     struct Clear { ~Clear() { logfault::LogManager::Instance().ClearHandlers(); } } clear;
-    logfault::LogManager::Instance().AddHandler(std::make_unique<logfault::StreamHandler>(output,logfault::LogLevel::TRACE));
+    logfault::LogManager::Instance().AddHandler(std::make_unique<logfault::StreamHandler>(output,logfault::LogLevel::DEBUGGING));
     Fixture f; auto id = f.publish("PRIVATE-FILENAME", "PRIVATE-CONTENT");
     CancellationToken token; token.cancel(); auto pending = f.pending("PRIVATE-OTHER", "x"); error(pending.writer->commit(token), ErrorCode::Cancelled); get(pending.writer->abort());
     get(f.manager.shutdown());
     const auto logs = output.str(); CHECK(logs.find("FileManager") != std::string::npos);
     for (auto private_value : {std::string("PRIVATE-"), f.config.storage_root.toStdString(), id.toString().toStdString(), f.config.id.toString().toStdString()}) CHECK(logs.find(private_value) == std::string::npos);
+    logfault::LogManager::Instance().ClearHandlers();
+    std::ostringstream trace;
+    logfault::LogManager::Instance().AddHandler(std::make_unique<logfault::StreamHandler>(trace,logfault::LogLevel::TRACE));
+    CHECK(::chmod(f.config.storage_root.toUtf8(), 0750) == 0);
+    NativeFileManager reopened;
+    auto result = QCoro::waitFor(reopened.openNamespace(f.config));
+    CHECK(::chmod(f.config.storage_root.toUtf8(), 0700) == 0);
+    CHECK(!result); CHECK(result.error().code == ErrorCode::PermissionDenied);
+    const auto details = trace.str();
+    CHECK(details.find("role=storage root") != std::string::npos);
+    CHECK(details.find("mode=750") != std::string::npos);
+    CHECK(details.find(f.config.storage_root.toStdString()) != std::string::npos);
+    CHECK(details.find("PRIVATE-") == std::string::npos);
 }
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
@@ -437,7 +508,7 @@ int main(int argc, char** argv) {
     test("injected failures", injectedFailures); test("reduced limits", reducedLimits);
     test("missing pending/orphans", missingPendingAndOrphans);
     test("abandonment/hash cancellation", abandonedHandlesAndCancellation);
-    test("race/permissions", raceAndPermissions); test("backpressure", backpressure); test("diagnostic redaction", diagnostics);
+    test("race/permissions", raceAndPermissions); test("permission repair", permissionRepair); test("backpressure", backpressure); test("diagnostic redaction", diagnostics);
     test("crash recovery", crashRecovery); test("overwrite crash", overwriteCrash);
     return failures ? 1 : 0;
 }

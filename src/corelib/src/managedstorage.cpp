@@ -90,6 +90,7 @@ ManagedStorage::ManagedStorage(QSettings& settings, QObject* parent)
     configs_[Private].naming = dsfm::PhysicalNaming::FileId;
     for (int area = 0; area < 2; ++area) {
         auto& config = configs_[area];
+        config.repair_permissions = settings.value("storage/repairPermissions", true).toBool();
         QSqlQuery query;
         query.prepare("SELECT id,naming FROM managed_namespace WHERE storage_root=:root");
         query.bindValue(":root", config.storage_root);
@@ -154,13 +155,25 @@ QCoro::Task<Result<void>> ManagedStorage::ready() {
     for (const auto& item : registered) {
         if (initialization_error_) break;
         const auto config = item.config;
+        const auto area_name = item.area == Downloads ? "downloads" : "private";
+        LFLOG_DEBUG << "Opening managed storage namespace; area=" << area_name
+                    << ", previously_created=" << item.created;
+        LFLOG_TRACE << "Managed storage namespace root; area=" << area_name
+                    << ", path=" << config.storage_root.toStdString();
         auto catalog_exists = co_await disk<bool>([config] {
             return Result<bool>{QFileInfo::exists(QDir(config.storage_root).filePath(".filemanager/catalog.db"))};
         });
         if (!catalog_exists) { initialization_error_ = catalog_exists.error(); break; }
         auto opened = (item.created || catalog_exists.value()) ? co_await manager_.openNamespace(config)
                                                                : co_await manager_.createNamespace(config);
-        if (!opened) { initialization_error_ = opened.error(); break; }
+        if (!opened) {
+            initialization_error_ = opened.error();
+            LFLOG_ERROR << "Managed storage namespace initialization failed; area=" << area_name
+                        << ", operation=" << ((item.created || catalog_exists.value()) ? "open" : "create")
+                        << ", code=" << int(opened.error().code)
+                        << ", native=" << opened.error().native_code;
+            break;
+        }
         if (item.area == Downloads) download_namespaces_.insert(config.id);
         if (config.id == configs_[item.area].id) roots_[item.area] = opened.value().root;
         query.prepare("UPDATE managed_namespace SET created=1 WHERE id=:id"); query.bindValue(":id", uuid(config.id));
@@ -218,7 +231,18 @@ QCoro::Task<Result<ManagedStorage::Imported>> ManagedStorage::importFile(QString
             return Result<QByteArray>{std::move(bytes)};
         });
         if (!read) { failure = read.error(); failed = true; break; }
-        if (!offset) mime_type = QMimeDatabase{}.mimeTypeForData(read.value()).name();
+        if (!offset) {
+            const auto detected = QMimeDatabase{}.mimeTypeForData(read.value());
+            // Qt distinguishes codec-specific desktop MIME subtypes (for
+            // example audio/x-vorbis+ogg). Advertise the standard HTTP container
+            // type so an explicit audio/ogg preference accepts actual Ogg audio.
+            if (detected.inherits(QStringLiteral("audio/ogg")))
+                mime_type = QStringLiteral("audio/ogg");
+            else if (detected.inherits(QStringLiteral("video/ogg")))
+                mime_type = QStringLiteral("video/ogg");
+            else
+                mime_type = detected.name();
+        }
         auto written = co_await pending.writer->writeAt(offset, read.value(), cancel);
         if (!written || written.value() != read.value().size()) { failure = written ? Error{ErrorCode::IoError} : written.error(); failed = true; break; }
         offset += quint64(written.value());

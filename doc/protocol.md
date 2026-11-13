@@ -1172,6 +1172,12 @@ extension. Implementations should use common HTTP media types such as
 to local policy. Limit each MIME string to 127 bytes and each preference
 list to 64 entries.
 
+When a content detector reports a codec-specific Ogg subtype (for example
+`audio/x-vorbis+ogg`), advertise its standard HTTP container type `audio/ogg`
+or `video/ogg`. This keeps explicit container preferences interoperable across
+platform MIME databases without trusting the filename or widening a preference
+to unrelated media types.
+
 Avatar hashes, when visible, are exactly 32-byte SHA-256 values over the raw
 channel bytes `red || green || blue`, concatenated in exactly that order with
 no separators. An absent optional avatar hash means that the receiver is not

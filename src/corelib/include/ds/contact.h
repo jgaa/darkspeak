@@ -261,6 +261,8 @@ private:
     static void bind(QSqlQuery& query, ContactData& data);
     void loadMessageQueue();
     void loadFileQueue();
+    void requestQueuedConnection();
+    void scheduleQueuedConnection();
     void queueTransfer(const std::shared_ptr<File>& file);
     void clearFileQueues();
     void prepareForNewConnection();
@@ -279,6 +281,8 @@ private:
     bool online_ = false;
     bool loadedMessageQueue_ = false;
     bool loadedFileQueue_ = false;
+    bool queued_connection_requested_ = false;
+    bool queued_connection_scheduled_ = false;
     data_t data_;
     QString onlineIcon_ = "qrc:///images/onion-bw.svg";
     OnlineStatus onlineStatus_ = DISCONNECTED;

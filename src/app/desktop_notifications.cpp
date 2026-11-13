@@ -50,11 +50,16 @@ DesktopNotifications::DesktopNotifications(QObject *parent)
                 return;
             }
             const auto conversation = message->getConversation();
-            const auto title = conversation && conversation->getFirstParticipant()
+            const auto identity = conversation ? conversation->getIdentity() : nullptr;
+            const bool show_sender = identity && identity->getNotificationShowSender();
+            const bool show_content = identity && identity->getNotificationShowContent();
+            const auto sender = show_sender && conversation && conversation->getFirstParticipant()
                     ? conversation->getFirstParticipant()->getName()
-                    : tr("Incoming message");
+                    : QString{};
+            const auto text = notificationText(NotificationType::IncomingMessage,
+                show_sender, show_content, sender, show_content ? message->getContent() : QString{});
             showNotification(NotificationType::IncomingMessage,
-                             title, message->getContent());
+                             text.title, text.body);
         } catch (...) {
             // Desktop notifications are optional and must not affect delivery.
         }
@@ -67,11 +72,16 @@ DesktopNotifications::DesktopNotifications(QObject *parent)
                 return;
             }
             const auto conversation = file->getConversation();
-            const auto sender = conversation && conversation->getFirstParticipant()
+            const auto identity = conversation ? conversation->getIdentity() : nullptr;
+            const bool show_sender = identity && identity->getNotificationShowSender();
+            const bool show_content = identity && identity->getNotificationShowContent();
+            const auto sender = show_sender && conversation && conversation->getFirstParticipant()
                     ? conversation->getFirstParticipant()->getName()
-                    : tr("Incoming file");
+                    : QString{};
+            const auto text = notificationText(NotificationType::IncomingFile,
+                show_sender, show_content, sender, show_content ? file->getDisplayName() : QString{});
             showNotification(NotificationType::IncomingFile,
-                             sender, tr("Incoming file: %1").arg(file->getDisplayName()));
+                             text.title, text.body);
         } catch (...) {
             // Desktop notifications are optional and must not affect transfers.
         }
@@ -80,12 +90,9 @@ DesktopNotifications::DesktopNotifications(QObject *parent)
     connect(engine.getIdentityManager(), &core::IdentityManager::newContactRequest,
             this, [this](core::Identity *identity, const core::PeerAddmeReq& request) {
         try {
-            const auto identityName = identity ? identity->getName() : tr("DarkSpeak");
-            const auto title = tr("New contact request for %1").arg(identityName);
-            const auto body = request.nickName.isEmpty()
-                    ? tr("A new contact request has arrived.")
-                    : tr("%1 wants to become a contact.").arg(request.nickName);
-            showNotification(NotificationType::IncomingContactRequest, title, body);
+            const auto text = notificationText(NotificationType::IncomingContactRequest,
+                identity && identity->getNotificationShowSender(), false, request.nickName, {});
+            showNotification(NotificationType::IncomingContactRequest, text.title, text.body);
         } catch (...) {
             // Desktop notifications are optional and must not affect requests.
         }
@@ -113,6 +120,9 @@ void DesktopNotifications::showNotification(const NotificationType type,
                                              const QString& title,
                                              const QString& body)
 {
+    if (!core::DsEngine::instance().settings().value("notifications/enabled", true).toBool()) {
+        return;
+    }
     if (pending_notifications_ >= maximumPendingNotifications) {
         LFLOG_DEBUG << "Desktop notification skipped: pending limit reached";
         return;

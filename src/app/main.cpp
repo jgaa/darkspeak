@@ -45,6 +45,13 @@
 #include "appearance.h"
 #include "controls_style.h"
 #include "settings_session.h"
+#include "ds/notificationsmodel.h"
+#ifdef DARKSPEAK_WITH_MCP
+#include "service.h"
+#ifdef DARKSPEAK_WITH_TEST_MCP
+#include "test_runtime.h"
+#endif
+#endif
 #ifdef Q_OS_LINUX
 #include "desktop_notifications.h"
 #endif
@@ -119,6 +126,10 @@ LogLevel logLevelFromName(const QString &name, bool &ok)
 
 int main(int argc, char *argv[])
 {
+#ifdef DARKSPEAK_WITH_TEST_MCP
+    if (ds::mcp::testRuntimeRequested(argc, argv))
+        return ds::mcp::runTestRuntime(argc, argv);
+#endif
     QElapsedTimer startup_timer;
     startup_timer.start();
 
@@ -327,7 +338,33 @@ int main(int argc, char *argv[])
     SettingsSession settingsSession(appearance, desktopIntegration);
     LogFilterModel filtered_log;
     filtered_log.setSourceModel(manager->logModel());
+#ifdef DARKSPEAK_WITH_MCP
+    // Exists independently of QML views; only fresh approval needs a live UI.
+    std::unique_ptr<ds::mcp::Service> mcp_service;
+    try {
+        mcp_service = std::make_unique<ds::mcp::Service>(DsEngine::instance());
+        mcp_service->setContactDecision([&manager](int request_id, bool accept) {
+            return manager->notificationsModel()->decideContactRequest(request_id, accept);
+        });
+        QSettings mcp_settings;
+        mcp_service->configure(mcp_settings.value("mcp/enabled", false).toBool(),
+            mcp_settings.value("mcp/address", "127.0.0.1").toString(),
+            mcp_settings.value("mcp/port", 17839).toInt(), mcp_settings.value("mcp/approvalTimeout", 60).toInt());
+        settingsSession.setMcpConfigurator([&mcp_service](bool enabled, const QString& address, int port, int timeout) {
+            return mcp_service->configure(enabled, address, port, timeout);
+        });
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, mcp_service.get(), &ds::mcp::Service::stop);
+    } catch (...) {
+        LFLOG_ERROR << "MCP initialization failed; endpoint unavailable";
+        settingsSession.setMcpConfigurator([](bool enabled, const QString&, int, int) { return !enabled; });
+    }
+#endif
     QQmlApplicationEngine engine;
+#ifdef DARKSPEAK_WITH_MCP
+    engine.rootContext()->setContextProperty("mcp", mcp_service.get());
+#else
+    engine.rootContext()->setContextProperty("mcp", static_cast<QObject*>(nullptr));
+#endif
     engine.rootContext()->setContextProperty("filteredLog", &filtered_log);
     engine.rootContext()->setContextProperty("appearance", &appearance);
     engine.rootContext()->setContextProperty("settingsSession", &settingsSession);
@@ -425,7 +462,13 @@ int main(int argc, char *argv[])
 
     LFLOG_INFO << "DarkSpeak is ready";
 
+#ifdef DARKSPEAK_WITH_MCP
+    if (mcp_service) mcp_service->setUiAvailable(true);
+#endif
     const auto rval = QGuiApplication::exec();
+#ifdef DARKSPEAK_WITH_MCP
+    if (mcp_service) mcp_service->setUiAvailable(false);
+#endif
     QEventLoop storage_cleanup;
     bool storage_finished = false;
     manager->shutdownStorage().then([&](dsfm::Result<void> result) {

@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "marker": "darkspeak-mcp-test-v1\n",
+  "bootstrap_fields": ["version", "label", "mcp_port", "controller_port", "tor_control_port", "tor_socks_port", "vault_passphrase"],
+  "provision_fields": ["version", "identity", "ordinary_secret", "controller_secret", "mcp_port", "controller_port"],
+  "controller_tools": ["controller_state", "controller_pending", "controller_decide", "controller_online", "controller_hash", "controller_shutdown", "darkspeak-controller_help"]
+}

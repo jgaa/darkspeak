@@ -1,0 +1,125 @@
+--- a/include/yahat/HttpServer.h
++++ b/include/yahat/HttpServer.h
+@@ -117,0 +118,4 @@
++    // DarkSpeak consumer hardening; zero preserves upstream unlimited mode.
++    size_t max_connections = 0;
++    bool reject_compressed_requests = false;
++
+--- a/src/HttpServer.cpp
++++ b/src/HttpServer.cpp
+@@ -715,0 +716,7 @@
++        if (instance.config().reject_compressed_requests && !req[http::field::content_encoding].empty()) {
++            http::response<http::empty_body> denied{http::status::unsupported_media_type, 11};
++            denied.keep_alive(false);
++            denied.content_length(0);
++            http::async_write(stream, denied, yield[ec]);
++            break;
++        }
+@@ -992 +999,14 @@
+-        boost::asio::spawn(ctx_, [this, ep, is_tls] (boost::asio::yield_context yield) {
++        // Bind synchronously, before advertising successful startup. A failed
++        // replacement listener must leave the consumer's working endpoint alive.
++        auto acceptor = make_shared<tcp::acceptor>(ctx_);
++        acceptor->open(ep.protocol());
++        acceptor->set_option(net::socket_base::reuse_address(true));
++        acceptor->bind(ep);
++        acceptor->listen(net::socket_base::max_listen_connections);
++        auto sslCtx = make_shared<ssl::context>(ssl::context::tls_server);
++        if (is_tls) {
++            sslCtx->use_certificate_chain_file(config_.http_tls_cert);
++            sslCtx->use_private_key_file(config_.http_tls_key, ssl::context::pem);
++        }
++        auto sessions = make_shared<std::atomic_size_t>(0);
++        boost::asio::spawn(ctx_, [this, ep, is_tls, acceptor, sslCtx, sessions] (boost::asio::yield_context yield) {
+@@ -994,38 +1013,0 @@
+-
+-            tcp::acceptor acceptor{ctx_};
+-            acceptor.open(ep.protocol(), ec);
+-            if(ec) {
+-                LOG_ERROR << "Failed to open endpoint " << ep << ": " << ec;
+-                return;
+-            }
+-
+-            acceptor.set_option(net::socket_base::reuse_address(true), ec);
+-            if(ec) {
+-                LOG_ERROR << "Failed to set option reuse_address on " << ep << ": " << ec;
+-                return;
+-            }
+-
+-            auto sslCtx = make_shared<ssl::context>(ssl::context::tls_server);
+-            if (is_tls) {
+-                try {
+-                    sslCtx->use_certificate_chain_file(config_.http_tls_cert);
+-                    sslCtx->use_private_key_file(config_.http_tls_key, ssl::context::pem);
+-                } catch(const exception& ex) {
+-                    LOG_ERROR << "Failed to initialize tls context: " << ex.what();
+-                    return;
+-                }
+-            }
+-
+-            // Bind to the server address
+-            acceptor.bind(ep, ec);
+-            if(ec) {
+-                LOG_ERROR << "Failed to bind to " << ep << ": " << ec;
+-                return;
+-            }
+-
+-            // Start listening for connections
+-            acceptor.listen(net::socket_base::max_listen_connections, ec);
+-            if(ec) {
+-                LOG_ERROR << "Failed to listen to on " << ep << ": " << ec;
+-                return;
+-            }
+@@ -1037 +1019 @@
+-                acceptor.async_accept(socket, yield[ec]);
++                acceptor->async_accept(socket, yield[ec]);
+@@ -1044,0 +1027,6 @@
++                if (config_.max_connections && sessions->load() >= config_.max_connections) {
++                    socket.close(ec);
++                    continue;
++                }
++                ++*sessions;
++                auto permit = std::shared_ptr<void>(nullptr, [sessions](void*) { --*sessions; });
+@@ -1055 +1043 @@
+-                    boost::asio::spawn(executor, [this, sslCtx, socket=std::move(socket)](boost::asio::yield_context yield) mutable {
++                    boost::asio::spawn(executor, [this, sslCtx, permit, socket=std::move(socket)](boost::asio::yield_context yield) mutable {
+@@ -1060 +1048 @@
+-                            LOG_ERROR << "Caught exception from DoSession [HTTPS]: " << ex.what();
++                            LOG_ERROR << "Caught exception from DoSession [HTTPS]: " << "private transport error";
+@@ -1066 +1054 @@
+-                    boost::asio::spawn(executor, [this, socket=std::move(socket)](boost::asio::yield_context yield) mutable {
++                    boost::asio::spawn(executor, [this, permit, socket=std::move(socket)](boost::asio::yield_context yield) mutable {
+@@ -1071 +1059 @@
+-                            LOG_ERROR << "Caught exception from DoSession [HTTP]: " << ex.what();
++                            LOG_ERROR << "Caught exception from DoSession [HTTP]: " << "private transport error";
+@@ -1218 +1206 @@
+-            LOG_TRACE << "Found route '" << best_route << "' for target '" << tw << "'";
++            LOG_TRACE << "Matched HTTP route";
+@@ -1235 +1223 @@
+-                      << typeid(ex).name() << " from request: " << ex.what();
++                      << typeid(ex).name() << " from request: " << "private transport error";
+@@ -1260 +1248 @@
+-                          << ex.what();
++                          << "private transport error";
+--- a/include/yahat/Mcp.h
++++ b/include/yahat/Mcp.h
+@@ -255,0 +256,4 @@
++        // Consumer-controlled control-plane reservation; disabled by default.
++        std::string reserved_tool;
++        size_t reserved_slots = 0;
++        size_t reserved_calls_per_minute = 0;
+@@ -275,0 +280 @@
++    mutable size_t reserved_window_calls_ = 0;
+--- a/src/Mcp.cpp
++++ b/src/Mcp.cpp
+@@ -357 +357,7 @@
+-            if (now - window_start_ >= std::chrono::minutes{1}) { window_start_ = now; window_calls_ = 0; }
++            if (now - window_start_ >= std::chrono::minutes{1}) { window_start_ = now; window_calls_ = 0; reserved_window_calls_ = 0; }
++            const bool reserved = !options_.reserved_tool.empty() && tool.name == options_.reserved_tool;
++            if (!reserved && (active_calls_ >= options_.max_concurrent_calls - options_.reserved_slots
++                || window_calls_ - reserved_window_calls_ >= options_.calls_per_minute - options_.reserved_calls_per_minute))
++                throw ToolError{"Tool call limit reached; retry later"};
++            if (reserved && reserved_window_calls_ >= options_.reserved_calls_per_minute)
++                throw ToolError{"Control call limit reached; retry later"};
+@@ -360,0 +367 @@
++            if (reserved) ++reserved_window_calls_;

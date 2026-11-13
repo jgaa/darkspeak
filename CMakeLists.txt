@@ -9,6 +9,52 @@ option(DARKSPEAK_FLATPAK_BUILD "Build the Flatpak package" OFF)
 include(cmake/FindSodium.cmake)
 include(FetchContent)
 
+option(DARKSPEAK_WITH_MCP "Enable MCP integration" OFF)
+option(DARKSPEAK_WITH_TEST_MCP "Enable MCP test extensions" OFF)
+# CI toolchain selections; local tests support Python 3.12+ and the normal Qt minimum.
+set(DARKSPEAK_TEST_QT_VERSION 6.10.2)
+set(DARKSPEAK_TEST_PYTHON_VERSION 3.14)
+if(DARKSPEAK_WITH_TEST_MCP AND NOT DARKSPEAK_WITH_MCP)
+    message(FATAL_ERROR "DARKSPEAK_WITH_TEST_MCP requires DARKSPEAK_WITH_MCP")
+endif()
+# Test infrastructure is fetched only for explicitly enabled test builds.
+if(DARKSPEAK_WITH_TEST_MCP)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        message(FATAL_ERROR "The isolated MCP test bootstrap currently requires Linux")
+    endif()
+    set(DARKSPEAK_CHUTNEY_REVISION 4bfd74bfb1f7b1bc663318c47fc8119668fffca3)
+    FetchContent_Declare(chutney
+        GIT_REPOSITORY https://gitlab.torproject.org/tpo/core/chutney.git
+        GIT_TAG ${DARKSPEAK_CHUTNEY_REVISION}
+        GIT_SHALLOW FALSE)
+    FetchContent_GetProperties(chutney)
+    if(NOT chutney_POPULATED)
+        FetchContent_Populate(chutney)
+    endif()
+endif()
+if(DARKSPEAK_WITH_MCP)
+    set(YAHAT_ENABLE_MCP ON CACHE BOOL "" FORCE)
+    set(YAHAT_WITH_TESTS OFF CACHE BOOL "" FORCE)
+    set(YAHAT_WITH_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(YAHAT_ENABLE_METRICS OFF CACHE BOOL "" FORCE)
+    set(DARKSPEAK_YAHAT_REVISION 67cb6c31c13f695fc548c71f7789a0619b1333d4)
+    FetchContent_Declare(yahat
+        GIT_REPOSITORY https://github.com/jgaa/yahat-cpp.git
+        GIT_TAG ${DARKSPEAK_YAHAT_REVISION}
+        GIT_SHALLOW FALSE)
+    # Populate first so offline FetchContent source preparation follows exactly
+    # the same patch path. No installed package or sibling source discovery.
+    FetchContent_GetProperties(yahat)
+    if(NOT yahat_POPULATED)
+        FetchContent_Populate(yahat)
+    endif()
+    set(SOURCE_DIR "${yahat_SOURCE_DIR}")
+    set(PATCH_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/yahat-hardening.patch")
+    include(cmake/PatchYahat.cmake)
+    add_subdirectory("${yahat_SOURCE_DIR}" "${yahat_BINARY_DIR}" EXCLUDE_FROM_ALL)
+endif()
+
+
 # Secret material is kept out of the DarkSpeak database.  SafeKeeping is
 # fetched by CMake so release builds do not depend on a manually installed
 # copy, while the exact revision remains pinned for reproducibility.
@@ -72,6 +118,10 @@ add_subdirectory(src/corelib)
 add_subdirectory(src/torlib)
 add_subdirectory(src/protlib)
 add_subdirectory(src/modelslib)
+if(DARKSPEAK_WITH_MCP)
+    target_compile_definitions(core PUBLIC DARKSPEAK_WITH_MCP=1)
+    add_subdirectory(src/mcp)
+endif()
 add_subdirectory(src/app)
 
 include(CTest)

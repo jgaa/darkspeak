@@ -232,6 +232,9 @@ bool EventJournal::configure(bool enabled, int precision, bool record_filenames)
 }
 void EventJournal::append(Kind kind, qint64 identity, qint64 contact, Direction direction,
                           Outcome outcome, const QByteArray& object, const QString& filename) {
+    if (operational_enabled_ && kind >= IdentityCreated && kind < Aggregated
+        && direction >= Local && direction <= Outgoing && outcome >= None && outcome <= Accepted)
+        emit operationalEvent(int(kind), identity, contact, int(outcome));
     if (!enabled_ || kind < IdentityCreated || kind >= Aggregated || object.size() > 64
         || direction < Local || direction > Outgoing || outcome < None || outcome > Accepted) return;
     // Only local user actions create/modify/delete our identities. Remote

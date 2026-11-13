@@ -11,6 +11,7 @@ Item {
 
     function commit() {
         settings.appAutoConnect = autoConnect.checked;
+        settings["notifications/enabled"] = desktopNotifications.checked;
         settings.useDarkSpeakFolder = useDarkSpeakFolder.checked;
         settings.autostart = autostart.checked;
         settings.autoAcceptIncomingFiles = autoAccept.checked;
@@ -32,6 +33,12 @@ Item {
             ToolTip.text: qsTr("Connect automatically when the application is started")
             ToolTip.visible: hovered
             checked: settings.appAutoConnect
+        }
+
+        CheckBox {
+            id: desktopNotifications
+            text: qsTr("Enable desktop notifications")
+            checked: settings["notifications/enabled"]
         }
 
         CheckBox {

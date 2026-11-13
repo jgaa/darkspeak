@@ -23,15 +23,27 @@ Page {
     Label {
         textFormat: Text.PlainText
         anchors.centerIn: parent
-        visible: list.count === 0
+        visible: list.count === 0 && (!mcp || mcp.pending.length === 0)
         text: qsTr("No new notifications")
         color: appearance.secondaryText
         font: appearance.headingFont
     }
 
+    McpApprovals {
+        id: mcpApprovals
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: mcp && mcp.pending.length > 0 ? Math.min(parent.height * 0.65, implicitHeight) : 0
+        visible: height > 0
+    }
+
     ListView {
         id: list
-        anchors.fill: parent
+        anchors.top: mcpApprovals.bottom
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
         anchors.margins: appearance.spacing
         clip: true
         model: notifications

@@ -10,6 +10,7 @@
 #include "ds/textpolicy.h"
 #include "ds/mimepreferences.h"
 #include "ds/resourcelimits.h"
+#include "notification_text.h"
 #ifdef DARKSPEAK_KDE_COLOR_SCHEME
 #include <KColorSchemeManager>
 #endif
@@ -17,6 +18,27 @@
 class PreferencesTest final : public QObject {
     Q_OBJECT
 private slots:
+    void desktop_notification_privacy_data() {
+        QTest::addColumn<bool>("show_sender");
+        QTest::addColumn<bool>("show_content");
+        QTest::newRow("private-defaults") << false << false;
+        QTest::newRow("sender-only") << true << false;
+        QTest::newRow("content-only") << false << true;
+        QTest::newRow("both") << true << true;
+    }
+    void desktop_notification_privacy() {
+        QFETCH(bool, show_sender);
+        QFETCH(bool, show_content);
+        for (auto type : {ds::app::NotificationType::IncomingMessage, ds::app::NotificationType::IncomingFile,
+                          ds::app::NotificationType::IncomingContactRequest}) {
+            const auto text = ds::app::notificationText(type, show_sender, show_content,
+                "PRIVATE-SENDER", "PRIVATE-CONTENT");
+            const auto combined = text.title + text.body;
+            QCOMPARE(combined.contains("PRIVATE-SENDER"), show_sender);
+            QCOMPARE(combined.contains("PRIVATE-CONTENT"), show_content && type != ds::app::NotificationType::IncomingContactRequest);
+            QVERIFY(!text.title.isEmpty()); QVERIFY(!text.body.isEmpty());
+        }
+    }
     void initTestCase() {
         QCoreApplication::setOrganizationName("DarkSpeakUiTest");
         QCoreApplication::setApplicationName("preferences");
@@ -59,6 +81,46 @@ private slots:
         QVERIFY(!session.error().isEmpty());
         QVERIFY(!QSettings{}.contains("torServiceFromPort"));
         session.cancel();
+    }
+    void storage_permission_repair_setting() {
+        QSettings settings;
+        settings.remove("storage/repairPermissions"); settings.sync();
+        Appearance appearance;
+        DesktopIntegration desktop;
+        SettingsSession session(appearance, desktop);
+        session.begin();
+        QVERIFY(session.values()->value("storage/repairPermissions").toBool());
+        session.values()->insert("storage/repairPermissions", false);
+        session.cancel();
+        QVERIFY(!QSettings{}.contains("storage/repairPermissions"));
+        session.begin();
+        session.values()->insert("storage/repairPermissions", false);
+        QVERIFY(session.save());
+        QVERIFY(!QSettings{}.value("storage/repairPermissions", true).toBool());
+        session.begin();
+        QVERIFY(!session.values()->value("storage/repairPermissions").toBool());
+        session.cancel();
+        settings.remove("storage/repairPermissions"); settings.sync();
+    }
+    void desktop_notification_setting() {
+        QSettings settings;
+        settings.remove("notifications/enabled"); settings.sync();
+        Appearance appearance;
+        DesktopIntegration desktop;
+        SettingsSession session(appearance, desktop);
+        session.begin();
+        QVERIFY(session.values()->value("notifications/enabled").toBool());
+        session.values()->insert("notifications/enabled", false);
+        session.cancel();
+        QVERIFY(!QSettings{}.contains("notifications/enabled"));
+        session.begin();
+        session.values()->insert("notifications/enabled", false);
+        QVERIFY(session.save());
+        QVERIFY(!QSettings{}.value("notifications/enabled", true).toBool());
+        session.begin();
+        QVERIFY(!session.values()->value("notifications/enabled").toBool());
+        session.cancel();
+        settings.remove("notifications/enabled"); settings.sync();
     }
     void geometry_is_clamped() {
         Appearance appearance;

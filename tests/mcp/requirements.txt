@@ -1,0 +1,12 @@
+# Compatible with the yahat revision pinned in the root CMakeLists.txt.
+mcp==2.3.0
+httpx2==2.16.0
+pytest==9.2.0
+pytest-asyncio==1.5.0
+# Imports required by the pinned Chutney source; local launcher only.
+networkx==3.7
+paramiko==5.1.0
+rpyc==6.0.2
+typeguard==4.6.0
+tomli-w==1.2.0
+cryptography==50.0.2

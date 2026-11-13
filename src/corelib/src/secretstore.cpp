@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QUuid>
 
+#include <sodium.h>
 #include <cstddef>
 #include <stdexcept>
 
@@ -138,6 +139,19 @@ void SecretStore::removeTorServiceKey(const QUuid& identity)
 {
     remove(torServiceKeyName(identity));
 }
+
+#ifdef DARKSPEAK_WITH_MCP
+QByteArray SecretStore::mcpFingerprintKey()
+{
+    constexpr auto name = "mcp-arguments-v1";
+    if (const auto existing = vault_->retrieveSecretBytes(name)) return fromBytes(*existing);
+    QByteArray key(crypto_generichash_KEYBYTES, Qt::Uninitialized);
+    randombytes_buf(key.data(), key.size());
+    write(name, key);
+    return key;
+}
+
+#endif
 
 void SecretStore::lock() noexcept
 {

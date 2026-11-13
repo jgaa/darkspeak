@@ -577,6 +577,22 @@ void NotificationsModel::requestNotificationAvatar(core::Identity *identity,
     (*request)();
 }
 
+bool NotificationsModel::decideContactRequest(int notification_id, bool accept)
+{
+    refresh();
+    for (int row = 0; row < rowCount(); ++row) {
+        if (QSqlQueryModel::data(index(row, H_ID), Qt::DisplayRole).toInt() == notification_id
+            && QSqlQueryModel::data(index(row, H_TYPE), Qt::DisplayRole).toInt() == N_ADDME) {
+            acceptContact(row, accept);
+            QSqlQuery remaining;
+            remaining.prepare("SELECT id FROM notification WHERE id=? AND type=0");
+            remaining.addBindValue(notification_id);
+            return remaining.exec() && !remaining.next();
+        }
+    }
+    return false;
+}
+
 void NotificationsModel::acceptContact(const int row, bool accept)
 {
     const auto d = core::DsEngine::fromJson(QSqlQueryModel::data(index(row, H_DATA), Qt::DisplayRole).toByteArray());

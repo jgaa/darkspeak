@@ -46,7 +46,7 @@ void recordPeerEvent(const PeerConnection& peer, EventJournal::Kind kind,
                      const QByteArray& object) {
     auto* engine = DsEngine::tryInstance();
     if (!engine || QThread::currentThread() != engine->thread() || !engine->getIdentityManager()
-        || !engine->events().enabled()) return;
+        || (!engine->events().enabled() && !engine->events().operationalCollectionEnabled())) return;
     if (!peer.eventContext().resolved) {
         auto* identity = engine->getIdentityManager()->identityFromUuid(peer.getIdentityId());
         qint64 contact_id = 0;

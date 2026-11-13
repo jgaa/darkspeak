@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "earth",
+      "path": "earth.jpg",
+      "media_type": "image/jpeg",
+      "size_bytes": 536295,
+      "sha256": "3b47b77b49ccd18ecf0aa58610a2047cc68a2e06a1de2e224295a1346aa2dc95",
+      "creator": "NASA",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Earth_Eastern_Hemisphere.jpg",
+      "download_url": "https://upload.wikimedia.org/wikipedia/commons/6/6f/Earth_Eastern_Hemisphere.jpg",
+      "retrieved_on": "2026-11-13",
+      "public_domain_tag": "PD-USGov-NASA",
+      "public_domain_basis": "United States federal-government work (NASA)",
+      "transformations": [],
+      "roles": [
+        "avatar_a",
+        "attachment_a_to_b",
+        "attachment_b_to_a"
+      ]
+    },
+    {
+      "id": "apollo11",
+      "path": "apollo11.jpg",
+      "media_type": "image/jpeg",
+      "size_bytes": 366774,
+      "sha256": "13caa49532682d254a2daebc19c92f0a84b8d60b5570e6ce8a30af720472f028",
+      "creator": "NASA Apollo 11 team",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Apollo-11_nasa_535.jpg",
+      "download_url": "https://upload.wikimedia.org/wikipedia/commons/d/d1/Apollo-11_nasa_535.jpg",
+      "retrieved_on": "2026-11-13",
+      "public_domain_tag": "PD-USGov-NASA",
+      "public_domain_basis": "United States federal-government work (NASA)",
+      "transformations": [],
+      "roles": [
+        "avatar_b",
+        "attachment_a_to_b",
+        "attachment_b_to_a"
+      ]
+    },
+    {
+      "id": "sos",
+      "path": "sos.ogg",
+      "media_type": "audio/ogg",
+      "size_bytes": 43444,
+      "sha256": "c793046b0de253c340badf958a05a725cd8b3cc2f83e8ca2f6afab21123eb966",
+      "creator": "Hydrargyrum",
+      "source_page": "https://commons.wikimedia.org/wiki/File:SOS_morse_code.ogg",
+      "download_url": "https://upload.wikimedia.org/wikipedia/commons/f/f6/SOS_morse_code.ogg",
+      "retrieved_on": "2026-11-13",
+      "public_domain_tag": "PD-self",
+      "public_domain_basis": "Worldwide public-domain dedication by author; unrestricted-use fallback",
+      "transformations": [],
+      "roles": [
+        "attachment_a_to_b",
+        "attachment_b_to_a"
+      ]
+    }
+  ]
+}

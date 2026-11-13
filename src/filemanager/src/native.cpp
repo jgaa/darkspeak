@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
+#include <logfault/logfault.h>
 #include <cerrno>
 #include <cstdlib>
 #include <fcntl.h>
@@ -16,6 +17,10 @@
 #endif
 
 namespace dsfm::detail {
+namespace { thread_local bool repair_permissions = false; }
+PermissionRepairScope::PermissionRepairScope(bool enabled)
+    : previous_(std::exchange(repair_permissions, enabled)) {}
+PermissionRepairScope::~PermissionRepairScope() { repair_permissions = previous_; }
 void ioCheck(bool condition) {
     if (condition) return;
     auto code = ErrorCode::IoError;
@@ -29,12 +34,31 @@ void ioCheck(bool condition) {
 }
 QString uuid(QUuid id) { return id.toString(QUuid::WithoutBraces); }
 QUuid uuid(const QVariant& value) { return QUuid(value.toString()); }
-Identity identity(int fd, bool directory) {
+Identity identity(int fd, bool directory, const char* role) {
     struct stat info{};
     ioCheck(::fstat(fd, &info) == 0);
     require(directory ? S_ISDIR(info.st_mode) : S_ISREG(info.st_mode), ErrorCode::ExternalModification);
-    require(info.st_uid == ::geteuid() && (info.st_mode & 0077) == 0, ErrorCode::PermissionDenied);
+    // Reject foreign owners and hard links before any permission mutation.
     require(directory || info.st_nlink == 1, ErrorCode::ExternalModification);
+    if (repair_permissions && info.st_uid == ::geteuid() && (info.st_mode & 0077) != 0) {
+        const auto mode = directory ? 0700 : 0600;
+        LFLOG_DEBUG << "FileManager restoring owner-only permissions; role=" << role;
+        LFLOG_TRACE << "FileManager repairing permissions; role=" << role
+                    << ", old_mode=" << QString::number(info.st_mode & 07777, 8).toStdString()
+                    << ", new_mode=" << QString::number(mode, 8).toStdString();
+        ioCheck(::fchmod(fd, mode) == 0);
+        ioCheck(::fstat(fd, &info) == 0);
+    }
+    if (info.st_uid != ::geteuid() || (info.st_mode & 0077) != 0) {
+        LFLOG_ERROR << "FileManager permission check failed; role=" << role
+                    << ", owner_matches=" << (info.st_uid == ::geteuid())
+                    << ", group_or_other_access=" << ((info.st_mode & 0077) != 0);
+        LFLOG_TRACE << "FileManager permission details; role=" << role
+                    << ", mode=" << QString::number(info.st_mode & 07777, 8).toStdString()
+                    << ", owner_uid=" << info.st_uid << ", effective_uid=" << ::geteuid()
+                    << ", owner_gid=" << info.st_gid;
+        fail(ErrorCode::PermissionDenied);
+    }
     return {quint64(info.st_dev), quint64(info.st_ino), quint64(info.st_size),
             qint64(info.st_mtim.tv_sec) * 1000000000LL + info.st_mtim.tv_nsec, directory};
 }
@@ -86,6 +110,8 @@ void syncDirectory(int root, const QString& path) {
 }
 Fd openRoot(const QString& path, bool create, bool private_root) {
 #ifdef __linux__
+    LFLOG_TRACE << "FileManager opening root; path=" << path.toStdString()
+                << ", create=" << create << ", private=" << private_root;
     require(path.startsWith('/') && path.size() <= 32768 && !path.contains(QChar::Null), ErrorCode::InvalidArgument);
     const auto clean = QDir::cleanPath(path);
     require(clean != "/" && clean == path, ErrorCode::InvalidArgument);
@@ -102,8 +128,14 @@ Fd openRoot(const QString& path, bool create, bool private_root) {
         fd = int(::syscall(SYS_openat2, slash.value, QFile::encodeName(relative).constData(), &how, sizeof(how)));
         ioCheck(::fsync(parent.value) == 0);
     }
+    if (fd < 0) {
+        const auto native_error = errno;
+        LFLOG_ERROR << "FileManager root open failed; native=" << native_error;
+        errno = native_error;
+        ioCheck(false);
+    }
     Fd result(fd);
-    if (private_root) identity(result.value, true);
+    if (private_root) identity(result.value, true, "storage root");
     struct statfs filesystem{}; ioCheck(::fstatfs(result.value, &filesystem) == 0);
     // Local filesystems with the required rename/locking/sync model. Network
     // filesystems cannot share the local ancestor-lock registry across hosts.
@@ -120,7 +152,7 @@ QVector<std::shared_ptr<Fd>> lockRoots(int root, bool exclusive) {
     const auto lock_path = QStringLiteral("/tmp/dsfm-locks-%1").arg(::geteuid());
     if (::mkdir(QFile::encodeName(lock_path).constData(), 0700) < 0) ioCheck(errno == EEXIST);
     Fd registry(::open(QFile::encodeName(lock_path).constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
-    identity(registry.value, true);
+    identity(registry.value, true, "lock registry");
     QVector<std::shared_ptr<Fd>> result;
     Fd current(::fcntl(root, F_DUPFD_CLOEXEC, 0));
     bool target = true;
@@ -134,8 +166,13 @@ QVector<std::shared_ptr<Fd>> lockRoots(int root, bool exclusive) {
         }
         const auto key = QCryptographicHash::hash(QByteArray::number(st.st_dev) + ':' + QByteArray::number(st.st_ino), QCryptographicHash::Sha256).toHex();
         auto lock = std::make_shared<Fd>(::openat(registry.value, key.constData(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600));
-        identity(lock->value);
-        if (::flock(lock->value, (target && exclusive ? LOCK_EX : LOCK_SH) | LOCK_NB) < 0) fail(ErrorCode::NamespaceBusy, errno);
+        identity(lock->value, false, "ancestor lock");
+        if (::flock(lock->value, (target && exclusive ? LOCK_EX : LOCK_SH) | LOCK_NB) < 0) {
+            const auto native_error = errno;
+            LFLOG_ERROR << "FileManager namespace lock unavailable; target=" << target
+                        << ", exclusive=" << exclusive << ", native=" << native_error;
+            fail(ErrorCode::NamespaceBusy, native_error);
+        }
         result.append(lock);
         Fd parent(::openat(current.value, "..", O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
         struct stat parent_st{};

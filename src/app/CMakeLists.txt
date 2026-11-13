@@ -26,12 +26,17 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     models prot tor core crypto
     Qt6::Core Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2
     Qt6::Sql Qt6::Svg Qt6::Widgets)
+if(DARKSPEAK_WITH_MCP)
+    target_link_libraries(${PROJECT_NAME} PRIVATE darkspeak_mcp)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE DARKSPEAK_WITH_MCP=1)
+endif()
 darkspeak_link_color_scheme(${PROJECT_NAME})
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_sources(${PROJECT_NAME} PRIVATE
         desktop_notifications.cpp
-        desktop_notifications.h)
+        desktop_notifications.h
+        notification_text.h)
     target_link_libraries(${PROJECT_NAME} PRIVATE Qt6::DBus)
 endif()
 
@@ -45,6 +50,9 @@ qt_add_qml_module(${PROJECT_NAME}
         AboutDialog.qml
         Events.qml
         EventsSettings.qml
+        McpSettings.qml
+        McpApprovals.qml
+        McpActivity.qml
         Log.qml
         Home.qml
         Contacts.qml

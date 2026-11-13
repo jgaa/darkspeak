@@ -22,6 +22,17 @@ struct Failure { Error error; };
 [[noreturn]] inline void fail(ErrorCode code, int native_code = 0) { throw Failure{{code, native_code}}; }
 inline void require(bool condition, ErrorCode code) { if (!condition) fail(code); }
 void ioCheck(bool condition);
+// Each synchronous scheduler job scopes its policy, including SQLite VFS calls.
+// Never keep this scope across a coroutine suspension.
+class PermissionRepairScope {
+public:
+    explicit PermissionRepairScope(bool enabled);
+    ~PermissionRepairScope();
+    PermissionRepairScope(const PermissionRepairScope&) = delete;
+    PermissionRepairScope& operator=(const PermissionRepairScope&) = delete;
+private:
+    bool previous_;
+};
 struct Fd {
     int value = -1;
     Fd() = default;
@@ -37,7 +48,7 @@ struct Identity {
     qint64 modified = 0;
     bool directory = false;
 };
-Identity identity(int fd, bool directory = false);
+Identity identity(int fd, bool directory = false, const char* role = "managed entry");
 Fd openBeneath(int dir, const QString& path, int flags, int mode = 0);
 void makeDirectory(int root, const QString& path);
 void renameSafe(int root, const QString& from, const QString& to, bool replace = false);

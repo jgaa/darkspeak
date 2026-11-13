@@ -614,7 +614,11 @@ QCoro::Task<void> File::importSource(File::ptr_t self, hash_cb_t callback) {
         try { saveStorage(); return true; } catch (...) { return false; }
     });
     data_->source_path.clear();
-    if (!imported) { if (callback) callback({}, tr("Unable to import the selected file into managed storage.")); co_return; }
+    if (!imported) {
+        LFLOG_ERROR << "Outgoing file import failed (storage code=" << int(imported.error().code) << ")";
+        if (callback) callback({}, tr("Unable to import the selected file into managed storage."));
+        co_return;
+    }
     data_->storage_namespace = imported.value().namespace_id;
     data_->storage_id = imported.value().file.id;
     data_->pending_id = {};

@@ -51,6 +51,7 @@ Contact::Contact(const int dbId,
         emit bioChanged();
     });
     connect(this, &Contact::blockedChanged, this, &Contact::peerPreferencesChanged);
+    connect(getIdentity(), &Identity::onlineChanged, this, &Contact::scheduleQueuedConnection);
     connect(this, &Contact::sendAddMeLater,
             this, &Contact::onSendAddMeLater,
             Qt::QueuedConnection);
@@ -143,6 +144,7 @@ void Contact::connectToContact()
 void Contact::disconnectFromContact(bool manual)
 {
     try {
+        if (manual) queued_connection_requested_ = false;
         prepareForNewConnection();
         connection_.reset();
         setOnlineStatus(DISCONNECTED);
@@ -469,6 +471,7 @@ void Contact::setBlocked(bool value)
     if (updateIf("blocked", value, data_->isBlocked,
              this, &Contact::blockedChanged)) {
         if (isBlocked()) {
+            queued_connection_requested_ = false;
             if (isOnline()) {
                 sendBlockNotification();
                 connection_->peer->close();
@@ -502,6 +505,7 @@ void Contact::queueMessage(const Message::ptr_t &message)
     if (message->getDirection() == Message::OUTGOING) {
         messageQueue_.push_back(message);
         message->setState(Message::MS_QUEUED);
+        requestQueuedConnection();
         procesMessageQueue();
     }
 }
@@ -512,7 +516,37 @@ void Contact::queueFile(const std::shared_ptr<File> &file)
 
     // Send offer or start transfer, depending on direction
     fileQueue_.push_back(file);
+    if (file->getDirection() == File::OUTGOING) requestQueuedConnection();
     processFilesQueue();
+}
+
+void Contact::requestQueuedConnection()
+{
+    if (isBlocked() || getState() != ACCEPTED || getOnlineStatus() != DISCONNECTED) return;
+    queued_connection_requested_ = true;
+    scheduleQueuedConnection();
+}
+
+void Contact::scheduleQueuedConnection()
+{
+    if (!queued_connection_requested_ || queued_connection_scheduled_) return;
+    const auto identity = getIdentity();
+    if (!identity || !identity->isOnline()) return;
+    queued_connection_scheduled_ = true;
+    QTimer::singleShot(0, this, [this] {
+        queued_connection_scheduled_ = false;
+        if (!queued_connection_requested_) return;
+        if (isBlocked() || getState() != ACCEPTED || getOnlineStatus() != DISCONNECTED) {
+            queued_connection_requested_ = false;
+            return;
+        }
+        const auto identity = getIdentity();
+        if (!identity || !identity->isOnline()) return;
+        // One attempt per enqueue burst. Failed attempts do not create a retry loop.
+        queued_connection_requested_ = false;
+        LFLOG_DEBUG << "Connecting contact for queued outbound work";
+        connectToContact();
+    });
 }
 
 void Contact::sendAvatar(const QImage &avatar)
@@ -1344,7 +1378,8 @@ bool Contact::processFilesQueue()
 
             if (file->getDirection() == File::OUTGOING) {
                 if (!peerAllowsMimeType(file->getMimeType())
-                        || !peerUserInfo_.allowFiles) {
+                        || !peerUserInfo_.allowFiles
+                        || (!peerUserInfo_.allowUtf8 && !text_policy::permittedAscii(file->getName(), false))) {
                     file->setState(File::FS_REJECTED);
                     fileQueue_.erase(fileQueue_.begin());
                     return true;
@@ -1799,13 +1834,14 @@ void Contact::onReceivedBioRequest(const PeerReq &request)
 
 bool Contact::canSendFiles() const
 {
-    return have_peer_preferences_ && peerUserInfo_.allowFiles && !peerUserInfo_.allowMimeTypes.isEmpty() && !iBlocked() && getState() == ACCEPTED;
+    return !isBlocked() && getState() == ACCEPTED
+        && (!have_peer_preferences_ || (peerUserInfo_.allowFiles && !peerUserInfo_.allowMimeTypes.isEmpty()));
 }
 
 bool Contact::canSendFileType(const QString &mime_type, const QString &filename) const
 {
-    return canSendFiles() && peerAllowsMimeType(mime_type)
-        && (peerUserInfo_.allowUtf8 || text_policy::permittedAscii(filename, false));
+    return canSendFiles() && (!have_peer_preferences_ || (peerAllowsMimeType(mime_type)
+        && (peerUserInfo_.allowUtf8 || text_policy::permittedAscii(filename, false))));
 }
 
 bool Contact::canSendText(const QString &text) const

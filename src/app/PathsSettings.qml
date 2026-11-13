@@ -9,6 +9,7 @@ ColumnLayout {
         settings.dbpath = database.text;
         settings.downloadLocation = download.text;
         settings["storage/originalFilenames"] = originalNames.checked;
+        settings["storage/repairPermissions"] = repairPermissions.checked;
     }
     Label {
         text: qsTr("Database")
@@ -49,6 +50,16 @@ ColumnLayout {
                     download.text = selected;
             }
         }
+    }
+    CheckBox {
+        id: repairPermissions
+        text: qsTr("Automatically restore owner-only storage permissions")
+        checked: settings["storage/repairPermissions"]
+    }
+    Label {
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        text: qsTr("Applies to managed storage owned by your user, as entries are opened. Other owners are always rejected. When disabled, incorrect permissions prevent access. Restart to apply.")
     }
     CheckBox {
         id: originalNames

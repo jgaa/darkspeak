@@ -17,6 +17,7 @@
 #include "ds/crypto.h"
 #include "ds/dsengine.h"
 #include "ds/managedstorage.h"
+#include "ds/resourcelimits.h"
 
 using namespace ds::core;
 template<class T> T waitTask(QCoro::Task<T> task) {
@@ -61,6 +62,22 @@ protected:
         if (socket->setSocketDescriptor(descriptor)) accepted(std::move(socket));
     }
 };
+class QueueProtocol final : public ProtocolManager {
+public:
+    int attempts = 0;
+    State getState() const override { return ONLINE; }
+    QByteArray getPeerHandle(const QUuid&, const QUuid&) override { return {}; }
+    void start() override {}
+    void stop() override {}
+    void createTransportHandle(const TransportHandleReq&) override {}
+    void startService(const QUuid&, const ds::crypto::DsCert::ptr_t&, const QVariantMap&) override {}
+    void stopService(const QUuid&) override {}
+    PeerConnection::ptr_t connectTo(ConnectData) override {
+        ++attempts;
+        return std::make_shared<ReceivingPeer>();
+    }
+    uint64_t sendAddme(const AddmeReq&) override { return 0; }
+};
 class ManagedStorageTest final : public QObject {
     Q_OBJECT
 private slots:
@@ -99,6 +116,38 @@ private slots:
             for (const auto column : it.value().toArray()) QVERIFY(query.record().indexOf(column.toString()) >= 0);
         }
     }
+    void permission_repair_defaults_on() {
+        for (auto area : {ManagedStorage::Downloads, ManagedStorage::Private}) {
+            auto info = waitTask(storage().manager().namespaceInfo(storage().namespaceId(area)));
+            QVERIFY(info); QVERIFY(info.value().config.repair_permissions);
+        }
+    }
+    void desktop_notification_preferences_are_private_per_identity() {
+        QVERIFY(!identity_->getNotificationShowSender());
+        QVERIFY(!identity_->getNotificationShowContent());
+        QmlIdentityReq request;
+        QVERIFY(!request.notificationShowSender()); QVERIFY(!request.notificationShowContent());
+        request.setNotificationShowSender(true); request.setNotificationShowContent(true);
+        QVERIFY(request.value.notificationShowSender); QVERIFY(request.value.notificationShowContent);
+        IdentityData second;
+        second.uuid = QUuid::createUuid(); second.name = "Second local identity";
+        second.cert = ds::crypto::DsCert::create(); second.hash = second.cert->getHash().toByteArray();
+        second.autoConnect = false;
+        auto* other = engine_->getIdentityManager()->addIdentity(second);
+        QVERIFY(other);
+        QSignalSpy changes(identity_, &Identity::securityPreferencesChanged);
+        identity_->setNotificationShowSender(true);
+        identity_->setNotificationShowContent(true);
+        QCOMPARE(changes.count(), 2);
+        QVERIFY(!other->getNotificationShowSender()); QVERIFY(!other->getNotificationShowContent());
+        const auto prefix = QStringLiteral("identity/%1/").arg(identity_->getUuid().toString(QUuid::WithoutBraces));
+        engine_->settings().sync();
+        QSettings persisted(engine_->settings().fileName(), QSettings::IniFormat);
+        QVERIFY(persisted.value(prefix + "notificationShowSender").toBool());
+        QVERIFY(persisted.value(prefix + "notificationShowContent").toBool());
+        identity_->setNotificationShowSender(false); identity_->setNotificationShowContent(false);
+        QCOMPARE(changes.count(), 4);
+    }
     void import_is_a_managed_copy_and_export_is_verified() {
         const auto path = directory_.filePath("source.txt");
         const QByteArray bytes("a managed outgoing snapshot");
@@ -112,6 +161,63 @@ private slots:
         QFile copy(exported.value()); QVERIFY(copy.open(QIODevice::ReadOnly)); QCOMPARE(copy.readAll(), bytes);
         QVERIFY(copy.permissions().testFlag(QFileDevice::ReadOwner));
         QVERIFY(!copy.permissions().testFlag(QFileDevice::ReadGroup));
+    }
+    void outgoing_media_import_uses_normal_file_service() {
+        auto data = std::make_unique<FileData>();
+        data->identity = identity_->getId();
+        data->contact = contact_->getId();
+        data->conversation = conversation_->getId();
+        data->name = QStringLiteral("earth.jpg");
+        data->source_path = QStringLiteral(DS_STORAGE_FIXTURES) + "/../assets/mcp/earth.jpg";
+        auto file = engine_->getFileManager()->addFile(std::move(data));
+        QVERIFY(file);
+        QTRY_VERIFY_WITH_TIMEOUT(file->getState() != File::FS_HASHING, 5000);
+        // No network/peer permissions are configured here: rejection after import
+        // is expected, but the import must have published its verified snapshot.
+        QCOMPARE(file->getHash().size(), 32);
+        QCOMPARE(file->getSize(), 536295);
+        QVERIFY(!file->storageId().isNull());
+    }
+    void vorbis_import_advertises_standard_ogg_media_type() {
+        const auto path = QStringLiteral(DS_STORAGE_FIXTURES) + "/../assets/mcp/sos.ogg";
+        auto imported = waitTask(storage().importFile(path, "vorbis.ogg"));
+        QVERIFY(imported);
+        QCOMPARE(imported.value().mime_type, QStringLiteral("audio/ogg"));
+    }
+    void outgoing_offer_validation_diagnostics_data() {
+        QTest::addColumn<QString>("field");
+        QTest::addColumn<QString>("reason");
+        QTest::newRow("transfer-id") << QString("id") << QString("transfer ID must be 16 bytes");
+        QTest::newRow("negative-size") << QString("negative") << QString("file size is negative");
+        QTest::newRow("oversize") << QString("oversize") << QString("file size exceeds the hard limit");
+        QTest::newRow("checksum") << QString("hash") << QString("SHA-256 checksum must be 32 bytes");
+        QTest::newRow("empty-name") << QString("empty") << QString("filename is empty");
+        QTest::newRow("utf8-name") << QString("long") << QString("filename exceeds 255 UTF-8 bytes");
+        QTest::newRow("mime") << QString("mime") << QString("MIME type is invalid");
+    }
+    void outgoing_offer_validation_diagnostics() {
+        QFETCH(QString, field);
+        QFETCH(QString, reason);
+        auto data = std::make_unique<FileData>();
+        data->identity = identity_->getId(); data->contact = contact_->getId();
+        data->conversation = conversation_->getId(); data->fileId = QByteArray(16, 'i');
+        data->hash = QByteArray(32, 'h'); data->size = 1;
+        data->name = "private-name"; data->mime_type = "application/octet-stream";
+        if (field == "id") data->fileId = QByteArray(32, 'i');
+        else if (field == "negative") data->size = -1;
+        else if (field == "oversize") data->size = qlonglong(ResourceLimits::hardAcceptedFileBytes) + 1;
+        else if (field == "hash") data->hash = QByteArray(64, 'h');
+        else if (field == "empty") data->name.clear();
+        else if (field == "long") data->name = QString(128, QChar(0x00e9));
+        else if (field == "mime") data->mime_type = "invalid-mime";
+        File file(*engine_, std::move(data));
+        ReceivingPeer peer;
+        try {
+            peer.offerFile(file);
+            QFAIL("Invalid metadata was accepted");
+        } catch (const std::runtime_error& error) {
+            QCOMPARE(QString::fromUtf8(error.what()), "File offer violates v3 policy: " + reason);
+        }
     }
     void incoming_is_unpublished_until_checksum_verified_and_resumes() {
         const QByteArray bytes(8192 * 2 + 3, 's');
@@ -318,6 +424,59 @@ private slots:
         QVERIFY(waitTask(storage().collectGarbage()));
         auto missing = waitTask(storage().manager().openPending(storage().namespaceId(ManagedStorage::Private), id)); QVERIFY(!missing);
     }
+    void queued_sends_reconnect_without_connection_churn() {
+        auto protocol = std::make_shared<QueueProtocol>();
+        ProtocolManager::addFactory(ProtocolManager::Transport::TOR, [protocol](QSettings&) { return protocol; });
+        engine_->start();
+        contact_->setState(Contact::ACCEPTED);
+        contact_->setAutoConnect(false);
+        identity_->setOnline(false);
+        contact_->disconnectFromContact(true);
+        // Enqueueing preserves offline identity state, then connects as it comes online.
+        QVERIFY(conversation_->sendMessage("queued while identity offline"));
+        QCoreApplication::processEvents();
+        QCOMPARE(protocol->attempts, 0); QVERIFY(!identity_->isOnline());
+        identity_->setOnline(true);
+        QTRY_COMPARE_WITH_TIMEOUT(protocol->attempts, 1, 2000);
+        QCOMPARE(contact_->getOnlineStatus(), Contact::CONNECTING);
+        QVERIFY(!contact_->wasManuallyDisconnected());
+        QVERIFY(conversation_->sendMessage("another message during connection"));
+        QCoreApplication::processEvents(); QCOMPARE(protocol->attempts, 1);
+        // An explicit disconnect after enqueueing cancels the pending attempt.
+        contact_->disconnectFromContact(true);
+        QVERIFY(conversation_->sendMessage("cancel pending connection"));
+        contact_->disconnectFromContact(true);
+        QCoreApplication::processEvents(); QCOMPARE(protocol->attempts, 1);
+        // Locally imported files also initiate a connection, without offering
+        // metadata before fresh peer preferences arrive.
+        QVERIFY(contact_->canSendFiles());
+        File::ptr_t queued;
+        const auto added = connect(engine_->getFileManager(), &FileManager::fileAdded, this,
+            [&queued](const File::ptr_t& file) { queued = file; });
+        conversation_->sendFile({{"path", QStringLiteral(DS_STORAGE_FIXTURES) + "/../assets/mcp/earth.jpg"}});
+        disconnect(added);
+        QVERIFY(queued);
+        QTRY_COMPARE_WITH_TIMEOUT(queued->getState(), File::FS_WAITING, 5000);
+        QTRY_COMPARE_WITH_TIMEOUT(protocol->attempts, 2, 2000);
+        QVERIFY(!queued->getHash().isEmpty());
+        QCoreApplication::processEvents(); QCOMPARE(protocol->attempts, 2);
+        // Blocked contacts and inbound work never trigger an outgoing dial.
+        contact_->disconnectFromContact(true);
+        contact_->setBlocked(true);
+        QVERIFY(!conversation_->sendMessage("blocked message"));
+        QVERIFY(!contact_->canSendFiles());
+        QCoreApplication::processEvents(); QCOMPARE(protocol->attempts, 2);
+        contact_->setBlocked(false);
+        const auto inbound = incoming("inbound", "inbound.bin");
+        inbound->setState(File::FS_QUEUED);
+        contact_->queueFile(inbound);
+        QCoreApplication::processEvents(); QCOMPARE(protocol->attempts, 2);
+        contact_->setState(Contact::REJECTED);
+        QVERIFY(conversation_->sendMessage("unaccepted contact stays disconnected"));
+        QCoreApplication::processEvents(); QCOMPARE(protocol->attempts, 2);
+        identity_->setOnline(false);
+        contact_->setState(Contact::PENDING);
+    }
     void restart_and_download_location_change_preserve_managed_ids() {
         const QByteArray bytes(8192, 'r');
         auto file = incoming(bytes, "restart.bin");
@@ -329,6 +488,7 @@ private slots:
         const auto next_downloads = directory_.filePath("next-downloads"); QVERIFY(QDir().mkdir(next_downloads));
         engine_->settings().setValue("downloadLocation", next_downloads);
         engine_->settings().setValue("storage/originalFilenames", false);
+        engine_->settings().setValue("storage/repairPermissions", false);
         ManagedStorage reopened(engine_->settings());
         QVERIFY(waitTask(reopened.ready()));
         QVERIFY(reopened.isDownloadNamespace(ns)); QVERIFY(reopened.namespaceId(ManagedStorage::Downloads) != ns);
@@ -339,6 +499,7 @@ private slots:
         auto data = waitTask(reader.value()->readAt(0, 8192)); QVERIFY(data); QCOMPARE(data.value(), bytes);
         QVERIFY(waitTask(reader.value()->close()));
         auto info = waitTask(reopened.manager().namespaceInfo(reopened.namespaceId(ManagedStorage::Downloads))); QVERIFY(info);
+        QVERIFY(!info.value().config.repair_permissions);
         QCOMPARE(info.value().config.naming, dsfm::PhysicalNaming::FileId);
         std::optional<ManagedStorage::Operation> operation(reopened.holdOperation());
         std::optional<dsfm::Result<void>> stopped;

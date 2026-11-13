@@ -29,6 +29,10 @@ public:
     void storeTorServiceKey(const QUuid& identity, const QByteArray& key);
     void removeTorServiceKey(const QUuid& identity);
 
+#ifdef DARKSPEAK_WITH_MCP
+    QByteArray mcpFingerprintKey();
+#endif
+
     void lock() noexcept;
 
 private:

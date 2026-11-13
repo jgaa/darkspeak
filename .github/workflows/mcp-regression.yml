@@ -1,0 +1,87 @@
+name: MCP peer regression
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "src/**"
+      - "dependencies/**"
+      - "tests/**"
+      - "!tests/**/*.md"
+      - ".github/workflows/mcp-regression.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-regression-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  peer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          submodules: recursive
+      - name: Read test toolchain versions
+        id: versions
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          source = Path('CMakeLists.txt').read_text()
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for name in ('QT', 'PYTHON'):
+                  version = re.search(r'set\(DARKSPEAK_TEST_' + name + r'_VERSION ([0-9.]+)\)', source).group(1)
+                  output.write(name.lower() + '=' + version + '\n')
+          PY
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ steps.versions.outputs.python }}
+          cache: pip
+          cache-dependency-path: tests/mcp/requirements.txt
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake ninja-build g++ pkg-config libsodium-dev \
+            libssl-dev libsqlite3-dev zlib1g-dev libboost-all-dev tor \
+            libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ steps.versions.outputs.qt }}
+          modules: qtgrpc qtimageformats qtshadertools qtsvg qttools
+          cache: true
+      - name: Install pinned Python dependencies
+        run: python -m pip install --quiet -r tests/mcp/requirements.txt
+      - name: Configure isolated test build
+        run: |
+          cmake -S . -B /tmp/darkspeak-mcp-ci -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON \
+            -DDARKSPEAK_WITH_MCP=ON -DDARKSPEAK_WITH_TEST_MCP=ON \
+            -DPython3_EXECUTABLE="$(command -v python)"
+      - name: Build test runtimes and focused checks
+        run: |
+          cmake --build /tmp/darkspeak-mcp-ci --parallel 2 --target \
+            mcp_test_instance mcp_service_test mcp_policy_test mcp_ui_test managed_storage_test
+      - name: Run sequential regression suite
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: |
+          export DARKSPEAK_MCP_TEST_PYTHON="$(command -v python)"
+          ctest --test-dir /tmp/darkspeak-mcp-ci --parallel 1 --output-on-failure \
+            -R '^(mcp_.*|managed_storage)$'
+      - name: Retain sanitized scenario reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mcp-sanitized-results
+          path: /tmp/darkspeak-mcp-ci/tests/mcp-artifacts/*.json
+          if-no-files-found: ignore
+          retention-days: 7

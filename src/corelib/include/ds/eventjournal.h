@@ -38,6 +38,8 @@ public:
     EventJournal(QSqlDatabase db, QSettings& settings, QObject* parent = nullptr);
     ~EventJournal() override;
     bool enabled() const { return enabled_; }
+    void setOperationalCollectionEnabled(bool enabled) { operational_enabled_ = enabled; }
+    bool operationalCollectionEnabled() const { return operational_enabled_; }
     QString error() const { return error_; }
     bool hasOlder() const { return has_older_; }
     bool hasNewer() const { return has_newer_; }
@@ -70,6 +72,8 @@ signals:
     void pageChanged();
     void verificationChanged();
     void journalChanged();
+    // Bounded metadata producer, independent of optional persistent recording.
+    void operationalEvent(int kind, qint64 identity, qint64 contact, int outcome);
 private:
     struct Key {
         int kind, direction, outcome;
@@ -88,6 +92,7 @@ private:
     qint64 rounded(qint64 seconds) const;
     QSqlDatabase db_;
     QSettings& settings_;
+    bool operational_enabled_ = false;
     bool enabled_ = false, ready_ = false, active_ = false, record_filenames_ = true;
     bool has_older_ = false, has_newer_ = false, follow_ = true;
     int precision_ = 60;

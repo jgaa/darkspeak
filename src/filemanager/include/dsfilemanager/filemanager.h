@@ -95,6 +95,7 @@ struct NamespaceConfig {
     PhysicalNaming naming = PhysicalNaming::FileId;
     NamespaceLimits limits;
     std::optional<NamespaceLimits> limits_override; // Explicit override on reopen; otherwise use persisted limits.
+    bool repair_permissions = false; // Local runtime policy: tighten owned entries on access; never change ownership.
 };
 struct NamespaceInfo {
     NamespaceConfig config;

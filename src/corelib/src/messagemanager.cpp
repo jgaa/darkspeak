@@ -66,7 +66,7 @@ Message::ptr_t MessageManager::getMessage(const QByteArray &messageId, const Mes
     return {};
 }
 
-Message::ptr_t MessageManager::sendMessage(Conversation &conversation, MessageData data)
+Message::ptr_t MessageManager::sendMessage(Conversation &conversation, MessageData data, const std::function<void(int)>& commit)
 {
     auto message = make_shared<Message>(*this, data, Message::OUTGOING, conversation.getId());
 
@@ -77,7 +77,20 @@ Message::ptr_t MessageManager::sendMessage(Conversation &conversation, MessageDa
     if (!message->validate(*cert)) {
         throw Error("Invalid v3 outgoing message");
     }
-    message->addToDb();
+    // MCP can atomically associate durable commit evidence with the outgoing
+    // message. No model signal or network queue sees an uncommitted insertion.
+    auto& db = DsEngine::instance().getDb();
+    if (commit && !db.transaction()) throw Error("Cannot begin outgoing message transaction");
+    try {
+        message->addToDb();
+        if (commit) {
+            commit(message->getId());
+            if (!db.commit()) throw Error("Cannot commit outgoing message transaction");
+        }
+    } catch (...) {
+        if (commit) db.rollback();
+        throw;
+    }
     registry_.add(message->getId(), message);
     touch(message);
 

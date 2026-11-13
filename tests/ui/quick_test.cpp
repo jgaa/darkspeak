@@ -59,6 +59,7 @@ public slots:
         settings_->setEventsConfigurator([this](bool enabled, int precision, bool record_filenames) { return events_->configure(enabled, precision, record_filenames); });
     }
     void qmlEngineAvailable(QQmlEngine *engine) {
+        engine->rootContext()->setContextProperty("mcp", static_cast<QObject*>(nullptr));
         engine->rootContext()->setContextProperty("events", events_.get());
         engine->rootContext()->setContextProperty("appearance", appearance_);
         engine->rootContext()->setContextProperty("uiTest", this);

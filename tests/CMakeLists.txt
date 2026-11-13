@@ -79,3 +79,43 @@ target_link_libraries(managed_storage_test PRIVATE models prot Qt6::Test)
 target_compile_definitions(managed_storage_test PRIVATE DS_STORAGE_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 add_test(NAME managed_storage COMMAND managed_storage_test)
 set_tests_properties(managed_storage PROPERTIES TIMEOUT 120 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+if(DARKSPEAK_WITH_MCP)
+    add_executable(mcp_policy_test mcp_policy_test.cpp ../src/mcp/store.cpp)
+    target_include_directories(mcp_policy_test PRIVATE ../src/mcp)
+    target_compile_features(mcp_policy_test PRIVATE cxx_std_20)
+    target_compile_definitions(mcp_policy_test PRIVATE MCP_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/mcp")
+    target_link_libraries(mcp_policy_test PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+    add_test(NAME mcp_policy COMMAND mcp_policy_test)
+    add_executable(mcp_ui_test mcp_ui_test.cpp)
+    target_compile_features(mcp_ui_test PRIVATE cxx_std_20)
+    target_compile_definitions(mcp_ui_test PRIVATE MCP_UI_SOURCE="${CMAKE_SOURCE_DIR}/src/app")
+    target_link_libraries(mcp_ui_test PRIVATE darkspeak_ui_test_support Qt6::Quick Qt6::QuickControls2 Qt6::Test)
+    add_test(NAME mcp_ui COMMAND mcp_ui_test -nocrashhandler)
+    set_tests_properties(mcp_ui PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+    add_executable(mcp_service_test mcp_service_test.cpp)
+    target_compile_features(mcp_service_test PRIVATE cxx_std_20)
+    target_compile_definitions(mcp_service_test PRIVATE MCP_CLIENT_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/mcp/client_smoke.py")
+    target_link_libraries(mcp_service_test PRIVATE darkspeak_mcp models prot Qt6::Test)
+    target_include_directories(mcp_service_test PRIVATE ${CMAKE_SOURCE_DIR}/dependencies/logfault/include)
+    add_test(NAME mcp_service COMMAND mcp_service_test -nocrashhandler)
+    set_tests_properties(mcp_policy mcp_service PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
+if(DARKSPEAK_WITH_TEST_MCP)
+    add_executable(mcp_test_instance mcp/test_instance.cpp)
+    target_link_libraries(mcp_test_instance PRIVATE darkspeak_mcp)
+    find_package(Python3 3.12 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME mcp_harness COMMAND ${Python3_EXECUTABLE} -m pytest -q
+        ${CMAKE_CURRENT_SOURCE_DIR}/mcp/test_harness.py)
+    set_tests_properties(mcp_harness PROPERTIES TIMEOUT 30 LABELS "mcp;integration")
+    add_test(NAME mcp_bootstrap COMMAND ${CMAKE_COMMAND} -E env
+        DARKSPEAK_TEST_INSTANCE=$<TARGET_FILE:mcp_test_instance>
+        ${Python3_EXECUTABLE} -m pytest -q ${CMAKE_CURRENT_SOURCE_DIR}/mcp/test_bootstrap.py)
+    set_tests_properties(mcp_bootstrap PROPERTIES TIMEOUT 45 RUN_SERIAL TRUE LABELS "mcp;integration")
+    add_test(NAME mcp_peer_happy_path COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/mcp/run_scenario.py
+        --instance $<TARGET_FILE:mcp_test_instance> --chutney ${chutney_SOURCE_DIR}
+        --artifacts ${CMAKE_CURRENT_BINARY_DIR}/mcp-artifacts)
+    set_tests_properties(mcp_peer_happy_path PROPERTIES TIMEOUT 630 RUN_SERIAL TRUE LABELS "mcp;integration;tor")
+endif()

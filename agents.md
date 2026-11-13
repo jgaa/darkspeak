@@ -34,6 +34,19 @@ Use `git -c safe.directory=/var/local/src/darkspeak ...` if Git reports dubious
 ownership. Build directories belong in `/tmp` until the project has an agreed
 build-directory convention.
 
+## Test entry point maintenance
+
+- `tests/run-all-tests.sh` is the entry point for building and running all unit,
+  functional, GUI, integration and acceptance tests.
+- Whenever tests are added, removed or renamed, review and maintain that script
+  in the same change. Keep its prerequisites, build flags, Python dependency
+  setup and execution behavior current; update `tests/README.md` as needed.
+- Register every automated test with CTest, including future Python acceptance
+  scenarios, and give it a bounded timeout. The script must build all required
+  binaries and run the complete catalog without a fixed test-name filter.
+- Keep ordinary runs isolated from real profiles and public Tor. Preserve
+  sequential execution until parallel test isolation has been verified.
+
 ## Protocol specification:
  - Definition and rules: `doc/protocol.md`
  - Protofile: `proto/darkspeak.proto`

@@ -12,6 +12,9 @@ QVariantMap defaults()
 {
     using Limits = ds::core::ResourceLimits;
     return {
+        {"mcp/enabled", false}, {"mcp/address", "127.0.0.1"}, {"mcp/port", 17839}, {"mcp/approvalTimeout", 60},
+        {"notifications/enabled", true},
+        {"storage/repairPermissions", true},
         {"storage/originalFilenames", true}, {"storage/downloadsInitialized", false}, {"events/enabled", false}, {"events/recordFilenames", true}, {"events/precisionSeconds", 60},
         {"appAutoConnect", true}, {"autostart", false}, {"useDarkSpeakFolder", true},
         {"autoAcceptIncomingFiles", false}, {"includeConversationNameInDownloadPath", false},
@@ -96,6 +99,11 @@ bool SettingsSession::save()
     if (!integer("events/precisionSeconds", 0, 3600)
         || (precision != 0 && precision != 60 && precision != 300 && precision != 1800 && precision != 3600))
         return fail(tr("Select a valid event timestamp precision."));
+    const QHostAddress mcp_address(values_.value("mcp/address").toString());
+    if (mcp_address.isNull() || !mcp_address.isLoopback()
+        || values_.value("mcp/address").toString().contains('%')
+        || !integer("mcp/port", 1, 65535) || !integer("mcp/approvalTimeout", 1, 300))
+        return fail(tr("MCP requires a literal loopback address, port 1–65535, and timeout 1–300 seconds."));
     using Limits = ds::core::ResourceLimits;
     const struct { const char *key; quint64 minimum; quint64 maximum; } limits[] = {
         {"resourceUnapprovedConnections", 1, Limits::hardUnapprovedConnections},
@@ -164,6 +172,16 @@ bool SettingsSession::save()
         restore_settings();
         if (autostart != old_autostart) desktop_.setAutostartEnabled(old_autostart);
         return fail(tr("Unable to update event recording. Check the Events page for the database error."));
+    }
+    if (mcp_configurator_ && !mcp_configurator_(values_.value("mcp/enabled").toBool(),
+            values_.value("mcp/address").toString(), values_.value("mcp/port").toInt(),
+            values_.value("mcp/approvalTimeout").toInt())) {
+        restore_settings();
+        if (events_configurator_) events_configurator_(original_.value("events/enabled").toBool(),
+            original_.value("events/precisionSeconds").toInt(), original_.value("events/recordFilenames").toBool());
+        if (autostart != old_autostart) desktop_.setAutostartEnabled(old_autostart);
+        if (folder != old_folder) desktop_.setDarkSpeakFolderEnabled(old_folder);
+        return fail(tr("Unable to configure MCP. The previous endpoint and settings remain active."));
     }
     appearance_.savePreview();
     return true;

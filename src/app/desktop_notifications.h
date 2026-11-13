@@ -2,14 +2,9 @@
 
 #include <QObject>
 #include <QStringList>
+#include "notification_text.h"
 
 namespace ds::app {
-
-enum class NotificationType {
-    IncomingMessage,
-    IncomingFile,
-    IncomingContactRequest
-};
 
 class DesktopNotifications final : public QObject
 {

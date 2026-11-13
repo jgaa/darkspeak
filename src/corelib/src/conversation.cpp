@@ -49,6 +49,11 @@ void Conversation::incrementUnread()
 
 bool Conversation::sendMessage(const QString &text)
 {
+    return sendMessageWithCommit(text, {});
+}
+
+bool Conversation::sendMessageWithCommit(const QString &text, const std::function<void(int)>& commit)
+{
     try {
         LFLOG_DEBUG << "Sending message text payload of " << text.size() << " characters";
 
@@ -74,7 +79,7 @@ bool Conversation::sendMessage(const QString &text)
         data.messageId = crypto::Crypto::getSha256(
             std::string_view{"DarkSpeak message id v3"}, data.sender, random);
 
-        DsEngine::instance().getMessageManager()->sendMessage(*this, data);
+        DsEngine::instance().getMessageManager()->sendMessage(*this, data, commit);
         touchLastActivity();
         return true;
     } catch (const std::exception& ex) {

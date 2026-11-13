@@ -60,6 +60,8 @@ Identity::Identity(QObject& parent,
     settings.setValue(prefix + QStringLiteral("publicBio"), data_.publicBio);
     settings.setValue(prefix + QStringLiteral("bio"), data_.bio);
     settings.setValue(prefix + QStringLiteral("publicAvatar"), data_.publicAvatar);
+    settings.setValue(prefix + QStringLiteral("notificationShowSender"), data_.notificationShowSender);
+    settings.setValue(prefix + QStringLiteral("notificationShowContent"), data_.notificationShowContent);
 
     auto* changed = new QTimer(this);
     changed->setSingleShot(true);
@@ -817,6 +819,24 @@ void Identity::setAllowReactions(bool value)
         QStringLiteral("identity/%1/allowReactions").arg(data_.uuid.toString(QUuid::WithoutBraces)), value);
     emit securityPreferencesChanged();
     forAllContacts([](const Contact::ptr_t& contact) { if (contact->isOnline()) contact->sendUserInfo(); });
+}
+
+void Identity::setNotificationShowSender(bool value)
+{
+    if (value == data_.notificationShowSender) return;
+    data_.notificationShowSender = value;
+    DsEngine::instance().settings().setValue(
+        QStringLiteral("identity/%1/notificationShowSender").arg(data_.uuid.toString(QUuid::WithoutBraces)), value);
+    emit securityPreferencesChanged();
+}
+
+void Identity::setNotificationShowContent(bool value)
+{
+    if (value == data_.notificationShowContent) return;
+    data_.notificationShowContent = value;
+    DsEngine::instance().settings().setValue(
+        QStringLiteral("identity/%1/notificationShowContent").arg(data_.uuid.toString(QUuid::WithoutBraces)), value);
+    emit securityPreferencesChanged();
 }
 
 void Identity::setPublicBio(bool value)

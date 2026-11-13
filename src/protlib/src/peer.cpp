@@ -1975,14 +1975,23 @@ uint64_t Peer::sendAvatarResponse(const quint64 responseToRequestId,
 uint64_t Peer::offerFile(const File &file)
 {
     const auto mimeType = file.getMimeType();
-    if (file.getFileId().size() != 16 || file.getConversation() == nullptr
-            || file.getSize() < 0
-            || static_cast<quint64>(file.getSize()) > ResourceLimits::hardAcceptedFileBytes
-            || file.getHash().size() != crypto_hash_sha256_BYTES
-            || file.getName().isEmpty() || file.getName().toUtf8().size() > 255
-            || !validMimeType(mimeType)) {
-        throw Error("File offer violates v3 policy");
-    }
+    const auto reject = [&file](const char* reason) {
+        LFLOG_TRACE << "Outgoing file offer validation failed; reason=" << reason
+                    << ", transfer_id_bytes=" << file.getFileId().size()
+                    << ", sha256_bytes=" << file.getHash().size()
+                    << ", size=" << file.getSize()
+                    << ", filename_bytes=" << file.getName().toUtf8().size();
+        throw Error(QStringLiteral("File offer violates v3 policy: %1").arg(QLatin1String(reason)));
+    };
+    if (file.getFileId().size() != 16) reject("transfer ID must be 16 bytes");
+    if (file.getConversation() == nullptr) reject("conversation is missing");
+    if (file.getSize() < 0) reject("file size is negative");
+    if (static_cast<quint64>(file.getSize()) > ResourceLimits::hardAcceptedFileBytes)
+        reject("file size exceeds the hard limit");
+    if (file.getHash().size() != crypto_hash_sha256_BYTES) reject("SHA-256 checksum must be 32 bytes");
+    if (file.getName().isEmpty()) reject("filename is empty");
+    if (file.getName().toUtf8().size() > 255) reject("filename exceeds 255 UTF-8 bytes");
+    if (!validMimeType(mimeType)) reject("MIME type is invalid");
     ds::protocol::FileOffer offer;
     offer.setFileId(file.getFileId());
     offer.setConversationId(file.getConversation()->getHash());

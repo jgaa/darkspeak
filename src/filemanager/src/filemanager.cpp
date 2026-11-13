@@ -257,6 +257,7 @@ struct NativeFileManager::Impl : std::enable_shared_from_this<Impl> {
         auto work = [self, ns, function = std::move(function), recovery]() mutable -> Result<T> {
             require(!self->shutting_down, ErrorCode::ShuttingDown);
             std::lock_guard lock(ns->mutex);
+            PermissionRepairScope permissions(ns->config.repair_permissions);
             auto current_root = openRoot(ns->config.storage_root, false);
             const auto expected_root = identity(ns->root.value, true); const auto actual_root = identity(current_root.value, true);
             require(expected_root.dev == actual_root.dev && expected_root.ino == actual_root.ino, ErrorCode::ExternalModification);
@@ -558,6 +559,7 @@ NativeFileManager::NativeFileManager() : impl_(std::make_shared<Impl>()) {}
 NativeFileManager::~NativeFileManager() = default;
 namespace {
 Result<NamespaceInfo> acquireNamespace(std::shared_ptr<NativeFileManager::Impl> impl, NamespaceConfig config, bool create, CancellationToken cancel) {
+    PermissionRepairScope permissions(config.repair_permissions);
     cancelCheck(cancel); require(!impl->shutting_down, ErrorCode::ShuttingDown);
     require(!config.id.isNull() && (config.naming == PhysicalNaming::OriginalName || config.naming == PhysicalNaming::FileId), ErrorCode::InvalidArgument);
     validateLimits(config.limits);
@@ -586,11 +588,11 @@ Result<NamespaceInfo> acquireNamespace(std::shared_ptr<NativeFileManager::Impl> 
         makeDirectory(ns->root.value, ".filemanager/staging"); makeDirectory(ns->root.value, ".filemanager/recovery");
         if (config.naming == PhysicalNaming::FileId) makeDirectory(ns->root.value, "objects");
     }
-    ns->internal = openBeneath(ns->root.value, ".filemanager", O_RDONLY | O_DIRECTORY); identity(ns->internal.value, true);
-    ns->owner_lock = openBeneath(ns->internal.value, "owner.lock", O_RDWR | O_CREAT, 0600); identity(ns->owner_lock.value);
+    ns->internal = openBeneath(ns->root.value, ".filemanager", O_RDONLY | O_DIRECTORY); identity(ns->internal.value, true, "internal directory");
+    ns->owner_lock = openBeneath(ns->internal.value, "owner.lock", O_RDWR | O_CREAT, 0600); identity(ns->owner_lock.value, false, "owner lock");
     if (::flock(ns->owner_lock.value, LOCK_EX | LOCK_NB) < 0) fail(ErrorCode::NamespaceBusy, errno);
     {
-        auto file = openBeneath(ns->internal.value, "catalog.db", create ? O_RDWR | O_CREAT | O_EXCL : O_RDWR, create ? 0600 : 0); identity(file.value);
+        auto file = openBeneath(ns->internal.value, "catalog.db", create ? O_RDWR | O_CREAT | O_EXCL : O_RDWR, create ? 0600 : 0); identity(file.value, false, "catalog");
     }
     Catalog db(ns->catalogPath(), config.limits.max_catalog_bytes, create);
     if (create) {
@@ -675,7 +677,12 @@ QCoro::Task<Result<QVector<NamespaceInfo>>> NativeFileManager::namespaces() {
         QVector<std::shared_ptr<Namespace>> spaces;
         { std::lock_guard lock(impl->mutex); for (auto& ns : impl->spaces) spaces.append(ns); }
         QVector<NamespaceInfo> result;
-        for (auto& ns : spaces) { std::lock_guard lock(ns->mutex); Catalog db(ns->catalogPath(), ns->config.limits.max_catalog_bytes, false); result.append(infoFor(*ns, db)); }
+        for (auto& ns : spaces) {
+            std::lock_guard lock(ns->mutex);
+            PermissionRepairScope permissions(ns->config.repair_permissions);
+            Catalog db(ns->catalogPath(), ns->config.limits.max_catalog_bytes, false);
+            result.append(infoFor(*ns, db));
+        }
         return result;
     });
 }
@@ -989,7 +996,9 @@ QCoro::Task<Result<void>> NativeFileManager::shutdown() {
     }
     for (auto ns : spaces) {
         auto result = co_await execute<void>(impl->scheduler, ns->config.id, 0, 4096, 64ULL << 20, [impl, ns]() -> Result<void> {
-            std::lock_guard lock(ns->mutex); Catalog db(ns->catalogPath(), ns->config.limits.max_catalog_bytes, false);
+            std::lock_guard lock(ns->mutex);
+            PermissionRepairScope permissions(ns->config.repair_permissions);
+            Catalog db(ns->catalogPath(), ns->config.limits.max_catalog_bytes, false);
             std::optional<Error> error;
             try { recover(*ns, db); } catch (const Failure& failure) { error = failure.error; }
             QVector<std::shared_ptr<WriterState>> writers;

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "tables": {
+    "mcp_retry_epoch": ["singleton", "token", "created"],
+    "mcp_keys": ["id", "name", "verifier", "identities", "capabilities", "created", "expires", "last_used", "enabled"],
+    "mcp_rules": ["id", "key_id", "identity", "tool", "contact", "decision"],
+    "mcp_contacts": ["identity", "contact", "permission", "decision"],
+    "mcp_operations": ["id", "key_id", "identity", "tool", "targets", "retry_hash", "fingerprint", "state", "created", "reference"]
+  }
+}

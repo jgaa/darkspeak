@@ -88,7 +88,9 @@ ApplicationWindow {
         property bool appAutoConnect: true
     }
 
-    function openSettings() {
+    function openSettings(section) {
+        settingsLoader.initialSection = section === undefined ? 0 : section;
+        if (settingsLoader.item) settingsLoader.item.initialSection = settingsLoader.initialSection;
         if (!settingsLoader.active)
             settingsLoader.active = true;
         else if (settingsLoader.item)
@@ -373,6 +375,11 @@ ApplicationWindow {
             Item {
                 Layout.fillWidth: true
             }
+            McpActivity {
+                visible: !!mcp && mcp.enabled
+                onOpenSettings: mainWindow.openSettings(7)
+                onOpenApprovals: manager.currentPage = Manager.HOME
+            }
             Label {
                 text: manager.statusMessage
                 textFormat: Text.PlainText
@@ -390,9 +397,10 @@ ApplicationWindow {
     }
     Loader {
         id: settingsLoader
+        property int initialSection: 0
         active: false
         source: "SettingsDialog.qml"
-        onLoaded: item.open()
+        onLoaded: { item.initialSection = initialSection; item.open(); }
         Connections {
             target: settingsLoader.item
             function onClosed() {

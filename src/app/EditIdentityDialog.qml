@@ -29,6 +29,8 @@ UiDialog {
             value.allowReactions = identity.allowReactions;
             value.publicBio = identity.publicBio;
             value.publicAvatar = identity.publicAvatar;
+            value.notificationShowSender = identity.notificationShowSender;
+            value.notificationShowContent = identity.notificationShowContent;
         }
         mimeTypes.text = value.allowMimeTypes.join("\n");
     }
@@ -265,6 +267,16 @@ UiDialog {
                         checked: value.allowReactions
                     }
                     CheckBox {
+                        id: notificationShowSender
+                        text: qsTr("Show sender names in desktop notifications")
+                        checked: value.notificationShowSender
+                    }
+                    CheckBox {
+                        id: notificationShowContent
+                        text: qsTr("Show message content and filenames in desktop notifications")
+                        checked: value.notificationShowContent
+                    }
+                    CheckBox {
                         id: publicBio
                         text: qsTr("Allow public Bio visibility")
                         checked: value.publicBio
@@ -312,6 +324,8 @@ UiDialog {
         value.allowReactions = allowReactions.checked;
         value.publicBio = publicBio.checked;
         value.publicAvatar = publicAvatar.checked;
+        value.notificationShowSender = notificationShowSender.checked;
+        value.notificationShowContent = notificationShowContent.checked;
         if (!value.setMimeText(mimeTypes.text))
             return;
         if (identity) {
@@ -327,6 +341,8 @@ UiDialog {
             identity.allowReactions = value.allowReactions;
             identity.publicBio = value.publicBio;
             identity.publicAvatar = value.publicAvatar;
+            identity.notificationShowSender = value.notificationShowSender;
+            identity.notificationShowContent = value.notificationShowContent;
             identity.allowMimeTypes = value.allowMimeTypes;
         } else {
             identities.createIdentity(value);

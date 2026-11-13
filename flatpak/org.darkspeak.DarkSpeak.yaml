@@ -67,6 +67,7 @@ modules:
           -DDARKSPEAK_FLATPAK_BUILD=ON \
           -DDARKSPEAK_KDE_COLOR_SCHEME=ON \
           -DDSFM_QCORO_SOURCE_DIR="$(pwd)/third_party/qcoro" \
+          -DFETCHCONTENT_SOURCE_DIR_YAHAT="$(pwd)/third_party/yahat" \
           -DFETCHCONTENT_SOURCE_DIR_SAFEKEEPING="$(pwd)/third_party/safekeeping" \
           -DFETCHCONTENT_SOURCE_DIR_NAYUKI_QR_GENERATOR="$(pwd)/third_party/nayuki_qr_generator" \
           -DBUILD_TESTING=OFF
@@ -100,6 +101,11 @@ modules:
         url: https://github.com/nayuki/QR-Code-generator.git
         tag: v1.8.0
         dest: third_party/nayuki_qr_generator
+      # Generated pin: scripts/update-mcp-flatpak-pin.py reads root CMake.
+      - type: git
+        url: https://github.com/jgaa/yahat-cpp.git
+        commit: 67cb6c31c13f695fc548c71f7789a0619b1333d4
+        dest: third_party/yahat
       - type: git
         url: https://github.com/jgaa/SafeKeeping.git
         commit: c53b3f5ad5ec150058e0313a856aa3ad2c68f9e1

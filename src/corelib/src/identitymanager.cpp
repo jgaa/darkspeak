@@ -74,6 +74,8 @@ void IdentityManager::load()
         data.allowReactions = settings.value(prefix + QStringLiteral("allowReactions"), true).toBool();
         data.publicBio = settings.value(prefix + QStringLiteral("publicBio"), true).toBool();
         data.publicAvatar = settings.value(prefix + QStringLiteral("publicAvatar"), true).toBool();
+        data.notificationShowSender = settings.value(prefix + QStringLiteral("notificationShowSender"), false).toBool();
+        data.notificationShowContent = settings.value(prefix + QStringLiteral("notificationShowContent"), false).toBool();
 
         auto identity = new Identity{
                     *this,
@@ -184,6 +186,8 @@ void IdentityManager::createIdentity(const QmlIdentityReq *req)
     id.allowReactions = req->value.allowReactions;
     id.publicBio = req->value.publicBio;
     id.publicAvatar = req->value.publicAvatar;
+    id.notificationShowSender = req->value.notificationShowSender;
+    id.notificationShowContent = req->value.notificationShowContent;
     id.uuid = req->value.uuid;
     id.autoConnect = req->autoConnect();
     id.cert = DsCert::create();

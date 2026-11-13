@@ -8,6 +8,7 @@ UiDialog {
     width: Math.min(mainWindow.width - 24 * appearance.factor, 900 * appearance.factor)
     height: Math.min(mainWindow.height - 24 * appearance.factor, 760 * appearance.factor)
     property bool saved: false
+    property int initialSection: 0
 
     Component.onCompleted: settingsSession.begin()
     Component.onDestruction: {
@@ -25,8 +26,8 @@ UiDialog {
                 objectName: "settingsSections"
                 Layout.preferredWidth: 150 * appearance.factor
                 Layout.fillHeight: true
-                currentIndex: 0
-                model: [qsTr("General"), qsTr("Appearance"), qsTr("Tor"), qsTr("Files / Paths"), qsTr("Logging"), qsTr("Limits"), qsTr("Events")]
+                currentIndex: root.initialSection
+                model: [qsTr("General"), qsTr("Appearance"), qsTr("Tor"), qsTr("Files / Paths"), qsTr("Logging"), qsTr("Limits"), qsTr("Events")].concat(mcp ? [qsTr("MCP")] : [])
                 delegate: ItemDelegate {
                     required property int index
                     required property string modelData
@@ -41,7 +42,7 @@ UiDialog {
                 Layout.fillHeight: true
                 currentIndex: sections.currentIndex
                 Repeater {
-                    model: ["GeneralSettings.qml", "AppearanceSettings.qml", "TorSettings.qml", "PathsSettings.qml", "LogSettings.qml", "ResourceLimitsSettings.qml", "EventsSettings.qml"]
+                    model: ["GeneralSettings.qml", "AppearanceSettings.qml", "TorSettings.qml", "PathsSettings.qml", "LogSettings.qml", "ResourceLimitsSettings.qml", "EventsSettings.qml"].concat(mcp ? ["McpSettings.qml"] : [])
                     ScrollView {
                         id: scroll
                         required property int index

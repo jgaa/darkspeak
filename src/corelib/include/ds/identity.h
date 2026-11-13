@@ -39,6 +39,8 @@ struct IdentityData {
     bool allowReactions = true;
     bool publicBio = true;
     bool publicAvatar = true;
+    bool notificationShowSender = false;
+    bool notificationShowContent = false;
     crypto::DsCert::ptr_t cert;
     bool autoConnect = true;
 };
@@ -57,6 +59,8 @@ struct IdentityReq {
     bool allowReactions = true;
     bool publicBio = true;
     bool publicAvatar = true;
+    bool notificationShowSender = false;
+    bool notificationShowContent = false;
     bool autoConnect = true;
 };
 
@@ -80,6 +84,8 @@ public:
     Q_PROPERTY(bool allowReactions READ allowReactions WRITE setAllowReactions NOTIFY securityPreferencesChanged)
     Q_PROPERTY(bool publicBio READ publicBio WRITE setPublicBio NOTIFY securityPreferencesChanged)
     Q_PROPERTY(bool publicAvatar READ publicAvatar WRITE setPublicAvatar NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool notificationShowSender READ notificationShowSender WRITE setNotificationShowSender NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool notificationShowContent READ notificationShowContent WRITE setNotificationShowContent NOTIFY securityPreferencesChanged)
 
     Q_INVOKABLE bool validMimeText(const QString &text) const { return parseMimePreferences(text).has_value(); }
     Q_INVOKABLE bool setMimeText(const QString &text) {
@@ -144,6 +150,11 @@ public:
     bool publicAvatar() const { return value.publicAvatar; }
     void setPublicAvatar(bool enabled) { if (value.publicAvatar != enabled) { value.publicAvatar = enabled; emit securityPreferencesChanged(); } }
 
+    bool notificationShowSender() const { return value.notificationShowSender; }
+    void setNotificationShowSender(bool enabled) { if (value.notificationShowSender != enabled) { value.notificationShowSender = enabled; emit securityPreferencesChanged(); } }
+    bool notificationShowContent() const { return value.notificationShowContent; }
+    void setNotificationShowContent(bool enabled) { if (value.notificationShowContent != enabled) { value.notificationShowContent = enabled; emit securityPreferencesChanged(); } }
+
 signals:
     void nameChanged();
     void notesChanged();
@@ -207,6 +218,8 @@ public:
     Q_PROPERTY(bool allowReactions READ getAllowReactions WRITE setAllowReactions NOTIFY securityPreferencesChanged)
     Q_PROPERTY(bool publicBio READ getPublicBio WRITE setPublicBio NOTIFY securityPreferencesChanged)
     Q_PROPERTY(bool publicAvatar READ getPublicAvatar WRITE setPublicAvatar NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool notificationShowSender READ getNotificationShowSender WRITE setNotificationShowSender NOTIFY securityPreferencesChanged)
+    Q_PROPERTY(bool notificationShowContent READ getNotificationShowContent WRITE setNotificationShowContent NOTIFY securityPreferencesChanged)
 
     Q_INVOKABLE void addContact(const QVariantMap& args);
     Q_INVOKABLE void probeContact(const QString& identityId);
@@ -243,6 +256,10 @@ public:
     bool getAllowReactions() const noexcept { return data_.allowReactions; }
     bool getPublicBio() const noexcept { return data_.publicBio; }
     bool getPublicAvatar() const noexcept { return data_.publicAvatar; }
+    bool getNotificationShowSender() const noexcept { return data_.notificationShowSender; }
+    bool getNotificationShowContent() const noexcept { return data_.notificationShowContent; }
+    void setNotificationShowSender(bool enabled);
+    void setNotificationShowContent(bool enabled);
     void setAllowUtf8(bool value);
     void setAllowFiles(bool value);
     void setAllowMimeTypes(QStringList value);

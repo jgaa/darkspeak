@@ -43,6 +43,8 @@ public:
 
     Q_INVOKABLE void incrementUnread();
     Q_INVOKABLE bool sendMessage(const QString& text);
+    // Called inside the message insert transaction, before publication/queueing.
+    bool sendMessageWithCommit(const QString& text, const std::function<void(int)>& commit);
     Q_INVOKABLE void sendFile(const QVariantMap& args);
 
     void incomingMessage(Contact *contact, const MessageData& data);

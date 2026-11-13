@@ -89,6 +89,9 @@ public slots:
     void refreshNotifications();
 
 public:
+    // Stable-ID entry point shared by GUI-backed MCP dispatch and the view.
+    bool decideContactRequest(int notification_id, bool accept);
+
     NotificationsModel() = default;
     NotificationsModel(QSettings& settings);
 
