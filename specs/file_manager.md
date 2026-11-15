@@ -2,7 +2,7 @@
 
 Implement a standalone, reusable C++20 FileManager library providing a virtual filesystem independent of physical storage. First delivery: public headers, install/export CMake targets, a native filesystem backend, tests, and a minimal example. DarkSpeak application migration is a separate task. Application configuration and internal application data are outside the managed filesystem.
 
-Use Qt types, `QCoro::Task<T>`, and a library-defined `Result<T>` with typed errors. Follow `agents.md` coding conventions, including snake_case public data members and variables and trailing underscores for private members. Components: `IFileManager`, `IFileReader`, `IFileWriter`, metadata/result types, `NativeFileManager`, and a bounded I/O executor. No dependencies on DarkSpeak identities, protocol, UI, or network code. Keep public contracts storage-independent; implement only the native backend in this delivery.
+Use Qt types, `QCoro::Task<T>`, and a library-defined `Result<T>` with typed errors. Follow `agents.md` coding conventions, including snake_case public data members and variables and trailing underscores for private members. Components: `IFileManager`, `IFileReader`, `IFileWriter`, move-only `DirectorySubscription`, metadata/result types, `NativeFileManager`, and a bounded I/O executor. No dependencies on DarkSpeak identities, protocol, UI, or network code. Keep public contracts storage-independent; the native backend is the first implementation and the read-only backend is specified separately. Maintain **one** abstract storage interface (`IFileManager`): add generally useful operations there, with default `UnsupportedCapability` implementations for optional methods; backend-specific configuration/diagnostics may be accessed by casting to a concrete type at administration boundaries. Ordinary callers must not cast.
 
 ## 2. Identity and namespaces
 
@@ -40,7 +40,10 @@ Allow one owning process per namespace, enforced by an explicit process lock hel
 
 ```cpp
 enum class EntryType { File, Directory };
-enum class EntryStatus { Available, Missing, Inconsistent };
+enum class EntryStatus { Available = 0, Missing = 1, Inconsistent = 2, Updating = 3 };
+enum class HashState { Missing, Stale, Computing, Verified };
+enum class NamespaceStatus { Updating, Ready, Failed };
+enum class ReadConsistency { DetectChanges, Snapshot };
 enum class ConflictPolicy { Fail, UniqueName };
 
 struct FileInfo {
@@ -52,7 +55,10 @@ struct FileInfo {
     quint64 size;
     QDateTime created;
     QDateTime modified;
-    QByteArray sha256; // Empty or exactly 32 bytes; verified content digest.
+    QByteArray sha256; // Empty or exactly 32 bytes; consult hash_state before use.
+    HashState hash_state;
+    quint64 generation;
+    NamespaceId namespace_id; // Backing namespace, including delegated aliases.
 };
 
 struct ContentConstraints {
@@ -187,6 +193,13 @@ public:
         NamespaceId ns, PendingId id, RangeKind kind, PageRequest page) = 0;
     virtual QCoro::Task<Result<std::unique_ptr<IFileReader>>> openRead(
         NamespaceId ns, FileId id) = 0;
+    // Optional common operation: default returns UnsupportedCapability.
+    virtual QCoro::Task<Result<PreparedRead>> prepareRead(
+        NamespaceId ns, FileId id, ReadPreparationOptions options);
+    // Optional common operation: default returns UnsupportedCapability.
+    virtual QCoro::Task<Result<DirectorySubscription>> subscribeDirectory(
+        NamespaceId ns, DirectoryId directory,
+        DirectoryChangeCallback callback);
     virtual QCoro::Task<Result<MutationResult>> rename(
         NamespaceId ns, QUuid id, QString name) = 0;
     virtual QCoro::Task<Result<MutationResult>> move(
@@ -201,12 +214,26 @@ public:
 };
 ```
 
-`NamespaceInfo` returns persisted configuration, root ID, limits/usage, and supported visibility/durability capabilities. Expose bounded enumeration of opened namespaces/roots. Creation refuses existing unmanaged contents; opening does not import them. Native storage locations are backend configuration, never required for content access.
+`NamespaceInfo` returns persisted configuration, root ID, limits/usage, supported visibility/durability capabilities, `NamespaceStatus status`, optional `readiness_error`, and common `Capabilities` flags (`Read`, `Write`, `PreparedRead`, `DirectorySubscriptions`, `SnapshotReads`, `ResumeLeases`). Report only implemented capabilities. The managed native backend reports `Ready` after recovery and supports the first four flags; it does not advertise snapshots or retained resume leases. Metadata validation and hash availability are distinct: an externally indexed `Available` file may have `HashState::Missing` until preparation. `Stale` and `Computing` hashes cannot be announced as valid. Native committed files expose `Verified` hashes while available; directories have `Missing` hash state. Entry status integer values are explicit and covered by catalog regression fixtures. Expose bounded enumeration of opened namespaces/roots. Creation refuses existing unmanaged contents; opening does not import them. Native storage locations are backend configuration, never required for content access.
 
 Logical lookup uses a bounded root-relative sequence of validated name components with `/` separators; reject absolute paths, empty intermediate components, `.` and `..`. The empty path identifies the root. Never pass a logical path directly to an OS path API.
 
+### 5.0 Prepared reads and directory subscriptions
+
+`PreparedRead` owns an already opened reader and reports its `FileInfo` (including expected SHA-256, size, content generation and `HashState::Verified`) for the **same selected source object**. It also reports `ReadConsistency`: `DetectChanges` uses opened-object identity and backend-defined metadata/content validation; `Snapshot` reads an isolated backend-controlled version. Hashing or configured cached-digest validation completes before return, allowing announcement before payload transmission. Preparation fails if reader/metadata identity cannot be bound. `DetectChanges` deliberately does not guarantee immutable source bytes or detection of writes that preserve metadata; Cached/Rehash read-only modes use this guarantee. Native committed generations are pinned against backend replacement/deletion and rehashed during preparation, but remain subject to the native external-change limitations. FileShare additionally verifies actual outgoing bytes before successful completion, and the receiver verifies the complete file before publication. Existing `openRead()` remains unchanged. `ReadPreparationOptions` expresses common requirements such as content-version/expected-hash binding and cancellation, not backend-specific storage paths or policies. Any backend-specific verification mode is configured on its concrete type. The native backend may support this generic operation with its committed, verified file generation. Optional snapshot leases/retention are implementation details but may be referenced by an opaque resume token where supported; a resume never silently switches content versions.
+
+`FileInfo::namespace_id` identifies the backing namespace, including directory entries returned through cross-mount aliases. Route subsequent ID operations using that namespace rather than assuming the listing's original namespace.
+
+Contextual overloads of metadata, listing, reading/preparation and directory subscriptions carry an owned `AccessContext`. Its opaque requester scope, captured/current authorization generation and ID-based check stay outside shared metadata caches. Alias-aware backends additionally use the bounded target resolver and namespace/backend routing callback. `filesystem_check` projects originating exclusions through delegated operations; both provided filesystem backends check resolved objects and traversed ancestors. Other backends fail closed through the optional filesystem guard rather than ignoring that predicate. Filtered cursors are opaque, finite, expiring and bound to the requester scope and policy authority. A retained reader rechecks authorization before returning bytes. There is no mutable global current requester.
+
+`ReadPreparationOptions::resume_lease` and `PreparedRead::resume_lease` carry opaque backend leases where `ResumeLeases` is supported; resumption requires the original expected SHA-256. The native backend rejects lease requests. `IFileReader::invalidate()` reports a mismatch in bytes read from its opened object and invalidates cached content evidence; its optional default is `UnsupportedCapability`. It does not modify source content.
+
+
+`DirectorySubscription` is a move-only, RAII handle: no copy operations; move transfers ownership, move-assignment releases the destination's old subscription, and destructor/`reset()` unsubscribe without blocking. A successful subscription is bound to `(NamespaceId, DirectoryId)`, has a generation watermark for subscribe/list race detection, and delivers coalesced change/invalidation/`RescanRequired` callbacks through the subscriber's registered Qt execution context. Cancellation stops **new** callbacks; already executing callbacks own safe state and can finish. Never dispatch into a destroyed QObject/context. Manager shutdown invalidates handles safely; directory removal delivers terminal invalidation. Subscription interest may pin a backend's bounded directory cache; impose finite subscriber/pin budgets and retain paginated listing for directories too large to pin. Persist indexed changes regardless of subscribers. Existing namespace-level notifications remain supported.
+
 ### 5.1 Directory mutations, listings, and notifications
 
+- Normal directory pages include only entries whose status is `Available` or `Updating`, subject to host/VFS authorization and exclusions; both files and directories may be listed. `Updating` metadata retains last-known display values and may be browsed/subscribed, but only `Available` files can be opened/prepared. Reads of an authorized `Updating` file return `Busy`. `stat`/reconciliation can still report diagnostic `Missing`/`Inconsistent` metadata to authorized local callers. A retained digest on an `Updating` entry is `Stale`, never a current verification claim.
 - Rename/move preserve identity and fail on destination collision; normalized no-op renames/moves succeed without generating a mutation. Atomic uniqueness includes pending reservations. No implicit merge or overwrite.
 - Move requires a destination directory in the same namespace. Reject cross-namespace moves, self-parenting, descendant cycles, and resulting subtree depth violations. Bound traversal work; do not load an entire subtree into memory.
 - Remove files or empty directories only. Return `DirectoryNotEmpty` for directories containing completed or reserved entries. Recursive removal is outside initial scope.
@@ -271,7 +298,7 @@ Provide explicit bounded scan/report and resolution actions: retry validation, r
 
 ## 7. Portable filename policy
 
-Use one versioned, deterministic policy for logical names and uniqueness in both naming modes. Persist the policy/Unicode version; opening with a different implementation must not silently change existing keys. Supply fixed normalization/collision fixtures.
+Use one versioned, deterministic managed-native policy for logical names and uniqueness in both physical naming modes. The read-only backend uses separate Linux source-name encoding policy v1 (`encodeLinuxName`): preserve case/normalization and printable Linux filename characters, percent-escape unsafe/raw invalid UTF-8 bytes and literal `%`, and retain original bytes for anchored filesystem resolution. Its encoded logical components allow up to 765 bytes; never URL-decode them into OS paths. The following managed-native creation rules do not reject or rename read-only source entries. Persist the policy/Unicode version; opening with a different implementation must not silently change existing keys. Supply fixed normalization/collision fixtures.
 
 - Bound raw input before processing. Reject ill-formed Unicode, empty names, `.`/`..`, separators `/` and `\`, NUL, control/format characters, Windows-forbidden characters `< > : " | ? *`, and names ending in a dot or space. Do not silently strip dangerous components.
 - Normalize accepted names to Unicode NFC. Enforce at most 255 UTF-8 bytes **and** 255 UTF-16 code units per component, further limited by native filesystem capability. Root-relative path length and component count are bounded independently.
@@ -296,7 +323,11 @@ Cancellation is cooperative at safe boundaries; OS calls may not be interruptibl
 
 Use structured operational diagnostics with filenames, paths, IDs, and sensitive metadata redacted by default at every log level. Never log file contents. Explicit diagnostic opt-in must be independently controlled by the host; normal errors and notifications do not implicitly log their payloads. Library logging must not bypass DarkSpeak's filename-event preference. Deletion means logical removal and ordinary reclamation; make no secure-erasure promise, including for SQLite history, backups, snapshots, or storage devices.
 
-Future DarkSpeak integration owns identity-to-namespace mapping, incoming-file authorization, mandatory incoming SHA-256, transfer-level verified-range decisions, and user policy. Network transfers use async handles without physical paths; UI models consume logical pages and notifications. Native import/export, previews, drag-and-drop, and existing file-storage migration are separate integration work. Evaluate MCP exposure during that work; this library specification adds no MCP tools or permissions.
+Future DarkSpeak integration uses a separate VFS composition layer to mount namespaces into per-identity views; the FileManager remains identity-agnostic. DarkSpeak owns identity-to-namespace mapping, incoming-file authorization, mandatory incoming SHA-256, transfer-level verified-range decisions, and user policy. Network transfers use async handles without physical paths; UI models consume logical pages and notifications. Native import/export, previews, drag-and-drop, and existing file-storage migration are separate integration work. Evaluate MCP exposure during that work; this library specification adds no MCP tools or permissions.
+
+## 9.1 Backend extension policy
+
+The separate read-only backend (`read_only_file_manager.md`) indexes existing directories without modifying them; source changes are normal there, unlike the managed native backend's external-change policy. Both satisfy `IFileManager`. `SymlinkPolicy::Always` is a deliberately insecure read-only-backend setting, not a weakening of the native backend's confinement contract. The VFS composition layer (`vfs.md`) handles identity-specific mounts and permissions; no new abstract storage interface is introduced.
 
 ## 10. Tests and delivery criteria
 
@@ -305,11 +336,11 @@ Deliver the standalone CMake library, native backend, public headers, documented
 Tests must cover:
 
 - Both naming policies, stable identities, persisted configuration, schema/operation/range version fixtures, root overlap aliases, live/stale process locks, and restart ownership.
-- Unicode/case/platform-name fixtures, length boundaries, collision exhaustion, reserved names, traversal, symlink/hard-link/special-file attacks, mount boundaries, and deterministic race injection.
+- Common entry/hash/readiness/capability metadata, `Updating` visibility/read refusal, Linux encoding byte-preservation/collision/expansion fixtures, Unicode/case/platform-name fixtures, length boundaries, collision exhaustion, reserved names, traversal, symlink/hard-link/special-file attacks, mount boundaries, and deterministic race injection.
 - Create versus replacement identity, reader generation retention or explicit busy behavior, ancestor writer conflicts, cycles/depth bounds, nonempty-directory rejection, and cross-namespace rejection.
 - Sequential/random/overlapping/short writes, EOF, empty files, sparse holes, final sizes, checked arithmetic, range fragmentation limits, and quota accounting/reservations.
 - Durable range invalidation/checkpoint ordering, suspension/reopen, crash recovery, full-file hashing after resume, invalidation of incremental hashes, expected-size/hash mismatch, repair and abort. Never accept persisted checksum state as verification after reopen.
 - Fault injection and process termination before/after every filesystem/catalog/sync boundary for create, replace, rename, move, delete, and abort; idempotent repeated recovery; foreign-object preservation; disk-full, permission, sync, and cleanup failures.
 - Cancellation before/during verification and around publication; explicit post-publication/durability/indeterminate outcomes, abandoned awaiters, handle destruction, and asynchronous shutdown.
 - External modification/removal/replacement, explicit reconciliation without automatic adoption, owner-only permissions including SQLite side files, and diagnostic redaction.
-- Stable pagination and stale cursors, bounded notifications/rescan fallback, concurrent operations, queue/byte limits, fair namespace scheduling, large files without whole-file buffering, and UI-thread responsiveness under sustained I/O.
+- Stable pagination and stale cursors, bounded notifications/rescan fallback, move-only RAII subscription teardown/move/generation races, prepared-read metadata/content binding and hash-before-streaming, concurrent operations, queue/byte limits, fair namespace scheduling, large files without whole-file buffering, and UI-thread responsiveness under sustained I/O.
