@@ -48,7 +48,7 @@ build-directory convention.
   sequential execution until parallel test isolation has been verified.
 
 ## Protocol specification:
- - Definition and rules: `doc/protocol.md`
+ - Definition and rules: `specs/protocol.md`
  - Protofile: `proto/darkspeak.proto`
 
 ## Safety and protocol invariants
