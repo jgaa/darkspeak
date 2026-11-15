@@ -83,7 +83,7 @@ struct ByteRange {
 
 `NamespaceLimits` supplies finite, documented defaults and locally configurable maxima for:
 
-- File logical size, total charged storage, and staging storage bytes.
+- File logical size, total charged storage, and staging storage bytes; independent temporary-artifact/cache quotas and common physical-pool reservations.
 - Persistent pending writes, active writer handles, reader handles, and total open handles.
 - Completed/reserved entries, directory depth, and stored range records per pending file.
 - Listing/range page size, queued/running operations, per-operation read/write bytes, and total buffered bytes.
@@ -92,6 +92,12 @@ struct ByteRange {
 Enforce limits before allocation, reservation, queue admission, file extension, or durable-state growth. Validate input lengths before normalization/copying. Check all additions, range endpoints, offsets, and conversions; reject values exceeding signed backend offset limits even though the API uses `quint64`. Negative read lengths are invalid. Zero-length reads/writes do not extend files or create range records.
 
 Reserve known expected sizes at admission. Unknown-size writers reserve additional capacity before extending; they still obey finite file/staging/total limits. Charge pending content, replacement overlap, retained reader versions, and cleanup backlog without double-counting the same physical version. Bound catalog/journal growth as well as payloads; document accounting units and filesystem overhead allowance. Quotas are admission controls, not guarantees against external disk consumption or disk-full errors. Preserve quota headroom for recovery and deletion; reducing limits below current usage blocks growth rather than deleting data.
+
+### 3.1 Shared physical capacity and storage classes
+
+Account separately for (1) permanent committed content, (2) incomplete/pending incoming writes, (3) operation-temporary artifacts (e.g. complete catalog exports), and (4) disposable reusable caches. Keep distinct finite budgets for bytes, objects, outstanding reservations, concurrent producers and retained leases, while charging all classes against common physical capacity and recovery headroom. Configure minimum free bytes, minimum free percent, and maximum backend/pool physical usage; an admission or growth operation must satisfy **all** applicable hard limits. Coordinate reservations across namespaces/backends sharing a physical pool in the host; a backend's own per-namespace quota alone cannot protect a shared filesystem. Capacity checks are advisory against external consumers, so all writes must handle `DiskFull`. Critical low-space policies may pause active writes, preserving checkpoint/recovery state and cleanup headroom.
+
+Temporary/cache objects have private IDs and do not enter ordinary VFS listings. Provide an optional, capability-advertised **common `IFileManager` temporary-artifact API** (default `UnsupportedCapability`) to reserve, create/write, finalize with exact size and SHA-256, open under bounded opaque read/resume leases, release, and reclaim artifacts durably; implement using the backend's existing recovery and integrity primitives. A finalized artifact is immutable for its offered lifetime; leases pin it until released/expired/revoked, and cleanup is bounded/idempotent after crashes. Cache objects are evictable when unleased; optional promotion of a temporary artifact to cache does not require duplicating its payload. Give each namespace and shared pool independent permanent/staging/temporary/cache limits and make usage/limits queryable without exposing physical paths to peers. Bind access to request authorization in VFS/server, not the storage backend's shared catalog; changes or withdrawal revoke subsequent reads. If a backend does not support this capability, its callers must choose an explicitly configured supporting backend or fail safely, not write invisible temporary files into the public VFS.
 
 ## 4. Pending writes and asynchronous handles
 
