@@ -1085,29 +1085,11 @@ message FileResume {
 }
 ```
 
-`next_offset` is the first byte not present in the receiver's durably
-stored contiguous prefix for which it has maintained local hash state.
-It must be no greater than `file_size` and must satisfy the negotiated
-chunking rules. The receiver must not claim an offset beyond its
-verified prefix.
+`next_offset` in historical `FileResume` is advisory only on checkpoint-enabled sessions. The receiver can report its durable retained prefix and bounded checkpoint identifiers; the sender chooses a previously confirmed checkpoint at or below that prefix, never an arbitrary peer-proposed offset. Both parties validate the selected offset and prefix SHA-256. A receiver with more unconfirmed bytes discards its suffix; with fewer durable bytes, it can negotiate an earlier retained checkpoint in bounded rounds, or restart a new transfer at zero. The offered full-file SHA-256, size and transfer ID remain immutable.
 
-The sender compares `file_id`, `file_size`, and the complete SHA-256
-hash with the immutable metadata for the offered source file. It must
-validate the offset before resuming. If all metadata matches and the
-source file is still available, the sender replies with an accepted
-`FileResumeResult` and resumes with the chunk beginning at
-`next_offset`. Before sending chunks, the sender waits for the receiver's
-`FileOfferResponse(ACCEPTED)` readiness acknowledgement, which the receiver
-sends only after reopening storage and installing its receive channel. This
-acknowledgement preserves the negotiated resume offset; it does not start a new
-offer at byte zero. There are at most two readiness waits per contact, matching
-the concurrent-transfer budget. Each has a monotonic 30-second deadline; expiry
-or disconnection returns it to failed/resumable without sending chunks. If the hash or any other immutable metadata differs, the
-sender replies with a cancelled result whose reason is `SOURCE_CHANGED`
-and sends no further chunks for that transfer. If the source file has
-been deleted or is otherwise unavailable, the sender uses the same
-`SOURCE_CHANGED` result. Malformed requests and invalid offsets are
-rejected without resuming.
+The sender checks current feature-specific authorization and immutable file metadata, reopens the original source, and recomputes SHA-256 through the selected checkpoint offset. If this prefix differs from its persisted checkpoint, fail the original transfer with `SOURCE_CHANGED` and (for FileShare chargeable content) refund its settled debits idempotently. Do not silently switch source versions. The receiver independently recomputes its retained prefix and compares it with the sender-selected digest before signaling readiness. The existing `FileOfferResponse(ACCEPTED)` readiness message is retained only after the selected checkpoint has been mutually verified. Maintain the existing bound of two readiness waits per contact, each with a 30-second monotonic deadline. Unavailable sources may be paused distinctly from proven source-integrity failures.
+
+Sender-side final SHA-256 covers the complete logical file bytes, in ascending order and exactly once; transmitted duplicate/retried chunks do not contribute twice. A resumed sender rebuilds the hashing context from the same source's validated prefix, then hashes new content as transmitted. A saved digest is an integrity checkpoint, not serializable SHA-256 internal state. Any out-of-order transfer must separately establish this complete ordered byte stream or fail. Both sender and receiver compare their full-file digests with the originally announced SHA-256; only the receiver publishes content after its own successful verification. Sender-detected prefix or final mismatch fails the transfer and triggers an idempotent full refund for its FileShare-specific debits; receiver-reported mismatch alone cannot force a refund.
 
 For example:
 
