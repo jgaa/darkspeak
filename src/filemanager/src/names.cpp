@@ -2,6 +2,49 @@
 #include <QSet>
 
 namespace dsfm {
+Result<QString> encodeLinuxName(QByteArrayView name) {
+    if (name.isEmpty() || name.size() > max_linux_name_bytes || name == "." || name == "..")
+        return Error{ErrorCode::InvalidName};
+    // Validate the whole component before producing an encoded result.
+    for (const auto byte : name) if (byte == '\0' || byte == '/') return Error{ErrorCode::InvalidName};
+    QString result;
+    result.reserve(name.size() * 3);
+    constexpr char hex[] = "0123456789ABCDEF";
+    const auto escape = [&](qsizetype offset, qsizetype length) {
+        for (qsizetype i = offset; i < offset + length; ++i) {
+            const auto byte = static_cast<unsigned char>(name[i]);
+            result.append('%'); result.append(QLatin1Char(hex[byte >> 4])); result.append(QLatin1Char(hex[byte & 15]));
+        }
+    };
+    for (qsizetype offset = 0; offset < name.size();) {
+        const auto first = static_cast<unsigned char>(name[offset]);
+        qsizetype length = 1;
+        char32_t scalar = first;
+        char32_t minimum = 0;
+        if (first >= 0xc2 && first <= 0xdf) { length = 2; scalar = first & 0x1f; minimum = 0x80; }
+        else if (first >= 0xe0 && first <= 0xef) { length = 3; scalar = first & 0x0f; minimum = 0x800; }
+        else if (first >= 0xf0 && first <= 0xf4) { length = 4; scalar = first & 0x07; minimum = 0x10000; }
+        bool valid = first < 0x80 || length > 1;
+        if (length > name.size() - offset) valid = false;
+        if (valid && length > 1) {
+            for (qsizetype i = 1; i < length; ++i) {
+                const auto byte = static_cast<unsigned char>(name[offset + i]);
+                if ((byte & 0xc0) != 0x80) { valid = false; break; }
+                scalar = (scalar << 6) | (byte & 0x3f);
+            }
+            valid = valid && scalar >= minimum && scalar <= 0x10ffff && !(scalar >= 0xd800 && scalar <= 0xdfff);
+        }
+        if (!valid) { escape(offset, 1); ++offset; continue; }
+        const auto category = QChar::category(scalar);
+        const bool unsafe = scalar == '%' || category == QChar::Other_Control || category == QChar::Other_Format
+            || category == QChar::Separator_Line || category == QChar::Separator_Paragraph
+            || (scalar >= 0xfdd0 && scalar <= 0xfdef) || (scalar & 0xffff) >= 0xfffe;
+        if (unsafe) escape(offset, length);
+        else result.append(QString::fromUtf8(name.data() + offset, length));
+        offset += length;
+    }
+    return result;
+}
 Result<QString> normalizeName(QString name) {
     const auto invalid = Error{ErrorCode::InvalidName};
     if (name.isEmpty() || name.size() > 255 || !name.isValidUtf16()) return invalid;

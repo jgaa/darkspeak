@@ -72,7 +72,7 @@ Page {
             width: list.width
             property var contactObject: contact
             property string avatar: contactObject && contactObject.avatarUrl ? contactObject.avatarUrl : avatarUrl
-            property int notificationHeight: type === NotificationsModel.N_ADDME ? 92 : 62
+            property int notificationHeight: type === NotificationsModel.N_ADDME ? 92 : type === NotificationsModel.N_VFS_CONFLICT ? 110 : 62
             height: (contactHeader ? 56 : 0) + notificationHeight
 
             Column {
@@ -116,10 +116,12 @@ Page {
                         Label {
                             textFormat: Text.PlainText
                             Layout.fillWidth: true
-                            text: type === NotificationsModel.N_ADDME ? qsTr("New contact request") : type === NotificationsModel.N_MESSAGE ? qsTr("Unread messages (%1)").arg(unreadCount) : qsTr("Incoming file: %1").arg(fileName)
+                            text: type === NotificationsModel.N_ADDME ? qsTr("New contact request") : type === NotificationsModel.N_MESSAGE ? qsTr("Unread messages (%1)").arg(unreadCount) : type === NotificationsModel.N_VFS_CONFLICT ? message : qsTr("Incoming file: %1").arg(fileName)
                             color: root.primaryText
                             font.bold: true
                             wrapMode: Text.WordWrap
+                            maximumLineCount: type === NotificationsModel.N_VFS_CONFLICT ? 4 : 2
+                            elide: Text.ElideRight
                         }
 
                         Label {
@@ -148,7 +150,7 @@ Page {
                                     requestingIdentity: identities.identityFromId(identityId)
                                 });
                                 requestLoader.active = true;
-                            } else {
+                            } else if (type !== NotificationsModel.N_VFS_CONFLICT) {
                                 openConversation();
                             }
                         }

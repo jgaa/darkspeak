@@ -8,6 +8,11 @@
 #include <QProcess>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QThread>
+#include <QSemaphore>
+#include <QSet>
+#include <type_traits>
+#include <fcntl.h>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -106,6 +111,107 @@ void names() {
     CHECK(normalizeName(QString::fromUtf8("e\xcc\x81.txt")).value() == QString::fromUtf8("é.txt"));
     CHECK(nameKey("Straße.txt").value() == nameKey("STRASSE.TXT").value());
     CHECK(normalizeName(QString(255, 'x')));
+}
+void linuxNames() {
+    CHECK(linux_name_encoding_version == 1);
+    const QVector<QPair<QByteArray, QString>> fixtures{
+        {"plain.txt", "plain.txt"}, {"a\tb", "a%09b"}, {"a%09b", "a%2509b"},
+        {"%", "%25"}, {"%25", "%2525"}, {"line\n\r", "line%0A%0D"},
+        {" .CON:<>\\\"|?* ", " .CON:<>\\\"|?* "},
+        {"CON", "CON"}, {"objects", "objects"}, {".filemanager", ".filemanager"},
+        {QByteArray::fromHex("c285"), "%C2%85"}, {QByteArray::fromHex("e280ae"), "%E2%80%AE"},
+        {QByteArray::fromHex("e280a8e280a9"), "%E2%80%A8%E2%80%A9"},
+        {QByteArray::fromHex("efb790efbfbf"), "%EF%B7%90%EF%BF%BF"},
+        {QByteArray::fromHex("c080"), "%C0%80"}, {QByteArray::fromHex("eda080"), "%ED%A0%80"},
+        {QByteArray::fromHex("f4908080"), "%F4%90%80%80"},
+        {QByteArray::fromHex("e282"), "%E2%82"}, {QByteArray::fromHex("ffe282ac"), QString::fromUtf8("%FF€")},
+        {QByteArray::fromHex("f09f9880"), QString::fromUtf8("😀")}
+    };
+    for (const auto& [raw, expected] : fixtures) {
+        const auto encoded = encodeLinuxName(raw); CHECK(encoded);
+        CHECK(encoded.value() == expected);
+        CHECK(QByteArray::fromPercentEncoding(encoded.value().toUtf8()) == raw);
+    }
+    CHECK(encodeLinuxName("Report").value() != encodeLinuxName("report").value());
+    CHECK(encodeLinuxName(QByteArray::fromHex("c3a9")).value() != encodeLinuxName(QByteArray::fromHex("65cc81")).value());
+    CHECK(encodeLinuxName(" ./CON").error().code == ErrorCode::InvalidName);
+    for (const QByteArray raw : {QByteArray{}, QByteArray("."), QByteArray(".."), QByteArray("a/b"), QByteArray("a\0b", 3), QByteArray(256, 'a')})
+        CHECK(!encodeLinuxName(raw));
+    CHECK(encodeLinuxName(QByteArray(255, 'a')).value().size() == 255);
+    const auto maximum = encodeLinuxName(QByteArray(255, '\t')).value();
+    CHECK(maximum.size() == max_encoded_linux_name_bytes && maximum == QString("%09").repeated(255));
+    QSet<QString> unique;
+    QByteArray all_bytes;
+    for (int byte = 1; byte <= 255; ++byte) {
+        if (byte == '/') continue;
+        const QByteArray raw(1, char(byte));
+        if (raw == ".") continue;
+        const auto encoded = encodeLinuxName(raw); CHECK(encoded);
+        CHECK(encoded.value().isValidUtf16() && !unique.contains(encoded.value()));
+        CHECK(QByteArray::fromPercentEncoding(encoded.value().toUtf8()) == raw);
+        unique.insert(encoded.value()); all_bytes.append(char(byte));
+    }
+    const auto combined = encodeLinuxName(all_bytes); CHECK(combined);
+    CHECK(QByteArray::fromPercentEncoding(combined.value().toUtf8()) == all_bytes);
+}
+void commonMetadata() {
+    static_assert(int(EntryStatus::Available) == 0 && int(EntryStatus::Missing) == 1
+        && int(EntryStatus::Inconsistent) == 2 && int(EntryStatus::Updating) == 3);
+    CHECK(isListable(EntryStatus::Available) && isListable(EntryStatus::Updating));
+    CHECK(!isListable(EntryStatus::Missing) && !isListable(EntryStatus::Inconsistent));
+    CHECK(isReadable(EntryStatus::Available) && !isReadable(EntryStatus::Updating));
+    Fixture f;
+    const auto available = f.publish("available", "a");
+    const auto updating = f.publish("updating", "u");
+    const auto missing = f.publish("missing", "m");
+    const auto inconsistent = f.publish("inconsistent", "i");
+    const auto directory = get(f.manager.mkdir(f.config.id, f.ns.root, "waiting"));
+    const auto child = f.publish("child", "c", directory);
+    const auto available_info = get(f.manager.stat(f.config.id, available));
+    CHECK(available_info.hash_state == HashState::Verified && available_info.sha256 == digest("a"));
+    CHECK(get(f.manager.stat(f.config.id, directory)).hash_state == HashState::Missing);
+    CHECK(f.ns.status == NamespaceStatus::Ready && !f.ns.readiness_error);
+    CHECK(f.ns.capabilities == (Capability::Read | Capability::Write | Capability::PreparedRead | Capability::DirectorySubscriptions));
+    CHECK(!f.ns.capabilities.testFlag(Capability::SnapshotReads) && !f.ns.capabilities.testFlag(Capability::ResumeLeases));
+    auto prepared = get(f.manager.prepareRead(f.config.id, available));
+    CHECK(prepared.consistency == ReadConsistency::DetectChanges && prepared.info.hash_state == HashState::Verified);
+    get(prepared.reader->close());
+    get(f.manager.shutdown());
+    {
+        auto db = QSqlDatabase::addDatabase("QSQLITE", "metadata-status");
+        db.setDatabaseName(f.config.storage_root + "/.filemanager/catalog.db"); CHECK(db.open());
+        QSqlQuery query(db); CHECK(db.transaction());
+        for (const auto& [id, status] : QVector<QPair<QUuid, EntryStatus>>{
+            {updating, EntryStatus::Updating}, {missing, EntryStatus::Missing},
+            {inconsistent, EntryStatus::Inconsistent}, {directory, EntryStatus::Updating}}) {
+            CHECK(query.prepare("UPDATE entries SET status=? WHERE id=?"));
+            query.addBindValue(int(status)); query.addBindValue(id.toString(QUuid::WithoutBraces)); CHECK(query.exec());
+        }
+        CHECK(query.exec("UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='generation'"));
+        CHECK(db.commit()); db.close();
+    }
+    QSqlDatabase::removeDatabase("metadata-status");
+    NativeFileManager reopened; const auto ns = get(reopened.openNamespace(f.config));
+    CHECK(ns.status == NamespaceStatus::Ready && ns.capabilities == f.ns.capabilities);
+    const auto updating_info = get(reopened.stat(f.config.id, updating));
+    CHECK(updating_info.status == EntryStatus::Updating && updating_info.hash_state == HashState::Stale);
+    CHECK(updating_info.sha256 == digest("u"));
+    CHECK(get(reopened.lookup(f.config.id, "updating")).status == EntryStatus::Updating);
+    error(reopened.openRead(f.config.id, updating), ErrorCode::Busy);
+    error(reopened.prepareRead(f.config.id, updating), ErrorCode::Busy);
+    error(reopened.openRead(f.config.id, missing), ErrorCode::MissingEntry);
+    error(reopened.openRead(f.config.id, inconsistent), ErrorCode::ExternalModification);
+    QSet<QUuid> listed; PageRequest page{1, {}};
+    do {
+        auto entries = get(reopened.list(f.config.id, f.ns.root, page));
+        for (const auto& entry : entries.entries) { CHECK(isListable(entry.status)); listed.insert(entry.id); }
+        page.cursor = entries.next_cursor;
+    } while (!page.cursor.isEmpty());
+    CHECK(listed == QSet<QUuid>{available, updating, directory});
+    CHECK(get(reopened.list(f.config.id, directory)).entries.first().id == child);
+    QObject context;
+    auto subscription = get(reopened.subscribeDirectory(f.config.id, directory, {&context, [](DirectoryChange) {}})); CHECK(subscription);
+    get(reopened.shutdown()); CHECK(!subscription);
 }
 void lifecycle(PhysicalNaming naming) {
     Fixture f(naming);
@@ -234,6 +340,141 @@ void cancellationAndNotifications() {
     QCoreApplication::processEvents(); CHECK(notifications > 0); f.manager.unsubscribe(subscription.value());
     auto stopped = f.manager.shutdown(); get(std::move(stopped)); error(f.manager.stat(f.config.id, file.info.file_id), ErrorCode::ShuttingDown);
 }
+static_assert(!std::is_copy_constructible_v<DirectorySubscription>);
+static_assert(!std::is_copy_assignable_v<DirectorySubscription>);
+static_assert(std::is_nothrow_move_constructible_v<DirectorySubscription>);
+static_assert(std::is_nothrow_move_assignable_v<DirectorySubscription>);
+void preparedReads(PhysicalNaming naming) {
+    NamespaceLimits limits; limits.max_io_bytes = 4;
+    Fixture f(naming, limits);
+    const QByteArray content("0123456789");
+    auto pending = f.pending("prepared", content);
+    for (qsizetype offset = 0; offset < content.size(); offset += 4)
+        get(pending.writer->writeAt(offset, content.mid(offset, 4)));
+    get(pending.writer->commit());
+    const auto id = pending.info.file_id;
+    const auto info = get(f.manager.stat(f.config.id, id));
+    // Cancellation after asynchronous admission must stop preparation and release
+    // its pinned handle.
+    CancellationToken during;
+    auto interrupted = f.manager.prepareRead(f.config.id, id, {{}, {}, during});
+    QTimer::singleShot(0, [&] { during.cancel(); });
+    error(std::move(interrupted), ErrorCode::Cancelled);
+    IFileManager& api = f.manager;
+    auto prepared = get(api.prepareRead(f.config.id, id, {info.generation, digest(content), {}}));
+    CHECK(prepared.info.id == id && prepared.info.size == quint64(content.size()));
+    CHECK(prepared.info.generation == info.generation && prepared.info.sha256 == digest(content));
+    CHECK(get(prepared.reader->readAt(4, 4)) == "4567");
+    auto replacement = get(api.replaceFile(f.config.id, id, {1, digest("x")}));
+    get(replacement.writer->writeAt(0, "x"));
+    error(replacement.writer->commit(), ErrorCode::Busy);
+    error(api.remove(f.config.id, id), ErrorCode::Busy);
+    get(prepared.reader->close());
+    get(replacement.writer->commit());
+    error(api.prepareRead(f.config.id, id, {info.generation, {}, {}}), ErrorCode::Conflict);
+    error(api.prepareRead(f.config.id, id, {{}, digest(content), {}}), ErrorCode::IntegrityError);
+    error(api.prepareRead(f.config.id, id, {{}, "invalid", {}}), ErrorCode::InvalidArgument);
+    CancellationToken cancelled; cancelled.cancel();
+    error(api.prepareRead(f.config.id, id, {{}, {}, cancelled}), ErrorCode::Cancelled);
+    error(api.prepareRead(f.config.id, f.ns.root), ErrorCode::InvalidArgument);
+    auto empty = f.publish("empty", {});
+    auto empty_read = get(api.prepareRead(f.config.id, empty));
+    CHECK(empty_read.info.size == 0 && empty_read.info.sha256 == digest({}));
+    get(empty_read.reader->close());
+    error(f.manager.IFileManager::prepareRead(f.config.id, id), ErrorCode::UnsupportedCapability);
+
+    // Restore mtime after an in-place edit: matching inode/size/timestamp alone
+    // must never produce a prepared digest without hashing the actual bytes.
+    const auto path = f.path(id).toUtf8(); struct stat before{};
+    CHECK(::stat(path.constData(), &before) == 0);
+    QFile source(QString::fromUtf8(path)); CHECK(source.open(QIODevice::WriteOnly)); CHECK(source.write("y") == 1); source.close();
+    const timespec times[]{before.st_atim, before.st_mtim};
+    CHECK(::utimensat(AT_FDCWD, path.constData(), times, 0) == 0);
+    error(api.prepareRead(f.config.id, id), ErrorCode::IntegrityError);
+}
+void directorySubscriptions() {
+    NamespaceLimits limits; limits.max_notifications = 2;
+    Fixture f(PhysicalNaming::OriginalName, limits);
+    QObject context;
+    const auto directory = get(f.manager.mkdir(f.config.id, f.ns.root, "subscribed"));
+    QVector<DirectoryChange> changes;
+    auto callback = [&](DirectoryChange change) { CHECK(QThread::currentThread() == context.thread()); changes.append(change); };
+    auto subscription = get(f.manager.subscribeDirectory(f.config.id, directory, {&context, callback}));
+    CHECK(subscription && subscription.namespaceId() == f.config.id && subscription.directoryId() == directory);
+    CHECK(subscription.generation() == get(f.manager.namespaceInfo(f.config.id)).generation);
+    const auto watermark = subscription.generation();
+    auto other = get(f.manager.subscribeDirectory(f.config.id, f.ns.root, {&context, callback}));
+    error(f.manager.subscribeDirectory(f.config.id, directory, {&context, callback}), ErrorCode::QuotaExceeded);
+    CHECK(!f.manager.subscribe(f.config.id, &context, [](Change) {})); // Shared finite budget.
+    DirectorySubscription moved(std::move(subscription)); CHECK(!subscription && moved);
+    other = std::move(moved); CHECK(!moved && other.directoryId() == directory);
+    // Move assignment releases the destination's previous budget slot.
+    auto freed = get(f.manager.subscribeDirectory(f.config.id, f.ns.root, {&context, [](DirectoryChange) {}}));
+    freed.reset(); freed.reset();
+    { auto scoped = get(f.manager.subscribeDirectory(f.config.id, f.ns.root, {&context, [](DirectoryChange) {}})); CHECK(scoped); }
+    auto after_destructor = get(f.manager.subscribeDirectory(f.config.id, f.ns.root, {&context, [](DirectoryChange) {}}));
+    after_destructor.reset();
+    auto file = f.publish("change", "x", directory);
+    QCoreApplication::processEvents();
+    CHECK(!changes.isEmpty());
+    CHECK(changes.last().kind == DirectoryChangeKind::RescanRequired && changes.last().generation > watermark);
+    CHECK(changes.last().directory_id == directory);
+    auto page = get(f.manager.list(f.config.id, directory)); CHECK(page.entries.size() == 1);
+    get(f.manager.remove(f.config.id, file));
+    get(f.manager.remove(f.config.id, directory));
+    QCoreApplication::processEvents();
+    CHECK(changes.last().kind == DirectoryChangeKind::Invalidated && !other);
+    const auto count = changes.size();
+    f.publish("unrelated", "x"); QCoreApplication::processEvents(); CHECK(changes.size() == count);
+    other.reset();
+    error(f.manager.subscribeDirectory(f.config.id, directory, {&context, callback}), ErrorCode::MissingEntry);
+    error(f.manager.subscribeDirectory(f.config.id, f.ns.root, {}), ErrorCode::InvalidArgument);
+    error(f.manager.IFileManager::subscribeDirectory(f.config.id, f.ns.root, {&context, callback}), ErrorCode::UnsupportedCapability);
+    const auto file_id = f.publish("file", "x");
+    error(f.manager.subscribeDirectory(f.config.id, file_id, {&context, callback}), ErrorCode::InvalidArgument);
+
+    auto transient = std::make_unique<QObject>();
+    auto dead = get(f.manager.subscribeDirectory(f.config.id, f.ns.root, {transient.get(), callback}));
+    transient.reset(); CHECK(!dead);
+    auto live = get(f.manager.subscribeDirectory(f.config.id, f.ns.root, {&context, callback}));
+    get(f.manager.shutdown()); CHECK(!live); live.reset(); dead.reset();
+
+    DirectorySubscription survivor;
+    { Fixture temporary;
+        survivor = get(temporary.manager.subscribeDirectory(temporary.config.id, temporary.ns.root, {&context, callback}));
+    }
+    CHECK(!survivor); survivor.reset();
+}
+void directorySubscriptionContext() {
+    Fixture f;
+    QThread thread;
+    QObject context; context.moveToThread(&thread);
+    thread.start();
+    struct Stop { QThread& thread; ~Stop() { thread.quit(); thread.wait(); } } stop{thread};
+    DirectorySubscription subscription;
+    std::atomic_bool delivered{false}, wrong_thread{false};
+    QMetaObject::invokeMethod(&context, [&] {
+        subscription = get(f.manager.subscribeDirectory(f.config.id, f.ns.root, {&context, [&](DirectoryChange) {
+            wrong_thread = QThread::currentThread() != &thread; delivered = true;
+        }}));
+    }, Qt::BlockingQueuedConnection);
+    f.publish("thread", "x");
+    QMetaObject::invokeMethod(&context, [] {}, Qt::BlockingQueuedConnection);
+    CHECK(delivered && !wrong_thread);
+
+    // Hold delivery while a notice is queued, then cancel before dispatch.
+    QSemaphore entered, release;
+    QMetaObject::invokeMethod(&context, [&] { entered.release(); release.tryAcquire(1, 5000); }, Qt::QueuedConnection);
+    CHECK(entered.tryAcquire(1, 5000));
+    delivered = false;
+    f.publish("queued", "x");
+    subscription.reset(); release.release();
+    QMetaObject::invokeMethod(&context, [] {}, Qt::BlockingQueuedConnection);
+    CHECK(!delivered);
+    // Return ownership to the test's thread before destroying the context.
+    auto* test_thread = QThread::currentThread();
+    QMetaObject::invokeMethod(&context, [&] { context.moveToThread(test_thread); }, Qt::BlockingQueuedConnection);
+}
 void crashRecovery() {
     for (auto naming : {PhysicalNaming::OriginalName, PhysicalNaming::FileId}) {
         for (auto mode : {"create", "replace", "rename", "move", "delete", "abort"}) {
@@ -307,6 +548,11 @@ void schemaAndPermissions() {
     }
     QFile fixture(QStringLiteral(DSFM_TEST_SOURCE_DIR) + "/fixtures/schema-v1.json"); CHECK(fixture.open(QIODevice::ReadOnly));
     const auto expected = QJsonDocument::fromJson(fixture.readAll()).object();
+    const auto statuses = expected["entry_status"].toObject();
+    CHECK(statuses["Available"].toInt() == int(EntryStatus::Available));
+    CHECK(statuses["Missing"].toInt() == int(EntryStatus::Missing));
+    CHECK(statuses["Inconsistent"].toInt() == int(EntryStatus::Inconsistent));
+    CHECK(statuses["Updating"].toInt() == int(EntryStatus::Updating));
     {
         auto db = QSqlDatabase::addDatabase("QSQLITE", "fixture"); db.setDatabaseName(f.config.storage_root + "/.filemanager/catalog.db"); CHECK(db.open());
         QSqlQuery query(db); CHECK(query.exec("SELECT value FROM meta WHERE key='schema'")); CHECK(query.next()); CHECK(query.value(0).toString() == expected["version"].toString());
@@ -492,13 +738,28 @@ void diagnostics() {
     CHECK(details.find(f.config.storage_root.toStdString()) != std::string::npos);
     CHECK(details.find("PRIVATE-") == std::string::npos);
 }
+void queuedOfferGuard() {
+    Fixture fixture; const auto id = fixture.publish("file","content");
+    auto generation = std::make_shared<std::atomic<quint64>>(1);
+    auto filesystem_allowed = std::make_shared<std::atomic_bool>(true);
+    AccessContext access; access.authorization_scope = QUuid::createUuid(); access.current_generation = generation; access.generation = 1;
+    access.check = [](NamespaceId,QUuid,AccessOperation) -> Result<bool> { return true; };
+    access.filesystem_check = [filesystem_allowed](FilesystemIdentity) { return filesystem_allowed->load(); };
+    auto reader = get(fixture.manager.openRead(fixture.config.id,id,access)); auto guard = reader->accessGuard(); CHECK(guard());
+    filesystem_allowed->store(false); CHECK(!guard()); filesystem_allowed->store(true); CHECK(guard());
+    generation->store(2); CHECK(!guard()); error(reader->readAt(0,7),ErrorCode::MissingEntry); get(reader->close());
+}
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     if (app.arguments().value(1) == "--child") { try { return child(app.arguments()); } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 99; } }
     int failures = 0;
     auto test = [&](const char* name, auto function) { try { function(); std::cout << "PASS " << name << std::endl; } catch (const std::exception& error) { ++failures; std::cerr << "FAIL " << name << ": " << error.what() << std::endl; } };
-    test("names", names);
+    test("queued offer guard", queuedOfferGuard);
+    test("names", names); test("Linux name encoding", linuxNames); test("common metadata", commonMetadata);
+    test("directory subscriptions", directorySubscriptions);
+    test("directory subscription context", directorySubscriptionContext);
     for (auto naming : {PhysicalNaming::OriginalName, PhysicalNaming::FileId}) {
+        test("prepared reads", [&] { preparedReads(naming); });
         test("lifecycle", [&] { lifecycle(naming); }); test("resume", [&] { resume(naming); }); test("replacement", [&] { replacement(naming); });
     }
     test("integrity", integrity); test("reservations/directories", reservationAndDirectories); test("quotas", quotas); test("listings", listings);

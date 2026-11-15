@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "async_p.h"
 #include <QAbstractEventDispatcher>
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -6,6 +7,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QThread>
+#include <chrono>
 #include <logfault/logfault.h>
 #include <fcntl.h>
 #include <dirent.h>
@@ -14,99 +16,185 @@
 
 namespace dsfm {
 using namespace detail;
-namespace {
-struct Job { QUuid key; quint64 bytes; std::function<void()> run; QUuid group{}; };
-struct Scheduler : std::enable_shared_from_this<Scheduler> {
-    std::mutex mutex;
-    std::condition_variable ready;
-    std::map<QUuid, std::deque<Job>> queues;
-    QSet<QUuid> running;
-    QHash<QUuid, quint32> group_counts;
-    QHash<QUuid, quint64> group_bytes;
-    QUuid last;
-    quint64 bytes = 0;
-    quint32 count = 0;
-    bool stopping = false;
-    static std::shared_ptr<Scheduler> create() {
-        auto state = std::make_shared<Scheduler>();
-        for (int i = 0; i < 4; ++i) std::thread([state] { state->loop(); }).detach();
-        return state;
+DirectorySubscription::DirectorySubscription(NamespaceId ns, DirectoryId directory, quint64 generation,
+        std::shared_ptr<std::atomic_bool> active, std::function<void()> release)
+    : namespace_id_(ns), directory_id_(directory), generation_(generation), active_(std::move(active)), release_(std::move(release)) {}
+DirectorySubscription::~DirectorySubscription() { reset(); }
+DirectorySubscription::DirectorySubscription(DirectorySubscription&& other) noexcept { *this = std::move(other); }
+DirectorySubscription& DirectorySubscription::operator=(DirectorySubscription&& other) noexcept {
+    if (this != &other) {
+        reset();
+        namespace_id_ = std::exchange(other.namespace_id_, {});
+        directory_id_ = std::exchange(other.directory_id_, {});
+        generation_ = std::exchange(other.generation_, 0);
+        active_ = std::move(other.active_);
+        release_ = std::exchange(other.release_, {});
     }
-    bool enqueue(Job job, quint32 max_count, quint64 max_bytes, bool control = false) {
-        std::lock_guard lock(mutex);
-        if (job.group.isNull()) job.group = job.key;
-        if (stopping || count >= (control ? 132096U : 256U) || (!control && group_counts.value(job.group) >= max_count)
-            || job.bytes > max_bytes || job.bytes > (64ULL << 20) || bytes > (64ULL << 20) - job.bytes
-            || group_bytes.value(job.group) > max_bytes - job.bytes) return false;
-        ++count; bytes += job.bytes; ++group_counts[job.group]; group_bytes[job.group] += job.bytes;
-        queues[job.key].push_back(std::move(job)); ready.notify_all(); return true;
-    }
-    void loop() {
-        for (;;) {
-            Job job;
-            {
-                std::unique_lock lock(mutex);
-                ready.wait(lock, [&] { if (stopping && !count) return true; for (auto& [key, queue] : queues) if (!queue.empty() && !running.contains(key)) return true; return false; });
-                if (stopping && !count) return;
-                auto it = queues.upper_bound(last);
-                for (size_t attempts = 0; attempts < queues.size(); ++attempts) {
-                    if (it == queues.end()) it = queues.begin();
-                    if (!it->second.empty() && !running.contains(it->first)) break;
-                    ++it;
-                }
-                last = it->first; running.insert(last); job = std::move(it->second.front()); it->second.pop_front();
-            }
-            job.run();
-            {
-                std::lock_guard lock(mutex);
-                running.remove(job.key); --count; bytes -= job.bytes;
-                if (--group_counts[job.group] == 0) group_counts.remove(job.group);
-                group_bytes[job.group] -= job.bytes; if (!group_bytes[job.group]) group_bytes.remove(job.group);
-                auto it = queues.find(job.key); if (it != queues.end() && it->second.empty()) queues.erase(it);
-            }
-            ready.notify_all();
-        }
-    }
-    void stop() { std::lock_guard lock(mutex); stopping = true; ready.notify_all(); }
-};
-template<typename T> struct AsyncState { std::optional<Result<T>> result; };
-template<typename T> struct WorkAwaiter {
-    std::shared_ptr<Scheduler> scheduler;
-    QUuid key;
-    quint64 bytes;
-    quint32 max_count;
-    quint64 max_bytes;
-    std::function<Result<T>()> function;
-    QUuid group;
-    std::shared_ptr<AsyncState<T>> state = std::make_shared<AsyncState<T>>();
-    bool await_ready() const { return false; }
-    bool await_suspend(std::coroutine_handle<> continuation) {
-        auto* dispatcher = QAbstractEventDispatcher::instance(QThread::currentThread());
-        if (!dispatcher) { state->result.emplace(Error{ErrorCode::InvalidArgument}); return false; }
-        auto result = state;
-        QPointer<QObject> context(dispatcher);
-        auto run = [result, context, continuation, fn = std::move(function)]() mutable {
-            try { result->result.emplace(fn()); }
-            catch (const Failure& failure) {
-                LFLOG_DEBUG << "FileManager operation failed: code=" << int(failure.error.code) << ", native=" << failure.error.native_code;
-                result->result.emplace(failure.error);
-            } catch (const std::bad_alloc&) { result->result.emplace(Error{ErrorCode::QuotaExceeded}); }
-            catch (...) { result->result.emplace(Error{ErrorCode::IoError}); }
-            if (context) QMetaObject::invokeMethod(context, [result, continuation] { continuation.resume(); }, Qt::QueuedConnection);
-        };
-        if (!scheduler->enqueue({key, bytes, std::move(run), group}, max_count, max_bytes, max_count == 4096)) {
-            state->result.emplace(Error{ErrorCode::QueueFull}); return false;
-        }
-        return true;
-    }
-    Result<T> await_resume() { return std::move(state->result.value()); }
-};
-template<typename T> QCoro::Task<Result<T>> execute(std::shared_ptr<Scheduler> scheduler, QUuid key, quint64 bytes,
-        quint32 count, quint64 max_bytes, std::function<Result<T>()> function, QUuid group = {}) {
-    // Named awaiter keeps nontrivial captures out of a temporary coroutine expression.
-    WorkAwaiter<T> work{std::move(scheduler), key, bytes, count, max_bytes, std::move(function), group};
-    co_return co_await work;
+    return *this;
 }
+void DirectorySubscription::reset() noexcept {
+    if (active_) active_->store(false);
+    if (release_) { auto release = std::exchange(release_, {}); release(); }
+    active_.reset(); namespace_id_ = {}; directory_id_ = {}; generation_ = 0;
+}
+DirectorySubscription::operator bool() const noexcept { return active_ && active_->load(); }
+struct IFileManager::AccessPages {
+    struct Cursor {
+        NamespaceId ns; DirectoryId parent; QUuid scope; QByteArray cursor, filesystem_generation;
+        quint64 generation = 0, policy = 0;
+        std::shared_ptr<const std::atomic<quint64>> authority;
+        std::chrono::steady_clock::time_point expires;
+        bool stable_order = false, ascii_order = false;
+    };
+    std::mutex mutex;
+    QHash<QByteArray, Cursor> cursors;
+};
+IFileManager::IFileManager() : access_pages_(std::make_shared<AccessPages>()) {}
+IFileManager::~IFileManager() = default;
+QCoro::Task<Result<PreparedRead>> IFileManager::prepareRead(NamespaceId, FileId, ReadPreparationOptions) {
+    co_return Error{ErrorCode::UnsupportedCapability};
+}
+QCoro::Task<Result<DirectorySubscription>> IFileManager::subscribeDirectory(NamespaceId, DirectoryId, DirectoryChangeCallback) {
+    co_return Error{ErrorCode::UnsupportedCapability};
+}
+IFileManager::FilesystemGuard IFileManager::filesystemGuard(NamespaceId, QUuid, std::function<bool(FilesystemIdentity)> check) {
+    if (!check) return {};
+    return []() -> QCoro::Task<Result<void>> { co_return Error{ErrorCode::UnsupportedCapability}; };
+}
+namespace {
+bool permitted(const AccessContext& access, NamespaceId ns, QUuid id, AccessOperation operation) {
+    if (!access.current()) return false;
+    if (!access.check) return true;
+    try { auto result = access.check(ns, id, operation); return result && result.value(); }
+    catch (...) { return false; }
+}
+class AuthorizedReader final : public IFileReader {
+public:
+    AuthorizedReader(std::unique_ptr<IFileReader> reader, AccessContext access, NamespaceId ns, FileId id,
+        std::function<QCoro::Task<Result<void>>()> guard)
+        : reader_(std::move(reader)), access_(std::move(access)), ns_(ns), id_(id), guard_(std::move(guard)) {}
+    std::function<bool()> accessGuard() const override {
+        auto inner = reader_->accessGuard(); auto access = access_; auto ns = ns_; auto id = id_;
+        return [inner, access, ns, id] {
+            try { return permitted(access, ns, id, AccessOperation::Read) && inner()
+                && (!access.filesystem_check || access.filesystem_check({})); }
+            catch (...) { return false; }
+        };
+    }
+    QCoro::Task<Result<QByteArray>> readAt(quint64 offset, qsizetype length, CancellationToken cancel) override {
+        if (!permitted(access_, ns_, id_, AccessOperation::Read)) co_return Error{ErrorCode::MissingEntry};
+        if (guard_) { auto check = co_await guard_(); if (!check) co_return check.error(); }
+        auto result = co_await reader_->readAt(offset, length, cancel);
+        if (guard_) { auto check = co_await guard_(); if (!check) co_return check.error(); }
+        if (!permitted(access_, ns_, id_, AccessOperation::Read)) co_return Error{ErrorCode::MissingEntry};
+        co_return result;
+    }
+    QCoro::Task<Result<void>> close() override { return reader_->close(); }
+    QCoro::Task<Result<void>> invalidate() override { return reader_->invalidate(); }
+private:
+    std::unique_ptr<IFileReader> reader_; AccessContext access_; NamespaceId ns_; FileId id_;
+    std::function<QCoro::Task<Result<void>>()> guard_;
+};
+}
+QCoro::Task<Result<FileInfo>> IFileManager::stat(NamespaceId ns, QUuid id, AccessContext access) {
+    if (!permitted(access, ns, id, AccessOperation::Inspect)) co_return Error{ErrorCode::MissingEntry};
+    auto guard = filesystemGuard(ns, id, access.filesystem_check);
+    if (guard) { auto check = co_await guard(); if (!check) co_return check.error(); }
+    auto result = co_await stat(ns, id);
+    if (guard) { auto check = co_await guard(); if (!check) co_return check.error(); }
+    if (!permitted(access, ns, id, AccessOperation::Inspect)) co_return Error{ErrorCode::MissingEntry};
+    co_return result;
+}
+QCoro::Task<Result<FileInfo>> IFileManager::lookup(NamespaceId ns, QString path, AccessContext access) {
+    auto result = co_await lookup(ns, std::move(path));
+    if (result && !permitted(access, ns, result.value().id, AccessOperation::Inspect)) co_return Error{ErrorCode::MissingEntry};
+    if (result) { auto guard = filesystemGuard(ns, result.value().id, access.filesystem_check); if (guard) { auto check = co_await guard(); if (!check) co_return check.error(); } }
+    if (result && !permitted(access, ns, result.value().id, AccessOperation::Inspect)) co_return Error{ErrorCode::MissingEntry};
+    co_return result;
+}
+QCoro::Task<Result<void>> IFileManager::discardDirectoryCursor(NamespaceId ns, QByteArray cursor) {
+    std::lock_guard lock(access_pages_->mutex);
+    auto found=access_pages_->cursors.find(cursor);
+    if(found!=access_pages_->cursors.end() && found->ns==ns) access_pages_->cursors.erase(found);
+    co_return Result<void>{};
+}
+QCoro::Task<Result<DirectoryPage>> IFileManager::list(NamespaceId ns, DirectoryId parent, PageRequest page, AccessContext access) {
+    if(page.stable_order && !supportsStableEnumeration()) co_return Error{ErrorCode::UnsupportedCapability};
+    if (!access.check && !access.current_generation && !access.filesystem_check) co_return co_await list(ns, parent, std::move(page));
+    if (access.authorization_scope.isNull() || page.cursor.size() > 64) co_return Error{ErrorCode::InvalidArgument};
+    if (!access.current()) co_return Error{page.cursor.isEmpty() ? ErrorCode::MissingEntry : ErrorCode::StaleCursor};
+    if (!permitted(access, ns, parent, AccessOperation::List)) co_return Error{ErrorCode::MissingEntry};
+    auto info = co_await namespaceInfo(ns); if (!info) co_return info.error();
+    if (!page.limit || page.limit > info.value().config.limits.max_page_size) co_return Error{ErrorCode::InvalidArgument};
+    auto state = access_pages_; const auto now = std::chrono::steady_clock::now();
+    if (!page.cursor.isEmpty()) {
+        std::lock_guard lock(state->mutex); auto found = state->cursors.find(page.cursor);
+        if (found == state->cursors.end()) co_return Error{ErrorCode::StaleCursor};
+        const auto stored = found.value(); state->cursors.erase(found);
+        if (stored.ns != ns || stored.parent != parent || stored.scope != access.authorization_scope || (!page.stable_order && stored.generation != info.value().generation) || stored.stable_order != page.stable_order || stored.ascii_order != page.ascii_order
+            || stored.policy != access.generation || stored.filesystem_generation != access.filesystem_generation || stored.authority != access.current_generation || now >= stored.expires) co_return Error{ErrorCode::StaleCursor};
+        page.cursor = stored.cursor;
+    }
+    auto parent_guard = filesystemGuard(ns, parent, access.filesystem_check);
+    if (parent_guard) { auto check = co_await parent_guard(); if (!check) co_return check.error(); }
+    auto result = co_await list(ns, parent, page); if (!result) co_return result.error();
+    QVector<FileInfo> visible;
+    for (auto& child : result.value().entries) {
+        if (!permitted(access, ns, child.id, AccessOperation::Inspect)) continue;
+        auto guard = filesystemGuard(ns, child.id, access.filesystem_check);
+        if (guard) {
+            auto check = co_await guard();
+            if (!check) { if (check.error().code == ErrorCode::MissingEntry || check.error().code == ErrorCode::PermissionDenied) continue; co_return check.error(); }
+        }
+        visible.append(std::move(child));
+    }
+    result.value().entries = std::move(visible);
+    if (parent_guard) { auto check = co_await parent_guard(); if (!check) co_return check.error(); }
+    if (!permitted(access, ns, parent, AccessOperation::List)) co_return Error{ErrorCode::MissingEntry};
+    if (!result.value().next_cursor.isEmpty()) {
+        std::lock_guard lock(state->mutex);
+        for (auto it = state->cursors.begin(); it != state->cursors.end();) {
+            if (now >= it->expires) it = state->cursors.erase(it); else ++it;
+        }
+        if (state->cursors.size() >= std::min<quint32>(128, info.value().config.limits.max_notifications)) co_return Error{ErrorCode::QuotaExceeded};
+        auto token = QUuid::createUuid().toRfc4122().toHex();
+        state->cursors.insert(token, {ns, parent, access.authorization_scope, result.value().next_cursor, access.filesystem_generation, info.value().generation, access.generation,
+            access.current_generation, now + std::chrono::minutes(1), page.stable_order, page.ascii_order});
+        result.value().next_cursor = token;
+    }
+    co_return result;
+}
+QCoro::Task<Result<std::unique_ptr<IFileReader>>> IFileManager::openRead(NamespaceId ns, FileId id, AccessContext access) {
+    if (!permitted(access, ns, id, AccessOperation::Read)) co_return Error{ErrorCode::MissingEntry};
+    auto guard = filesystemGuard(ns, id, access.filesystem_check);
+    if (guard) { auto check = co_await guard(); if (!check) co_return check.error(); }
+    auto result = co_await openRead(ns, id);
+    if (!result) co_return result.error();
+    if (!permitted(access, ns, id, AccessOperation::Read)) co_return Error{ErrorCode::MissingEntry};
+    co_return std::unique_ptr<IFileReader>(new AuthorizedReader(std::move(result).value(), std::move(access), ns, id, std::move(guard)));
+}
+QCoro::Task<Result<PreparedRead>> IFileManager::prepareRead(NamespaceId ns, FileId id, ReadPreparationOptions options, AccessContext access) {
+    if (!permitted(access, ns, id, AccessOperation::Read)) co_return Error{ErrorCode::MissingEntry};
+    auto guard = filesystemGuard(ns, id, access.filesystem_check);
+    if (guard) { auto check = co_await guard(); if (!check) co_return check.error(); }
+    auto result = co_await prepareRead(ns, id, std::move(options));
+    if (!result) co_return result.error();
+    if (guard) { auto check = co_await guard(); if (!check) co_return check.error(); }
+    if (!permitted(access, ns, id, AccessOperation::Read)) co_return Error{ErrorCode::MissingEntry};
+    auto value = std::move(result).value();
+    value.reader = std::make_unique<AuthorizedReader>(std::move(value.reader), std::move(access), ns, id, std::move(guard));
+    co_return value;
+}
+QCoro::Task<Result<DirectorySubscription>> IFileManager::subscribeDirectory(NamespaceId ns, DirectoryId directory, DirectoryChangeCallback callback, AccessContext access) {
+    if (access.filesystem_check) co_return Error{ErrorCode::UnsupportedCapability};
+    if (!permitted(access, ns, directory, AccessOperation::List)) co_return Error{ErrorCode::MissingEntry};
+    auto deliver = std::move(callback.callback);
+    callback.callback = [access, ns, directory, deliver = std::move(deliver)](DirectoryChange change) {
+        if (permitted(access, ns, directory, AccessOperation::List)) deliver(change);
+    };
+    co_return co_await subscribeDirectory(ns, directory, std::move(callback));
+}
+namespace {
 template<typename T> QCoro::Task<Result<T>> rejected(ErrorCode code) { co_return Error{code}; }
 bool validPageEnvelope(const PageRequest& page) { return page.limit > 0 && page.limit <= 1000 && page.cursor.size() <= 4096; }
 struct WriterState {
@@ -128,13 +216,43 @@ struct ReaderState {
 };
 struct Subscriber {
     QUuid ns;
-    QPointer<QObject> context;
-    std::function<void(Change)> callback;
+    QPointer<QObject> context; // Accessed only on its Qt thread after registration.
+    std::shared_ptr<QObject> dispatch;
+    std::optional<DirectoryId> directory;
+    std::atomic_bool invalidated{false};
+    std::function<void(DirectoryChange)> callback;
     std::atomic_bool queued{false};
     std::atomic_bool active{true};
     std::atomic<quint64> generation{0};
 };
-NamespaceInfo infoFor(Namespace& ns, Catalog& db) { return {ns.config, ns.root_id, db.generation(), charged(db), false, true, ns.untracked_staging, ns.staging_scan_truncated}; }
+std::shared_ptr<Subscriber> makeSubscriber(NamespaceId ns, QObject* context, std::function<void(Change)> callback) {
+    auto sub = std::make_shared<Subscriber>();
+    sub->ns = ns; sub->context = context;
+    if (callback) sub->callback = [callback = std::move(callback)](DirectoryChange change) {
+        callback({change.namespace_id, change.generation, true});
+    };
+    // Keep a separate delivery object alive across queued worker calls, even if the
+    // subscriber's context is destroyed. Never dereference its QPointer on workers.
+    sub->dispatch = std::shared_ptr<QObject>(new QObject, [](QObject* object) { object->deleteLater(); });
+    std::weak_ptr<Subscriber> weak = sub;
+    QObject::connect(context, &QObject::destroyed, sub->dispatch.get(), [weak] {
+        if (auto state = weak.lock()) state->active = false;
+    }, Qt::DirectConnection);
+    return sub;
+}
+NamespaceInfo infoFor(Namespace& ns, Catalog& db) {
+    NamespaceInfo result;
+    result.config = ns.config; result.root = ns.root_id; result.generation = db.generation(); result.charged_bytes = charged(db);
+    result.untracked_staging = ns.untracked_staging; result.staging_scan_truncated = ns.staging_scan_truncated;
+    result.status = NamespaceStatus::Ready;
+    result.capabilities = Capability::Read | Capability::Write | Capability::PreparedRead | Capability::DirectorySubscriptions;
+    return result;
+}
+void checkBrowseDirectory(Namespace& ns, Catalog& db, DirectoryId id) {
+    const auto entry = db.entry(id);
+    require(entry.type == EntryType::Directory, ErrorCode::InvalidArgument);
+    if (entry.status != EntryStatus::Updating) validateEntry(ns, db, entry);
+}
 void checkParent(Namespace& ns, Catalog& db, DirectoryId parent) {
     auto info = db.entry(parent); require(info.type == EntryType::Directory, ErrorCode::InvalidArgument);
     validateEntry(ns, db, info);
@@ -237,16 +355,26 @@ struct NativeFileManager::Impl : std::enable_shared_from_this<Impl> {
         require(!shutting_down, ErrorCode::ShuttingDown);
         std::lock_guard lock(mutex); auto found = spaces.value(id); require(bool(found), ErrorCode::MissingEntry); return found;
     }
-    void notify(NamespaceId id, quint64 generation) {
+    void notify(NamespaceId id, Catalog& db) {
+        const auto generation = db.generation();
         std::lock_guard lock(mutex);
+        std::erase_if(subscribers, [](const auto& item) { return !item.second->active; });
         for (auto& [key, sub] : subscribers) {
             Q_UNUSED(key);
-            if (sub->ns != id || !sub->active || !sub->context) continue;
+            if (sub->ns != id || !sub->active) continue;
+            // Native notifications deliberately invalidate pages on any namespace
+            // change. This bounded fallback also covers moves and reconciliation.
             sub->generation = generation;
+            if (sub->directory && !db.scalar("SELECT id FROM entries WHERE id=?", {uuid(*sub->directory)}).isValid()) sub->invalidated = true;
             if (sub->queued.exchange(true)) continue;
-            QMetaObject::invokeMethod(sub->context, [sub] {
+            QMetaObject::invokeMethod(sub->dispatch.get(), [sub] {
                 sub->queued = false;
-                if (sub->active && sub->context) sub->callback({sub->ns, sub->generation.load(), true});
+                if (sub->active && sub->context) {
+                    const bool terminal = sub->invalidated;
+                    if (terminal) sub->active = false;
+                    sub->callback({sub->ns, sub->directory.value_or(DirectoryId{}), sub->generation.load(),
+                        terminal ? DirectoryChangeKind::Invalidated : DirectoryChangeKind::RescanRequired});
+                }
             }, Qt::QueuedConnection);
         }
     }
@@ -265,14 +393,14 @@ struct NativeFileManager::Impl : std::enable_shared_from_this<Impl> {
             const auto expected_internal = identity(ns->internal.value, true); const auto actual_internal = identity(current_internal.value, true);
             require(expected_internal.dev == actual_internal.dev && expected_internal.ino == actual_internal.ino, ErrorCode::ExternalModification);
             Catalog db(ns->catalogPath(), ns->config.limits.max_catalog_bytes, false);
-            if (recovery) recover(*ns, db);
             const auto before = db.generation();
             try {
+                if (recovery) recover(*ns, db);
                 auto result = function(*ns, db);
-                if (db.generation() != before) self->notify(ns->config.id, db.generation());
+                if (db.generation() != before) self->notify(ns->config.id, db);
                 return result;
             } catch (...) {
-                if (db.generation() != before) self->notify(ns->config.id, db.generation());
+                if (db.generation() != before) self->notify(ns->config.id, db);
                 throw;
             }
         };
@@ -318,6 +446,13 @@ public:
             return data;
         }, quint64(max_bytes));
     }
+    QCoro::Task<Result<void>> invalidate() override {
+        auto state = state_;
+        co_return co_await impl_->handleSubmit<void>(state, [state](Namespace&, Catalog& db) -> Result<void> {
+            require(!state->closed, ErrorCode::Busy);
+            db.query("UPDATE entries SET status=2,sha=NULL WHERE id=?", {uuid(state->id)}); db.bump(); return {};
+        });
+    }
     QCoro::Task<Result<void>> close() override {
         auto state = state_;
         co_return co_await impl_->handleSubmit<void>(state, [state](Namespace& ns, Catalog&) -> Result<void> {
@@ -328,6 +463,26 @@ private:
     std::shared_ptr<NativeFileManager::Impl> impl_;
     std::shared_ptr<ReaderState> state_;
 };
+PreparedRead attachReader(const std::shared_ptr<NativeFileManager::Impl>& impl, Namespace& space, Catalog& db, FileId id) {
+    auto entry = db.entry(id);
+    require(entry.type == EntryType::File, ErrorCode::InvalidArgument);
+    validateEntry(space, db, entry);
+    require(space.handles < space.config.limits.max_handles, ErrorCode::QuotaExceeded);
+    auto state = std::make_shared<ReaderState>(); state->ns = impl->space(space.config.id); state->id = id;
+    state->fd = openBeneath(space.root.value, db.path(id, space.config.naming, space.config.limits.max_depth), O_RDONLY | O_NONBLOCK);
+    state->opened = identity(state->fd.value);
+    auto q = db.query("SELECT dev,ino,mtime FROM entries WHERE id=?", {uuid(id)});
+    require(q.next(), ErrorCode::MissingEntry);
+    require(state->opened.dev == q.value(0).toULongLong() && state->opened.ino == q.value(1).toULongLong()
+        && state->opened.modified == q.value(2).toLongLong() && state->opened.size == entry.size, ErrorCode::ExternalModification);
+    auto reader = std::make_unique<Reader>(impl, state);
+    ++space.handles; ++space.readers[id];
+    { std::lock_guard lock(impl->mutex);
+        erase_if(impl->readers, [](const auto& weak) { auto item = weak.lock(); return !item || item->closed; });
+        impl->readers.append(state);
+    }
+    return {std::move(entry), std::move(reader), ReadConsistency::DetectChanges, {}};
+}
 class Writer final : public IFileWriter {
 public:
     Writer(std::shared_ptr<NativeFileManager::Impl> impl, std::shared_ptr<WriterState> state) : impl_(std::move(impl)), state_(std::move(state)) {}
@@ -556,7 +711,11 @@ QCoro::Task<Result<CommitResult>> Writer::commit(CancellationToken cancel) {
 }
 
 NativeFileManager::NativeFileManager() : impl_(std::make_shared<Impl>()) {}
-NativeFileManager::~NativeFileManager() = default;
+NativeFileManager::~NativeFileManager() {
+    std::lock_guard lock(impl_->mutex);
+    for (auto& [id, sub] : impl_->subscribers) { Q_UNUSED(id); sub->active = false; }
+    impl_->subscribers.clear();
+}
 namespace {
 Result<NamespaceInfo> acquireNamespace(std::shared_ptr<NativeFileManager::Impl> impl, NamespaceConfig config, bool create, CancellationToken cancel) {
     PermissionRepairScope permissions(config.repair_permissions);
@@ -705,19 +864,24 @@ QCoro::Task<Result<FileInfo>> NativeFileManager::lookup(NamespaceId ns, QString 
                 auto found = db.scalar("SELECT id FROM entries WHERE parent=? AND name_key=?", {uuid(id), key.value()}); require(found.isValid(), ErrorCode::MissingEntry); id = uuid(found);
             }
         }
-        auto info = db.entry(id); validateEntry(space, db, info); return info;
+        auto info = db.entry(id);
+        if (info.status != EntryStatus::Updating) validateEntry(space, db, info);
+        return info;
     });
 }
 QCoro::Task<Result<DirectoryPage>> NativeFileManager::list(NamespaceId ns, DirectoryId parent, PageRequest page) {
     if (!validPageEnvelope(page)) return rejected<DirectoryPage>(ErrorCode::InvalidArgument);
     return impl_->submit<DirectoryPage>(ns, [parent, page = std::move(page)](Namespace& space, Catalog& db) -> Result<DirectoryPage> {
-        const auto entry = db.entry(parent); require(entry.type == EntryType::Directory, ErrorCode::InvalidArgument); validateEntry(space, db, entry);
-        const auto scope = "directory:" + uuid(parent); const auto generation = db.generation();
+        checkBrowseDirectory(space, db, parent);
+        const auto scope = (page.stable_order ? (page.ascii_order ? "directory-ascii:" : "directory-ordered:") : "directory:") + uuid(parent); const auto generation = page.stable_order ? 0 : db.generation();
         const auto last = readCursor(page, generation, scope, space.config.limits.max_page_size);
         const auto separator = last.lastIndexOf(QChar::Null);
         const auto last_key = separator < 0 ? QString{} : last.left(separator);
-        const auto last_id = separator < 0 ? QString{} : last.mid(separator + 1);
-        auto q = db.query("SELECT id,name_key FROM entries WHERE parent=? AND (name_key>? OR (name_key=? AND id>?)) ORDER BY name_key,id LIMIT ?", {uuid(parent), last_key, last_key, last_id, page.limit + 1});
+        const auto key = page.stable_order ? (page.ascii_order ? QStringLiteral("dsfm_ascii(name) COLLATE BINARY") : QStringLiteral("name COLLATE BINARY")) : QStringLiteral("name_key");
+        // Names (and their injective ASCII presentation) are unique per parent;
+        // a simple key range lets SQLite seek instead of scanning earlier pages.
+        auto q = db.query(QStringLiteral("SELECT id,%1 FROM entries WHERE parent=? AND status IN(?,?) AND %1>? ORDER BY %1,id LIMIT ?").arg(key),
+            {uuid(parent), int(EntryStatus::Available), int(EntryStatus::Updating), last_key, page.limit + 1});
         DirectoryPage result; QString next;
         while (q.next()) {
             if (result.entries.size() == page.limit) { result.next_cursor = cursor(generation, scope, next); break; }
@@ -836,17 +1000,86 @@ QCoro::Task<Result<RangePage>> NativeFileManager::listRanges(NamespaceId ns, Pen
 QCoro::Task<Result<std::unique_ptr<IFileReader>>> NativeFileManager::openRead(NamespaceId ns, FileId id) {
     auto impl = impl_;
     return impl->submit<std::unique_ptr<IFileReader>>(ns, [impl, id](Namespace& space, Catalog& db) -> Result<std::unique_ptr<IFileReader>> {
-        auto entry = db.entry(id); require(entry.type == EntryType::File, ErrorCode::InvalidArgument); validateEntry(space, db, entry);
-        require(space.handles < space.config.limits.max_handles, ErrorCode::QuotaExceeded);
-        auto state = std::make_shared<ReaderState>(); state->ns = impl->space(space.config.id); state->id = id;
-        state->fd = openBeneath(space.root.value, db.path(id, space.config.naming, space.config.limits.max_depth), O_RDONLY | O_NONBLOCK);
-        state->opened = identity(state->fd.value); ++space.handles; ++space.readers[id];
-        { std::lock_guard lock(impl->mutex);
-            erase_if(impl->readers, [](const auto& weak) { auto item = weak.lock(); return !item || item->closed; });
-            impl->readers.append(state);
-        }
-        return std::unique_ptr<IFileReader>(new Reader(impl, state));
+        auto prepared = attachReader(impl, space, db, id);
+        return std::move(prepared.reader);
     });
+}
+IFileManager::FilesystemGuard NativeFileManager::filesystemGuard(NamespaceId ns, QUuid id, std::function<bool(FilesystemIdentity)> check) {
+    if (!check) return {};
+    auto impl = impl_;
+    return [impl, ns, id, check = std::move(check)]() -> QCoro::Task<Result<void>> {
+        co_return co_await impl->submit<void>(ns, [id, check](Namespace& space, Catalog& db) -> Result<void> {
+            auto allowed = [&](int fd) {
+                struct stat found{}; ioCheck(::fstat(fd, &found) == 0);
+                bool result = false; try { result = check({quint64(found.st_dev), quint64(found.st_ino), bool(S_ISDIR(found.st_mode))}); } catch (...) {}
+                require(result, ErrorCode::MissingEntry);
+            };
+            auto current = Fd(::fcntl(space.root.value, F_DUPFD_CLOEXEC, 0));
+            for (quint32 depth = 0; depth < 512; ++depth) {
+                allowed(current.value); struct stat before{}, after{}; ioCheck(::fstat(current.value, &before) == 0);
+                auto parent = Fd(::openat(current.value, "..", O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+                ioCheck(::fstat(parent.value, &after) == 0);
+                if (before.st_dev == after.st_dev && before.st_ino == after.st_ino) break;
+                require(depth < 511, ErrorCode::MissingEntry); current = std::move(parent);
+            }
+            const auto item = db.entry(id);
+            require(isListable(item.status), ErrorCode::MissingEntry);
+            if (item.status != EntryStatus::Updating) validateEntry(space, db, item);
+            if (space.config.naming == PhysicalNaming::FileId && item.type == EntryType::Directory) return {};
+            const auto path = db.path(id, space.config.naming, space.config.limits.max_depth);
+            QString prefix;
+            for (const auto& component : path.split('/')) {
+                if (!prefix.isEmpty()) prefix += '/';
+                prefix += component;
+                auto object = openBeneath(space.root.value, prefix, O_PATH); allowed(object.value);
+            }
+            return {};
+        });
+    };
+}
+QCoro::Task<Result<PreparedRead>> NativeFileManager::prepareRead(NamespaceId ns, FileId id, ReadPreparationOptions options) {
+    auto impl = impl_;
+    if (!options.resume_lease.isEmpty()) co_return Error{ErrorCode::UnsupportedCapability};
+    if (!options.expected_sha256.isEmpty() && options.expected_sha256.size() != 32) co_return Error{ErrorCode::InvalidArgument};
+    std::shared_ptr<Namespace> space;
+    try { space = impl->space(ns); } catch (const Failure& failure) { co_return failure.error; }
+    auto opened = co_await impl->submit<PreparedRead>(ns, [impl, id, options](Namespace& space, Catalog& db) -> Result<PreparedRead> {
+        cancelCheck(options.cancel);
+        const auto entry = db.entry(id);
+        require(entry.type == EntryType::File, ErrorCode::InvalidArgument);
+        require(!options.expected_generation || *options.expected_generation == entry.generation, ErrorCode::Conflict);
+        require(entry.sha256.size() == 32, ErrorCode::IntegrityError);
+        require(options.expected_sha256.isEmpty() || options.expected_sha256 == entry.sha256, ErrorCode::IntegrityError);
+        return attachReader(impl, space, db, id);
+    });
+    if (!opened) co_return opened.error();
+    auto prepared = std::move(opened).value();
+    auto hash = std::make_shared<QCryptographicHash>(QCryptographicHash::Sha256);
+    quint64 offset = 0;
+    // Each bounded chunk yields its worker turn; the reader pins this committed
+    // generation throughout hashing and subsequent streaming. No whole-file buffer.
+    while (offset < prepared.info.size) {
+        const auto count = std::min<quint64>(space->config.limits.max_io_bytes, prepared.info.size - offset);
+        auto bytes = co_await prepared.reader->readAt(offset, qsizetype(count), options.cancel);
+        if (!bytes) co_return bytes.error();
+        if (bytes.value().isEmpty()) co_return Error{ErrorCode::ExternalModification};
+        const auto bytes_count = quint64(bytes.value().size());
+        auto hashed = co_await impl->submit<void>(ns, [hash, data = std::move(bytes).value(), cancel = options.cancel](Namespace&, Catalog&) -> Result<void> {
+            cancelCheck(cancel); hash->addData(data); return {};
+        }, bytes_count, false);
+        if (!hashed) co_return hashed.error();
+        offset += bytes_count;
+    }
+    // Also validate empty files and the final content identity after hashing.
+    auto final_check = co_await prepared.reader->readAt(offset, 0, options.cancel);
+    if (!final_check) co_return final_check.error();
+    auto digest = co_await impl->submit<QByteArray>(ns, [hash, cancel = options.cancel](Namespace&, Catalog&) -> Result<QByteArray> {
+        cancelCheck(cancel); return hash->result();
+    }, 0, false);
+    if (!digest) co_return digest.error();
+    if (digest.value() != prepared.info.sha256) { co_await prepared.reader->invalidate(); co_return Error{ErrorCode::IntegrityError}; }
+    LFLOG_DEBUG << "FileManager prepared verified read";
+    co_return std::move(prepared);
 }
 QCoro::Task<Result<MutationResult>> NativeFileManager::rename(NamespaceId ns, QUuid id, QString name, CancellationToken cancel) {
     if (name.isEmpty() || name.size() > 255) return rejected<MutationResult>(ErrorCode::InvalidName);
@@ -963,14 +1196,42 @@ QCoro::Task<Result<ReconciliationPage>> NativeFileManager::reconcile(NamespaceId
     });
 }
 Result<quint64> NativeFileManager::subscribe(NamespaceId ns, QObject* context, std::function<void(Change)> callback) {
-    if (!context || !callback || impl_->shutting_down) return Error{ErrorCode::InvalidArgument};
+    if (!context || context->thread() != QThread::currentThread() || !callback || impl_->shutting_down) return Error{ErrorCode::InvalidArgument};
     std::lock_guard lock(impl_->mutex);
     auto space = impl_->spaces.value(ns); if (!space) return Error{ErrorCode::MissingEntry};
+    std::erase_if(impl_->subscribers, [](const auto& item) { return !item.second->active; });
     quint32 count = 0;
     for (const auto& [id, existing] : impl_->subscribers) { Q_UNUSED(id); if (existing->ns == ns) ++count; }
     if (count >= space->config.limits.max_notifications || impl_->subscribers.size() >= 4096) return Error{ErrorCode::QuotaExceeded};
-    auto sub = std::make_shared<Subscriber>(); sub->ns = ns; sub->context = context; sub->callback = std::move(callback);
+    auto sub = makeSubscriber(ns, context, std::move(callback));
     const auto id = impl_->next_subscription++; impl_->subscribers[id] = sub; return id;
+}
+QCoro::Task<Result<DirectorySubscription>> NativeFileManager::subscribeDirectory(
+        NamespaceId ns, DirectoryId directory, DirectoryChangeCallback callback) {
+    if (!callback.context || callback.context->thread() != QThread::currentThread() || !callback.callback)
+        return rejected<DirectorySubscription>(ErrorCode::InvalidArgument);
+    auto sub = makeSubscriber(ns, callback.context, {});
+    sub->directory = directory;
+    sub->callback = std::move(callback.callback);
+    auto impl = impl_;
+    return impl->submit<DirectorySubscription>(ns, [impl, sub, directory](Namespace& space, Catalog& db) -> Result<DirectorySubscription> {
+        checkBrowseDirectory(space, db, directory);
+        require(sub->active, ErrorCode::Cancelled);
+        const auto generation = db.generation();
+        std::lock_guard lock(impl->mutex);
+        require(!impl->shutting_down, ErrorCode::ShuttingDown);
+        std::erase_if(impl->subscribers, [](const auto& item) { return !item.second->active; });
+        quint32 count = 0;
+        for (const auto& [id, existing] : impl->subscribers) { Q_UNUSED(id); if (existing->ns == space.config.id) ++count; }
+        require(count < space.config.limits.max_notifications && impl->subscribers.size() < 4096, ErrorCode::QuotaExceeded);
+        const auto id = impl->next_subscription++;
+        impl->subscribers[id] = sub;
+        LFLOG_DEBUG << "FileManager directory subscription registered";
+        // Atomic cancellation never waits for catalog I/O or a manager mutex.
+        // Admission/notification prunes inactive records before applying budgets.
+        return DirectorySubscription{space.config.id, directory, generation,
+            std::shared_ptr<std::atomic_bool>(sub, &sub->active), {}};
+    });
 }
 void NativeFileManager::unsubscribe(quint64 subscription) {
     std::lock_guard lock(impl_->mutex); auto found = impl_->subscribers.find(subscription);
@@ -1039,3 +1300,12 @@ QCoro::Task<Result<void>> NativeFileManager::shutdown() {
     co_return Result<void>{};
 }
 } // namespace dsfm
+
+namespace dsfm {
+QCoro::Task<Result<AccessContext>> IFileManager::descendantAccess(NamespaceId ns, DirectoryId directory, AccessContext access) {
+    auto info = co_await stat(ns, directory, access);
+    if (!info) co_return info.error();
+    if (info.value().type != EntryType::Directory) co_return Error{ErrorCode::InvalidArgument};
+    co_return access;
+}
+}

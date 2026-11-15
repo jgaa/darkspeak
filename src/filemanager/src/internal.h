@@ -84,6 +84,7 @@ public:
     QSqlDatabase db;
 private:
     QString connection_;
+    NamespaceId namespace_id_;
 };
 struct Transaction {
     Catalog& db;

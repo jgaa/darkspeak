@@ -1,6 +1,8 @@
 #pragma once
 
 #include <dsfilemanager/filemanager.h>
+#include <dsfilemanager/readonlyfilemanager.h>
+#include <dsvfs/vfs.h>
 #include <QHash>
 #include <QImage>
 #include <QSettings>
@@ -35,7 +37,15 @@ public:
     };
     explicit ManagedStorage(QSettings& settings, QObject* parent = nullptr);
     QCoro::Task<dsfm::Result<void>> ready();
-    dsfm::IFileManager& manager() { return manager_; }
+    QCoro::Task<dsfm::Result<dsvfs::Vfs*>> openVfs();
+    dsvfs::Vfs* vfs() const { return vfs_.get(); }
+    dsfm::IFileManager& manager() { return *manager_; }
+    // Application-wide external-source backend. Hosts supply requester contexts;
+    // opening a source never grants a contact access to it.
+    dsfm::IFileManager* readOnlyManager() { return readonly_manager_.get(); }
+    QCoro::Task<dsfm::Result<dsfm::NamespaceInfo>> openReadOnlySource(dsfm::ReadOnlyNamespaceConfig config, bool create);
+    QCoro::Task<dsfm::Result<void>> closeReadOnlySource(dsfm::NamespaceId ns);
+    QCoro::Task<dsfm::Result<void>> updateReadOnlyExclusions(dsfm::NamespaceId ns, dsfm::ExclusionPolicy policy);
     dsfm::NamespaceId namespaceId(Area area) const { return configs_[area].id; }
     dsfm::DirectoryId root(Area area) const { return roots_[area]; }
     bool isDownloadNamespace(dsfm::NamespaceId id) const { return download_namespaces_.contains(id); }
@@ -56,6 +66,8 @@ public:
     static QString identityAvatar(QUuid id);
     static QString contactAvatar(QUuid id);
 signals:
+    void vfsConflictDetected(QUuid identity, QByteArray key, QString virtual_location);
+    void vfsConflictResolved(QUuid identity, QByteArray key);
     void initialized();
     void drained();
     void storageError();
@@ -65,7 +77,12 @@ private:
     QCoro::Task<void> restoreAvatar(QString key, QPointer<QObject> context, std::function<void(QImage)> apply);
     QCoro::Task<void> eraseAsset(QString key);
     QSettings& settings_;
-    dsfm::NativeFileManager manager_;
+    std::shared_ptr<dsfm::ReadOnlyFileManager> readonly_manager_;
+    std::unique_ptr<dsvfs::Vfs> vfs_;
+    bool opening_vfs_ = false;
+    QStringList host_private_roots_;
+    QString export_root_;
+    std::shared_ptr<dsfm::NativeFileManager> manager_ = std::make_shared<dsfm::NativeFileManager>();
     dsfm::NamespaceConfig configs_[2];
     dsfm::DirectoryId roots_[2];
     bool initializing_ = false;

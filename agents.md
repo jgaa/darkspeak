@@ -72,3 +72,5 @@ failures terminate the connection before application dispatch.**
 - Any new wire or database format must have an explicit version and regression
   fixtures. No migration or compatibility layer is required.
 - Use Tor v3 addresses only. 
+- When presenting `SymlinkPolicy::Always` in the UI, show the option and its active state in red with a clear warning that it can expose individual regular files outside the configured storage boundary; external directory traversal is forbidden. Show the assignment-level external-file permission with the same red warning.
+

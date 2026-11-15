@@ -344,3 +344,15 @@ Tests must cover:
 - Cancellation before/during verification and around publication; explicit post-publication/durability/indeterminate outcomes, abandoned awaiters, handle destruction, and asynchronous shutdown.
 - External modification/removal/replacement, explicit reconciliation without automatic adoption, owner-only permissions including SQLite side files, and diagnostic redaction.
 - Stable pagination and stale cursors, bounded notifications/rescan fallback, move-only RAII subscription teardown/move/generation races, prepared-read metadata/content binding and hash-before-streaming, concurrent operations, queue/byte limits, fair namespace scheduling, large files without whole-file buffering, and UI-thread responsiveness under sustained I/O.
+
+### Composition enumeration
+
+`IFileManager` remains the sole storage abstraction. An optional, explicitly
+advertised stable keyset enumeration mode on `PageRequest` supports VFS bounded
+filtering without whole-directory materialization. It orders logical UTF-8 labels
+(or indexed ASCII presentation labels) consistently, bounds inspected candidates,
+and can return empty continuations. It retains authorization/exclusion bindings
+while internal hidden catalog generation changes do not restart the keyset.
+Unsupported backends fail with `UnsupportedCapability`; ordinary default paging
+keeps its generation-consistent contract. Release abandoned cursors explicitly.
+Complete catalog export consistency remains specified in `vfs.md`.

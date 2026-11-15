@@ -65,5 +65,11 @@
     "version",
     "kind",
     "file_id"
-  ]
+  ],
+  "entry_status": {
+    "Available": 0,
+    "Missing": 1,
+    "Inconsistent": 2,
+    "Updating": 3
+  }
 }

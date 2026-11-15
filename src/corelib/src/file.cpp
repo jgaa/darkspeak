@@ -267,8 +267,15 @@ File::State File::getState() const noexcept
 
 void File::setState(const File::State state)
 {
+    if (getDirection() == OUTGOING) {
+        if (state == FS_TRANSFERRING && getState() != FS_TRANSFERRING) storage_cancel_ = {};
+        else if (state == FS_FAILED || state == FS_REJECTED || state == FS_CANCELLED) storage_cancel_.cancel();
+    }
     if (updateIf("state", state, data_->state, this, &File::stateChanged)) {
         flushBytesAdded();
+        if (state == FS_DONE || state == FS_REJECTED || state == FS_CANCELLED) {
+            source_prepare_ = {}; source_current_ = {}; catalog_source_.reset();
+        }
         if (state == FS_TRANSFERRING || state == FS_DONE || state == FS_FAILED
             || state == FS_REJECTED || state == FS_CANCELLED) {
             DsEngine::instance().events().append(EventJournal::TransferState, data_->identity, data_->contact,
@@ -570,8 +577,60 @@ QCoro::Task<dsfm::Result<void>> File::abortIncoming() {
     if (!ready) co_return ready.error();
     co_return co_await storage.manager().abortPending(storageNamespace(), pendingId());
 }
+bool File::outgoingSourceCurrent() const {
+    if (catalog_source_) {
+        auto* contact = getContact();
+        return catalog_source_->isAuthorized() && contact && contact->canSendFileType(getMimeType(),getName())
+            && (!catalog_source_->requiresUtf8() || contact->canSendText(QString::fromUtf8("é")));
+    }
+    if (source_prepare_) {
+        auto* contact = getContact();
+        return source_current_ && source_current_() && contact && contact->canSendFileType(getMimeType(),getName());
+    }
+    if (getId() > 0 && getDirection() == OUTGOING && storageId().isNull()) return false;
+    // Transient catalog bindings are deliberately not reconstructed from a file
+    // row after restart. A fresh authorized export is required.
+    return getMimeType() != "application/vnd.darkspeak.vfs-catalog+jsonl" || !storageId().isNull();
+}
+dsfm::Result<void> File::setCatalogSource(std::shared_ptr<dsvfs::CatalogExport> source) {
+    auto* contact = getContact();
+    if (!source || !source->isAuthorized() || getDirection() != OUTGOING || !contact
+        || !contact->getIdentity() || contact->getIdentity()->getId() != getIdentityId()
+        || source->identity() != contact->getIdentity()->getUuid()
+        || source->authorizationScope() != contact->getUuid()
+        || getMimeType() != "application/vnd.darkspeak.vfs-catalog+jsonl"
+        || getHash() != source->sha256() || quint64(getSize()) != source->size()) return dsfm::Error{dsfm::ErrorCode::PermissionDenied};
+    catalog_source_ = std::move(source); return {};
+}
+dsfm::Result<void> File::setPreparedSource(QUuid identity,QUuid scope,std::function<bool()> current,PrepareSource prepare) {
+    auto* contact = getContact();
+    if (!contact || !contact->getIdentity() || contact->getIdentity()->getId() != getIdentityId()
+        || contact->getIdentity()->getUuid() != identity || contact->getUuid() != scope
+        || getDirection() != OUTGOING || !current || !prepare || !current()) return dsfm::Error{dsfm::ErrorCode::PermissionDenied};
+    source_current_ = std::move(current); source_prepare_ = std::move(prepare); return {};
+}
+QCoro::Task<dsfm::Result<dsfm::PreparedRead>> File::prepareOutgoingRead(dsfm::ReadPreparationOptions options) {
+    auto self = shared_from_this();
+    if (catalog_source_) co_return co_await catalog_source_->prepareRead(options);
+    if (source_prepare_) {
+        if (!outgoingSourceCurrent()) co_return dsfm::Error{dsfm::ErrorCode::MissingEntry};
+        auto prepare = source_prepare_; // Keep a coroutine lambda alive through terminal state changes.
+        co_return co_await prepare(options);
+    }
+    auto& storage = DsEngine::instance().getFileManager()->storage();
+    auto operation = storage.holdOperation();
+    auto ready = co_await storage.ready(); if (!ready) co_return ready.error();
+    co_return co_await storage.manager().prepareRead(storageNamespace(), storageId(), options);
+}
 QCoro::Task<dsfm::Result<void>> File::validateSourceSnapshot() {
     auto self = shared_from_this();
+    if (hasPreparedSource()) {
+        dsfm::ReadPreparationOptions options; options.expected_sha256 = getHash();
+        auto prepared = co_await prepareOutgoingRead(options); if (!prepared) co_return prepared.error();
+        const bool matches = prepared.value().info.sha256 == getHash() && prepared.value().info.size == quint64(getSize());
+        co_await prepared.value().reader->close();
+        co_return matches ? dsfm::Result<void>{} : dsfm::Result<void>{dsfm::Error{dsfm::ErrorCode::IntegrityError}};
+    }
     auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
     auto& storage = DsEngine::instance().getFileManager()->storage();
     auto ready = co_await storage.ready();

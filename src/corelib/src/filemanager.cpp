@@ -9,6 +9,7 @@
 #include "ds/resourcelimits.h"
 #include "ds/mediapreview.h"
 #include "ds/crypto.h"
+#include "ds/mimepreferences.h"
 
 #include "logfault/logfault.h"
 
@@ -115,6 +116,77 @@ File::ptr_t FileManager::addFile(std::unique_ptr<FileData> data)
     }
 
     return file;
+}
+
+dsfm::Result<File::ptr_t> FileManager::addCatalogTransfer(Conversation& conversation, std::shared_ptr<dsvfs::CatalogExport> catalog) {
+    auto contact = conversation.getParticipant();
+    if (!contact || !catalog || !catalog->isAuthorized()
+        || catalog->identity() != conversation.getIdentity()->getUuid()
+        || catalog->authorizationScope() != contact->getUuid()) return dsfm::Error{dsfm::ErrorCode::PermissionDenied};
+    const auto mime = QStringLiteral("application/vnd.darkspeak.vfs-catalog+jsonl");
+    if ((catalog->requiresUtf8() && !contact->canSendText(QString::fromUtf8("é"))) || !contact->canSendFileType(mime,"catalog.jsonl")) return dsfm::Error{dsfm::ErrorCode::PermissionDenied};
+    auto data = std::make_unique<FileData>();
+    data->state = File::FS_WAITING; data->identity = conversation.getIdentity()->getId();
+    data->contact = contact->getId(); data->conversation = conversation.getId();
+    data->name = "catalog.jsonl"; data->mime_type = mime; data->hash = catalog->sha256(); data->size = qlonglong(catalog->size());
+    auto file = addFile(std::move(data));
+    auto bound = file->setCatalogSource(std::move(catalog));
+    if (!bound) { file->deleteFromDb(); return bound.error(); }
+    contact->queueFile(file); return file;
+}
+
+QString FileManager::transferName(QString logical_name) {
+    // Catalog labels preserve Linux names. Transfer suggestions must also fit
+    // the existing wire and managed-download component limits.
+    auto normalized = dsfm::normalizeName(logical_name); if (normalized) return normalized.value();
+    if (logical_name.size() > 3*dsfm::max_encoded_linux_name_bytes) return "download";
+    const auto bytes = logical_name.toUtf8(); QByteArray encoded; constexpr char hex[] = "0123456789ABCDEF";
+    for (auto ch : bytes) { const auto byte = quint8(ch); encoded.append('%'); encoded.append(hex[byte>>4]); encoded.append(hex[byte&15]); }
+    if (encoded.size() > 255) encoded = encoded.first(237)+'-'+QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex().first(16);
+    if (encoded.isEmpty()) encoded = "download";
+    return QString::fromLatin1(encoded);
+}
+
+QCoro::Task<dsfm::Result<File::ptr_t>> FileManager::addVfsTransfer(Conversation& conversation,dsvfs::Vfs& vfs,
+        dsvfs::NodeId node,dsvfs::Request request,QString mime_type) {
+    auto contact = conversation.getParticipant(); QPointer<Identity> identity = conversation.getIdentity(); const auto conversation_id = conversation.getId();
+    if (!identity || !contact || request.scope != contact->getUuid() || !contact->canSendFiles()) co_return dsfm::Error{dsfm::ErrorCode::PermissionDenied};
+    if (mime_type == "*" || !validIdentityMimePreferences({mime_type})) co_return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
+    auto prepared = co_await vfs.prepareRead(identity->getUuid(),node,{},request); if (!prepared) co_return prepared.error();
+    const auto transfer_name = transferName(prepared.value().info.name);
+    if (!identity || !request.current() || !prepared.value().current || !prepared.value().current()
+        || !contact->canSendFileType(mime_type,transfer_name)) { co_await prepared.value().reader->close(); co_return dsfm::Error{dsfm::ErrorCode::PermissionDenied}; }
+    struct Source {
+        QPointer<dsvfs::Vfs> vfs; QUuid identity; dsvfs::NodeId node; dsvfs::Request request;
+        std::optional<dsvfs::PreparedRead> first; QByteArray sha256,lease; quint64 size=0;
+        std::function<bool()> current;
+    };
+    auto source = std::make_shared<Source>(); source->vfs = &vfs; source->identity = identity->getUuid(); source->node = node; source->request = request;
+    source->sha256 = prepared.value().info.sha256; source->size = prepared.value().info.size; source->lease = prepared.value().resume_lease;
+    source->current = prepared.value().current; source->first.emplace(std::move(prepared).value());
+    auto current = [source] { return source->vfs && source->request.current() && source->current && source->current(); };
+    auto factory = [source](dsfm::ReadPreparationOptions options) -> QCoro::Task<dsfm::Result<dsfm::PreparedRead>> {
+        if (options.cancel.cancelled()) co_return dsfm::Error{dsfm::ErrorCode::Cancelled};
+        if (!source->vfs || !source->request.current()) co_return dsfm::Error{dsfm::ErrorCode::MissingEntry};
+        if (!options.expected_sha256.isEmpty() && options.expected_sha256 != source->sha256) co_return dsfm::Error{dsfm::ErrorCode::IntegrityError};
+        options.expected_sha256 = source->sha256;
+        dsvfs::PreparedRead selected;
+        if (source->first) { selected = std::move(*source->first); source->first.reset(); }
+        else {
+            if (options.resume_lease.isEmpty()) options.resume_lease = source->lease;
+            auto read = co_await source->vfs->prepareRead(source->identity,source->node,options,source->request); if (!read) co_return read.error(); selected = std::move(read).value();
+        }
+        source->current = selected.current;
+        if (selected.info.size != source->size || selected.info.sha256 != source->sha256) { co_await selected.reader->close(); co_return dsfm::Error{dsfm::ErrorCode::ExternalModification}; }
+        dsfm::FileInfo info; info.name = selected.info.name; info.type = dsfm::EntryType::File; info.size = selected.info.size; info.sha256 = selected.info.sha256;
+        info.hash_state = selected.info.hash_state; info.generation = selected.info.revision; info.modified = selected.info.modified;
+        co_return dsfm::PreparedRead{info,std::move(selected.reader),selected.consistency,selected.resume_lease};
+    };
+    auto data = std::make_unique<FileData>(); data->state = File::FS_WAITING; data->identity = identity->getId(); data->contact = contact->getId(); data->conversation = conversation_id;
+    data->name = transfer_name; data->hash = source->sha256; data->size = qlonglong(source->size); data->mime_type = mime_type;
+    auto file = addFile(std::move(data)); auto bound = file->setPreparedSource(source->identity,request.scope,current,factory);
+    if (!bound) { file->deleteFromDb(); co_return bound.error(); }
+    contact->queueFile(file); co_return file;
 }
 
 void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOffer &offer)

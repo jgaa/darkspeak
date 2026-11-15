@@ -1,3 +1,4 @@
+#include <dsfilemanager/transferverifier.h>
 #include <array>
 #include <algorithm>
 #include <vector>
@@ -191,7 +192,7 @@ public:
     explicit OutgoingFileChannel(core::File::ptr_t file) : file_{std::move(file)} {
         const auto offset = file_->getBytesTransferred();
         if (file_->getDirection() != File::OUTGOING || offset < 0 || offset > file_->getSize()
-            || offset % Peer::file_chunk_bytes || file_->storageId().isNull()) throw Error("Invalid managed outgoing file");
+            || offset % Peer::file_chunk_bytes || (file_->storageId().isNull() && !file_->hasPreparedSource())) throw Error("Invalid managed outgoing file");
         nextOffset_ = quint64(offset);
         nextSequence_ = nextOffset_ / Peer::file_chunk_bytes;
     }
@@ -220,9 +221,24 @@ public:
         if (!reader_) {
             auto ready = co_await storage.ready();
             if (!ready) { pumping_ = false; file_->transferFailed(QObject::tr("File storage is unavailable."), File::FS_FAILED); co_return; }
-            auto opened = co_await storage.manager().openRead(file_->storageNamespace(), file_->storageId());
-            if (!opened) { pumping_ = false; reportSourceChanged(*peer); co_return; }
-            reader_ = std::move(opened).value();
+            dsfm::ReadPreparationOptions preparation;
+            preparation.expected_sha256 = file_->getHash();
+            preparation.cancel = file_->outgoingCancellation();
+            auto opened = co_await file_->prepareOutgoingRead(preparation);
+            if (!opened || opened.value().info.size != quint64(file_->getSize())) { pumping_ = false; reportSourceChanged(*peer); co_return; }
+            auto prepared = std::move(opened).value(); reader_ = std::move(prepared.reader);
+            verifier_ = std::make_unique<dsfm::TransferVerifier>(prepared.info.size, prepared.info.sha256);
+            // Rebuild a resumed prefix from this same prepared reader. Persisted
+            // checksum state and the suffix alone cannot prove the whole file.
+            quint64 prefix = 0;
+            while (prefix < nextOffset_) {
+                const auto length = qsizetype(std::min<quint64>(Peer::file_chunk_bytes, nextOffset_ - prefix));
+                auto bytes = co_await reader_->readAt(prefix, length);
+                if (!bytes || bytes.value().size() != length) { pumping_ = false; reportSourceChanged(*peer); co_return; }
+                auto checked = co_await verifier_->add(prefix, std::move(bytes).value());
+                if (!checked || file_->getState() != File::FS_TRANSFERRING || !peer->isConnected()) { pumping_ = false; reportSourceChanged(*peer); co_return; }
+                prefix += quint64(length);
+            }
         }
         while (file_->getState() == File::FS_TRANSFERRING && peer->isConnected()
                && inFlight_.size() < Peer::file_window_chunks && !endQueued_) {
@@ -233,6 +249,11 @@ public:
             if (nextOffset_ > quint64(file_->getSize()) || count > quint64(file_->getSize()) - nextOffset_
                 || (!count && nextOffset_ != quint64(file_->getSize()))) { reportSourceChanged(*peer); break; }
             const bool final = nextOffset_ + count == quint64(file_->getSize());
+            auto checked = co_await verifier_->add(nextOffset_, read.value());
+            if (checked && final) checked = co_await verifier_->finish();
+            if (!checked) { co_await reader_->invalidate(); reportSourceChanged(*peer); break; }
+            if (file_->getState() != File::FS_TRANSFERRING || !peer->isConnected()) break;
+            if (final) payload_verified_ = true;
             const auto sequence = nextSequence_++;
             const auto offset = nextOffset_;
             nextOffset_ += count;
@@ -244,6 +265,7 @@ public:
             // Register before send: a transport can synchronously dispatch an acknowledgement.
             inFlight_.emplace(sequence, PendingChunk{payload, final, 0, std::chrono::steady_clock::now(), offset, nextOffset_});
             endQueued_ = final;
+            if (!file_->outgoingSourceCurrent()) { pumping_ = false; reportSourceChanged(*peer); co_return; }
             try { peer->sendFileChunk(file_->getFileId(), sequence, offset, read.value(), final); }
             catch (...) { file_->transferFailed(QObject::tr("Unable to send the file chunk."), File::FS_FAILED); break; }
         }
@@ -258,6 +280,7 @@ public:
         if (file_->getState() != File::FS_TRANSFERRING) {
             throw Error("Acknowledgement for inactive file transfer");
         }
+        if (!file_->outgoingSourceCurrent()) { reportSourceChanged(peer); return; }
         if (sequence >= nextSequence_ || offset < 0
                 || static_cast<quint64>(offset) > static_cast<quint64>(file_->getSize())) {
             throw Error("Invalid file acknowledgement");
@@ -292,7 +315,7 @@ public:
         }
 
         if (final) {
-            if (!endQueued_ || sequence + 1 != nextSequence_ || !inFlight_.empty()
+            if (!payload_verified_ || !endQueued_ || sequence + 1 != nextSequence_ || !inFlight_.empty()
                     || acknowledged != file_->getSize()) {
                 throw Error("Invalid final file acknowledgement");
             }
@@ -314,6 +337,7 @@ public:
                 file_->transferFailed("File transfer acknowledgement timeout", File::FS_FAILED);
                 return;
             }
+            if (!file_->outgoingSourceCurrent()) { reportSourceChanged(peer); return; }
             try {
                 peer.sendFileChunk(file_->getFileId(), sequence, pending.offset,
                                    pending.payload.mid(static_cast<int>(Peer::file_chunk_header_bytes)),
@@ -350,6 +374,8 @@ private:
     };
 
     std::unique_ptr<dsfm::IFileReader> reader_;
+    std::unique_ptr<dsfm::TransferVerifier> verifier_;
+    bool payload_verified_ = false;
     bool pumping_ = false;
     File::ptr_t file_;
     std::map<quint64, PendingChunk> inFlight_;
@@ -2020,6 +2046,7 @@ uint64_t Peer::offerFile(const File &file)
                     << ", filename_bytes=" << file.getName().toUtf8().size();
         throw Error(QStringLiteral("File offer violates v3 policy: %1").arg(QLatin1String(reason)));
     };
+    if (!file.outgoingSourceCurrent()) reject("content authorization was revoked or expired");
     if (file.getFileId().size() != 16) reject("transfer ID must be 16 bytes");
     if (file.getConversation() == nullptr) reject("conversation is missing");
     if (file.getSize() < 0) reject("file size is negative");

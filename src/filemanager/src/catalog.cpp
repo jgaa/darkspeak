@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "label_order_p.h"
 #include <QCryptographicHash>
 #include <QDataStream>
 #include <QFile>
@@ -24,6 +25,7 @@ Catalog::Catalog(const QString& path, quint64 max_bytes, bool create) {
         auto handle = db.driver()->handle();
         require(handle.isValid() && QByteArray(handle.typeName()) == "sqlite3*", ErrorCode::UnsupportedCapability);
         auto* sqlite = *static_cast<sqlite3**>(handle.data());
+        require(installLabelOrder(sqlite),ErrorCode::StorageUnavailable);
         sqlite3_limit(sqlite, SQLITE_LIMIT_LENGTH, 1 << 20);
         sqlite3_limit(sqlite, SQLITE_LIMIT_SQL_LENGTH, 16384);
         sqlite3_limit(sqlite, SQLITE_LIMIT_ATTACHED, 0);
@@ -38,6 +40,8 @@ Catalog::Catalog(const QString& path, quint64 max_bytes, bool create) {
             query("CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)");
             query("CREATE TABLE entries(id TEXT PRIMARY KEY,parent TEXT REFERENCES entries(id),name TEXT NOT NULL,name_key TEXT NOT NULL,type INTEGER NOT NULL CHECK(type IN(0,1)),status INTEGER NOT NULL DEFAULT 0,size INTEGER NOT NULL DEFAULT 0 CHECK(size>=0),created INTEGER NOT NULL,modified INTEGER NOT NULL,sha BLOB,generation INTEGER NOT NULL,dev TEXT,ino TEXT,mtime TEXT,UNIQUE(parent,name_key))");
             query("CREATE INDEX entries_parent ON entries(parent,name_key,id)");
+            query("CREATE INDEX entries_ordered ON entries(parent,name COLLATE BINARY,id)");
+            query("CREATE INDEX entries_ascii ON entries(parent,dsfm_ascii(name) COLLATE BINARY,id)");
             query("CREATE TABLE pending(id TEXT PRIMARY KEY,file_id TEXT NOT NULL UNIQUE,parent TEXT NOT NULL REFERENCES entries(id),name TEXT NOT NULL,name_key TEXT NOT NULL,expected_size INTEGER,expected_sha BLOB,final_size INTEGER,state INTEGER NOT NULL DEFAULT 0,replacement INTEGER NOT NULL,reserved INTEGER NOT NULL CHECK(reserved>=0),range_generation INTEGER NOT NULL DEFAULT 0,dev TEXT NOT NULL,ino TEXT NOT NULL)");
             query("CREATE INDEX pending_names ON pending(parent,name_key)");
             query("CREATE TABLE ranges(pending TEXT NOT NULL REFERENCES pending(id) ON DELETE CASCADE,kind INTEGER NOT NULL,start INTEGER NOT NULL CHECK(start>=0),end INTEGER NOT NULL CHECK(end>start),PRIMARY KEY(pending,kind,start))");
@@ -82,12 +86,23 @@ FileInfo Catalog::entry(QUuid id) {
     auto q = query("SELECT id,parent,name,type,status,size,created,modified,sha,generation FROM entries WHERE id=?", {uuid(id)});
     require(q.next(), ErrorCode::MissingEntry);
     FileInfo info;
+    if (namespace_id_.isNull()) namespace_id_ = QUuid(meta("namespace"));
+    info.namespace_id = namespace_id_;
     info.id = uuid(q.value(0));
     if (!q.value(1).isNull()) info.parent = uuid(q.value(1));
-    info.name = q.value(2).toString(); info.type = EntryType(q.value(3).toInt()); info.status = EntryStatus(q.value(4).toInt());
+    const auto type = q.value(3).toInt(); const auto status = q.value(4).toInt();
+    require(type == int(EntryType::File) || type == int(EntryType::Directory), ErrorCode::Corruption);
+    require(status == int(EntryStatus::Available) || status == int(EntryStatus::Updating)
+        || status == int(EntryStatus::Missing) || status == int(EntryStatus::Inconsistent), ErrorCode::Corruption);
+    info.name = q.value(2).toString(); info.type = EntryType(type); info.status = EntryStatus(status);
     info.size = q.value(5).toULongLong(); info.created = QDateTime::fromMSecsSinceEpoch(q.value(6).toLongLong(), QTimeZone::UTC);
     info.modified = QDateTime::fromMSecsSinceEpoch(q.value(7).toLongLong(), QTimeZone::UTC);
-    info.sha256 = info.status == EntryStatus::Available ? q.value(8).toByteArray() : QByteArray{}; info.generation = q.value(9).toULongLong();
+    const auto stored_hash = q.value(8).toByteArray();
+    require(stored_hash.isEmpty() || stored_hash.size() == 32, ErrorCode::Corruption);
+    info.sha256 = isListable(info.status) ? stored_hash : QByteArray{};
+    if (info.type == EntryType::File && !stored_hash.isEmpty())
+        info.hash_state = isReadable(info.status) ? HashState::Verified : HashState::Stale;
+    info.generation = q.value(9).toULongLong();
     return info;
 }
 QString Catalog::path(QUuid id, PhysicalNaming naming, quint32 depth) {
@@ -173,7 +188,8 @@ void checkQuota(Namespace& ns, Catalog& db, quint64 reserve, quint64 old_reserve
     require(total - old_reserve <= limits.max_total_bytes - reserve && staging - old_reserve <= limits.max_staging_bytes - reserve, ErrorCode::QuotaExceeded);
 }
 void validateEntry(Namespace& ns, Catalog& db, const FileInfo& entry) {
-    require(entry.status == EntryStatus::Available, entry.status == EntryStatus::Missing ? ErrorCode::MissingEntry : ErrorCode::ExternalModification);
+    require(isReadable(entry.status), entry.status == EntryStatus::Updating ? ErrorCode::Busy
+        : entry.status == EntryStatus::Missing ? ErrorCode::MissingEntry : ErrorCode::ExternalModification);
     if (!entry.parent || (ns.config.naming == PhysicalNaming::FileId && entry.type == EntryType::Directory)) return;
     try {
         const auto path = db.path(entry.id, ns.config.naming, ns.config.limits.max_depth);

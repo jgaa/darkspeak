@@ -102,6 +102,20 @@ run cmake -S "$project_dir" -B "$test_build_dir" -DCMAKE_BUILD_TYPE=Debug "$@" \
 # no additional Qt module or system thumbnailer is needed for image previews.
 # Video tests require FFmpeg and a Linux kernel with Landlock and seccomp.
 # The startup dependency-dialog and persistent opt-out tests are also discovered.
+# The existing filemanager CTest target also covers prepared reads and directory
+# subscriptions, including cross-thread delivery and cancellation, plus shared
+# status/hash/capability metadata and Linux filename encoding. No extra flags
+# or dependencies are required.
+# The vfs CTest target includes assignment, overlay, permission and mount-scoped
+# composition, catalog formats/exports, revocation and alias privacy. Its host
+# Home-pane and ordinary-transfer integration is also in managed_storage.
+# readonly_filemanager covers external sources, exclusion/authorization alias
+# guards, snapshot leases, quotas, paging and replacement races. Bind-mount
+# checks use unshare only when private user/mount namespaces are available.
+# readonly_million_entry_paging has its own 1800-second deadline and reports a
+# CTest skip unless DSFM_RUN_MILLION_ENTRY_TEST=1 and 6 GiB temporary space exist.
+# managed_storage also exercises mandatory host exclusions and sender payload
+# verification, including resumed prefixes and timestamp-preserving tampering.
 # No explicit target allowlist can accidentally omit a future test binary.
 run cmake --build "$test_build_dir" --parallel "$build_jobs"
 

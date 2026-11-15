@@ -13,6 +13,7 @@
 #include "ds/contact.h"
 #include "ds/identity.h"
 
+namespace dsvfs { class CatalogExport; }
 namespace ds {
 namespace core {
 
@@ -121,6 +122,14 @@ public:
     quint32 getChannel() const noexcept;
     void setChannel(quint32 channel);
     float getProgress() const noexcept;
+    bool hasCatalogSource() const { return bool(catalog_source_); }
+    dsfm::CancellationToken outgoingCancellation() const { return storage_cancel_; }
+    bool hasPreparedSource() const { return hasCatalogSource() || bool(source_prepare_); }
+    using PrepareSource = std::function<QCoro::Task<dsfm::Result<dsfm::PreparedRead>>(dsfm::ReadPreparationOptions)>;
+    dsfm::Result<void> setPreparedSource(QUuid identity,QUuid scope,std::function<bool()> current,PrepareSource prepare);
+    bool outgoingSourceCurrent() const;
+    dsfm::Result<void> setCatalogSource(std::shared_ptr<dsvfs::CatalogExport> source);
+    QCoro::Task<dsfm::Result<dsfm::PreparedRead>> prepareOutgoingRead(dsfm::ReadPreparationOptions options = {});
     dsfm::NamespaceId storageNamespace() const;
     dsfm::FileId storageId() const;
     dsfm::PendingId pendingId() const;
@@ -183,6 +192,9 @@ private:
     bool previewAllowed() const;
     QCoro::Task<void> loadPreview(File::ptr_t self);
     QCoro::Task<void> recoverStorage(File::ptr_t self);
+    std::shared_ptr<dsvfs::CatalogExport> catalog_source_;
+    std::function<bool()> source_current_;
+    PrepareSource source_prepare_;
     std::unique_ptr<dsfm::IFileWriter> writer_;
     dsfm::CancellationToken storage_cancel_;
     bool storage_busy_ = false;

@@ -13,6 +13,9 @@
 #include <QScopeGuard>
 #include <QtEndian>
 #include <QTcpServer>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "ds/dsclient.h"
 #include "ds/dsserver.h"
 #include "ds/peer.h"
@@ -21,6 +24,7 @@
 #include "ds/managedstorage.h"
 #include "ds/mediapreview.h"
 #include "ds/resourcelimits.h"
+#include "ds/notificationsmodel.h"
 
 using namespace ds::core;
 template<class T> T waitTask(QCoro::Task<T> task) {
@@ -55,6 +59,28 @@ public:
     }
     quint64 acknowledged = 0;
     bool completed = false;
+};
+class SendingPeer final : public ds::prot::Peer {
+public:
+    SendingPeer() : Peer(std::make_shared<ds::prot::ConnectionSocket>(), {}) {}
+    Direction getDirection() const noexcept override { return OUTGOING; }
+    bool isConnected() const noexcept override { return true; }
+    void begin(const File::ptr_t& file) {
+        channel_ = createChannel(*file); file->setChannel(channel_); file->setState(File::FS_TRANSFERRING);
+        outChannels_.at(channel_)->onOutgoing(*this);
+    }
+    uint64_t sendFileChunk(const QByteArray&, quint64 sequence, quint64 offset, const QByteArray& bytes, bool final) override {
+        sent.append(bytes);
+        if (!final && mutate) { auto action = std::exchange(mutate, {}); action(); }
+        if (final) { final_sent = true; outChannels_.at(channel_)->onAck(*this, sequence, qlonglong(offset + quint64(bytes.size())), true); }
+        return 0;
+    }
+    uint64_t sendFileCancel(const QByteArray&, FileCancelReason reason) override { cancelled = reason == FileCancelReason::SourceChanged; return 0; }
+    QByteArray sent;
+    std::function<void()> mutate;
+    bool final_sent = false, cancelled = false;
+private:
+    quint32 channel_ = 0;
 };
 class ResumePeer final : public ds::prot::Peer {
 public:
@@ -133,6 +159,34 @@ private slots:
         contact_ = engine_->getContactManager()->addContact(std::move(contact));
         conversation_ = engine_->getConversationManager()->getConversation(contact_);
     }
+    void read_only_host_exclusions_are_mandatory() {
+        QTemporaryDir external; QVERIFY(external.isValid());
+        QFile public_file(external.filePath("public")); QVERIFY(public_file.open(QIODevice::WriteOnly)); QCOMPARE(public_file.write("public"), 6); public_file.close();
+        const auto database = engine_->settings().value("dbpath").toString();
+        QVERIFY(QFile::link(database, external.filePath("private-database")));
+        QVERIFY(QFile::link(dsfm::NativeFileManager::lockRegistryRoot(), external.filePath("private-locks")));
+        dsfm::ReadOnlyNamespaceConfig config; config.common = {QUuid::createUuid(), external.path()}; config.symlinks = dsfm::SymlinkPolicy::Always;
+        auto opened = waitTask(storage().openReadOnlySource(config, true)); QVERIFY(opened);
+        auto* manager = storage().readOnlyManager(); QVERIFY(manager);
+        bool ready = false;
+        for (int i = 0; i < 1000; ++i) {
+            auto info = waitTask(manager->namespaceInfo(config.common.id)); QVERIFY(info); QVERIFY(!info.value().readiness_error);
+            if (info.value().status == dsfm::NamespaceStatus::Ready) { ready = true; break; }
+            QCoreApplication::processEvents();
+        }
+        QVERIFY(ready);
+        auto public_entry = waitTask(manager->lookup(config.common.id, "public")); QVERIFY(public_entry);
+        auto hidden = waitTask(manager->lookup(config.common.id, "private-database")); QVERIFY(!hidden); QCOMPARE(hidden.error().code, dsfm::ErrorCode::MissingEntry);
+        hidden = waitTask(manager->lookup(config.common.id, "private-locks")); QVERIFY(!hidden); QCOMPARE(hidden.error().code, dsfm::ErrorCode::MissingEntry);
+        auto prepared = waitTask(manager->prepareRead(config.common.id, public_entry.value().id)); QVERIFY(prepared);
+        auto data = waitTask(prepared.value().reader->readAt(0, 64)); QVERIFY(data); QCOMPARE(data.value(), QByteArray("public"));
+        dsfm::ExclusionPolicy policy; policy.objects = {external.filePath("public")};
+        QVERIFY(waitTask(storage().updateReadOnlyExclusions(config.common.id, policy)));
+        auto revoked = waitTask(prepared.value().reader->readAt(0, 64)); QVERIFY(!revoked); QCOMPARE(revoked.error().code, dsfm::ErrorCode::MissingEntry);
+        hidden = waitTask(manager->lookup(config.common.id, "private-database")); QVERIFY(!hidden);
+        QVERIFY(waitTask(prepared.value().reader->close())); prepared.value().reader.reset();
+        QVERIFY(waitTask(storage().closeReadOnlySource(config.common.id)));
+    }
     void schema_matches_versioned_fixture() {
         QFile fixture(QStringLiteral(DS_STORAGE_FIXTURES) + "/managed-storage-v2.json"); QVERIFY(fixture.open(QIODevice::ReadOnly));
         const auto data = QJsonDocument::fromJson(fixture.readAll()).object();
@@ -205,6 +259,117 @@ private slots:
         QFile copy(exported.value()); QVERIFY(copy.open(QIODevice::ReadOnly)); QCOMPARE(copy.readAll(), bytes);
         QVERIFY(copy.permissions().testFlag(QFileDevice::ReadOwner));
         QVERIFY(!copy.permissions().testFlag(QFileDevice::ReadGroup));
+    }
+    void sender_verifies_actual_payload_data() {
+        QTest::addColumn<bool>("tamper"); QTest::addColumn<bool>("resume");
+        QTest::newRow("complete") << false << false;
+        QTest::newRow("resume-prefix") << false << true;
+        QTest::newRow("changed-with-restored-mtime") << true << false;
+    }
+    void sender_verifies_actual_payload() {
+        QFETCH(bool, tamper); QFETCH(bool, resume);
+        const QByteArray original(2 * ds::prot::Peer::file_chunk_bytes, 'a');
+        const auto source_path = directory_.filePath("sender-source");
+        QFile source(source_path); QVERIFY(source.open(QIODevice::WriteOnly)); QCOMPARE(source.write(original), original.size()); source.close();
+        auto imported = waitTask(storage().importFile(source_path, "sender-source")); QVERIFY(imported);
+        auto data = std::make_unique<FileData>(); data->state = File::FS_WAITING;
+        data->identity = identity_->getId(); data->contact = contact_->getId(); data->conversation = conversation_->getId();
+        data->storage_namespace = imported.value().namespace_id; data->storage_id = imported.value().file.id;
+        data->name = "sender-source"; data->hash = imported.value().file.sha256; data->size = original.size();
+        if (resume) data->bytesTransferred = ds::prot::Peer::file_chunk_bytes;
+        auto file = engine_->getFileManager()->addFile(std::move(data)); QVERIFY(file);
+        auto peer = std::make_shared<SendingPeer>(); bool mutation_ok = false;
+        if (tamper) {
+            const auto id = file->storageId().toString(QUuid::WithoutBraces);
+            auto ns = waitTask(storage().manager().namespaceInfo(file->storageNamespace())); QVERIFY(ns);
+            const auto physical = ns.value().config.storage_root + "/objects/" + id.left(2) + '/' + id;
+            peer->mutate = [physical, &mutation_ok] {
+                const auto fd = ::open(QFile::encodeName(physical).constData(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
+                if (fd < 0) return;
+                struct stat before{};
+                if (::fstat(fd, &before) == 0 && ::pwrite(fd, "z", 1, off_t(ds::prot::Peer::file_chunk_bytes)) == 1) {
+                    const timespec times[]{before.st_atim, before.st_mtim}; mutation_ok = ::futimens(fd, times) == 0;
+                }
+                ::close(fd);
+            };
+        }
+        QSignalSpy done(file.get(), &File::transferDone); peer->begin(file);
+        QTRY_VERIFY_WITH_TIMEOUT(file->getState() == File::FS_DONE || file->getState() == File::FS_FAILED, 5000);
+        if (tamper) {
+            QVERIFY(mutation_ok); QCOMPARE(file->getState(), File::FS_FAILED); QVERIFY(peer->cancelled); QVERIFY(!peer->final_sent);
+            auto info = waitTask(storage().manager().stat(file->storageNamespace(), file->storageId())); QVERIFY(info); QCOMPARE(info.value().hash_state, dsfm::HashState::Missing);
+        } else {
+            QCOMPARE(file->getState(), File::FS_DONE); QVERIFY(peer->final_sent); QVERIFY(!peer->cancelled);
+            QCOMPARE(peer->sent, resume ? original.mid(ds::prot::Peer::file_chunk_bytes) : original);
+        }
+        QCOMPARE(done.count(), 1); QCOMPARE(done.front()[1].toBool(), !tamper);
+    }
+    void vfs_home_conflicts_and_catalog_transport() {
+        const auto encoded = FileManager::transferName(QString(700,QChar('%')));
+        QVERIFY(encoded.toUtf8().size() <= 255); QVERIFY(dsfm::normalizeName(encoded));
+        QCOMPARE(encoded,FileManager::transferName(QString(700,QChar('%'))));
+        QCOMPARE(FileManager::transferName("plain.txt"),QString("plain.txt"));
+        QVERIFY(dsfm::normalizeName(FileManager::transferName("name:part")));
+        const auto previous_state = contact_->getState(); contact_->setState(Contact::ACCEPTED);
+        auto restore_state = qScopeGuard([this,previous_state] { contact_->setState(previous_state); });
+        auto opened = waitTask(storage().openVfs()); QVERIFY(opened); auto* vfs = opened.value();
+        QSettings unused; ds::models::NotificationsModel notifications(unused);
+        QTemporaryDir external; QVERIFY(external.isValid()); QVERIFY(QDir().mkdir(external.filePath("dir")));
+        for (int i = 0; i < 20; ++i) {
+            QFile file(external.filePath(QStringLiteral("entry-%1").arg(i,3,10,QChar('0'))));
+            QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write("hello"),5);
+        }
+        dsfm::ReadOnlyNamespaceConfig config; config.common = {QUuid::createUuid(),external.path()};
+        auto source = waitTask(storage().openReadOnlySource(config,true)); QVERIFY(source);
+        auto* backend = storage().readOnlyManager(); QVERIFY(backend);
+        for (int turn = 0; turn < 1000; ++turn) {
+            auto info = waitTask(backend->namespaceInfo(config.common.id)); QVERIFY(info);
+            if (info.value().status == dsfm::NamespaceStatus::Ready) break;
+        }
+        dsvfs::Request request; request.scope = contact_->getUuid();
+        auto generation = std::make_shared<std::atomic<quint64>>(1); request.current_generation = generation; request.generation = 1;
+        request.authorize = [](dsvfs::Target,dsvfs::Operation) -> dsfm::Result<bool> { return true; };
+        request.commit_permit = [](dsvfs::Target,dsvfs::Operation) -> dsfm::Result<std::shared_ptr<void>> { return std::static_pointer_cast<void>(std::make_shared<int>(1)); };
+        const auto identity = identity_->getUuid();
+        auto resource=waitTask(vfs->addResource({{},config.common.id,{}},request)); QVERIFY(resource);
+        auto assignment=waitTask(vfs->assignStorage({{},identity,resource.value().id,source.value().root,false},request)); QVERIFY(assignment);
+        auto mounted = waitTask(vfs->addMount(identity,{{},{},config.common.id,source.value().root,"vfs-fixture",{}},request)); QVERIFY(mounted);
+        auto root = waitTask(vfs->lookup(identity,vfs->root(identity),"vfs-fixture",request)); QVERIFY(root);
+        auto entry = waitTask(vfs->lookup(identity,root.value().id,"entry-000",request)); QVERIFY(entry);
+        auto file_download = waitTask(engine_->getFileManager()->addVfsTransfer(*conversation_,*vfs,entry.value().id,request)); QVERIFY(file_download);
+        QVERIFY(file_download.value()->hasPreparedSource()); QVERIFY(file_download.value()->storageId().isNull());
+        auto file_peer = std::make_shared<SendingPeer>(); file_peer->begin(file_download.value());
+        QTRY_COMPARE_WITH_TIMEOUT(file_download.value()->getState(),File::FS_DONE,5000); QCOMPARE(file_peer->sent,QByteArray("hello"));
+        auto catalog = waitTask(vfs->exportCatalog(identity,root.value().id,false,request)); QVERIFY(catalog);
+        auto outgoing = engine_->getFileManager()->addCatalogTransfer(*conversation_,catalog.value()); QVERIFY(outgoing);
+        QVERIFY(outgoing.value()->storageId().isNull()); QVERIFY(outgoing.value()->hasCatalogSource());
+        auto peer = std::make_shared<SendingPeer>(); peer->begin(outgoing.value());
+        QTRY_COMPARE_WITH_TIMEOUT(outgoing.value()->getState(),File::FS_DONE,5000); QVERIFY(peer->final_sent);
+        QCOMPARE(QCryptographicHash::hash(peer->sent,QCryptographicHash::Sha256),catalog.value()->sha256());
+        auto second = waitTask(vfs->exportCatalog(identity,root.value().id,false,request)); QVERIFY(second);
+        auto interrupted = engine_->getFileManager()->addCatalogTransfer(*conversation_,second.value()); QVERIFY(interrupted);
+        auto denied_peer = std::make_shared<SendingPeer>(); denied_peer->mutate = [generation] { ++*generation; }; denied_peer->begin(interrupted.value());
+        QTRY_COMPARE_WITH_TIMEOUT(interrupted.value()->getState(),File::FS_FAILED,5000); QVERIFY(denied_peer->cancelled); QVERIFY(!denied_peer->final_sent);
+        auto closed = waitTask(catalog.value()->close()); QVERIFY(closed); closed = waitTask(second.value()->close()); QVERIFY(closed);
+        request.generation = generation->load();
+        auto directory = waitTask(vfs->lookup(identity,root.value().id,"dir",request)); QVERIFY(directory);
+        auto nested = waitTask(vfs->addMount(identity,{{},directory.value().id,config.common.id,source.value().root,"nested",{}},request)); QVERIFY(nested);
+        QFile collision(external.filePath("dir/nested")); QVERIFY(collision.open(QIODevice::WriteOnly)); collision.write("conflict"); collision.close();
+        auto scan = waitTask(backend->reconcile(config.common.id,{})); QVERIFY(scan);
+        for (int turn = 0; turn < 1000; ++turn) { auto info = waitTask(backend->namespaceInfo(config.common.id)); QVERIFY(info); if (info.value().status == dsfm::NamespaceStatus::Ready) break; }
+        auto refreshed = waitTask(vfs->refresh()); QVERIFY(refreshed);
+        QSqlQuery query; QVERIFY(query.exec("SELECT COUNT(*) FROM notification WHERE type=3")); QVERIFY(query.next()); QCOMPARE(query.value(0).toInt(),1);
+        refreshed = waitTask(vfs->refresh()); QVERIFY(refreshed);
+        QVERIFY(query.exec("SELECT COUNT(*) FROM notification WHERE type=3")); QVERIFY(query.next()); QCOMPARE(query.value(0).toInt(),1);
+        QVERIFY(notifications.rowCount() > 0);
+        QVERIFY(query.exec("SELECT message FROM notification WHERE type=3")); QVERIFY(query.next()); QVERIFY(query.value(0).toString().contains("/vfs-fixture/dir/nested"));
+        QVERIFY(collision.remove()); scan = waitTask(backend->reconcile(config.common.id,{})); QVERIFY(scan);
+        for (int turn = 0; turn < 1000; ++turn) { auto info = waitTask(backend->namespaceInfo(config.common.id)); QVERIFY(info); if (info.value().status == dsfm::NamespaceStatus::Ready) break; }
+        refreshed = waitTask(vfs->refresh()); QVERIFY(refreshed);
+        QVERIFY(query.exec("SELECT COUNT(*) FROM notification WHERE type=3")); QVERIFY(query.next()); QCOMPARE(query.value(0).toInt(),0);
+        QVERIFY(waitTask(vfs->removeMount(identity,nested.value().id,request)));
+        QVERIFY(waitTask(vfs->removeMount(identity,mounted.value().id,request)));
+        QVERIFY(waitTask(storage().closeReadOnlySource(config.common.id)));
     }
     void outgoing_media_import_uses_normal_file_service() {
         auto data = std::make_unique<FileData>();

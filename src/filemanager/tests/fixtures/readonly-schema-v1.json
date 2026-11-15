@@ -1,0 +1,83 @@
+{
+  "schema": "readonly-1",
+  "name_encoding": 1,
+  "tables": {
+    "meta": [
+      "key",
+      "value"
+    ],
+    "entries": [
+      "id",
+      "parent",
+      "name",
+      "type",
+      "status",
+      "size",
+      "mtime",
+      "sha",
+      "generation",
+      "raw",
+      "dev",
+      "ino",
+      "mount",
+      "ctime",
+      "mode",
+      "links",
+      "alias",
+      "epoch",
+      "seen",
+      "birth"
+    ],
+    "scan_queue": [
+      "id"
+    ],
+    "scan_targets": [
+      "dev",
+      "ino",
+      "id",
+      "epoch"
+    ],
+    "hash_jobs": [
+      "id"
+    ],
+    "leases": [
+      "token",
+      "id",
+      "size",
+      "sha",
+      "expires",
+      "exclusions",
+      "dev",
+      "ino",
+      "mtime",
+      "ctime",
+      "birth",
+      "stage_dev",
+      "stage_ino",
+      "source_generation"
+    ]
+  },
+  "indexes": {
+    "entries_parent": [
+      "parent",
+      "name",
+      "id"
+    ],
+    "entries_identity": [
+      "dev",
+      "ino",
+      "birth",
+      "alias"
+    ],
+    "entries_reconcile": [
+      "parent",
+      "status",
+      "seen"
+    ],
+    "entries_history": [
+      "status",
+      "seen",
+      "id"
+    ]
+  }
+}

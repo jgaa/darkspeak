@@ -10,13 +10,17 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
+#include <QScopeGuard>
 #include <QMimeDatabase>
 #include <QPointer>
 #include <QImageReader>
 #include <QSqlQuery>
+#include <QStandardPaths>
 #include <QThreadPool>
 #include <QTimer>
 #include <coroutine>
+#include <limits>
+#include <algorithm>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -73,6 +77,14 @@ struct LocalFile {
     struct stat snapshot{};
     ~LocalFile() { if (fd >= 0) ::close(fd); }
 };
+Result<QString> ensureExportRoot(QString path) {
+    if (::mkdir(QFile::encodeName(path).constData(), 0700) < 0 && errno != EEXIST) return StorageError{ErrorCode::StorageUnavailable};
+    auto directory = std::make_shared<LocalFile>();
+    directory->fd = ::open(QFile::encodeName(path).constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    struct stat st{};
+    if (directory->fd < 0 || ::fstat(directory->fd, &st) != 0 || st.st_uid != ::geteuid() || (st.st_mode & 0077)) return StorageError{ErrorCode::PermissionDenied};
+    return path;
+}
 bool same(const struct stat& a, const struct stat& b) {
     return a.st_dev == b.st_dev && a.st_ino == b.st_ino && a.st_size == b.st_size
         && a.st_mtim.tv_sec == b.st_mtim.tv_sec && a.st_mtim.tv_nsec == b.st_mtim.tv_nsec;
@@ -86,6 +98,8 @@ ManagedStorage::Operation::~Operation() { if (storage_) { --storage_->active_; e
 ManagedStorage::ManagedStorage(QSettings& settings, QObject* parent)
     : QObject(parent), settings_(settings) {
     const auto base = QFileInfo(settings.value("dbpath").toString()).absolutePath();
+    const auto runtime = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+    export_root_ = runtime.isEmpty() ? QDir::tempPath() + QStringLiteral("/darkspeak-open-%1").arg(::geteuid()) : QDir(runtime).filePath("darkspeak-open");
     configs_[Downloads].storage_root = QDir(settings.value("downloadLocation").toString()).absoluteFilePath("Managed-v1");
     configs_[Downloads].naming = settings.value("storage/originalFilenames", true).toBool()
         ? dsfm::PhysicalNaming::OriginalName : dsfm::PhysicalNaming::FileId;
@@ -120,6 +134,114 @@ ManagedStorage::ManagedStorage(QSettings& settings, QObject* parent)
     gc->setInterval(60000);
     connect(gc, &QTimer::timeout, this, [this] { if (ready_ && !stopping_) collectGarbage(); });
     gc->start();
+}
+QCoro::Task<Result<dsvfs::Vfs*>> ManagedStorage::openVfs() {
+    auto initialized = co_await ready(); if (!initialized) co_return initialized.error();
+    auto operation = holdOperation();
+    if (vfs_) co_return vfs_.get();
+    if (opening_vfs_) co_return StorageError{ErrorCode::Busy};
+    opening_vfs_ = true;
+    auto finish = qScopeGuard([this] { opening_vfs_ = false; });
+    const auto base = QFileInfo(settings_.value("dbpath").toString()).absolutePath();
+    auto vfs = std::make_unique<dsvfs::Vfs>(QDir(base).filePath("vfs-v1"));
+    auto opened = co_await vfs->open(); if (!opened) co_return opened.error();
+    connect(vfs.get(), &dsvfs::Vfs::conflictDetected, this, &ManagedStorage::vfsConflictDetected);
+    connect(vfs.get(), &dsvfs::Vfs::conflictResolved, this, &ManagedStorage::vfsConflictResolved);
+    auto export_directory = co_await manager_->mkdir(configs_[Private].id, roots_[Private], "vfs-catalogs");
+    dsfm::DirectoryId export_root;
+    if (export_directory) export_root = export_directory.value();
+    else if (export_directory.error().code == ErrorCode::Conflict) {
+        auto entry = co_await manager_->lookup(configs_[Private].id, "vfs-catalogs");
+        if (!entry || entry.value().type != dsfm::EntryType::Directory) co_return StorageError{ErrorCode::Corruption};
+        export_root = entry.value().id;
+    } else co_return export_directory.error();
+    // Derived exports are disposable after restart. Reclaim a bounded batch;
+    // callers retry if interrupted cleanup still occupies the private quota.
+    auto stale = co_await manager_->list(configs_[Private].id, export_root);
+    if (!stale) co_return stale.error();
+    for (auto entry : stale.value().entries) {
+        auto removed = co_await manager_->remove(configs_[Private].id, entry.id);
+        if (!removed) co_return removed.error();
+    }
+    auto manager = std::static_pointer_cast<dsfm::IFileManager>(manager_);
+    auto store = vfs->setExportStore(manager, configs_[Private].id, export_root);
+    if (!store) co_return store.error();
+    if (readonly_manager_) {
+        auto namespaces = co_await readonly_manager_->namespaces(); if (!namespaces) co_return namespaces.error();
+        for (auto ns : namespaces.value()) {
+            auto config = co_await readonly_manager_->sourceConfig(ns.config.id); if (!config) co_return config.error();
+            auto registered = vfs->registerNamespace(ns.config.id, std::static_pointer_cast<dsfm::IFileManager>(readonly_manager_), config.value().symlinks);
+            if (!registered) co_return registered.error();
+        }
+    }
+    vfs_ = std::move(vfs); co_return vfs_.get();
+}
+QCoro::Task<Result<dsfm::NamespaceInfo>> ManagedStorage::openReadOnlySource(dsfm::ReadOnlyNamespaceConfig config, bool create) {
+    auto initialized = co_await ready(); if (!initialized) co_return initialized.error();
+    auto operation = holdOperation();
+    if (!readonly_manager_) {
+        const auto base = QFileInfo(settings_.value("dbpath").toString()).absolutePath();
+        QStringList paths{base, QFileInfo(settings_.fileName()).absolutePath(), QStandardPaths::writableLocation(QStandardPaths::AppDataLocation), dsfm::NativeFileManager::lockRegistryRoot()};
+        const auto secret_root = qEnvironmentVariable("SAFEKEEPING_DATA_DIR");
+        paths.append(secret_root.isEmpty() ? QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)).filePath("safekeeping") : secret_root);
+        const auto runtime = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+        if (!runtime.isEmpty()) paths.append(QDir(runtime).filePath("darkspeak"));
+        auto export_root = co_await disk<QString>([path = export_root_] { return ensureExportRoot(path); });
+        if (!export_root) co_return export_root.error();
+        paths.append(export_root.value());
+        auto private_roots = co_await disk<QStringList>([paths]() -> Result<QStringList> {
+            QStringList roots;
+            for (auto path : paths) {
+                if (path.isEmpty() || !QDir::isAbsolutePath(path)) return StorageError{ErrorCode::StorageUnavailable};
+                path = QDir::cleanPath(path);
+                // Anchor an existing ancestor when a private directory has not
+                // yet been created. Broader exclusion preserves future privacy.
+                while (!QFileInfo::exists(path) && path != "/") path = QFileInfo(path).absolutePath();
+                if (path == "/" || !QFileInfo(path).isDir()) return StorageError{ErrorCode::StorageUnavailable};
+                if (!roots.contains(path)) roots.append(path);
+            }
+            return roots;
+        });
+        if (!private_roots) co_return private_roots.error();
+        host_private_roots_ = std::move(private_roots).value();
+        readonly_manager_ = std::make_shared<dsfm::ReadOnlyFileManager>(QDir(base).filePath("readonly-index-v1"));
+    }
+    auto native_namespaces = co_await manager_->namespaces(); if (!native_namespaces) co_return native_namespaces.error();
+    for (const auto& ns : native_namespaces.value()) {
+        const auto private_path = QDir(ns.config.storage_root).filePath(".filemanager");
+        if (!host_private_roots_.contains(private_path)) host_private_roots_.append(private_path);
+    }
+    for (const auto& path : host_private_roots_)
+        if (!config.exclusions.directory_roots.contains(path)) config.exclusions.directory_roots.append(path);
+    const auto key = QStringLiteral("readOnly/sources/%1/exclusionGeneration").arg(uuid(config.common.id));
+    const auto previous = settings_.value(key, 0).toULongLong();
+    if (previous >= quint64(std::numeric_limits<qint64>::max()) || config.exclusions.generation >= quint64(std::numeric_limits<qint64>::max()))
+        co_return StorageError{ErrorCode::QuotaExceeded};
+    config.exclusions.generation = std::max(previous, config.exclusions.generation) + 1;
+    auto opened = create ? co_await readonly_manager_->createSource(config) : co_await readonly_manager_->openSource(config);
+    if (opened) {
+        settings_.setValue(key, qulonglong(config.exclusions.generation)); settings_.sync();
+        if (vfs_) {
+            auto registered = vfs_->registerNamespace(config.common.id, readonly_manager_, config.symlinks);
+            if (!registered) co_return registered.error();
+        }
+    }
+    co_return opened;
+}
+QCoro::Task<Result<void>> ManagedStorage::closeReadOnlySource(dsfm::NamespaceId ns) {
+    if (stopping_ || !readonly_manager_) co_return StorageError{ErrorCode::ShuttingDown};
+    auto operation = holdOperation(); co_return co_await readonly_manager_->closeSource(ns);
+}
+QCoro::Task<Result<void>> ManagedStorage::updateReadOnlyExclusions(dsfm::NamespaceId ns, dsfm::ExclusionPolicy policy) {
+    if (stopping_ || !readonly_manager_) co_return StorageError{ErrorCode::ShuttingDown};
+    auto operation = holdOperation();
+    auto config = co_await readonly_manager_->sourceConfig(ns); if (!config) co_return config.error();
+    if (config.value().exclusions.generation >= quint64(std::numeric_limits<qint64>::max())) co_return StorageError{ErrorCode::QuotaExceeded};
+    policy.generation = std::max(policy.generation, config.value().exclusions.generation + 1);
+    for (const auto& path : host_private_roots_) if (!policy.directory_roots.contains(path)) policy.directory_roots.append(path);
+    auto result = co_await readonly_manager_->updateExclusions(ns, policy);
+    if (result) { settings_.setValue(QStringLiteral("readOnly/sources/%1/exclusionGeneration").arg(uuid(ns)), qulonglong(policy.generation)); settings_.sync(); }
+    co_return result;
 }
 QCoro::Task<Result<void>> ManagedStorage::ready() {
     if (stopping_) co_return StorageError{ErrorCode::ShuttingDown};
@@ -167,8 +289,8 @@ QCoro::Task<Result<void>> ManagedStorage::ready() {
             return Result<bool>{QFileInfo::exists(QDir(config.storage_root).filePath(".filemanager/catalog.db"))};
         });
         if (!catalog_exists) { initialization_error_ = catalog_exists.error(); break; }
-        auto opened = (item.created || catalog_exists.value()) ? co_await manager_.openNamespace(config)
-                                                               : co_await manager_.createNamespace(config);
+        auto opened = (item.created || catalog_exists.value()) ? co_await manager_->openNamespace(config)
+                                                               : co_await manager_->createNamespace(config);
         if (!opened) {
             initialization_error_ = opened.error();
             LFLOG_ERROR << "Managed storage namespace initialization failed; area=" << area_name
@@ -215,7 +337,7 @@ QCoro::Task<Result<ManagedStorage::Imported>> ManagedStorage::importFile(QString
     auto source = opened.value();
     dsfm::CreateOptions options{root(Private), name};
     options.content.expected_size = quint64(source->snapshot.st_size);
-    auto created = co_await manager_.createFile(namespaceId(Private), options);
+    auto created = co_await manager_->createFile(namespaceId(Private), options);
     if (!created) co_return created.error();
     auto pending = std::move(created).value();
     if (reserved && !reserved(pending.info)) { co_await pending.writer->abort(); co_return StorageError{ErrorCode::IoError}; }
@@ -263,7 +385,7 @@ QCoro::Task<Result<ManagedStorage::Imported>> ManagedStorage::importFile(QString
         if (committed.error().code != ErrorCode::IndeterminateOperation) co_await pending.writer->abort();
         co_return committed.error();
     }
-    auto info = co_await manager_.stat(namespaceId(Private), pending.info.file_id);
+    auto info = co_await manager_->stat(namespaceId(Private), pending.info.file_id);
     if (!info) co_return info.error();
     if (mime_type.isEmpty()) mime_type = QStringLiteral("application/octet-stream");
     co_return Imported{namespaceId(Private), info.value(), mime_type};
@@ -276,17 +398,19 @@ QCoro::Task<Result<QString>> ManagedStorage::exportFile(dsfm::NamespaceId ns, ds
     if (!normalized) co_return normalized.error();
     ++active_;
     struct Guard { ManagedStorage* self; ~Guard() { --self->active_; emit self->drained(); } } guard{this};
-    auto info = co_await manager_.stat(ns, id);
+    auto info = co_await manager_->stat(ns, id);
     if (!info) co_return info.error();
     constexpr quint64 export_budget = 64ULL << 30;
     if (info.value().size > export_budget - export_bytes_ || export_slots_ >= 32) co_return StorageError{ErrorCode::QuotaExceeded};
     export_bytes_ += info.value().size; ++export_slots_;
     struct Reservation { ManagedStorage* self; quint64 bytes; bool retained = false; ~Reservation() { if (!retained) { self->export_bytes_ -= bytes; --self->export_slots_; } } } reservation{this, info.value().size};
-    auto opened = co_await manager_.openRead(ns, id);
+    auto opened = co_await manager_->openRead(ns, id);
     if (!opened) co_return opened.error();
     auto reader = std::move(opened).value();
     // Exported copies are a bounded, explicit external-application boundary, never managed paths.
-    auto directory = std::make_unique<QTemporaryDir>(QDir::tempPath() + "/darkspeak-open-XXXXXX");
+    auto export_root = co_await disk<QString>([path = export_root_] { return ensureExportRoot(path); });
+    if (!export_root) co_return export_root.error();
+    auto directory = std::make_unique<QTemporaryDir>(export_root.value() + "/open-XXXXXX");
     if (!directory->isValid()) co_return StorageError{ErrorCode::StorageUnavailable};
     const auto path = directory->filePath(normalized.value());
     auto sink = std::make_shared<LocalFile>();
@@ -342,10 +466,10 @@ QCoro::Task<Result<QByteArray>> ManagedStorage::readAsset(QString key) {
     if (!query.next()) co_return StorageError{ErrorCode::MissingEntry};
     const auto id = query.value(0).toUuid();
     query.finish();
-    auto info = co_await manager_.stat(namespaceId(Private), id);
+    auto info = co_await manager_->stat(namespaceId(Private), id);
     if (!info) co_return info.error();
     if (info.value().size > quint64(avatar_bytes)) co_return StorageError{ErrorCode::QuotaExceeded};
-    auto opened = co_await manager_.openRead(namespaceId(Private), id);
+    auto opened = co_await manager_->openRead(namespaceId(Private), id);
     if (!opened) co_return opened.error();
     auto reader = std::move(opened).value();
     QByteArray bytes;
@@ -383,7 +507,7 @@ QCoro::Task<Result<void>> ManagedStorage::writeAssetImpl(QString key, QByteArray
     if (query.next()) { old_id = query.value(0).toUuid(); old_pending = query.value(1).toUuid(); }
     query.finish();
     if (!old_pending.isNull()) {
-        auto aborted = co_await manager_.abortPending(namespaceId(Private), old_pending);
+        auto aborted = co_await manager_->abortPending(namespaceId(Private), old_pending);
         if (!aborted && aborted.error().code != ErrorCode::MissingEntry) co_return aborted.error();
     }
     if (bytes.isEmpty()) {
@@ -391,7 +515,7 @@ QCoro::Task<Result<void>> ManagedStorage::writeAssetImpl(QString key, QByteArray
         query.bindValue(":key", key);
         if (!query.exec()) co_return StorageError{ErrorCode::IoError};
         if (!old_id.isNull()) {
-            auto removed = co_await manager_.remove(namespaceId(Private), old_id);
+            auto removed = co_await manager_->remove(namespaceId(Private), old_id);
             if (!removed && removed.error().code != ErrorCode::MissingEntry) co_return removed.error();
         }
         query.prepare("DELETE FROM media_asset WHERE asset_key=:key");
@@ -400,10 +524,10 @@ QCoro::Task<Result<void>> ManagedStorage::writeAssetImpl(QString key, QByteArray
         co_return Result<void>{};
     }
     dsfm::ContentConstraints content{quint64(bytes.size()), QCryptographicHash::hash(bytes, QCryptographicHash::Sha256)};
-    auto exists = old_id.isNull() ? Result<dsfm::FileInfo>{StorageError{ErrorCode::MissingEntry}} : co_await manager_.stat(namespaceId(Private), old_id);
+    auto exists = old_id.isNull() ? Result<dsfm::FileInfo>{StorageError{ErrorCode::MissingEntry}} : co_await manager_->stat(namespaceId(Private), old_id);
     if (!exists && exists.error().code != ErrorCode::MissingEntry) co_return exists.error();
     dsfm::CreateOptions options{root(Private), QStringLiteral("avatar-%1.png").arg(QString::fromLatin1(QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha256).toHex())), dsfm::ConflictPolicy::Fail, content};
-    auto created = exists ? co_await manager_.replaceFile(namespaceId(Private), old_id, content) : co_await manager_.createFile(namespaceId(Private), options);
+    auto created = exists ? co_await manager_->replaceFile(namespaceId(Private), old_id, content) : co_await manager_->createFile(namespaceId(Private), options);
     if (!created) co_return created.error();
     auto pending = std::move(created).value();
     QVariant owner_identity, owner_contact, owner_notification;
@@ -534,11 +658,11 @@ QCoro::Task<Result<QByteArray>> ManagedStorage::imagePreview(int file_id) {
     } else if (cached.error().code != ErrorCode::MissingEntry) co_return cached.error();
     if (video && !thumbnail && media_preview::ffmpegExecutable().isEmpty())
         co_return StorageError{ErrorCode::InvalidArgument};
-    auto info = co_await manager_.stat(ns, id);
+    auto info = co_await manager_->stat(ns, id);
     if (!info) co_return info.error();
     if (info.value().size != quint64(size) || info.value().sha256 != source_sha256)
         co_return StorageError{ErrorCode::IntegrityError};
-    auto opened = co_await manager_.openRead(ns, id);
+    auto opened = co_await manager_->openRead(ns, id);
     if (!opened) co_return opened.error();
     auto reader = std::move(opened).value();
     QByteArray source;
@@ -648,10 +772,10 @@ QCoro::Task<Result<void>> ManagedStorage::collectGarbage() {
     for (const auto item : items) {
         if (!isDownloadNamespace(item.ns) && item.ns != namespaceId(Private)) continue;
         if (!item.pending.isNull()) {
-            auto aborted = co_await manager_.abortPending(item.ns, item.pending);
+            auto aborted = co_await manager_->abortPending(item.ns, item.pending);
             if (!aborted && aborted.error().code != ErrorCode::MissingEntry) continue;
         }
-        auto removed = co_await manager_.remove(item.ns, item.id);
+        auto removed = co_await manager_->remove(item.ns, item.id);
         if (!removed && removed.error().code != ErrorCode::MissingEntry) continue;
         query.prepare("DELETE FROM storage_gc WHERE storage_namespace=:ns AND storage_id=:id");
         query.bindValue(":ns", item.ns); query.bindValue(":id", item.id);
@@ -667,12 +791,12 @@ QCoro::Task<Result<void>> ManagedStorage::collectGarbage() {
     }
     // Bridge the two independent catalogs: reclaim abandoned reservations that never acquired
     // an application reference. An active writer is protected by the library's Busy response.
-    auto spaces = co_await manager_.namespaces();
+    auto spaces = co_await manager_->namespaces();
     if (!spaces) co_return spaces.error();
     quint32 orphan_budget = 32;
     for (const auto& space : spaces.value()) {
         if (!orphan_budget) break;
-        auto pending = co_await manager_.listPending(space.config.id);
+        auto pending = co_await manager_->listPending(space.config.id);
         if (!pending) continue;
         for (const auto& item : pending.value().entries) {
             if (!orphan_budget) break;
@@ -681,7 +805,7 @@ QCoro::Task<Result<void>> ManagedStorage::collectGarbage() {
             query.bindValue(":ns", space.config.id); query.bindValue(":private", namespaceId(Private)); query.bindValue(":pending", item.id);
             if (!query.exec()) co_return StorageError{ErrorCode::IoError};
             const bool referenced = query.next(); query.finish();
-            if (!referenced) { --orphan_budget; co_await manager_.abortPending(space.config.id, item.id); }
+            if (!referenced) { --orphan_budget; co_await manager_->abortPending(space.config.id, item.id); }
         }
     }
     co_return Result<void>{};
@@ -696,7 +820,12 @@ QCoro::Task<Result<void>> ManagedStorage::shutdown() {
     while (active_ || !avatar_queue_.isEmpty() || initializing_) co_await qCoro(this, &ManagedStorage::drained);
     if (ready_) co_await collectGarbage();
     stopping_ = true;
-    auto stopped = co_await manager_.shutdown();
+    if (vfs_) {
+        auto vfs_stopped = co_await vfs_->shutdown();
+        if (!vfs_stopped) shutdown_error_ = vfs_stopped.error();
+    }
+    auto stopped = co_await manager_->shutdown();
+    if (readonly_manager_) { auto external_stopped = co_await readonly_manager_->shutdown(); if (!external_stopped && stopped) stopped = external_stopped; }
     if (!stopped) shutdown_error_ = stopped.error();
     closed_ = true;
     emit drained();

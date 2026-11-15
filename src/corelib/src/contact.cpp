@@ -1401,6 +1401,10 @@ bool Contact::processFilesQueue()
                 }
                 switch(file->getState()) {
                 case File::FS_WAITING:
+                    if (!file->outgoingSourceCurrent()) {
+                        fileQueue_.erase(fileQueue_.begin());
+                        file->transferFailed(tr("Catalog access was revoked or expired"),File::FS_FAILED); return true;
+                    }
                     connection_->peer->offerFile(*file);
                     file->setState(File::FS_OFFERED);
                     break;

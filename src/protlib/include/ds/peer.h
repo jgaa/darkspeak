@@ -103,7 +103,7 @@ public slots:
     // Returns a unique id for the request (within the scope of this peer)
     uint64_t send(const ds::protocol::Envelope& envelope);
     uint64_t nextRequestId(RequestType type = RequestType::ConnectionResponse);
-    uint64_t sendFileChunk(const QByteArray& fileId, quint64 sequence,
+    virtual uint64_t sendFileChunk(const QByteArray& fileId, quint64 sequence,
                            quint64 offset, const QByteArray& data, bool final);
     uint64_t sendFileAck(const QByteArray& fileId, quint64 nextSequence,
                          quint64 nextOffset, bool final) override;

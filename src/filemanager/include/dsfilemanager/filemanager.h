@@ -2,8 +2,11 @@
 
 #include <QCoroTask>
 #include <QByteArray>
+#include <QByteArrayView>
+#include <QFlags>
 #include <QDateTime>
 #include <QObject>
+#include <QPointer>
 #include <QUuid>
 #include <QVector>
 #include <atomic>
@@ -65,7 +68,21 @@ private:
 };
 enum class PhysicalNaming { OriginalName, FileId };
 enum class EntryType { File, Directory };
-enum class EntryStatus { Available, Missing, Inconsistent };
+// Explicit values are persisted by the native catalog.
+enum class EntryStatus { Available = 0, Missing = 1, Inconsistent = 2, Updating = 3 };
+enum class HashState { Missing, Stale, Computing, Verified };
+enum class NamespaceStatus { Updating, Ready, Failed };
+enum class Capability : quint32 {
+    Read = 1U << 0, Write = 1U << 1, PreparedRead = 1U << 2,
+    DirectorySubscriptions = 1U << 3, SnapshotReads = 1U << 4, ResumeLeases = 1U << 5
+};
+Q_DECLARE_FLAGS(Capabilities, Capability)
+Q_DECLARE_OPERATORS_FOR_FLAGS(Capabilities)
+enum class ReadConsistency { DetectChanges, Snapshot };
+constexpr bool isListable(EntryStatus status) noexcept {
+    return status == EntryStatus::Available || status == EntryStatus::Updating;
+}
+constexpr bool isReadable(EntryStatus status) noexcept { return status == EntryStatus::Available; }
 enum class ConflictPolicy { Fail, UniqueName };
 enum class RangeKind { StorageValid, ApplicationVerified };
 enum class PendingState { Ready, Suspended, IntegrityFailed, Inconsistent };
@@ -106,6 +123,9 @@ struct NamespaceInfo {
     bool durable_sync = true;
     quint64 untracked_staging = 0; // Minimum count from a bounded scan.
     bool staging_scan_truncated = false;
+    NamespaceStatus status = NamespaceStatus::Updating;
+    Capabilities capabilities;
+    std::optional<Error> readiness_error;
 };
 struct ContentConstraints {
     std::optional<quint64> expected_size;
@@ -128,13 +148,22 @@ struct FileInfo {
     QDateTime modified;
     QByteArray sha256;
     quint64 generation = 0;
+    HashState hash_state = HashState::Missing;
+    // Identifies the backing namespace after cross-mount alias delegation.
+    NamespaceId namespace_id;
 };
 struct ByteRange {
     quint64 offset = 0;
     quint64 length = 0;
     bool operator==(const ByteRange&) const = default;
 };
-struct PageRequest { quint32 limit = 100; QByteArray cursor; };
+struct PageRequest {
+    quint32 limit = 100; QByteArray cursor;
+    // Live keyset enumeration for composition. Normal browsing retains its
+    // generation-consistent default. Never forward backend cursors to peers.
+    bool stable_order = false;
+    bool ascii_order = false;
+};
 template<typename T> struct Page {
     QVector<T> entries;
     QByteArray next_cursor;
@@ -182,8 +211,15 @@ using ReconciliationPage = Page<FileInfo>;
 class IFileReader {
 public:
     virtual ~IFileReader() = default;
+    // Memory-only admission for queued offers/retransmissions. The returned
+    // guard may outlive the descriptor; it is not filesystem validation or a
+    // capability grant. Actual access still requires preparation/read checks.
+    virtual std::function<bool()> accessGuard() const { return [] { return true; }; }
     virtual QCoro::Task<Result<QByteArray>> readAt(quint64 offset, qsizetype max_bytes, CancellationToken cancel = {}) = 0;
     virtual QCoro::Task<Result<void>> close() = 0;
+    // Report a digest mismatch in bytes read from this opened object. Backends
+    // invalidate its cached digest/version; this never permits content mutation.
+    virtual QCoro::Task<Result<void>> invalidate() { co_return Error{ErrorCode::UnsupportedCapability}; }
 };
 class IFileWriter {
 public:
@@ -196,13 +232,98 @@ public:
     virtual QCoro::Task<Result<CommitResult>> commit(CancellationToken cancel = {}) = 0;
     virtual QCoro::Task<Result<void>> abort(CancellationToken cancel = {}) = 0;
 };
+// Optional requirements bind the returned reader to the requested committed version.
+struct ReadPreparationOptions {
+    std::optional<quint64> expected_generation;
+    QByteArray expected_sha256;
+    CancellationToken cancel;
+    // Opaque backend lease; resumption also requires the original expected digest.
+    QByteArray resume_lease;
+};
+struct PreparedRead {
+    FileInfo info;
+    std::unique_ptr<IFileReader> reader;
+    ReadConsistency consistency = ReadConsistency::DetectChanges;
+    QByteArray resume_lease;
+};
+enum class DirectoryChangeKind { RescanRequired, Invalidated };
+struct DirectoryChange {
+    NamespaceId namespace_id;
+    DirectoryId directory_id;
+    quint64 generation = 0;
+    DirectoryChangeKind kind = DirectoryChangeKind::RescanRequired;
+};
+// Register from context's thread. Delivery always uses that Qt execution context.
+struct DirectoryChangeCallback {
+    QPointer<QObject> context;
+    std::function<void(DirectoryChange)> callback;
+};
+class DirectorySubscription {
+public:
+    DirectorySubscription() = default;
+    ~DirectorySubscription();
+    DirectorySubscription(const DirectorySubscription&) = delete;
+    DirectorySubscription& operator=(const DirectorySubscription&) = delete;
+    DirectorySubscription(DirectorySubscription&& other) noexcept;
+    DirectorySubscription& operator=(DirectorySubscription&& other) noexcept;
+    void reset() noexcept;
+    explicit operator bool() const noexcept;
+    NamespaceId namespaceId() const noexcept { return namespace_id_; }
+    DirectoryId directoryId() const noexcept { return directory_id_; }
+    quint64 generation() const noexcept { return generation_; }
+    // Backend construction hook; release must not throw or block. Cancellation is
+    // signalled through active before release is invoked.
+    DirectorySubscription(NamespaceId ns, DirectoryId directory, quint64 generation,
+        std::shared_ptr<std::atomic_bool> active, std::function<void()> release);
+private:
+    NamespaceId namespace_id_;
+    DirectoryId directory_id_;
+    quint64 generation_ = 0;
+    std::shared_ptr<std::atomic_bool> active_;
+    std::function<void()> release_;
+};
 struct PendingFile {
     PendingInfo info;
     std::unique_ptr<IFileWriter> writer;
 };
+// Request state is immutable except for the host's shared policy-generation counter.
+enum class AccessOperation { Inspect, List, Read };
+struct FilesystemIdentity {
+    quint64 device = 0;
+    quint64 inode = 0;
+    bool directory = false;
+};
+struct EntryTarget { NamespaceId namespace_id; QUuid id; };
+class IFileManager;
+struct AccessContext {
+    // Stable opaque requester/session scope; required for authorized pagination.
+    QUuid authorization_scope;
+    quint64 generation = 0;
+    std::shared_ptr<const std::atomic<quint64>> current_generation;
+    std::function<Result<bool>(NamespaceId, QUuid, AccessOperation)> check;
+    // Memory-only VFS lookup. Never perform reentrant storage I/O in callbacks.
+    std::function<Result<EntryTarget>(FilesystemIdentity)> resolve_target;
+    // Optional mount-aware context for a resolved directory destination. The
+    // delegating backend carries its projected filesystem guard into this
+    // context. This disambiguates descendants of overlapping mounted aliases.
+    std::function<Result<std::shared_ptr<AccessContext>>(EntryTarget)> target_context;
+    // Additional exclusion predicates supplied by composition. Backends apply
+    // these to opened objects and every traversed ancestor; unsupported backends
+    // fail closed rather than drop the predicate when delegating an alias.
+    std::function<bool(FilesystemIdentity)> filesystem_check;
+    QByteArray filesystem_generation;
+    std::function<std::shared_ptr<IFileManager>(NamespaceId)> backend;
+    DirectoryId assignment_directory;
+    bool allow_external_files = false; // administrative assignment capability
+    quint32 remaining_aliases = 32;
+    bool current() const noexcept {
+        return !current_generation || current_generation->load() == generation;
+    }
+};
 class IFileManager {
 public:
-    virtual ~IFileManager() = default;
+    IFileManager();
+    virtual ~IFileManager();
     virtual QCoro::Task<Result<NamespaceInfo>> createNamespace(NamespaceConfig config, CancellationToken cancel = {}) = 0;
     virtual QCoro::Task<Result<NamespaceInfo>> openNamespace(NamespaceConfig config, CancellationToken cancel = {}) = 0;
     virtual QCoro::Task<Result<NamespaceInfo>> namespaceInfo(NamespaceId ns) = 0;
@@ -218,6 +339,8 @@ public:
     virtual QCoro::Task<Result<PendingPage>> listPending(NamespaceId ns, PageRequest page = {}) = 0;
     virtual QCoro::Task<Result<RangePage>> listRanges(NamespaceId ns, PendingId id, RangeKind kind, PageRequest page = {}) = 0;
     virtual QCoro::Task<Result<std::unique_ptr<IFileReader>>> openRead(NamespaceId ns, FileId id) = 0;
+    virtual QCoro::Task<Result<PreparedRead>> prepareRead(NamespaceId ns, FileId id, ReadPreparationOptions options = {});
+    virtual QCoro::Task<Result<DirectorySubscription>> subscribeDirectory(NamespaceId ns, DirectoryId directory, DirectoryChangeCallback callback);
     virtual QCoro::Task<Result<MutationResult>> rename(NamespaceId ns, QUuid id, QString name, CancellationToken cancel = {}) = 0;
     virtual QCoro::Task<Result<MutationResult>> move(NamespaceId ns, QUuid id, DirectoryId destination, CancellationToken cancel = {}) = 0;
     virtual QCoro::Task<Result<MutationResult>> remove(NamespaceId ns, QUuid id, CancellationToken cancel = {}) = 0;
@@ -225,17 +348,54 @@ public:
     virtual QCoro::Task<Result<ReconciliationPage>> reconcile(NamespaceId ns, ReconciliationRequest request, CancellationToken cancel = {}) = 0;
     virtual Result<quint64> subscribe(NamespaceId ns, QObject* context, std::function<void(Change)> callback) = 0;
     virtual void unsubscribe(quint64 subscription) = 0;
+    // Contextual operations preserve the single storage interface. Native entries
+    // use these defaults; alias-aware backends override them.
+    virtual QCoro::Task<Result<FileInfo>> stat(NamespaceId ns, QUuid id, AccessContext access);
+    virtual QCoro::Task<Result<FileInfo>> lookup(NamespaceId ns, QString path, AccessContext access);
+    virtual QCoro::Task<Result<DirectoryPage>> list(NamespaceId ns, DirectoryId parent, PageRequest page, AccessContext access);
+    virtual QCoro::Task<Result<std::unique_ptr<IFileReader>>> openRead(NamespaceId ns, FileId id, AccessContext access);
+    virtual QCoro::Task<Result<PreparedRead>> prepareRead(NamespaceId ns, FileId id, ReadPreparationOptions options, AccessContext access);
+    virtual QCoro::Task<Result<DirectorySubscription>> subscribeDirectory(NamespaceId ns, DirectoryId directory, DirectoryChangeCallback callback, AccessContext access);
+    // Composition retains this context while representing directory aliases.
+    // Privacy-aware backends project their mandatory exclusions/revocation into
+    // it so a different backend cannot bypass them when serving descendants.
+    virtual bool supportsStableEnumeration() const noexcept { return false; }
+    virtual QCoro::Task<Result<void>> discardDirectoryCursor(NamespaceId ns, QByteArray cursor);
+    virtual QCoro::Task<Result<AccessContext>> descendantAccess(NamespaceId ns, DirectoryId directory, AccessContext access);
     virtual QCoro::Task<Result<void>> shutdown() = 0;
+protected:
+    using FilesystemGuard = std::function<QCoro::Task<Result<void>>() >;
+    virtual FilesystemGuard filesystemGuard(NamespaceId ns, QUuid id, std::function<bool(FilesystemIdentity)> check);
+private:
+    struct AccessPages;
+    std::shared_ptr<AccessPages> access_pages_;
 };
 
 // Raw input is bounded before Unicode processing. No filesystem access.
 Result<QString> normalizeName(QString name);
 Result<QString> nameKey(QString name);
 
+// Linux source-name encoding v1: raw component bytes, no filesystem access.
+// Preserves printable UTF-8, case and normalization; escapes unsafe bytes and '%'.
+// Encoded names are logical labels, never URL-decoded to construct OS paths.
+inline constexpr quint32 linux_name_encoding_version = 1;
+inline constexpr qsizetype max_linux_name_bytes = 255;
+inline constexpr qsizetype max_encoded_linux_name_bytes = 3 * max_linux_name_bytes;
+Result<QString> encodeLinuxName(QByteArrayView name);
+
 class NativeFileManager final : public IFileManager {
 public:
     struct Impl;
+    using IFileManager::stat;
+    using IFileManager::lookup;
+    using IFileManager::list;
+    using IFileManager::openRead;
+    using IFileManager::prepareRead;
+    using IFileManager::subscribeDirectory;
+    bool supportsStableEnumeration() const noexcept override { return true; }
     NativeFileManager();
+    // Host privacy policies must also exclude this shared backend metadata root.
+    static QString lockRegistryRoot();
     ~NativeFileManager() override;
     QCoro::Task<Result<NamespaceInfo>> createNamespace(NamespaceConfig config, CancellationToken cancel = {}) override;
     QCoro::Task<Result<NamespaceInfo>> openNamespace(NamespaceConfig config, CancellationToken cancel = {}) override;
@@ -252,6 +412,8 @@ public:
     QCoro::Task<Result<PendingPage>> listPending(NamespaceId ns, PageRequest page = {}) override;
     QCoro::Task<Result<RangePage>> listRanges(NamespaceId ns, PendingId id, RangeKind kind, PageRequest page = {}) override;
     QCoro::Task<Result<std::unique_ptr<IFileReader>>> openRead(NamespaceId ns, FileId id) override;
+    QCoro::Task<Result<PreparedRead>> prepareRead(NamespaceId ns, FileId id, ReadPreparationOptions options = {}) override;
+    QCoro::Task<Result<DirectorySubscription>> subscribeDirectory(NamespaceId ns, DirectoryId directory, DirectoryChangeCallback callback) override;
     QCoro::Task<Result<MutationResult>> rename(NamespaceId ns, QUuid id, QString name, CancellationToken cancel = {}) override;
     QCoro::Task<Result<MutationResult>> move(NamespaceId ns, QUuid id, DirectoryId destination, CancellationToken cancel = {}) override;
     QCoro::Task<Result<MutationResult>> remove(NamespaceId ns, QUuid id, CancellationToken cancel = {}) override;
@@ -260,6 +422,8 @@ public:
     Result<quint64> subscribe(NamespaceId ns, QObject* context, std::function<void(Change)> callback) override;
     void unsubscribe(quint64 subscription) override;
     QCoro::Task<Result<void>> shutdown() override;
+protected:
+    FilesystemGuard filesystemGuard(NamespaceId ns, QUuid id, std::function<bool(FilesystemIdentity)> check) override;
 private:
     std::shared_ptr<Impl> impl_;
 };

@@ -16,6 +16,9 @@
 #include <linux/fs.h>
 #endif
 
+namespace dsfm {
+QString NativeFileManager::lockRegistryRoot() { return QStringLiteral("/tmp/dsfm-locks-%1").arg(::geteuid()); }
+}
 namespace dsfm::detail {
 namespace { thread_local bool repair_permissions = false; }
 PermissionRepairScope::PermissionRepairScope(bool enabled)
@@ -149,7 +152,7 @@ Fd openRoot(const QString& path, bool create, bool private_root) {
 QVector<std::shared_ptr<Fd>> lockRoots(int root, bool exclusive) {
     // Shared locks on ancestor filesystem identities, exclusive on the target.
     // Distinct open descriptions make flock enforce ownership within a process too.
-    const auto lock_path = QStringLiteral("/tmp/dsfm-locks-%1").arg(::geteuid());
+    const auto lock_path = NativeFileManager::lockRegistryRoot();
     if (::mkdir(QFile::encodeName(lock_path).constData(), 0700) < 0) ioCheck(errno == EEXIST);
     Fd registry(::open(QFile::encodeName(lock_path).constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
     identity(registry.value, true, "lock registry");

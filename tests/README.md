@@ -15,6 +15,12 @@ legacy optional `tor_integration` registration is enabled too; its current
 implementation reruns the crypto handshake test, while the real peer scenario
 uses the isolated private Tor network.
 
+The existing file-manager test registration also checks common entry/hash/readiness
+and capability metadata, visibility/read refusal for updating entries, and Linux
+source-name encoding (raw invalid UTF-8, escaped-percent collisions, case and
+normalization distinctions, and maximum expansion). These need no extra flags or
+dependencies.
+
 The preferences tests include desktop notification redaction combinations and
 the global enable setting; managed-storage tests also cover identity preference
 defaults, isolation and persistence. They use the existing test registrations
@@ -85,3 +91,40 @@ The full runner also discovers `mcp_peer_file_decisions` and
 `mcp_peer_corrupt_partial`. Both use the same build flags and pinned dependencies;
 fault setup is restricted to stopped private test profiles. See
 [transfer-error scenarios](mcp/scenarios/003-file-decisions-and-corruption.md).
+
+
+`readonly_filemanager` covers the external read-only backend, raw Linux names,
+startup/restart reconciliation, partial-scan safety, Cached/Rehash/Snapshot
+preparation, staged resume/expiry, resource quotas, subscription pins, opaque
+requester-bound cursors, cross-backend aliases and exclusion revocation. The
+bind-mount case uses `unshare` when private user/mount namespaces are available;
+otherwise that subcase reports a skip. No additional Qt module is needed.
+`managed_storage` also checks mandatory DarkSpeak exclusions and actual sender
+completion/failure, including a resumed prefix and tampering that restores mtime.
+
+The full runner discovers `readonly_million_entry_paging` without a test-name
+filter. That scale test reports CTest skip code 77 unless
+`DSFM_RUN_MILLION_ENTRY_TEST=1` is set and at least 6 GiB of temporary storage is
+available. When enabled it creates and indexes one million real files using finite
+entry/catalog/page budgets, checks complete keyset paging and UI responsiveness,
+and has an explicit 1800-second timeout. The ordinary read-only suite performs the
+same paging checks with 1,200 real files. Enable the larger run with:
+
+```sh
+DSFM_RUN_MILLION_ENTRY_TEST=1 tests/run-all-tests.sh
+```
+
+`vfs` covers identity/mount composition, persistent opaque IDs and format fixtures,
+subtree confinement, mount-scoped authorization, synthetic pagination, filtered
+subscriptions, cross-mount alias exclusions, revocation, writable delegation and
+bounded catalog exports/validation. It runs against real FileManager backends
+with a 120-second CTest deadline and no extra test-runner flags.
+`managed_storage` also checks Home-pane filesystem-conflict notifications and
+catalog payload completion/revocation through the existing outgoing transfer
+channel. See `src/vfs/README.md` for the standalone test command.
+
+The `vfs` target also covers persistent storage assignments and withdrawal,
+identity/group/contact overlays, permission precedence/group conflicts,
+nonrecursive parents and navigation-only reopening, bounded empty-page
+continuations, and assignment-gated external-file symlinks. These cases are part
+of the existing CTest target and require no additional runner dependency.

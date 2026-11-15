@@ -31,6 +31,10 @@ public:
     File::ptr_t getFileFromId(const QByteArray& fileId, const Contact& contact);
 
     File::ptr_t addFile(std::unique_ptr<FileData> data);
+    static QString transferName(QString logical_name);
+    QCoro::Task<dsfm::Result<File::ptr_t>> addVfsTransfer(Conversation& conversation, dsvfs::Vfs& vfs, dsvfs::NodeId node,
+                                                       dsvfs::Request request, QString mime_type = "application/octet-stream");
+    dsfm::Result<File::ptr_t> addCatalogTransfer(Conversation& conversation, std::shared_ptr<dsvfs::CatalogExport> catalog);
 
     // Validate the local policy before an incoming file is started.
     bool canAcceptIncoming(const File& file, QString& reason) const;

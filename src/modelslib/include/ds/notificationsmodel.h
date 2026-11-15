@@ -24,7 +24,8 @@ public:
     enum Type {
         N_ADDME,
         N_FILE,
-        N_MESSAGE
+        N_MESSAGE,
+        N_VFS_CONFLICT
     };
     Q_ENUM(Type)
 

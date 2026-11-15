@@ -1338,6 +1338,14 @@ Directory browsing, exchange accounting, library manifests, and similar
 higher-level semantics remain separate application protocols layered
 above the generic transfer mechanism.
 
+The application VFS can stage bounded authorization-filtered catalog exports
+(including recursive listings) as immutable content objects. They use the
+existing file chunk/byte acknowledgement window and SHA-256, with no new entry
+acknowledgements or filesystem cursors on the wire. Catalog format versioning,
+validation, revocation and resource limits are specified in `specs/vfs.md`;
+transport completion is not a grant to access entries described in a catalog.
+
+
 ### Transfer identity and content identity
 
 `file_id`/transfer ID identifies one transfer and remains distinct from

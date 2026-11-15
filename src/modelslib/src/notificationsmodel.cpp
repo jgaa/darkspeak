@@ -38,6 +38,33 @@ NotificationsModel::NotificationsModel(QSettings &settings)
             &ConversationManager::conversationTouched,
             this, [this](const core::Conversation::ptr_t&) { refresh(); });
 
+    auto& storage = core::DsEngine::instance().getFileManager()->storage();
+    connect(&storage, &ManagedStorage::vfsConflictDetected, this,
+            [this](QUuid identity_uuid, QByteArray key, QString location) {
+        auto* identity = DsEngine::instance().getIdentityManager()->identityFromUuid(identity_uuid);
+        if (!identity) return;
+        const auto hash = QStringLiteral("vfs-conflict-%1-%2").arg(identity_uuid.toString(QUuid::WithoutBraces), QString::fromLatin1(key.toHex()));
+        const auto message = tr("Shared-directory conflict at %1. Rename the conflicting entry or move the mount to restore access.").arg(location);
+        if (isHashPresent(hash)) {
+            QSqlQuery update; update.prepare("UPDATE notification SET message=? WHERE type=3 AND hash=?");
+            update.addBindValue(message); update.addBindValue(hash); if (update.exec()) refresh(); return;
+        }
+        QSqlQuery query;
+        query.prepare("INSERT INTO notification (status,priority,identity,type,timestamp,message,data,hash) VALUES(0,1,?,3,?,?,'{}',?)");
+        query.addBindValue(identity->getId()); query.addBindValue(QDateTime::currentDateTime());
+        query.addBindValue(message);
+        query.addBindValue(hash);
+        if (query.exec()) refresh();
+        else LFLOG_ERROR << "Failed to persist VFS conflict notification";
+    });
+    connect(&storage, &ManagedStorage::vfsConflictResolved, this,
+            [this](QUuid identity_uuid, QByteArray key) {
+        QSqlQuery query;
+        query.prepare("DELETE FROM notification WHERE type=3 AND hash=?");
+        query.addBindValue(QStringLiteral("vfs-conflict-%1-%2").arg(identity_uuid.toString(QUuid::WithoutBraces), QString::fromLatin1(key.toHex())));
+        if (query.exec()) refresh();
+    });
+
     const auto watch = [this](int first, int last) {
         auto *identities = core::DsEngine::instance().getIdentityManager();
         for (int row = first; row <= last; ++row) {

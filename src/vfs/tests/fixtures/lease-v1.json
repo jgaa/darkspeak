@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "prefix": 17,
+  "cipher": "crypto_secretbox_easy",
+  "nonce_bytes": 24,
+  "mac_bytes": 16,
+  "kdf_context": "DSVFSv1_",
+  "kdf_subkey": 3,
+  "binding": ["identity_uuid", "request_scope_uuid", "virtual_node_id"],
+  "versions": ["backend_generation", "visible_revision"],
+  "maximum_backend_lease_bytes": 128
+}
