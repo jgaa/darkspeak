@@ -48,6 +48,8 @@ struct Limits {
     quint32 max_batch = 100;
     quint32 max_export_entries = 1000000;
     quint64 max_export_bytes = 256ULL << 20;
+    quint32 max_exports_per_identity = 2;
+    quint32 max_exports_per_contact = 2;
     quint32 max_exports = 2; // Generation and retained/transmitting exports.
     quint32 max_record_bytes = 16384;
     quint32 request_timeout_ms = 30000;
@@ -180,8 +182,7 @@ class Vfs final : public QObject {
     QCoro::Task<Result<dsfm::MutationResult>> remove(QUuid identity, NodeId node, Request request);
     // The host supplies an application-private managed namespace. It is never
     // mounted or remotely addressable except through the returned export lease.
-    Result<void> setExportStore(std::shared_ptr<dsfm::IFileManager> backend, dsfm::NamespaceId ns,
-                                dsfm::DirectoryId directory);
+    Result<void> setExportStore(std::shared_ptr<dsfm::IFileManager> backend, dsfm::NamespaceId ns);
     QCoro::Task<Result<std::shared_ptr<CatalogExport>>> exportCatalog(QUuid identity, NodeId node, bool recursive,
                                                                       Request request, CancellationToken cancel = {});
     // Validate hostile export content before a consumer publishes its cache.

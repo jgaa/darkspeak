@@ -1,4 +1,5 @@
 #include <dsvfs/vfs.h>
+#include <dsfilemanager/storagepool.h>
 #include <QCoreApplication>
 #include <QTemporaryDir>
 #include <QDir>
@@ -66,6 +67,7 @@ dsvfs::StorageAssignment assignment(dsvfs::Vfs &vfs, QUuid identity, NamespaceId
 struct Fixture {
     QTemporaryDir temporary;
     std::shared_ptr<NativeFileManager> backend = std::make_shared<NativeFileManager>();
+    std::shared_ptr<StoragePool> pool;
     NamespaceInfo source, exports;
     QUuid identity = QUuid::createUuid();
     std::shared_ptr<std::atomic<quint64>> generation = std::make_shared<std::atomic<quint64>>(1);
@@ -73,7 +75,11 @@ struct Fixture {
     std::unique_ptr<dsvfs::Vfs> vfs;
     Fixture(dsvfs::Limits limits = {}) {
         source = get(backend->createNamespace({QUuid::createUuid(), temporary.path() + "/source"}));
-        exports = get(backend->createNamespace({QUuid::createUuid(), temporary.path() + "/exports"}));
+        pool = std::make_shared<StoragePool>(temporary.path() + "/pool");
+        get(pool->open());
+        NamespaceConfig config{QUuid::createUuid(), temporary.path() + "/exports"};
+        config.storage_pool = pool;
+        exports = get(backend->createNamespace(config));
         request.scope = QUuid::createUuid();
         request.generation = 1;
         request.current_generation = generation;
@@ -91,7 +97,7 @@ struct Fixture {
         vfs = std::make_unique<dsvfs::Vfs>(temporary.path() + "/vfs", limits);
         get(vfs->open());
         CHECK(vfs->registerNamespace(source.config.id, backend, SymlinkPolicy::Never, identity));
-        CHECK(vfs->setExportStore(backend, exports.config.id, exports.root));
+        CHECK(vfs->setExportStore(backend, exports.config.id));
         assignment(*vfs, identity, source.config.id, source.root, request);
     }
     FileInfo file(QString name, QByteArray bytes, QUuid parent = {}) {
@@ -246,6 +252,8 @@ void exportsAndValidation() {
     f.mount();
     auto catalog = get(f.vfs->exportCatalog(f.identity, f.vfs->root(f.identity), true, f.request));
     CHECK(catalog->size() > 0 && catalog->sha256().size() == 32);
+    CHECK(get(f.backend->list(f.exports.config.id, f.exports.root)).entries.isEmpty());
+    CHECK(get(f.backend->listPending(f.exports.config.id)).entries.isEmpty());
     auto prepared = get(catalog->prepareRead());
     CHECK(prepared.info.sha256 == catalog->sha256());
     auto reader = std::shared_ptr<IFileReader>(std::move(prepared.reader));
@@ -410,8 +418,12 @@ void readOnlyAliases() {
     CHECK(shared_hello.id != routed.id);
     CHECK(get(backend->namespaces()).size() == 2);
     auto export_backend = std::make_shared<NativeFileManager>();
-    auto export_space = get(export_backend->createNamespace({QUuid::createUuid(), temporary.path() + "/exports"}));
-    CHECK(vfs.setExportStore(export_backend, export_space.config.id, export_space.root));
+    auto pool = std::make_shared<StoragePool>(temporary.path() + "/pool");
+    get(pool->open());
+    NamespaceConfig export_config{QUuid::createUuid(), temporary.path() + "/exports"};
+    export_config.storage_pool = pool;
+    auto export_space = get(export_backend->createNamespace(export_config));
+    CHECK(vfs.setExportStore(export_backend, export_space.config.id));
     auto exported = get(vfs.exportCatalog(identity, link.id, false, request));
     auto opened_before_exclusion = get(vfs.prepareRead(identity, routed.id, {}, request));
     a.exclusions.generation = 2;
@@ -690,7 +702,9 @@ void boundedCollectionPaging() {
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
     try {
+        authorizationFixture();
         permissionSemantics();
+        permissionProvenance();
         overlaySemantics();
         assignmentBoundaries();
         effectiveTopology();

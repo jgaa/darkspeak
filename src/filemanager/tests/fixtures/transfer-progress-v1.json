@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "minimumInterval": 65536,
+  "defaultInterval": 1048576,
+  "maximumInterval": 16777216,
+  "tables": {
+    "meta": [
+      "version"
+    ],
+    "transfers": [
+      "key",
+      "size",
+      "sha",
+      "interval",
+      "attempt",
+      "confirmed",
+      "complete",
+      "pause",
+      "failure",
+      "next_sequence",
+      "side"
+    ],
+    "checkpoints": [
+      "key",
+      "sequence",
+      "offset",
+      "sha",
+      "final",
+      "pause_boundary",
+      "phase"
+    ]
+  }
+}

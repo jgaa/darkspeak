@@ -42,14 +42,19 @@ Catalog::Catalog(const QString& path, quint64 max_bytes, bool create) {
             query("CREATE INDEX entries_parent ON entries(parent,name_key,id)");
             query("CREATE INDEX entries_ordered ON entries(parent,name COLLATE BINARY,id)");
             query("CREATE INDEX entries_ascii ON entries(parent,dsfm_ascii(name) COLLATE BINARY,id)");
-            query("CREATE TABLE pending(id TEXT PRIMARY KEY,file_id TEXT NOT NULL UNIQUE,parent TEXT NOT NULL REFERENCES entries(id),name TEXT NOT NULL,name_key TEXT NOT NULL,expected_size INTEGER,expected_sha BLOB,final_size INTEGER,state INTEGER NOT NULL DEFAULT 0,replacement INTEGER NOT NULL,reserved INTEGER NOT NULL CHECK(reserved>=0),range_generation INTEGER NOT NULL DEFAULT 0,dev TEXT NOT NULL,ino TEXT NOT NULL)");
+            query("CREATE TABLE pending(id TEXT PRIMARY KEY,file_id TEXT NOT NULL UNIQUE,parent TEXT NOT NULL REFERENCES entries(id),name TEXT NOT NULL,name_key TEXT NOT NULL,expected_size INTEGER,expected_sha BLOB,final_size INTEGER,state INTEGER NOT NULL DEFAULT 0,replacement INTEGER NOT NULL,reserved INTEGER NOT NULL CHECK(reserved>=0),range_generation INTEGER NOT NULL DEFAULT 0,dev TEXT NOT NULL,ino TEXT NOT NULL,private INTEGER NOT NULL DEFAULT 0)");
             query("CREATE INDEX pending_names ON pending(parent,name_key)");
             query("CREATE TABLE ranges(pending TEXT NOT NULL REFERENCES pending(id) ON DELETE CASCADE,kind INTEGER NOT NULL,start INTEGER NOT NULL CHECK(start>=0),end INTEGER NOT NULL CHECK(end>start),PRIMARY KEY(pending,kind,start))");
             query("CREATE TABLE operations(sequence INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT UNIQUE NOT NULL,phase TEXT NOT NULL,payload TEXT NOT NULL)");
-            setMeta("schema", "1"); setMeta("generation", "0");
+            query("CREATE TABLE temporaries(id TEXT PRIMARY KEY,pending TEXT NOT NULL UNIQUE,owner TEXT NOT NULL,class INTEGER NOT NULL,limit_bytes INTEGER NOT NULL,created INTEGER NOT NULL,expires INTEGER NOT NULL,state INTEGER NOT NULL DEFAULT 0,size INTEGER NOT NULL DEFAULT 0,sha BLOB,revision INTEGER NOT NULL DEFAULT 0,dev TEXT,ino TEXT,mtime TEXT)");
+            query("CREATE TABLE temporary_leases(token BLOB PRIMARY KEY,artifact TEXT NOT NULL,owner TEXT NOT NULL,expires INTEGER NOT NULL)");
+            query("CREATE INDEX temporary_expiry ON temporaries(expires,state)");
+            query("CREATE INDEX temporary_lease_expiry ON temporary_leases(expires)");
+            query("CREATE TABLE pool_objects(file_id TEXT PRIMARY KEY,reservation TEXT NOT NULL UNIQUE)");
+            setMeta("schema", "2"); setMeta("generation", "0");
             transaction.commit();
         }
-        require(meta("schema") == "1", ErrorCode::Corruption);
+        require(meta("schema") == "2", ErrorCode::Corruption);
     } catch (...) {
         db.close(); db = {}; QSqlDatabase::removeDatabase(connection_); throw;
     }
@@ -124,8 +129,9 @@ QString Catalog::path(QUuid id, PhysicalNaming naming, quint32 depth) {
     fail(ErrorCode::Corruption);
 }
 PendingInfo Catalog::pending(PendingId id) {
-    auto q = query("SELECT file_id,parent,name,expected_size,expected_sha,final_size,state,replacement,range_generation FROM pending WHERE id=?", {uuid(id)});
+    auto q = query("SELECT file_id,parent,name,expected_size,expected_sha,final_size,state,replacement,range_generation,private FROM pending WHERE id=?", {uuid(id)});
     require(q.next(), ErrorCode::MissingEntry);
+    require(private_access || q.value(9).toInt()==0,ErrorCode::MissingEntry);
     PendingInfo result;
     result.id = id; result.file_id = uuid(q.value(0)); result.parent = uuid(q.value(1)); result.name = q.value(2).toString();
     if (!q.value(3).isNull()) result.content.expected_size = q.value(3).toULongLong();
@@ -146,7 +152,7 @@ void Catalog::putRanges(PendingId id, RangeKind kind, const QVector<ByteRange>& 
 }
 
 #define DSFM_LIMITS(X) \
- X(max_file_size) X(max_total_bytes) X(max_staging_bytes) X(max_catalog_bytes) X(max_pending) X(max_writers) X(max_handles) X(max_entries) X(max_depth) X(max_ranges) X(max_page_size) X(max_operations) X(max_io_bytes) X(max_buffered_bytes) X(max_collision_attempts) X(max_notifications) X(max_batch)
+ X(max_file_size) X(max_total_bytes) X(max_staging_bytes) X(max_catalog_bytes) X(max_pending) X(max_writers) X(max_handles) X(max_entries) X(max_depth) X(max_ranges) X(max_page_size) X(max_operations) X(max_io_bytes) X(max_buffered_bytes) X(max_collision_attempts) X(max_notifications) X(max_batch) X(max_temporary_bytes) X(max_cache_bytes) X(max_temporary_objects) X(max_cache_objects) X(max_temporary_leases) X(max_temporary_lifetime_ms)
 QJsonObject limitsJson(const NamespaceLimits& limits) {
     QJsonObject json;
 #define DSFM_PUT(field) json[#field] = QString::number(limits.field);
@@ -174,16 +180,26 @@ void validateLimits(const NamespaceLimits& limits) {
         && limits.max_operations <= 4096 && limits.max_page_size <= 1000 && limits.max_ranges <= 65536
         && limits.max_depth <= 128 && limits.max_batch <= 1000 && limits.max_pending <= 4096
         && limits.max_handles <= 4096 && limits.max_entries <= 10000000
+        && limits.max_temporary_bytes<=quint64(std::numeric_limits<qint64>::max())/4 && limits.max_cache_bytes<=quint64(std::numeric_limits<qint64>::max())/4
+        && limits.max_temporary_objects && limits.max_temporary_objects<=4096 && limits.max_cache_objects && limits.max_cache_objects<=4096
+        && limits.max_temporary_leases && limits.max_temporary_leases<=4096 && limits.max_temporary_lifetime_ms && limits.max_temporary_lifetime_ms<=3600000
         && limits.max_collision_attempts <= 10000 && limits.max_notifications <= 4096, ErrorCode::InvalidArgument);
 }
 quint64 charged(Catalog& db) {
-    return db.scalar("SELECT COALESCE((SELECT sum(size) FROM entries WHERE type=0),0)+COALESCE((SELECT sum(reserved) FROM pending),0)").toULongLong();
+    return db.scalar("SELECT COALESCE((SELECT sum(size) FROM entries WHERE type=0),0)+COALESCE((SELECT sum(reserved) FROM pending WHERE private=0),0)").toULongLong();
 }
 void checkQuota(Namespace& ns, Catalog& db, quint64 reserve, quint64 old_reserve) {
     const auto& limits = ns.config.limits;
+    if (db.private_access) {
+        require(reserve<=std::max(limits.max_temporary_bytes,limits.max_cache_bytes) && reserve<=limits.max_file_size,ErrorCode::QuotaExceeded);
+        const auto total=db.scalar("SELECT COALESCE((SELECT sum(reserved) FROM pending WHERE private=?),0)+COALESCE((SELECT sum(size) FROM temporaries WHERE state!=0 AND class=?),0)",{db.private_class,db.private_class}).toULongLong();
+        const auto maximum=db.private_class==int(StorageClass::Cache)?limits.max_cache_bytes:limits.max_temporary_bytes;
+        require(total>=old_reserve && reserve<=maximum && total-old_reserve<=maximum-reserve,ErrorCode::QuotaExceeded);
+        return;
+    }
     require(reserve <= limits.max_file_size && reserve <= limits.max_staging_bytes, ErrorCode::QuotaExceeded);
     const auto total = charged(db);
-    const auto staging = db.scalar("SELECT COALESCE(sum(reserved),0) FROM pending").toULongLong();
+    const auto staging = db.scalar("SELECT COALESCE(sum(reserved),0) FROM pending WHERE private=0").toULongLong();
     require(total >= old_reserve && staging >= old_reserve, ErrorCode::Corruption);
     require(total - old_reserve <= limits.max_total_bytes - reserve && staging - old_reserve <= limits.max_staging_bytes - reserve, ErrorCode::QuotaExceeded);
 }

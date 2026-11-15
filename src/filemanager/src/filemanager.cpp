@@ -1,5 +1,7 @@
 #include "internal.h"
 #include "async_p.h"
+#include "storagepool_p.h"
+#include "native_pool_p.h"
 #include <QAbstractEventDispatcher>
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -38,6 +40,12 @@ void DirectorySubscription::reset() noexcept {
     active_.reset(); namespace_id_ = {}; directory_id_ = {}; generation_ = 0;
 }
 DirectorySubscription::operator bool() const noexcept { return active_ && active_->load(); }
+QCoro::Task<Result<QByteArray>> IFileWriter::hashPrefix(quint64, CancellationToken) {
+    co_return Error{ErrorCode::UnsupportedCapability};
+}
+QCoro::Task<Result<void>> IFileWriter::discardSuffix(quint64, CancellationToken) {
+    co_return Error{ErrorCode::UnsupportedCapability};
+}
 struct IFileManager::AccessPages {
     struct Cursor {
         NamespaceId ns; DirectoryId parent; QUuid scope; QByteArray cursor, filesystem_generation;
@@ -57,6 +65,12 @@ QCoro::Task<Result<PreparedRead>> IFileManager::prepareRead(NamespaceId, FileId,
 QCoro::Task<Result<DirectorySubscription>> IFileManager::subscribeDirectory(NamespaceId, DirectoryId, DirectoryChangeCallback) {
     co_return Error{ErrorCode::UnsupportedCapability};
 }
+QCoro::Task<Result<TemporaryFile>> IFileManager::beginTemporary(NamespaceId,TemporaryOptions,TemporaryAccess){co_return Error{ErrorCode::UnsupportedCapability};}
+QCoro::Task<Result<TemporaryInfo>> IFileManager::finalizeTemporary(NamespaceId,TempId,TemporaryAccess,CancellationToken){co_return Error{ErrorCode::UnsupportedCapability};}
+QCoro::Task<Result<TemporaryRead>> IFileManager::leaseTemporary(NamespaceId,TempId,TemporaryLeaseOptions,TemporaryAccess){co_return Error{ErrorCode::UnsupportedCapability};}
+QCoro::Task<Result<void>> IFileManager::releaseTemporary(NamespaceId,QByteArray,TemporaryAccess){co_return Error{ErrorCode::UnsupportedCapability};}
+QCoro::Task<Result<void>> IFileManager::discardTemporary(NamespaceId,TempId,TemporaryAccess){co_return Error{ErrorCode::UnsupportedCapability};}
+QCoro::Task<Result<void>> IFileManager::reclaimTemporary(NamespaceId,quint32){co_return Error{ErrorCode::UnsupportedCapability};}
 IFileManager::FilesystemGuard IFileManager::filesystemGuard(NamespaceId, QUuid, std::function<bool(FilesystemIdentity)> check) {
     if (!check) return {};
     return []() -> QCoro::Task<Result<void>> { co_return Error{ErrorCode::UnsupportedCapability}; };
@@ -198,15 +212,24 @@ namespace {
 template<typename T> QCoro::Task<Result<T>> rejected(ErrorCode code) { co_return Error{code}; }
 bool validPageEnvelope(const PageRequest& page) { return page.limit > 0 && page.limit <= 1000 && page.cursor.size() <= 4096; }
 struct WriterState {
+    std::atomic_bool expired{false};
+    bool private_access = false;
+    int private_kind = 0;
     std::shared_ptr<Namespace> ns;
     PendingId id;
     Fd fd;
     QVector<ByteRange> dirty;
+    std::unique_ptr<QCryptographicHash> prefix_hash;
+    quint64 prefix_offset = 0;
+    Identity prefix_identity;
     bool verifying = false;
     std::atomic_bool closed{false};
     QUuid lane = QUuid::createUuid();
 };
+struct TemporaryReaderState;
 struct ReaderState {
+    bool private_access = false;
+    int private_kind = 0;
     std::shared_ptr<Namespace> ns;
     FileId id;
     Fd fd;
@@ -246,6 +269,7 @@ NamespaceInfo infoFor(Namespace& ns, Catalog& db) {
     result.untracked_staging = ns.untracked_staging; result.staging_scan_truncated = ns.staging_scan_truncated;
     result.status = NamespaceStatus::Ready;
     result.capabilities = Capability::Read | Capability::Write | Capability::PreparedRead | Capability::DirectorySubscriptions;
+    if(ns.config.storage_pool)result.capabilities|=Capability::TemporaryArtifacts;
     return result;
 }
 void checkBrowseDirectory(Namespace& ns, Catalog& db, DirectoryId id) {
@@ -281,7 +305,7 @@ QString chooseName(Namespace& ns, Catalog& db, DirectoryId parent, QString sugge
         }
         const auto key = nameKey(candidate).value();
         auto found = db.scalar("SELECT id FROM entries WHERE parent=? AND name_key=? AND id!=?", {uuid(parent), key, uuid(except)});
-        const auto pending = db.scalar("SELECT id FROM pending WHERE parent=? AND name_key=? AND file_id!=?", {uuid(parent), key, uuid(except)});
+        const auto pending = db.scalar("SELECT id FROM pending WHERE private=0 AND parent=? AND name_key=? AND file_id!=?", {uuid(parent), key, uuid(except)});
         bool physical_collision = false;
         if (ns.config.naming == PhysicalNaming::OriginalName) {
             const auto parent_path = db.path(parent, ns.config.naming, ns.config.limits.max_depth);
@@ -306,7 +330,8 @@ void checkConstraints(const ContentConstraints& content, const NamespaceLimits& 
     require(content.expected_sha256.isEmpty() || content.expected_sha256.size() == 32, ErrorCode::InvalidArgument);
     require(!content.expected_size || *content.expected_size <= limits.max_file_size, ErrorCode::QuotaExceeded);
 }
-void checkPendingFd(WriterState& writer, Catalog& db, bool allow_verifying = false) {
+void checkPendingFd(WriterState& writer, Catalog& db, bool allow_verifying = false, bool cleanup = false) {
+    require(cleanup || !writer.expired,ErrorCode::MissingEntry);
     require(allow_verifying || !writer.verifying, ErrorCode::Busy);
     require(!writer.closed, ErrorCode::Busy);
     auto q = db.query("SELECT dev,ino FROM pending WHERE id=?", {uuid(writer.id)}); require(q.next(), ErrorCode::MissingEntry);
@@ -328,6 +353,7 @@ void checkpointWriter(WriterState& writer, Catalog& db) {
     db.putRanges(writer.id, RangeKind::StorageValid, ranges);
     db.query("UPDATE pending SET range_generation=range_generation+1 WHERE id=?", {uuid(writer.id)});
     db.bump(); transaction.commit(); writer.dirty.clear();
+    if(!writer.private_access)poolPendingObserve(*writer.ns,writer.id,writer.fd.value);
     fault("after_checkpoint_record");
 }
 void closeWriter(WriterState& writer) {
@@ -343,6 +369,7 @@ struct NativeFileManager::Impl : std::enable_shared_from_this<Impl> {
     QHash<NamespaceId, std::shared_ptr<Namespace>> spaces;
     QVector<std::weak_ptr<WriterState>> writers;
     QVector<std::weak_ptr<ReaderState>> readers;
+    QVector<std::weak_ptr<TemporaryReaderState>> temporary_readers;
     std::map<quint64, std::shared_ptr<Subscriber>> subscribers;
     quint64 next_subscription = 1;
     std::atomic_bool shutting_down{false};
@@ -378,11 +405,11 @@ struct NativeFileManager::Impl : std::enable_shared_from_this<Impl> {
             }, Qt::QueuedConnection);
         }
     }
-    template<typename T, typename Function> QCoro::Task<Result<T>> submit(NamespaceId id, Function function, quint64 bytes = 0, bool recovery = true, QUuid lane = {}) {
+    template<typename T, typename Function> QCoro::Task<Result<T>> submit(NamespaceId id, Function function, quint64 bytes = 0, bool recovery = true, QUuid lane = {}, bool private_access = false) {
         auto self = shared_from_this();
         std::shared_ptr<Namespace> ns;
         try { ns = space(id); } catch (const Failure& error) { co_return error.error; }
-        auto work = [self, ns, function = std::move(function), recovery]() mutable -> Result<T> {
+        auto work = [self, ns, function = std::move(function), recovery, private_access]() mutable -> Result<T> {
             require(!self->shutting_down, ErrorCode::ShuttingDown);
             std::lock_guard lock(ns->mutex);
             PermissionRepairScope permissions(ns->config.repair_permissions);
@@ -393,6 +420,7 @@ struct NativeFileManager::Impl : std::enable_shared_from_this<Impl> {
             const auto expected_internal = identity(ns->internal.value, true); const auto actual_internal = identity(current_internal.value, true);
             require(expected_internal.dev == actual_internal.dev && expected_internal.ino == actual_internal.ino, ErrorCode::ExternalModification);
             Catalog db(ns->catalogPath(), ns->config.limits.max_catalog_bytes, false);
+            db.private_access=private_access;
             const auto before = db.generation();
             try {
                 if (recovery) recover(*ns, db);
@@ -408,7 +436,9 @@ struct NativeFileManager::Impl : std::enable_shared_from_this<Impl> {
     }
     template<typename T, typename State, typename Function>
     QCoro::Task<Result<T>> handleSubmit(std::shared_ptr<State> state, Function function, quint64 bytes = 0) {
-        return submit<T>(state->ns->config.id, std::move(function), bytes, true, state->lane);
+        return submit<T>(state->ns->config.id, [state,function=std::move(function)](Namespace& ns,Catalog& db)mutable->Result<T>{
+            db.private_class=state->private_kind;return function(ns,db);
+        }, bytes, true, state->lane, state->private_access);
     }
 };
 
@@ -501,20 +531,29 @@ public:
             const auto end = offset + quint64(data.size());
             require(!pending.final_size || end <= *pending.final_size, ErrorCode::InvalidArgument);
             const ByteRange affected{offset, quint64(data.size())};
-            auto valid = subtractRange(db.ranges(state->id, RangeKind::StorageValid), affected);
-            auto verified = subtractRange(db.ranges(state->id, RangeKind::ApplicationVerified), affected);
+            const auto original_valid=db.ranges(state->id,RangeKind::StorageValid);
+            const auto original_verified=db.ranges(state->id,RangeKind::ApplicationVerified);
+            auto valid = subtractRange(original_valid, affected);
+            auto verified = subtractRange(original_verified, affected);
             auto dirty = addRange(subtractRange(state->dirty, affected), affected);
             auto final_ranges = valid;
             for (auto range : dirty) final_ranges = addRange(std::move(final_ranges), range);
             require(final_ranges.size() <= ns.config.limits.max_ranges && verified.size() <= ns.config.limits.max_ranges && dirty.size() <= ns.config.limits.max_ranges, ErrorCode::QuotaExceeded);
             const auto reserved = db.scalar("SELECT reserved FROM pending WHERE id=?", {uuid(state->id)}).toULongLong();
             const auto next_reserve = std::max(reserved, end); checkQuota(ns, db, next_reserve, reserved);
-            {
+            if(!state->private_access)poolPendingGrow(ns,state->id,next_reserve);
+            if(valid!=original_valid || verified!=original_verified || reserved!=next_reserve || pending.state!=PendingState::Ready) {
                 Transaction transaction(db);
                 db.putRanges(state->id, RangeKind::StorageValid, valid);
                 db.putRanges(state->id, RangeKind::ApplicationVerified, verified);
                 db.query("UPDATE pending SET reserved=?,range_generation=range_generation+1,state=0 WHERE id=?", {qlonglong(next_reserve), uuid(state->id)});
                 db.bump(); transaction.commit();
+            }
+            const auto before_write=identity(state->fd.value);
+            if(state->prefix_hash && (offset<state->prefix_offset || before_write.dev!=state->prefix_identity.dev ||
+                before_write.ino!=state->prefix_identity.ino || before_write.size!=state->prefix_identity.size ||
+                before_write.modified!=state->prefix_identity.modified)) {
+                state->prefix_hash.reset();state->prefix_offset=0;
             }
             state->dirty = subtractRange(state->dirty, affected);
             fault("after_range_invalidation");
@@ -530,6 +569,7 @@ public:
             }
             ioCheck(count >= 0);
             state->dirty = addRange(std::move(state->dirty), {offset, quint64(count)});
+            if(state->prefix_hash)state->prefix_identity=identity(state->fd.value);
             return qsizetype(count);
         }, bytes);
     }
@@ -541,6 +581,7 @@ public:
             require(!pending.content.expected_size || *pending.content.expected_size == size, ErrorCode::InvalidArgument);
             require(identity(state->fd.value).size <= size, ErrorCode::InvalidArgument);
             const auto old = db.scalar("SELECT reserved FROM pending WHERE id=?", {uuid(state->id)}).toULongLong(); checkQuota(ns, db, size, old);
+            if(!state->private_access)poolPendingGrow(ns,state->id,size);
             db.query("UPDATE pending SET final_size=?,reserved=?,range_generation=range_generation+1 WHERE id=?", {qlonglong(size), qlonglong(size), uuid(state->id)}); db.bump(); return {};
         });
     }
@@ -566,17 +607,48 @@ public:
             cancelCheck(cancel); checkpointWriter(*state, db); db.query("UPDATE pending SET state=1 WHERE id=?", {uuid(state->id)}); db.bump(); closeWriter(*state); return {};
         });
     }
+    QCoro::Task<Result<void>> discardSuffix(quint64 length,CancellationToken cancel) override {
+        auto state=state_;
+        co_return co_await impl_->handleSubmit<void>(state,[state,length,cancel](Namespace &ns,Catalog &db)->Result<void> {
+            cancelCheck(cancel);checkPendingFd(*state,db);
+            require(length<=ns.config.limits.max_file_size && length<=identity(state->fd.value).size,ErrorCode::InvalidArgument);
+            auto valid=db.ranges(state->id,RangeKind::StorageValid);
+            require(covers(valid,{0,length}),ErrorCode::IncompleteContent);
+            const ByteRange suffix{length,ns.config.limits.max_file_size-length};
+            auto verified=subtractRange(db.ranges(state->id,RangeKind::ApplicationVerified),suffix);
+            valid=subtractRange(valid,suffix);
+            {
+                Transaction tx(db);db.putRanges(state->id,RangeKind::StorageValid,valid);
+                db.putRanges(state->id,RangeKind::ApplicationVerified,verified);
+                db.query("UPDATE pending SET range_generation=range_generation+1 WHERE id=?",{uuid(state->id)});
+                db.bump();tx.commit();
+            }
+            state->dirty=subtractRange(state->dirty,suffix);
+            const auto before=identity(state->fd.value);
+            if(state->prefix_hash && (state->prefix_offset>length || state->prefix_identity.dev!=before.dev ||
+                state->prefix_identity.ino!=before.ino || state->prefix_identity.size!=before.size || state->prefix_identity.modified!=before.modified)) {
+                state->prefix_hash.reset();state->prefix_offset=0;
+            }
+            fault("after_suffix_invalidation");
+            ioCheck(::ftruncate(state->fd.value,off_t(length))==0);ioCheck(::fsync(state->fd.value)==0);
+            if(state->prefix_hash)state->prefix_identity=identity(state->fd.value);
+            if(!state->private_access)poolPendingObserve(ns,state->id,state->fd.value);
+            return {};
+        });
+    }
+    QCoro::Task<Result<QByteArray>> hashPrefix(quint64 length, CancellationToken cancel) override;
     QCoro::Task<Result<CommitResult>> commit(CancellationToken cancel) override;
     QCoro::Task<Result<void>> abort(CancellationToken cancel) override {
         auto state = state_;
         co_return co_await impl_->handleSubmit<void>(state, [state, cancel](Namespace& ns, Catalog& db) -> Result<void> {
-            cancelCheck(cancel); checkPendingFd(*state, db);
+            cancelCheck(cancel); checkPendingFd(*state, db, false, true);
             const auto st = identity(state->fd.value);
             const auto pending = db.pending(state->id);
             QJsonObject op{{"kind", "abort"}, {"file_id", uuid(pending.file_id)}, {"pending_id", uuid(state->id)},
                 {"from", pendingPath(state->id)}, {"to", QStringLiteral(".filemanager/recovery/") + uuid(state->id)},
                 {"dev", QString::number(st.dev)}, {"ino", QString::number(st.ino)}, {"directory", false}};
-            applyOperation(ns, db, op); closeWriter(*state); return {};
+            if(ns.config.storage_pool && !state->private_access)op["pool_reservation"]=uuid(state->id);
+        applyOperation(ns, db, op); closeWriter(*state); return {};
         });
     }
 private:
@@ -587,7 +659,8 @@ PendingFile attachWriter(std::shared_ptr<NativeFileManager::Impl> impl, std::sha
     require(!ns->active_writers.contains(id), ErrorCode::Busy);
     require(ns->active_writers.size() < ns->config.limits.max_writers && ns->handles < ns->config.limits.max_handles, ErrorCode::QuotaExceeded);
     auto pending = db.pending(id); require(pending.state != PendingState::Inconsistent, ErrorCode::ExternalModification);
-    auto state = std::make_shared<WriterState>(); state->ns = ns; state->id = id;
+    auto state = std::make_shared<WriterState>();
+    state->private_kind=db.scalar("SELECT private FROM pending WHERE id=?",{uuid(id)}).toInt();state->private_access=state->private_kind!=0; state->ns = ns; state->id = id;
     state->fd = openBeneath(ns->root.value, pendingPath(id), O_RDWR | O_NONBLOCK);
     checkPendingFd(*state, db);
     ns->active_writers.insert(id); ++ns->handles;
@@ -599,6 +672,7 @@ PendingFile attachWriter(std::shared_ptr<NativeFileManager::Impl> impl, std::sha
 }
 QJsonObject physicalOperation(Namespace& ns, Catalog& db, const QString& kind, const FileInfo& entry, const QString& to) {
     QJsonObject op{{"kind", kind}, {"file_id", uuid(entry.id)}, {"parent", entry.parent ? uuid(*entry.parent) : QString{}}, {"name", entry.name}, {"directory", entry.type == EntryType::Directory}, {"size", QString::number(entry.size)}};
+    if(kind=="delete" && ns.config.storage_pool)op["pool_reservation"]=db.scalar("SELECT reservation FROM pool_objects WHERE file_id=?",{uuid(entry.id)}).toString();
     const bool catalog_only = ns.config.naming == PhysicalNaming::FileId && (entry.type == EntryType::Directory || kind == "move" || kind == "rename");
     op["catalog_only"] = catalog_only;
     if (!catalog_only) {
@@ -626,34 +700,131 @@ void noDescendantReservations(Namespace& ns, Catalog& db, FileId id) {
 } // namespace
 
 namespace {
+struct PrefixVerification {
+    Identity before;
+    std::unique_ptr<QCryptographicHash> hash;
+    quint64 offset=0;
+};
 struct Verification {
     PendingInfo pending;
     Identity before;
     QCryptographicHash hash{QCryptographicHash::Sha256};
+    QByteArray cached_digest;
     quint64 offset = 0;
 };
 }
+QCoro::Task<Result<QByteArray>> Writer::hashPrefix(quint64 length, CancellationToken cancel) {
+    auto state = state_;
+    auto impl = impl_;
+    auto prepared = co_await impl->handleSubmit<std::shared_ptr<PrefixVerification>>(
+        state, [state, length, cancel](Namespace &ns, Catalog &db) -> Result<std::shared_ptr<PrefixVerification>> {
+            cancelCheck(cancel);
+            require(length <= ns.config.limits.max_file_size, ErrorCode::InvalidArgument);
+            checkPendingFd(*state, db);
+            auto ranges = db.ranges(state->id, RangeKind::StorageValid);
+            for (auto range : state->dirty)
+                ranges = addRange(std::move(ranges), range);
+            require(covers(ranges, {0, length}), ErrorCode::IncompleteContent);
+            checkpointWriter(*state, db);
+            require(covers(db.ranges(state->id, RangeKind::StorageValid), {0, length}), ErrorCode::IncompleteContent);
+            auto v = std::make_shared<PrefixVerification>();
+            v->before = identity(state->fd.value);
+            require(length <= v->before.size, ErrorCode::IncompleteContent);
+            if(state->prefix_hash && state->prefix_offset<=length &&
+                state->prefix_identity.dev==v->before.dev && state->prefix_identity.ino==v->before.ino &&
+                state->prefix_identity.size==v->before.size && state->prefix_identity.modified==v->before.modified) {
+                v->hash=std::move(state->prefix_hash);v->offset=state->prefix_offset;
+            } else {state->prefix_hash.reset();state->prefix_offset=0;v->hash=std::make_unique<QCryptographicHash>(QCryptographicHash::Sha256);}
+            state->verifying = true;
+            return v;
+        });
+    if (!prepared)
+        co_return prepared.error();
+    auto v = prepared.value();
+    Result<QByteArray> result = Error{ErrorCode::Cancelled};
+    std::optional<Error> failure;
+    while (v->offset < length) {
+        auto part = co_await impl->handleSubmit<void>(
+            state, [state, v, length, cancel](Namespace &ns, Catalog &db) -> Result<void> {
+                cancelCheck(cancel);
+                checkPendingFd(*state, db, true);
+                const auto amount = std::min<quint64>(ns.config.limits.max_io_bytes, length - v->offset);
+                QByteArray bytes(qsizetype(amount), Qt::Uninitialized);
+                fault("before_prefix_read");
+                ssize_t got = 0;
+                {
+                    UnlockIo unlocked(ns.mutex);
+                    do {
+                        got = ::pread(state->fd.value, bytes.data(), size_t(amount), off_t(v->offset));
+                    } while (got < 0 && errno == EINTR && !cancel.cancelled());
+                    ioCheck(got >= 0);
+                    require(got > 0, ErrorCode::ExternalModification);
+                    v->hash->addData(QByteArrayView(bytes.constData(), got));
+                }
+                v->offset += quint64(got);
+                return {};
+            });
+        if (!part) {
+            failure = part.error();
+            break;
+        }
+    }
+    if (failure)
+        result = *failure;
+    else
+        result = co_await impl->handleSubmit<QByteArray>(
+            state, [state, v, cancel](Namespace &, Catalog &db) -> Result<QByteArray> {
+                cancelCheck(cancel);
+                checkPendingFd(*state, db, true);
+                const auto after = identity(state->fd.value);
+                require(after.dev == v->before.dev && after.ino == v->before.ino && after.size == v->before.size &&
+                            after.modified == v->before.modified,
+                        ErrorCode::ExternalModification);
+                return v->hash->result();
+            });
+    auto cleared =
+        co_await execute<void>(impl->scheduler, state->lane, 0, 4096, 64ULL << 20, [state,v,success=bool(result)]() -> Result<void> {
+            std::lock_guard lock(state->ns->mutex);
+            if(success && !state->closed && !state->expired) {
+                state->prefix_hash=std::move(v->hash);state->prefix_offset=v->offset;state->prefix_identity=v->before;
+            } else {state->prefix_hash.reset();state->prefix_offset=0;}
+            state->verifying = false;
+            return {};
+        });
+    Q_UNUSED(cleared);
+    co_return result;
+}
 QCoro::Task<Result<CommitResult>> Writer::commit(CancellationToken cancel) {
-    auto state = state_; auto impl = impl_;
-    auto prepared = co_await impl->handleSubmit<std::shared_ptr<Verification>>(state, [state, cancel](Namespace& ns, Catalog& db) -> Result<std::shared_ptr<Verification>> {
-        cancelCheck(cancel); checkpointWriter(*state, db);
-        auto pending = db.pending(state->id);
-        require(pending.final_size.has_value(), ErrorCode::IncompleteContent);
-        require(covers(db.ranges(state->id, RangeKind::StorageValid), {0, *pending.final_size}), ErrorCode::IncompleteContent);
-        if (pending.replacement) require(ns.readers.value(pending.file_id) == 0, ErrorCode::Busy);
-        auto verification = std::make_shared<Verification>(); verification->pending = pending;
-        verification->before = identity(state->fd.value);
-        require(verification->before.size == *pending.final_size, ErrorCode::IncompleteContent);
-        state->verifying = true;
-        return verification;
-    });
+    auto state = state_;
+    auto impl = impl_;
+    auto prepared = co_await impl->handleSubmit<std::shared_ptr<Verification>>(
+        state, [state, cancel](Namespace &ns, Catalog &db) -> Result<std::shared_ptr<Verification>> {
+            cancelCheck(cancel);
+            checkpointWriter(*state, db);
+            auto pending = db.pending(state->id);
+            require(pending.final_size.has_value(), ErrorCode::IncompleteContent);
+            require(covers(db.ranges(state->id, RangeKind::StorageValid), {0, *pending.final_size}),
+                    ErrorCode::IncompleteContent);
+            if (pending.replacement)
+                require(ns.readers.value(pending.file_id) == 0, ErrorCode::Busy);
+            auto verification = std::make_shared<Verification>();
+            verification->pending = pending;
+            verification->before = identity(state->fd.value);
+            require(verification->before.size == *pending.final_size, ErrorCode::IncompleteContent);
+            if(state->prefix_hash && state->prefix_offset==*pending.final_size &&
+                state->prefix_identity.dev==verification->before.dev && state->prefix_identity.ino==verification->before.ino &&
+                state->prefix_identity.size==verification->before.size && state->prefix_identity.modified==verification->before.modified)
+                verification->cached_digest=state->prefix_hash->result();
+            state->verifying = true;
+            return verification;
+        });
     if (!prepared) co_return prepared.error();
     auto verification = prepared.value();
     std::optional<Error> failure;
     // Each hashing chunk releases its worker/namespace turn before admitting the next.
-    while (verification->offset < verification->before.size) {
+    while (verification->cached_digest.isEmpty() && verification->offset < verification->before.size) {
         auto chunk = co_await impl->handleSubmit<void>(state, [state, verification, cancel](Namespace& ns, Catalog&) -> Result<void> {
-            cancelCheck(cancel); require(!state->closed && state->verifying, ErrorCode::Busy);
+            cancelCheck(cancel); require(!state->expired,ErrorCode::MissingEntry);require(!state->closed && state->verifying, ErrorCode::Busy);
             const auto count = std::min<quint64>(ns.config.limits.max_io_bytes, verification->before.size - verification->offset);
             QByteArray buffer(qsizetype(count), Qt::Uninitialized);
             ssize_t got;
@@ -673,12 +844,13 @@ QCoro::Task<Result<CommitResult>> Writer::commit(CancellationToken cancel) {
         auto pending = verification->pending;
         const auto stat = identity(state->fd.value);
         require(stat.dev == verification->before.dev && stat.ino == verification->before.ino && stat.size == verification->before.size && stat.modified == verification->before.modified, ErrorCode::ExternalModification);
-        const auto expected = verification->hash.result();
+        const auto expected = verification->cached_digest.isEmpty()?verification->hash.result():verification->cached_digest;
         if (!pending.content.expected_sha256.isEmpty() && expected != pending.content.expected_sha256) {
             db.query("UPDATE pending SET state=2 WHERE id=?", {uuid(state->id)}); db.bump(); fail(ErrorCode::IntegrityError);
         }
         QString destination;
-        if (ns.config.naming == PhysicalNaming::FileId) {
+        if(state->private_access) destination=QStringLiteral(".filemanager/artifacts/")+uuid(pending.file_id);
+        else if (ns.config.naming == PhysicalNaming::FileId) {
             const auto id = uuid(pending.file_id);
             const auto prefix = QStringLiteral("objects/") + id.left(2);
             try { auto dir = openBeneath(ns.root.value, prefix, O_RDONLY | O_DIRECTORY); identity(dir.value, true); }
@@ -688,7 +860,7 @@ QCoro::Task<Result<CommitResult>> Writer::commit(CancellationToken cancel) {
             const auto parent = db.path(pending.parent, ns.config.naming, ns.config.limits.max_depth);
             destination = parent == "." ? pending.name : parent + '/' + pending.name;
         }
-        QJsonObject op{{"kind", pending.replacement ? "replace" : "create"}, {"file_id", uuid(pending.file_id)}, {"pending_id", uuid(pending.id)},
+        QJsonObject op{{"kind", state->private_access ? "artifact" : pending.replacement ? "replace" : "create"}, {"file_id", uuid(pending.file_id)}, {"pending_id", uuid(pending.id)},
             {"parent", uuid(pending.parent)}, {"name", pending.name}, {"from", pendingPath(pending.id)}, {"to", destination},
             {"dev", QString::number(stat.dev)}, {"ino", QString::number(stat.ino)}, {"mtime", QString::number(stat.modified)},
             {"size", QString::number(*pending.final_size)}, {"sha", QString::fromLatin1(expected.toHex())}, {"directory", false}};
@@ -696,6 +868,12 @@ QCoro::Task<Result<CommitResult>> Writer::commit(CancellationToken cancel) {
             const auto entry = db.entry(pending.file_id); validateEntry(ns, db, entry);
             auto old = openBeneath(ns.root.value, destination, O_RDONLY | O_NONBLOCK); const auto previous = identity(old.value);
             op["old_dev"] = QString::number(previous.dev); op["old_ino"] = QString::number(previous.ino);
+        }
+        if(ns.config.storage_pool && !state->private_access) {
+            poolMetadata(ns);poolPendingObserve(ns,state->id,state->fd.value);
+            requirePool(PoolAccess::reclassify(*ns.config.storage_pool,state->id,ns.config.id,StorageClass::Permanent));
+            op["pool_reservation"]=uuid(state->id);
+            if(pending.replacement)op["old_pool_reservation"]=db.scalar("SELECT reservation FROM pool_objects WHERE file_id=?",{uuid(pending.file_id)}).toString();
         }
         cancelCheck(cancel); // No cancellation after the durable operation intent.
         auto result = applyOperation(ns, db, op);
@@ -743,7 +921,16 @@ Result<NamespaceInfo> acquireNamespace(std::shared_ptr<NativeFileManager::Impl> 
         bool empty = true;
         while (auto* entry = ::readdir(directory)) if (QByteArray(entry->d_name) != "." && QByteArray(entry->d_name) != "..") { empty = false; break; }
         ::closedir(directory); require(empty, ErrorCode::Conflict);
+        if (config.storage_pool) {
+            auto pool = PoolAccess::registerNamespace(*config.storage_pool, config.id, config.storage_root);
+            if (!pool) throw Failure{pool.error()};
+            ns->pool_id = pool.value();
+            requirePool(PoolAccess::reserve(*config.storage_pool,
+                {metadataClaim(*ns), ns->pool_id, config.id, config.id, config.id, StorageClass::Permanent,
+                 nativeMetadataBound(*ns,1), 0}));
+        }
         makeDirectory(ns->root.value, ".filemanager");
+        makeDirectory(ns->root.value, ".filemanager/artifacts");
         makeDirectory(ns->root.value, ".filemanager/staging"); makeDirectory(ns->root.value, ".filemanager/recovery");
         if (config.naming == PhysicalNaming::FileId) makeDirectory(ns->root.value, "objects");
     }
@@ -754,10 +941,20 @@ Result<NamespaceInfo> acquireNamespace(std::shared_ptr<NativeFileManager::Impl> 
         auto file = openBeneath(ns->internal.value, "catalog.db", create ? O_RDWR | O_CREAT | O_EXCL : O_RDWR, create ? 0600 : 0); identity(file.value, false, "catalog");
     }
     Catalog db(ns->catalogPath(), config.limits.max_catalog_bytes, create);
+    const auto stored_pool = QUuid(db.meta("pool"));
+    require(stored_pool.isNull() || bool(config.storage_pool), ErrorCode::StorageUnavailable);
+    if (config.storage_pool) {
+        auto registered = PoolAccess::registerNamespace(*config.storage_pool, config.id, config.storage_root);
+        if (!registered) throw Failure{registered.error()};
+        require(stored_pool.isNull() || stored_pool == registered.value(), ErrorCode::Conflict);
+        ns->pool_id = registered.value();
+        db.setMeta("pool", uuid(ns->pool_id));
+    }
     if (create) {
         ns->root_id = QUuid::createUuid();
         Transaction transaction(db);
         db.setMeta("namespace", uuid(config.id)); db.setMeta("root", uuid(ns->root_id)); db.setMeta("naming", QString::number(int(config.naming)));
+        db.setMeta("directory_count","1");
         db.setMeta("name_policy", "1"); db.setMeta("unicode", QString::number(int(QChar::currentUnicodeVersion())));
         db.setMeta("limits", QString::fromUtf8(QJsonDocument(limitsJson(config.limits)).toJson(QJsonDocument::Compact)));
         const auto now = QDateTime::currentMSecsSinceEpoch();
@@ -779,7 +976,7 @@ Result<NamespaceInfo> acquireNamespace(std::shared_ptr<NativeFileManager::Impl> 
         // Staging records are retained; validate in bounded SQL pages, without reading their contents.
         QString last;
         for (;;) {
-            auto q = db.query("SELECT id,dev,ino FROM pending WHERE id>? ORDER BY id LIMIT ?", {last, ns->config.limits.max_batch});
+            auto q = db.query("SELECT id,dev,ino FROM pending WHERE private=0 AND id>? ORDER BY id LIMIT ?", {last, ns->config.limits.max_batch});
             quint32 count = 0;
             while (q.next()) {
                 cancelCheck(cancel); last = q.value(0).toString(); ++count;
@@ -793,19 +990,39 @@ Result<NamespaceInfo> acquireNamespace(std::shared_ptr<NativeFileManager::Impl> 
     }
     {
         QSet<QString> known;
-        auto q = db.query("SELECT id FROM pending LIMIT 4097");
-        while (q.next()) { require(known.size() < 4096, ErrorCode::Corruption); known.insert(q.value(0).toString()); }
+        auto q = db.query("SELECT id FROM pending LIMIT 12289");
+        while (q.next()) { require(known.size() < 12288, ErrorCode::Corruption); known.insert(q.value(0).toString()); }
         auto fd = openBeneath(ns->root.value, ".filemanager/staging", O_RDONLY | O_DIRECTORY);
         auto* directory = ::fdopendir(std::exchange(fd.value, -1)); ioCheck(directory != nullptr);
         quint32 scanned = 0;
         while (auto* item = ::readdir(directory)) {
             const auto name = QString::fromUtf8(item->d_name);
             if (name == "." || name == "..") continue;
-            if (++scanned > ns->config.limits.max_pending + ns->config.limits.max_batch) { ns->staging_scan_truncated = true; break; }
+            if (++scanned > ns->config.limits.max_pending + ns->config.limits.max_temporary_objects + ns->config.limits.max_cache_objects + ns->config.limits.max_batch) { ns->staging_scan_truncated = true; break; }
             if (!known.contains(name)) ++ns->untracked_staging;
         }
         ::closedir(directory);
     }
+    ns->directory_count = db.meta("directory_count").toULongLong();
+    if(ns->config.storage_pool) {
+        auto own_db=openBeneath(ns->internal.value,"catalog.db",O_RDONLY|O_NONBLOCK);
+        const auto meta=physicalBytes(own_db.value)+physicalBytes(ns->internal.value)+physicalBytes(ns->root.value);
+        requirePool(PoolAccess::reconcileAllocated(*ns->config.storage_pool,{metadataClaim(*ns),ns->pool_id,config.id,config.id,config.id,StorageClass::Permanent,meta,meta}));
+        auto entries=db.query("SELECT id,type FROM entries WHERE type=0 ORDER BY id");
+        while(entries.next()) {
+            const auto file=QUuid(entries.value(0).toString());auto fd=openBeneath(ns->root.value,db.path(file,ns->config.naming,ns->config.limits.max_depth),O_RDONLY|O_NONBLOCK);
+            auto claim=QUuid(db.scalar("SELECT reservation FROM pool_objects WHERE file_id=?",{uuid(file)}).toString());if(claim.isNull()){claim=QUuid::createUuid();db.query("INSERT INTO pool_objects VALUES(?,?)",{uuid(file),uuid(claim)});}
+            auto actual=physicalBytes(fd.value);requirePool(PoolAccess::reconcileAllocated(*ns->config.storage_pool,{claim,ns->pool_id,config.id,config.id,claim,StorageClass::Permanent,actual,actual}));
+        }
+        auto pending=db.query("SELECT id,reserved FROM pending WHERE private=0 ORDER BY id");
+        while(pending.next()) {
+            const auto id=QUuid(pending.value(0).toString());auto fd=openBeneath(ns->root.value,pendingPath(id),O_RDONLY|O_NONBLOCK);auto actual=physicalBytes(fd.value);
+            requirePool(PoolAccess::reconcileAllocated(*ns->config.storage_pool,{id,ns->pool_id,config.id,config.id,id,StorageClass::Incoming,std::max(actual,poolEstimate(pending.value(1).toULongLong())),actual}));
+            // Persisted promises remain charged across restarts and quota reductions.
+        }
+
+    }
+    recoverPoolClaims(*ns, db);
     LFLOG_DEBUG << "FileManager namespace ready; naming=" << int(config.naming) << ", recovery complete";
     auto info = infoFor(*ns, db);
     { std::lock_guard lock(impl->mutex); require(!impl->shutting_down, ErrorCode::ShuttingDown); impl->spaces.insert(config.id, ns); }
@@ -894,8 +1111,9 @@ QCoro::Task<Result<DirectoryId>> NativeFileManager::mkdir(NamespaceId ns, Direct
     if (name.isEmpty() || name.size() > 255) return rejected<DirectoryId>(ErrorCode::InvalidName);
     return impl_->submit<DirectoryId>(ns, [parent, name = std::move(name)](Namespace& space, Catalog& db) -> Result<DirectoryId> {
         checkParent(space, db, parent);
-        require(db.scalar("SELECT (SELECT count(*) FROM entries)+(SELECT count(*) FROM pending WHERE replacement=0)").toULongLong() < space.config.limits.max_entries, ErrorCode::QuotaExceeded);
+        require(db.scalar("SELECT (SELECT count(*) FROM entries)+(SELECT count(*) FROM pending WHERE replacement=0 AND private=0)").toULongLong() < space.config.limits.max_entries, ErrorCode::QuotaExceeded);
         const auto assigned = chooseName(space, db, parent, name, ConflictPolicy::Fail);
+        poolMetadata(space,&db,1);
         const auto id = QUuid::createUuid();
         QJsonObject op{{"kind", "mkdir"}, {"file_id", uuid(id)}, {"parent", uuid(parent)}, {"name", assigned}, {"directory", true}, {"size", "0"}, {"catalog_only", space.config.naming == PhysicalNaming::FileId}};
         if (space.config.naming == PhysicalNaming::OriginalName) {
@@ -909,24 +1127,583 @@ QCoro::Task<Result<DirectoryId>> NativeFileManager::mkdir(NamespaceId ns, Direct
     });
 }
 namespace {
-PendingId reservePending(Namespace& ns, Catalog& db, DirectoryId parent, QString name, ContentConstraints content, bool replacement, FileId file_id) {
+PendingId reservePending(Namespace& ns, Catalog& db, DirectoryId parent, QString name, ContentConstraints content, bool replacement, FileId file_id, quint64 private_limit = 0, int private_kind = 0, PendingId proposed = {}) {
+    db.private_class=private_kind;
+    poolMetadata(ns,&db);
     checkConstraints(content, ns.config.limits); checkParent(ns, db, parent);
-    require(db.scalar("SELECT count(*) FROM pending").toUInt() < ns.config.limits.max_pending, ErrorCode::QuotaExceeded);
+    if (!private_kind) require(db.scalar("SELECT count(*) FROM pending WHERE private=0").toUInt() < ns.config.limits.max_pending, ErrorCode::QuotaExceeded);
     require(ns.handles < ns.config.limits.max_handles && ns.active_writers.size() < ns.config.limits.max_writers, ErrorCode::QuotaExceeded);
-    if (!replacement) require(db.scalar("SELECT (SELECT count(*) FROM entries)+(SELECT count(*) FROM pending WHERE replacement=0)").toULongLong() < ns.config.limits.max_entries, ErrorCode::QuotaExceeded);
-    const auto reservation = content.expected_size.value_or(0); checkQuota(ns, db, reservation);
-    const auto id = QUuid::createUuid();
+    if (!replacement && !private_kind) require(db.scalar("SELECT (SELECT count(*) FROM entries)+(SELECT count(*) FROM pending WHERE replacement=0 AND private=0)").toULongLong() < ns.config.limits.max_entries, ErrorCode::QuotaExceeded);
+    const auto reservation = private_kind ? private_limit : content.expected_size.value_or(0); checkQuota(ns, db, reservation);
+    const auto id = proposed.isNull() ? QUuid::createUuid() : proposed;
+    if(!private_kind)poolPendingReserve(ns,id,reservation);
     auto fd = openBeneath(ns.root.value, pendingPath(id), O_RDWR | O_CREAT | O_EXCL, 0600); const auto st = identity(fd.value);
     ioCheck(::fsync(fd.value) == 0); syncDirectory(ns.root.value, ".filemanager/staging");
     Transaction transaction(db);
-    db.query("INSERT INTO pending(id,file_id,parent,name,name_key,expected_size,expected_sha,final_size,replacement,reserved,dev,ino) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+    db.query("INSERT INTO pending(id,file_id,parent,name,name_key,expected_size,expected_sha,final_size,replacement,reserved,dev,ino,private) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
         {uuid(id), uuid(file_id), uuid(parent), name, nameKey(name).value(), content.expected_size ? QVariant::fromValue(qlonglong(*content.expected_size)) : QVariant{},
-         content.expected_sha256.isEmpty() ? QVariant{} : QVariant(content.expected_sha256), content.expected_size ? QVariant::fromValue(qlonglong(*content.expected_size)) : QVariant{}, replacement, qlonglong(reservation), QString::number(st.dev), QString::number(st.ino)});
+         content.expected_sha256.isEmpty() ? QVariant{} : QVariant(content.expected_sha256), content.expected_size ? QVariant::fromValue(qlonglong(*content.expected_size)) : QVariant{}, replacement, qlonglong(reservation), QString::number(st.dev), QString::number(st.ino),private_kind});
     db.bump(); transaction.commit(); return id;
 }
 }
+namespace {
+TemporaryInfo temporaryInfo(Catalog &db, TempId id, const TemporaryAccess &access, bool finalized = true) {
+    require(access.allowed(), ErrorCode::MissingEntry);
+    auto q = db.query("SELECT owner,created,expires,state,size,sha,revision FROM temporaries WHERE id=?", {uuid(id)});
+    require(q.next() && QUuid(q.value(0).toString()) == access.owner_scope, ErrorCode::MissingEntry);
+    const auto now = QDateTime::currentMSecsSinceEpoch();
+    require(now >= q.value(1).toLongLong() && now < q.value(2).toLongLong() && q.value(3).toInt() != 2,
+            ErrorCode::MissingEntry);
+    if (finalized)
+        require(q.value(3).toInt() == 1, ErrorCode::Busy);
+    return {id, q.value(4).toULongLong(), q.value(5).toByteArray(), q.value(6).toULongLong(),
+            QDateTime::fromMSecsSinceEpoch(q.value(2).toLongLong(), QTimeZone::UTC)};
+}
+quint64 temporaryEstimate(quint64 bytes) {
+    constexpr quint64 unit = 65536;
+    require(bytes <= quint64(std::numeric_limits<qint64>::max()) / 4 - unit * 2, ErrorCode::QuotaExceeded);
+    return ((bytes + unit - 1) / unit) * unit + unit;
+}
+void poolResult(Result<StorageReservation> result) {
+    if (!result)
+        throw Failure{result.error()};
+}
+class TemporaryWriter final : public IFileWriter {
+    std::unique_ptr<IFileWriter> writer_;
+    std::shared_ptr<NativeFileManager::Impl> impl_;
+    NamespaceId ns_;
+    TempId id_;
+    quint64 maximum_;
+    TemporaryAccess access_;
+    QCoro::Task<Result<void>> reportPhysical() {
+        co_return co_await impl_->submit<void>(
+            ns_,
+            [id = id_, access = access_](Namespace &ns, Catalog &db) -> Result<void> {
+                auto q = db.query("SELECT p.id,p.dev,p.ino FROM pending p JOIN temporaries t ON t.pending=p.id WHERE "
+                                  "t.id=? AND t.owner=?",
+                                  {uuid(id), uuid(access.owner_scope)});
+                require(q.next(), ErrorCode::MissingEntry);
+                auto fd = openBeneath(ns.root.value, pendingPath(QUuid(q.value(0).toString())), O_RDONLY | O_NONBLOCK);
+                auto evidence = identity(fd.value);
+                require(evidence.dev == q.value(1).toULongLong() && evidence.ino == q.value(2).toULongLong(),
+                        ErrorCode::ExternalModification);
+                struct stat st{};
+                ioCheck(::fstat(fd.value, &st) == 0);
+                poolResult(PoolAccess::materialize(*ns.config.storage_pool, id, access.owner_scope,
+                                                   quint64(st.st_blocks) * 512));
+                return {};
+            },
+            0, true, {}, true);
+    }
+    QCoro::Task<Result<void>> admit(quint64 end) {
+        if (!access_.allowed())
+            co_return Error{ErrorCode::MissingEntry};
+        if (end > maximum_)
+            co_return Error{ErrorCode::QuotaExceeded};
+        co_return co_await impl_->submit<void>(
+            ns_,
+            [id = id_, access = access_, end](Namespace &ns, Catalog &db) -> Result<void> {
+                temporaryInfo(db, id, access, false);
+                auto q = db.query("SELECT pending FROM temporaries WHERE id=?", {uuid(id)});
+                q.next();
+                auto old = db.scalar("SELECT reserved FROM pending WHERE id=?", {q.value(0)}).toULongLong();
+                poolResult(PoolAccess::resize(*ns.config.storage_pool, id, access.owner_scope,
+                                              temporaryEstimate(std::max(old, end))));
+                auto allowed=PoolAccess::admitGrowth(*ns.config.storage_pool,id,access.owner_scope);
+                if(!allowed)throw Failure{allowed.error()};
+                return {};
+            },
+            0, true, {}, true);
+    }
+
+  public:
+    TemporaryWriter(std::unique_ptr<IFileWriter> writer, std::shared_ptr<NativeFileManager::Impl> impl, NamespaceId ns,
+                    TempId id, quint64 maximum, TemporaryAccess access)
+        : writer_(std::move(writer)), impl_(std::move(impl)), ns_(ns), id_(id), maximum_(maximum),
+          access_(std::move(access)) {}
+    QCoro::Task<Result<qsizetype>> writeAt(quint64 offset, QByteArray data, CancellationToken cancel) override {
+        if (offset > maximum_ || quint64(data.size()) > maximum_ - offset)
+            co_return Error{ErrorCode::QuotaExceeded};
+        auto allowed = co_await admit(offset + quint64(data.size()));
+        if (!allowed)
+            co_return allowed.error();
+        auto result = co_await writer_->writeAt(offset, std::move(data), cancel);
+        if (result) {
+            auto measured = co_await reportPhysical();
+            if (!measured)
+                co_return measured.error();
+        }
+        if (!access_.allowed())
+            co_return Error{ErrorCode::MissingEntry};
+        co_return result;
+    }
+    QCoro::Task<Result<void>> setFinalSize(quint64 size) override {
+        auto check = co_await admit(size);
+        if (!check)
+            co_return check.error();
+        co_return co_await writer_->setFinalSize(size);
+    }
+    QCoro::Task<Result<void>> markVerified(ByteRange range) override {
+        if (!access_.allowed())
+            co_return Error{ErrorCode::MissingEntry};
+        auto result = co_await writer_->markVerified(range);
+        if (!result)
+            co_return result.error();
+        co_return co_await reportPhysical();
+    }
+    QCoro::Task<Result<void>> checkpoint(CancellationToken c) override {
+        if (!access_.allowed())
+            co_return Error{ErrorCode::MissingEntry};
+        auto result = co_await writer_->checkpoint(c);
+        if (!result)
+            co_return result.error();
+        co_return co_await reportPhysical();
+    }
+    QCoro::Task<Result<void>> discardSuffix(quint64 length,CancellationToken cancel) override {
+        if(!access_.allowed())co_return Error{ErrorCode::MissingEntry};
+        auto result=co_await writer_->discardSuffix(length,cancel);if(!result)co_return result.error();
+        co_return co_await reportPhysical();
+    }
+    QCoro::Task<Result<QByteArray>> hashPrefix(quint64 length,CancellationToken cancel) override {
+        if(!access_.allowed())co_return Error{ErrorCode::MissingEntry};
+        auto digest=co_await writer_->hashPrefix(length,cancel);
+        if(!access_.allowed())co_return Error{ErrorCode::MissingEntry};
+        co_return digest;
+    }
+    QCoro::Task<Result<void>> suspend(CancellationToken c) override { return writer_->suspend(c); }
+    QCoro::Task<Result<CommitResult>> commit(CancellationToken) override {
+        co_return Error{ErrorCode::UnsupportedCapability};
+    }
+    QCoro::Task<Result<void>> abort(CancellationToken c) override { return writer_->abort(c); }
+};
+struct TemporaryReaderState {
+    std::shared_ptr<Namespace> ns;
+    TempId id;
+    QByteArray lease;
+    TemporaryAccess access;
+    Fd fd;
+    Identity opened;
+    std::atomic_bool active{true}, closed{false};
+    std::shared_ptr<std::atomic_bool> epoch;
+    std::chrono::steady_clock::time_point deadline;
+};
+class TemporaryReader final : public IFileReader {
+    std::shared_ptr<NativeFileManager::Impl> impl_;
+    std::shared_ptr<TemporaryReaderState> state_;
+
+  public:
+    static void closeState(TemporaryReaderState &state) {
+        if (!state.closed.exchange(true)) {
+            state.active = false;
+            state.fd = Fd{};
+            if (--state.ns->readers[state.id] == 0)
+                state.ns->readers.remove(state.id);
+            --state.ns->handles;
+        }
+    }
+
+  public:
+    TemporaryReader(std::shared_ptr<NativeFileManager::Impl> impl, std::shared_ptr<TemporaryReaderState> state)
+        : impl_(std::move(impl)), state_(std::move(state)) {}
+    ~TemporaryReader() override {
+        auto state = state_;
+        impl_->scheduler->enqueue({state->id, 0,
+                                   [state] {
+                                       std::lock_guard lock(state->ns->mutex);
+                                       closeState(*state);
+                                   }},
+                                  4096, 64ULL << 20, true);
+    }
+    std::function<bool()> accessGuard() const override {
+        auto state = state_;
+        auto impl = impl_;
+        return [state, impl] {
+            return state->active && state->epoch && *state->epoch && !state->closed && !impl->shutting_down &&
+                   state->access.allowed() && std::chrono::steady_clock::now() < state->deadline;
+        };
+    }
+    QCoro::Task<Result<QByteArray>> readAt(quint64 offset, qsizetype amount, CancellationToken cancel) override {
+        auto state = state_;
+        if (amount < 0 || quint64(amount) > state->ns->config.limits.max_io_bytes ||
+            offset > quint64(std::numeric_limits<qint64>::max()) ||
+            quint64(amount) > quint64(std::numeric_limits<qint64>::max()) - offset)
+            co_return Error{ErrorCode::InvalidArgument};
+        co_return co_await impl_->submit<QByteArray>(
+            state->ns->config.id,
+            [state, offset, amount, cancel](Namespace &ns, Catalog &db) -> Result<QByteArray> {
+                cancelCheck(cancel);
+                require(state->active && state->epoch && *state->epoch && !state->closed && state->access.allowed() &&
+                            std::chrono::steady_clock::now() < state->deadline,
+                        ErrorCode::MissingEntry);
+                temporaryInfo(db, state->id, state->access);
+                auto lease = db.query("SELECT expires FROM temporary_leases WHERE token=? AND artifact=? AND owner=?",
+                                      {state->lease, uuid(state->id), uuid(state->access.owner_scope)});
+                require(lease.next() && lease.value(0).toLongLong() > QDateTime::currentMSecsSinceEpoch(),
+                        ErrorCode::MissingEntry);
+                auto before = identity(state->fd.value);
+                require(before.dev == state->opened.dev && before.ino == state->opened.ino &&
+                            before.size == state->opened.size && before.modified == state->opened.modified,
+                        ErrorCode::ExternalModification);
+                QByteArray data(amount, Qt::Uninitialized);
+                ssize_t count;
+                {
+                    UnlockIo unlocked(ns.mutex);
+                    do {
+                        count = ::pread(state->fd.value, data.data(), size_t(amount), off_t(offset));
+                    } while (count < 0 && errno == EINTR && !cancel.cancelled());
+                }
+                ioCheck(count >= 0);
+                data.resize(count);
+                auto after = identity(state->fd.value);
+                require(after.dev == before.dev && after.ino == before.ino && after.size == before.size &&
+                            after.modified == before.modified,
+                        ErrorCode::ExternalModification);
+                require(state->active && state->epoch && *state->epoch && state->access.allowed() &&
+                            std::chrono::steady_clock::now() < state->deadline,
+                        ErrorCode::MissingEntry);
+                return data;
+            },
+            quint64(amount), true, state->id);
+    }
+    QCoro::Task<Result<void>> close() override {
+        auto state = state_;
+        if (state->closed) co_return Result<void>{};
+        co_return co_await impl_->submit<void>(
+            state->ns->config.id,
+            [state](Namespace &, Catalog &) -> Result<void> {
+                closeState(*state);
+                return {};
+            },
+            0, false, state->id);
+    }
+    QCoro::Task<Result<void>> invalidate() override {
+        state_->active = false;
+        co_return Result<void>{};
+    }
+};
+} // namespace
+QCoro::Task<Result<TemporaryFile>> NativeFileManager::beginTemporary(NamespaceId ns, TemporaryOptions options,
+                                                                     TemporaryAccess access) {
+    auto impl = impl_;
+    co_return co_await impl->submit<TemporaryFile>(
+        ns,
+        [impl, options, access](Namespace &space, Catalog &db) -> Result<TemporaryFile> {
+            require(access.allowed(), ErrorCode::MissingEntry);
+            require(bool(space.config.storage_pool), ErrorCode::UnsupportedCapability);
+            require(options.storage_class == StorageClass::Temporary || options.storage_class == StorageClass::Cache,
+                    ErrorCode::InvalidArgument);
+            require(options.lifetime_ms && options.lifetime_ms <= space.config.limits.max_temporary_lifetime_ms,
+                    ErrorCode::InvalidArgument);
+            const bool cache = options.storage_class == StorageClass::Cache;
+            const auto bytes = cache ? space.config.limits.max_cache_bytes : space.config.limits.max_temporary_bytes;
+            const auto objects =
+                cache ? space.config.limits.max_cache_objects : space.config.limits.max_temporary_objects;
+            require(options.size_limit <= bytes && options.size_limit <= space.config.limits.max_file_size &&
+                        space.handles + 1 < space.config.limits.max_handles,
+                    ErrorCode::QuotaExceeded);
+            require(db.scalar("SELECT count(*) FROM temporaries WHERE class=?", {int(options.storage_class)})
+                            .toULongLong() < objects,
+                    ErrorCode::QuotaExceeded);
+            const auto id = QUuid::createUuid();
+            const auto pending = QUuid::createUuid();
+            const auto now = QDateTime::currentMSecsSinceEpoch();
+            // Durable ownership intent precedes the pool and native participants.
+            db.query("INSERT INTO temporaries(id,pending,owner,class,limit_bytes,created,expires) VALUES(?,?,?,?,?,?,?)",
+                {uuid(id), uuid(pending), uuid(access.owner_scope), int(options.storage_class),
+                 qlonglong(options.size_limit), now, now + options.lifetime_ms});
+            fault("after_artifact_intent");
+            auto reserved = PoolAccess::reserve(*space.config.storage_pool,
+                {id, space.pool_id, space.config.id, access.owner_scope, id, options.storage_class, temporaryEstimate(0), 0});
+            if (!reserved) throw Failure{reserved.error()};
+            fault("after_artifact_reservation");
+            reservePending(space, db, space.root_id, uuid(id), {}, false, id, 0, int(options.storage_class), pending);
+            auto writer = attachWriter(impl, impl->space(space.config.id), db, pending);
+            return TemporaryFile{
+                {id, 0, {}, 0, QDateTime::fromMSecsSinceEpoch(now + options.lifetime_ms, QTimeZone::UTC)},
+                std::make_unique<TemporaryWriter>(std::move(writer.writer), impl, space.config.id, id,
+                                                  options.size_limit, access)};
+        },
+        0, true, {}, true);
+}
+QCoro::Task<Result<TemporaryInfo>>
+NativeFileManager::finalizeTemporary(NamespaceId ns, TempId id, TemporaryAccess access, CancellationToken cancel) {
+    auto impl = impl_;
+    struct Finalizer {
+        std::shared_ptr<WriterState> state;
+        std::unique_ptr<IFileWriter> reopened;
+    };
+    auto prepared = co_await impl->submit<Finalizer>(
+        ns,
+        [impl, id, access](Namespace &space, Catalog &db) -> Result<Finalizer> {
+            auto info = temporaryInfo(db, id, access, false);
+            if (!info.sha256.isEmpty())
+                return Finalizer{};
+            auto q = db.query("SELECT pending FROM temporaries WHERE id=?", {uuid(id)});
+            q.next();
+            auto pending = QUuid(q.value(0).toString());
+            {
+                std::lock_guard lock(impl->mutex);
+                for (auto weak : impl->writers)
+                    if (auto state = weak.lock(); state && !state->closed && state->id == pending)
+                        return Finalizer{state, {}};
+            }
+            auto writer = attachWriter(impl, impl->space(space.config.id), db, pending);
+            std::lock_guard lock(impl->mutex);
+            for (auto weak : impl->writers)
+                if (auto state = weak.lock(); state && !state->closed && state->id == pending)
+                    return Finalizer{state, std::move(writer.writer)};
+            fail(ErrorCode::Corruption);
+        },
+        0, true, {}, true);
+    if (!prepared)
+        co_return prepared.error();
+    if (prepared.value().state) {
+        auto state = prepared.value().state;
+        auto sized =
+            co_await impl->handleSubmit<void>(state, [state, id, access](Namespace &, Catalog &db) -> Result<void> {
+                temporaryInfo(db, id, access, false);
+                auto q = db.query("SELECT limit_bytes FROM temporaries WHERE id=?", {uuid(id)});
+                q.next();
+                auto size = identity(state->fd.value).size;
+                require(size <= q.value(0).toULongLong(), ErrorCode::QuotaExceeded);
+                auto pending = db.pending(state->id);
+                require(!pending.content.expected_size || *pending.content.expected_size == size,
+                        ErrorCode::InvalidArgument);
+                db.query("UPDATE pending SET final_size=? WHERE id=?", {qlonglong(size), uuid(state->id)});
+                return {};
+            });
+        if (!sized)
+            co_return sized.error();
+        Writer writer(impl, state);
+        auto committed = co_await writer.commit(cancel);
+        if (!committed)
+            co_return committed.error();
+    }
+    co_return co_await impl->submit<TemporaryInfo>(
+        ns, [id, access](Namespace &space, Catalog &db) -> Result<TemporaryInfo> {
+            auto info = temporaryInfo(db, id, access);
+            auto fd = openBeneath(space.root.value, ".filemanager/artifacts/" + uuid(id), O_RDONLY | O_NONBLOCK);
+            ioCheck(::fchmod(fd.value, 0400) == 0);
+            ioCheck(::fsync(fd.value) == 0);
+            struct stat st{};
+            ioCheck(::fstat(fd.value, &st) == 0);
+            poolResult(PoolAccess::materialize(*space.config.storage_pool, id, access.owner_scope,
+                                               quint64(st.st_blocks) * 512));
+            return info;
+        });
+}
+QCoro::Task<Result<TemporaryRead>>
+NativeFileManager::leaseTemporary(NamespaceId ns, TempId id, TemporaryLeaseOptions options, TemporaryAccess access) {
+    auto impl = impl_;
+    co_return co_await impl->submit<TemporaryRead>(
+        ns, [impl, id, options, access](Namespace &space, Catalog &db) -> Result<TemporaryRead> {
+            auto info = temporaryInfo(db, id, access);
+            require(options.lifetime_ms && options.lifetime_ms <= space.config.limits.max_temporary_lifetime_ms &&
+                        options.resume_lease.size() <= 16,
+                    ErrorCode::InvalidArgument);
+            require(space.handles + 1 < space.config.limits.max_handles, ErrorCode::QuotaExceeded);
+            const auto now = QDateTime::currentMSecsSinceEpoch();
+            QByteArray token = options.resume_lease;
+            qint64 expires;
+            if (token.isEmpty()) {
+                require(db.scalar("SELECT count(*) FROM temporary_leases").toUInt() <
+                            space.config.limits.max_temporary_leases,
+                        ErrorCode::QuotaExceeded);
+                token = QUuid::createUuid().toRfc4122();
+                expires = std::min(info.expires.toMSecsSinceEpoch(), now + options.lifetime_ms);
+                db.query("INSERT INTO temporary_leases VALUES(?,?,?,?)",
+                         {token, uuid(id), uuid(access.owner_scope), expires});
+            } else {
+                auto q = db.query("SELECT expires FROM temporary_leases WHERE token=? AND artifact=? AND owner=?",
+                                  {token, uuid(id), uuid(access.owner_scope)});
+                require(q.next() && q.value(0).toLongLong() > now, ErrorCode::MissingEntry);
+                expires = q.value(0).toLongLong();
+            }
+            auto state = std::make_shared<TemporaryReaderState>();
+            state->ns = impl->space(space.config.id);
+            state->id = id;
+            state->lease = token;
+            state->access = access;
+            state->fd = openBeneath(space.root.value, ".filemanager/artifacts/" + uuid(id), O_RDONLY | O_NONBLOCK);
+            state->opened = identity(state->fd.value);
+            auto evidence = db.query("SELECT dev,ino,mtime FROM temporaries WHERE id=?", {uuid(id)});
+            evidence.next();
+            require(state->opened.dev == evidence.value(0).toULongLong() &&
+                        state->opened.ino == evidence.value(1).toULongLong() &&
+                        state->opened.modified == evidence.value(2).toLongLong() && state->opened.size == info.size,
+                    ErrorCode::ExternalModification);
+            state->deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(std::min<qint64>(expires - now, options.lifetime_ms));
+            if (!space.temporary_leases.contains(token))
+                space.temporary_leases.insert(token, std::make_shared<std::atomic_bool>(true));
+            state->epoch = space.temporary_leases.value(token);
+            {
+                std::lock_guard lock(impl->mutex);
+                impl->temporary_readers.removeIf([](auto weak) {
+                    auto state = weak.lock();
+                    return !state || state->closed;
+                });
+                impl->temporary_readers.append(state);
+            }
+            ++space.handles;
+            ++space.readers[id];
+            return TemporaryRead{info, std::make_unique<TemporaryReader>(impl, state), token};
+        });
+}
+QCoro::Task<Result<void>> NativeFileManager::releaseTemporary(NamespaceId ns, QByteArray lease,
+                                                              TemporaryAccess access) {
+    if (lease.size() != 16 || access.owner_scope.isNull())
+        co_return Error{ErrorCode::InvalidArgument};
+    co_return co_await impl_->submit<void>(ns, [lease, access](Namespace &ns, Catalog &db) -> Result<void> {
+        auto q =
+            db.query("SELECT token FROM temporary_leases WHERE token=? AND owner=?", {lease, uuid(access.owner_scope)});
+        if (q.next()) {
+            if (auto epoch = ns.temporary_leases.take(lease))
+                *epoch = false;
+            db.query("DELETE FROM temporary_leases WHERE token=? AND owner=?", {lease, uuid(access.owner_scope)});
+        }
+        return {};
+    });
+}
+QCoro::Task<Result<void>> NativeFileManager::discardTemporary(NamespaceId ns, TempId id, TemporaryAccess access) {
+    co_return co_await impl_->submit<void>(
+        ns,
+        [id, access](Namespace &space, Catalog &db) -> Result<void> {
+            require(!access.owner_scope.isNull(), ErrorCode::InvalidArgument);
+            auto q = db.query("SELECT pending,owner,state,dev,ino,mtime FROM temporaries WHERE id=?", {uuid(id)});
+            if (!q.next())
+                return {};
+            require(QUuid(q.value(1).toString()) == access.owner_scope, ErrorCode::MissingEntry);
+            auto pending = QUuid(q.value(0).toString());
+            require(!space.active_writers.contains(pending), ErrorCode::Busy);
+            db.query("UPDATE temporaries SET state=2 WHERE id=?", {uuid(id)});
+            auto leases = db.query("SELECT token FROM temporary_leases WHERE artifact=?", {uuid(id)});
+            while (leases.next())
+                if (auto epoch = space.temporary_leases.take(leases.value(0).toByteArray()))
+                    *epoch = false;
+
+            if (space.readers.value(id))
+                return {};
+            QJsonObject op{{"kind", "artifact_delete"},
+                           {"file_id", uuid(id)},
+                           {"pool_reservation", uuid(id)},
+                           {"pool_owner", uuid(access.owner_scope)},
+                           {"directory", false},
+                           {"catalog_only", false},
+                           {"from", ".filemanager/artifacts/" + uuid(id)},
+                           {"to", ".filemanager/recovery/" + uuid(id)},
+                           {"dev", q.value(3).toString()},
+                           {"ino", q.value(4).toString()},
+                           {"mtime", q.value(5).toString()}};
+            if (q.value(3).isNull()) {
+                if (db.scalar("SELECT id FROM pending WHERE id=?", {uuid(pending)}).isValid()) {
+                    auto fd = openBeneath(space.root.value, pendingPath(pending), O_RDONLY | O_NONBLOCK);
+                    auto evidence = identity(fd.value);
+                    auto expected = db.query("SELECT dev,ino FROM pending WHERE id=?", {uuid(pending)});
+                    expected.next();
+                    require(evidence.dev == expected.value(0).toULongLong() &&
+                                evidence.ino == expected.value(1).toULongLong(),
+                            ErrorCode::ExternalModification);
+                    op["from"] = pendingPath(pending);
+                    op["pending_id"] = uuid(pending);
+                    op["dev"] = QString::number(evidence.dev);
+                    op["ino"] = QString::number(evidence.ino);
+                    op["mtime"] = QString::number(evidence.modified);
+                } else {
+                    // No inode evidence exists for an interrupted creation. Do
+                    // not erase an untracked or externally replaced object.
+                    struct stat staged{};
+                    const auto path = pendingPath(pending).toUtf8();
+                    require(::fstatat(space.root.value, path.constData(), &staged, AT_SYMLINK_NOFOLLOW) < 0 && errno == ENOENT,
+                            ErrorCode::ExternalModification);
+                    op["catalog_only"] = true;
+                }
+            }
+            applyOperation(space, db, op);
+            auto released = PoolAccess::release(*space.config.storage_pool, id, access.owner_scope);
+            if (!released)
+                throw Failure{released.error()};
+            return {};
+        },
+        0, true, {}, true);
+}
+QCoro::Task<Result<void>> NativeFileManager::reclaimTemporary(NamespaceId ns, quint32 limit) {
+    if (!limit || limit > 1000)
+        co_return Error{ErrorCode::InvalidArgument};
+    auto impl = impl_;
+    struct Retired {
+        QVector<QPair<TempId, QUuid>> artifacts;
+        QVector<std::shared_ptr<WriterState>> writers;
+        QVector<std::shared_ptr<TemporaryReaderState>> readers;
+    };
+    auto retired = co_await impl->submit<Retired>(ns, [impl, limit](Namespace &space, Catalog &db) -> Result<Retired> {
+        const auto now = QDateTime::currentMSecsSinceEpoch();
+        auto leases = db.query("SELECT token FROM temporary_leases WHERE expires<=? LIMIT ?", {now, limit});
+        QVector<QByteArray> expired_leases;
+        while (leases.next())
+            expired_leases.append(leases.value(0).toByteArray());
+        leases.finish();
+        for (auto token : expired_leases) {
+            if (auto epoch = space.temporary_leases.take(token))
+                *epoch = false;
+            db.query("DELETE FROM temporary_leases WHERE token=?", {token});
+        }
+        auto q = db.query("SELECT id,owner,pending FROM temporaries WHERE state=2 OR expires<=? OR created>? "
+                          "OR (state=0 AND NOT EXISTS(SELECT 1 FROM pending WHERE pending.id=temporaries.pending)) "
+                          "ORDER BY expires LIMIT ?",
+                          {now, now, limit});
+        Retired result;
+        QSet<PendingId> pending;
+        while (q.next()) {
+            result.artifacts.append({QUuid(q.value(0).toString()), QUuid(q.value(1).toString())});
+            pending.insert(QUuid(q.value(2).toString()));
+        }
+        std::lock_guard lock(impl->mutex);
+        for (auto weak : impl->writers)
+            if (auto state = weak.lock();
+                state && state->ns.get() == &space && pending.contains(state->id) && !state->closed) {
+                state->expired = true;
+                result.writers.append(state);
+            }
+        for (auto weak : impl->temporary_readers)
+            if (auto reader = weak.lock(); reader && reader->ns.get() == &space && !reader->closed &&
+                                           (!reader->active || !reader->access.allowed() || !reader->epoch ||
+                                            !*reader->epoch || std::chrono::steady_clock::now() >= reader->deadline))
+                result.readers.append(reader);
+        return result;
+    });
+    if (!retired)
+        co_return retired.error();
+    for (auto state : retired.value().writers) {
+        auto closed = co_await impl->handleSubmit<void>(state, [state](Namespace &, Catalog &) -> Result<void> {
+            state->verifying = false;
+            closeWriter(*state);
+            return {};
+        });
+        if (!closed)
+            co_return closed.error();
+    }
+    for (auto state : retired.value().readers) {
+        auto closed = co_await impl->submit<void>(
+            ns,
+            [state](Namespace &, Catalog &) -> Result<void> {
+                TemporaryReader::closeState(*state);
+                return {};
+            },
+            0, false, state->id);
+        if (!closed)
+            co_return closed.error();
+    }
+    for (auto [id, owner] : retired.value().artifacts) {
+        auto removed = co_await discardTemporary(ns, id, {owner, [] { return true; }});
+        if (!removed && removed.error().code != ErrorCode::Busy)
+            co_return removed.error();
+    }
+    co_return Result<void>{};
+}
 QCoro::Task<Result<PendingFile>> NativeFileManager::createFile(NamespaceId ns, CreateOptions options) {
-    if (options.suggested_name.isEmpty() || options.suggested_name.size() > 255) return rejected<PendingFile>(ErrorCode::InvalidName);
+    if (options.suggested_name.isEmpty() || options.suggested_name.size() > 255)
+        return rejected<PendingFile>(ErrorCode::InvalidName);
     if (!options.content.expected_sha256.isEmpty() && options.content.expected_sha256.size() != 32) return rejected<PendingFile>(ErrorCode::InvalidArgument);
     auto impl = impl_;
     return impl->submit<PendingFile>(ns, [impl, options = std::move(options)](Namespace& space, Catalog& db) -> Result<PendingFile> {
@@ -966,6 +1743,7 @@ QCoro::Task<Result<void>> NativeFileManager::abortPending(NamespaceId ns, Pendin
         } catch (const Failure& failure) {
             if (failure.error.code != ErrorCode::MissingEntry && failure.error.code != ErrorCode::ExternalModification) throw;
         }
+        if(space.config.storage_pool)op["pool_reservation"]=uuid(id);
         applyOperation(space, db, op); return {};
     });
 }
@@ -973,7 +1751,7 @@ QCoro::Task<Result<PendingPage>> NativeFileManager::listPending(NamespaceId ns, 
     if (!validPageEnvelope(page)) return rejected<PendingPage>(ErrorCode::InvalidArgument);
     return impl_->submit<PendingPage>(ns, [page = std::move(page)](Namespace& space, Catalog& db) -> Result<PendingPage> {
         const auto generation = db.generation(); const auto last = readCursor(page, generation, "pending", space.config.limits.max_page_size);
-        auto q = db.query("SELECT id FROM pending WHERE id>? ORDER BY id LIMIT ?", {last, page.limit + 1});
+        auto q = db.query("SELECT id FROM pending WHERE private=0 AND id>? ORDER BY id LIMIT ?", {last, page.limit + 1});
         PendingPage result; QString next;
         while (q.next()) {
             if (result.entries.size() == page.limit) { result.next_cursor = cursor(generation, "pending", next); break; }
@@ -1250,6 +2028,7 @@ QCoro::Task<Result<void>> NativeFileManager::shutdown() {
     { std::lock_guard guard(impl->mutex);
         for (auto& weak : impl->writers) if (auto writer = weak.lock()) lanes.append(writer->lane);
         for (auto& weak : impl->readers) if (auto reader = weak.lock()) lanes.append(reader->lane);
+        for (auto& weak : impl->temporary_readers) if (auto reader = weak.lock()) lanes.append(reader->id);
     }
     for (auto lane : lanes) {
         auto drained = co_await execute<void>(impl->scheduler, lane, 0, 4096, 64ULL << 20, []() -> Result<void> { return {}; });
@@ -1260,21 +2039,43 @@ QCoro::Task<Result<void>> NativeFileManager::shutdown() {
             std::lock_guard lock(ns->mutex);
             PermissionRepairScope permissions(ns->config.repair_permissions);
             Catalog db(ns->catalogPath(), ns->config.limits.max_catalog_bytes, false);
+            db.private_access=true;
             std::optional<Error> error;
             try { recover(*ns, db); } catch (const Failure& failure) { error = failure.error; }
             QVector<std::shared_ptr<WriterState>> writers;
             { std::lock_guard guard(impl->mutex); for (auto& weak : impl->writers) if (auto writer = weak.lock(); writer && writer->ns == ns) writers.append(writer); }
             for (auto& writer : writers) if (!writer->closed) {
                 writer->verifying = false;
+                db.private_access=writer->private_access;db.private_class=writer->private_kind;
                 try { checkpointWriter(*writer, db); } catch (const Failure& failure) { error = failure.error; }
                 closeWriter(*writer);
             }
             QVector<std::shared_ptr<ReaderState>> readers;
-            { std::lock_guard guard(impl->mutex); for (auto& weak : impl->readers) if (auto reader = weak.lock(); reader && reader->ns == ns) readers.append(reader); }
-            for (auto& reader : readers) if (!reader->closed) {
-                reader->closed = true; reader->fd = Fd{}; if (--ns->readers[reader->id] == 0) ns->readers.remove(reader->id); --ns->handles;
+            {
+                std::lock_guard guard(impl->mutex);
+                for (auto &weak : impl->readers)
+                    if (auto reader = weak.lock(); reader && reader->ns == ns)
+                        readers.append(reader);
             }
-            if (error) return *error;
+            for (auto &reader : readers)
+                if (!reader->closed) {
+                    reader->closed = true;
+                    reader->fd = Fd{};
+                    if (--ns->readers[reader->id] == 0)
+                        ns->readers.remove(reader->id);
+                    --ns->handles;
+                }
+            {
+                std::lock_guard guard(impl->mutex);
+                for (auto weak : impl->temporary_readers)
+                    if (auto reader = weak.lock(); reader && reader->ns == ns)
+                        TemporaryReader::closeState(*reader);
+            }
+            for (auto epoch : ns->temporary_leases)
+                *epoch = false;
+            ns->temporary_leases.clear();
+            if (error)
+                return *error;
             return {};
         });
         if (!result) failure = result.error();

@@ -40,6 +40,15 @@ QCoro::Task<Result<void>> TransferVerifier::add(quint64 offset, QByteArray bytes
     if (!result) state->failed = true;
     co_return result;
 }
+QCoro::Task<Result<TransferPrefix>> TransferVerifier::prefix(CancellationToken cancel) {
+    auto state=impl_;
+    co_return co_await execute<TransferPrefix>(state->scheduler,state->lane,0,16,4U<<20,[state,cancel]()->Result<TransferPrefix> {
+        if(cancel.cancelled())return Error{ErrorCode::Cancelled};
+        if(state->failed || state->expected.size()!=32)return Error{ErrorCode::IntegrityError};
+        // QCryptographicHash::result() does not reset the running state.
+        return TransferPrefix{state->offset,state->hash.result()};
+    });
+}
 QCoro::Task<Result<void>> TransferVerifier::finish(CancellationToken cancel) {
     auto state = impl_;
     std::function<Result<void>()> work = [state, cancel]() -> Result<void> {

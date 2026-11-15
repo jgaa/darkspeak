@@ -10,6 +10,7 @@ add_executable(protocol_v3_test
 )
 target_compile_features(protocol_v3_test PRIVATE cxx_std_17)
 target_link_libraries(protocol_v3_test PRIVATE prot core Qt6::Core Qt6::Test)
+target_compile_definitions(protocol_v3_test PRIVATE DS_CHECKPOINT_WIRE_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 add_test(NAME protocol_v3 COMMAND protocol_v3_test)
 set_tests_properties(protocol_v3 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 

@@ -109,6 +109,9 @@ run cmake -S "$project_dir" -B "$test_build_dir" -DCMAKE_BUILD_TYPE=Debug "$@" \
 # The vfs CTest target includes assignment, overlay, permission and mount-scoped
 # composition, catalog formats/exports, revocation and alias privacy. Its host
 # Home-pane and ordinary-transfer integration is also in managed_storage.
+# transfer_checkpoints covers durable progress and accounting-independent backpressure.
+# temporary_artifacts covers private publication, lease isolation and recovery.
+# storage_pool covers shared capacity admission, reservation recovery and owner locks.
 # readonly_filemanager covers external sources, exclusion/authorization alias
 # guards, snapshot leases, quotas, paging and replacement races. Bind-mount
 # checks use unshare only when private user/mount namespaces are available.

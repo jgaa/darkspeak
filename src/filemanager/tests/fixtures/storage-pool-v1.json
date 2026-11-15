@@ -1,0 +1,1 @@
+{"version":1,"tables":{"meta":["version"],"pools":["id","filesystem","limits"],"namespaces":["id","pool","dev","ino"],"reservations":["id","pool","ns","owner","workflow","class","total","materialized"]},"storageClasses":{"permanent":0,"incoming":1,"temporary":2,"cache":3}}

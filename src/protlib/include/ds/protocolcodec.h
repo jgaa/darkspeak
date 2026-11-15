@@ -6,6 +6,7 @@
 #include <QString>
 #include <QStringList>
 #include <sodium.h>
+#include <dsfilemanager/transfercheckpoint.h>
 
 #include "darkspeak.qpb.h"
 
@@ -29,7 +30,17 @@ bool deserialize(QByteArrayView bytes, ds::protocol::ContactDescriptor& descript
 bool validRecordLength(quint32 length) noexcept;
 
 ds::protocol::Envelope makeCapabilities(const QStringList& names,
-                                        quint32 maxRecordBytes);
+                                        quint32 maxRecordBytes, quint32 checkpointIntervalBytes = 0);
+dsfm::Result<dsfm::TransferAttempt> checkpointAttempt(const ds::protocol::CheckpointParameters &parameters,
+                                                      const ds::protocol::CheckpointReference &selected, quint64 fileSize);
+ds::protocol::CheckpointParameters checkpointParameters(const dsfm::TransferAttempt &attempt);
+ds::protocol::CheckpointReference checkpointReference(const dsfm::DurableCheckpoint &checkpoint);
+bool validateCheckpointParameters(const ds::protocol::CheckpointParameters &parameters);
+bool validateCheckpointReference(const ds::protocol::CheckpointReference &checkpoint, quint64 fileSize,
+                                 quint32 intervalBytes);
+bool validateResumeCheckpoints(const ds::protocol::FileResume &resume);
+bool validateFileCheckpoint(const ds::protocol::FileCheckpoint &checkpoint, quint64 fileSize, quint32 intervalBytes);
+bool validateFilePause(const ds::protocol::FilePause &pause, quint64 fileSize, quint32 intervalBytes);
 bool validateCapabilities(const ds::protocol::Envelope& envelope,
                           QString* error = nullptr);
 

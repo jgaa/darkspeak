@@ -1,6 +1,7 @@
 #include <dsfilemanager/readonlyfilemanager.h>
 #include "async_p.h"
 #include "label_order_p.h"
+#include "native_pool_p.h"
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -141,6 +142,7 @@ struct ReadState;
 struct Source {
     ReadOnlyNamespaceConfig config;
     Fd root, internal, owner_lock;
+    StoragePoolId pool_id;
     Evidence root_identity;
     DirectoryId root_id;
     Database catalog;
@@ -255,6 +257,21 @@ Opened resolve(Source& source, QByteArray absolute, bool enforce_policy = true, 
     bool outside = boundary != nullptr;
     if (boundary) for (const auto &fd : stack) if (evidence(fd.value).sameObject(*boundary)) outside=false;
     return {std::move(stack.back()), found, alias, outside};
+}
+QUuid sourceMetadataClaim(const Source &source) {
+    return QUuid::fromRfc4122(QCryptographicHash::hash(QByteArray("dsfm-source-metadata-v1") +
+        source.config.common.id.toRfc4122(), QCryptographicHash::Sha256).first(16));
+}
+ReservationId snapshotClaim(QByteArrayView token) { return QUuid::fromRfc4122(QByteArray::fromHex(token.toByteArray())); }
+void releaseSnapshotClaim(Source &source, QByteArrayView token) {
+    if (!source.config.common.storage_pool) return;
+    auto result = PoolAccess::release(*source.config.common.storage_pool, snapshotClaim(token), source.config.common.id);
+    if (!result) throw Failure{result.error()};
+}
+void observeSnapshot(Source &source, QByteArrayView token, int fd) {
+    if (!source.config.common.storage_pool) return;
+    requirePool(PoolAccess::materialize(*source.config.common.storage_pool, snapshotClaim(token),
+                                       source.config.common.id, physicalBytes(fd)));
 }
 void validatePolicy(Source& source) {
     FilesystemCheckScope scope({});
@@ -660,6 +677,7 @@ void cleanupLeases(Source& source, bool startup = false) {
             ioCheck(::fsync(source.internal.value) == 0);
         } else ioCheck(errno == ENOENT);
         source.catalog.exec("DELETE FROM leases WHERE token=?", {token});
+        releaseSnapshotClaim(source, token);
     }
 }
 void expireReaders(Source& source);
@@ -818,6 +836,12 @@ std::shared_ptr<Source> openSourceState(ReadOnlyFileManager::Impl& impl, ReadOnl
     require(impl.sources.size() < config.limits.max_namespaces, ErrorCode::QuotaExceeded);
     auto source = std::make_shared<Source>(); source->subscription_limits = config.common.limits; source->config = std::move(config);
     auto private_root = openRoot(impl.private_root, true);
+    if (source->config.common.storage_pool) {
+        auto pool = PoolAccess::registerNamespace(*source->config.common.storage_pool, source->config.common.id,
+                                                  impl.private_root);
+        if (!pool) throw Failure{pool.error()};
+        source->pool_id = pool.value();
+    }
     checkNamespaceInventory(private_root.value, source->config.limits.max_namespaces, create);
     const auto name = uuid(source->config.common.id);
     source->recovery_bytes = recoveryCharge(private_root.value, name + ".reindex-backup", source->config.common.limits.max_total_bytes);
@@ -827,6 +851,11 @@ std::shared_ptr<Source> openSourceState(ReadOnlyFileManager::Impl& impl, ReadOnl
     source->owner_lock = openBeneath(source->internal.value, "owner.lock", O_RDWR | O_CREAT, 0600);
     identity(source->owner_lock.value);
     if (::flock(source->owner_lock.value, LOCK_EX | LOCK_NB) != 0) fail(ErrorCode::NamespaceBusy);
+    if (create && source->config.common.storage_pool)
+        requirePool(PoolAccess::reserveOrGrow(*source->config.common.storage_pool,
+            {sourceMetadataClaim(*source), source->pool_id, source->config.common.id, source->config.common.id,
+             sourceMetadataClaim(*source), StorageClass::Permanent,
+             source->config.common.limits.max_catalog_bytes * 4 + source->recovery_bytes + 65536, 0}));
     source->excluded = prepareExclusions(*source, source->config.exclusions, impl.private_root);
     auto root = resolve(*source, QFile::encodeName(source->config.common.storage_root), false);
     require(S_ISDIR(root.identity.mode) && !root.alias, ErrorCode::InvalidArgument);
@@ -896,6 +925,38 @@ std::shared_ptr<Source> openSourceState(ReadOnlyFileManager::Impl& impl, ReadOnl
     Statement entries(db.db, "SELECT count(*) FROM entries"); entries.next(); source->entry_count = quint64(entries.number(0));
     db.exec("DELETE FROM hash_jobs");
     source->exclusion_generation = source->config.exclusions.generation; source->access_epoch->store(source->exclusion_generation);
+    const auto previous_pool = QUuid(QString::fromUtf8(db.meta("pool")));
+    require(previous_pool.isNull() || previous_pool == source->pool_id, ErrorCode::StorageUnavailable);
+    if (source->config.common.storage_pool) {
+        db.meta("pool", uuid(source->pool_id).toUtf8());
+        const auto actual = physicalBytes(catalog.value) + physicalBytes(source->internal.value);
+        const auto total = std::max(actual, source->config.common.limits.max_catalog_bytes * 4 +
+                                             source->recovery_bytes + 65536);
+        // Index/journal growth and retained reindex recovery share the same pool.
+        requirePool(PoolAccess::reconcileAllocated(*source->config.common.storage_pool,
+            {sourceMetadataClaim(*source), source->pool_id, source->config.common.id, source->config.common.id,
+             sourceMetadataClaim(*source), StorageClass::Permanent, actual, actual}));
+        // Growth beyond an existing promise must pass ordinary admission.
+        requirePool(PoolAccess::resize(*source->config.common.storage_pool, sourceMetadataClaim(*source),
+                                       source->config.common.id, total));
+        Statement leases(db.db, "SELECT token,size,stage_dev,stage_ino FROM leases ORDER BY token LIMIT ?",
+                         {source->config.common.limits.max_pending + 1});
+        quint32 count = 0;
+        while (leases.next()) {
+            require(++count <= source->config.common.limits.max_pending, ErrorCode::Corruption);
+            const auto token = leases.bytes(0);
+            quint64 physical = 0;
+            try {
+                auto snapshot = openBeneath(source->internal.value, QString::fromLatin1(snapshotName(token)), O_RDONLY | O_NONBLOCK);
+                auto st = identity(snapshot.value);
+                require(st.dev == leases.text(2).toULongLong() && st.ino == leases.text(3).toULongLong(), ErrorCode::ExternalModification);
+                physical = physicalBytes(snapshot.value);
+            } catch (const Failure &failure) { if (failure.error.code != ErrorCode::MissingEntry) throw; }
+            requirePool(PoolAccess::reconcileAllocated(*source->config.common.storage_pool,
+                {snapshotClaim(token), source->pool_id, source->config.common.id, source->config.common.id,
+                 snapshotClaim(token), StorageClass::Cache, std::max(physical, poolEstimate(quint64(leases.number(1)))), physical}));
+        }
+    }
     cleanupLeases(*source, true);
     validatePolicy(*source); beginScan(*source, true, true); cancelCheck(cancel);
     impl.operation_limit = std::min(impl.operation_limit.load(), source->config.common.limits.max_operations);
@@ -1098,7 +1159,9 @@ void releaseReader(ReadState& reader) {
             require(S_ISREG(st.st_mode) && quint64(st.st_dev) == reader.snapshot_identity.dev && quint64(st.st_ino) == reader.snapshot_identity.ino, ErrorCode::IntegrityError);
             ioCheck(::unlinkat(reader.source->internal.value, name.constData(), 0) == 0);
         } else ioCheck(errno == ENOENT);
+        ioCheck(::fsync(reader.source->internal.value) == 0);
         reader.source->catalog.exec("DELETE FROM leases WHERE token=?", {reader.lease});
+        releaseSnapshotClaim(*reader.source, reader.lease);
     }
     if (reader.source->handles) --reader.source->handles;
 }
@@ -1113,6 +1176,10 @@ void expireReaders(Source& source) {
     });
 }
 void stageChunk(ReadState& state, QByteArrayView bytes) {
+    if (state.source->config.common.storage_pool) {
+        auto allowed=PoolAccess::admitGrowth(*state.source->config.common.storage_pool,snapshotClaim(state.lease),state.source->config.common.id);
+        if(!allowed)throw Failure{allowed.error()};
+    }
     qsizetype done = 0;
     while (done < bytes.size()) {
         const auto count = ::write(state.staging.value, bytes.data() + done, size_t(bytes.size() - done));
@@ -1542,6 +1609,9 @@ QCoro::Task<Result<PreparedRead>> ReadOnlyFileManager::prepareReadImpl(Namespace
             if (source->config.verification == ReadVerification::Snapshot) {
                 Statement usage(source->catalog.db, "SELECT count(*),COALESCE(sum(size),0) FROM leases"); usage.next();
                 require(quint64(usage.number(0)) < source->config.common.limits.max_pending
+                    && quint64(usage.number(0)) < source->config.common.limits.max_cache_objects
+                    && reader->opened.size <= source->config.common.limits.max_cache_bytes
+                    && quint64(usage.number(1)) <= source->config.common.limits.max_cache_bytes-reader->opened.size
                     && reader->opened.size <= source->config.common.limits.max_staging_bytes
                     && quint64(usage.number(1)) <= source->config.common.limits.max_staging_bytes - reader->opened.size
                     && source->recovery_bytes <= source->config.common.limits.max_total_bytes - reader->opened.size
@@ -1552,6 +1622,10 @@ QCoro::Task<Result<PreparedRead>> ReadOnlyFileManager::prepareReadImpl(Namespace
                 source->catalog.exec("INSERT INTO leases(token,id,size,sha,expires,exclusions,dev,ino,mtime,ctime,birth,source_generation) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", {reader->lease, uuid(id), qlonglong(reader->opened.size), QByteArray{},
                     QDateTime::currentMSecsSinceEpoch() + source->config.limits.reader_lifetime_ms, qlonglong(source->exclusion_generation),
                     QString::number(reader->opened.dev), QString::number(reader->opened.ino), reader->opened.mtime, reader->opened.ctime, reader->opened.birth, qlonglong(reader->selected_generation)});
+                if (source->config.common.storage_pool)
+                    requirePool(PoolAccess::reserve(*source->config.common.storage_pool,
+                        {snapshotClaim(reader->lease), source->pool_id, source->config.common.id, source->config.common.id,
+                         snapshotClaim(reader->lease), StorageClass::Cache, poolEstimate(reader->opened.size), 0}));
                 reader->staging = openBeneath(source->internal.value, QString::fromLatin1(name), O_RDWR | O_CREAT | O_EXCL, 0600);
                 auto stage_identity = evidence(reader->staging.value); reader->snapshot_identity = stage_identity;
                 source->catalog.exec("UPDATE leases SET stage_dev=?,stage_ino=? WHERE token=?", {QString::number(stage_identity.dev), QString::number(stage_identity.ino), reader->lease});
@@ -1575,7 +1649,10 @@ QCoro::Task<Result<PreparedRead>> ReadOnlyFileManager::prepareReadImpl(Namespace
     while (state->hash) {
         auto step = co_await impl->run<bool>([state, options, hash_chunk](Impl&) -> Result<bool> {
             auto bytes = readBytes(*state, state->progress, hash_chunk, options.cancel);
-            if (state->staging) stageChunk(*state, bytes);
+            if (state->staging) {
+                stageChunk(*state, bytes);
+                observeSnapshot(*state->source, state->lease, state->staging.value);
+            }
             state->hash->addData(bytes); state->progress += quint64(bytes.size());
             if (state->progress != state->opened.size) return false;
             const auto digest = state->hash->result();

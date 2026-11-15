@@ -58,6 +58,9 @@ public:
             Q_UNUSED(offset)
             Q_UNUSED(final)
         }
+        virtual void onCheckpoint(Peer &,const ds::protocol::FileCheckpoint &) {
+            throw std::runtime_error("Checkpoint for a legacy transfer");
+        }
         virtual void onTimeout(Peer& peer) { Q_UNUSED(peer) }
         virtual qlonglong resumeOffset() const noexcept { return 0; }
         virtual void onTransferDone(Peer& peer, bool success) {
@@ -105,6 +108,14 @@ public slots:
     uint64_t nextRequestId(RequestType type = RequestType::ConnectionResponse);
     virtual uint64_t sendFileChunk(const QByteArray& fileId, quint64 sequence,
                            quint64 offset, const QByteArray& data, bool final);
+    virtual uint64_t sendCheckpointChunk(const QByteArray &fileId,QUuid attempt,quint64 sequence,
+                                         quint64 offset,const QByteArray &data,bool final);
+    virtual uint64_t sendCheckpointAck(const QByteArray &fileId,QUuid attempt,quint64 nextSequence,
+                                       quint64 nextOffset,bool final);
+    virtual uint64_t sendFileCheckpoint(const QByteArray &fileId,const QByteArray &expectedSha256,const dsfm::TransferAttempt &attempt,
+                                        dsfm::DurableCheckpoint checkpoint,dsfm::CheckpointPhase phase);
+    virtual uint64_t sendFilePause(const QByteArray &fileId,QUuid attempt,dsfm::DurableCheckpoint checkpoint,
+                                   dsfm::TransferPauseReason reason);
     uint64_t sendFileAck(const QByteArray& fileId, quint64 nextSequence,
                          quint64 nextOffset, bool final) override;
     uint64_t sendFileCancel(const QByteArray& fileId,
@@ -173,6 +184,9 @@ protected:
     quint32 nextInchannel_ = 1;
     std::map<quint32, Channel::ptr_t> outChannels_;
     std::map<quint32, Channel::ptr_t> inChannels_;
+    // At most two completed receiver channels per connection, retained only
+    // long enough to repeat a lost final checkpoint receipt / flow ACK.
+    std::map<quint32, std::chrono::steady_clock::time_point> completed_incoming_;
     bool notificationsDisabled_ = false;
     bool capabilitiesReceived_ = false;
     bool inboundFinalReceived_ = false;

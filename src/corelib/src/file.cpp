@@ -15,6 +15,7 @@
 #include <QUrl>
 #include <QDesktopServices>
 #include <QScopeGuard>
+#include <QCryptographicHash>
 #include <QObject>
 //#include <QStringLiteral>
 
@@ -359,11 +360,17 @@ void File::setSize(const qlonglong size)
 
 qlonglong File::getBytesTransferred() const noexcept
 {
-    return data_->bytesTransferred;
+    return flow_progress_?qlonglong(*flow_progress_):data_->bytesTransferred;
 }
 
+void File::setFlowProgress(quint64 bytes) {
+    if(getSize()<0 || bytes>quint64(getSize()))throw Error("Invalid transfer flow progress");
+    if(bytes==quint64(qMax<qlonglong>(0,getBytesTransferred())))return;
+    flow_progress_=bytes;emit bytesTransferredChanged();
+}
 void File::setBytesTransferred(const qlonglong bytes)
 {
+    flow_progress_.reset();
     updateIf("bytes_transferred", bytes,
              data_->bytesTransferred, this,
              &File::bytesTransferredChanged);
@@ -545,6 +552,87 @@ QCoro::Task<dsfm::Result<qsizetype>> File::writeIncoming(quint64 offset, QByteAr
     auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
     if (!writer_) co_return dsfm::Error{dsfm::ErrorCode::MissingEntry};
     co_return co_await writer_->writeAt(offset, std::move(bytes), storage_cancel_);
+}
+dsfm::Result<dsfm::TransferKey> File::checkpointKey() const {
+    auto *contact=getContact();
+    if(!contact || !contact->getIdentity() || contact->getIdentity()->getId()!=getIdentityId() || getFileId().size()!=16)
+        return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
+    dsfm::TransferKey key{contact->getIdentity()->getUuid(),contact->getUuid(),QUuid::fromRfc4122(getFileId())};
+    if(key.local_scope.isNull() || key.remote_scope.isNull() || key.transfer.isNull())return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
+    return key;
+}
+dsfm::Result<void> File::setCheckpointAttempt(dsfm::TransferAttempt attempt) {
+    const auto &selected=attempt.selected;
+    if(attempt.id.isNull() || !dsfm::validCheckpointInterval(attempt.interval) || !attempt.next_sequence ||
+        attempt.next_sequence>=(1ULL<<60) || getSize()<0 || selected.offset>quint64(getSize()) || selected.sha256.size()!=32 ||
+        selected.sequence>=(1ULL<<60) || attempt.next_sequence<=selected.sequence ||
+        (selected.final && selected.offset!=quint64(getSize())) ||
+        (selected.offset%attempt.interval!=0 && !selected.final && !selected.pause_boundary) ||
+        (selected.offset==0 && (selected.sequence!=0 || selected.sha256!=QCryptographicHash::hash(QByteArray{},QCryptographicHash::Sha256))))
+        return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
+    checkpoint_attempt_=std::move(attempt);return {};
+}
+QCoro::Task<dsfm::Result<void>> File::selectIncomingCheckpoint(dsfm::TransferAttempt attempt) {
+    auto self=shared_from_this();
+    if(getDirection()!=INCOMING || !writer_ || storage_busy_)co_return dsfm::Error{dsfm::ErrorCode::Busy};
+    const auto previous=checkpoint_attempt_;bool selected=false;
+    if(!setCheckpointAttempt(attempt))co_return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
+    auto restore=qScopeGuard([&]{if(!selected)checkpoint_attempt_=previous;});
+    storage_busy_=true;struct Guard { File *file;~Guard(){file->storage_busy_=false;} } guard{this};
+    auto &storage=DsEngine::instance().getFileManager()->storage();auto operation=storage.holdOperation();
+    auto actual=co_await writer_->hashPrefix(attempt.selected.offset,storage_cancel_);
+    if(!actual)co_return actual.error();
+    if(actual.value()!=attempt.selected.sha256)co_return dsfm::Error{dsfm::ErrorCode::IntegrityError};
+    auto trimmed=co_await writer_->discardSuffix(attempt.selected.offset,storage_cancel_);if(!trimmed)co_return trimmed.error();
+    auto key=checkpointKey();if(!key)co_return key.error();
+    auto begun=co_await storage.transferProgress().beginAttempt(key.value(),attempt.id,attempt.selected,attempt.next_sequence);
+    if(!begun)co_return begun.error();
+    setBytesTransferred(qlonglong(attempt.selected.offset));selected=true;co_return dsfm::Result<void>{};
+}
+QCoro::Task<dsfm::Result<dsfm::DurableTransferProgress>> File::prepareCheckpointProgress(quint32 interval) {
+    auto self=shared_from_this();auto key=checkpointKey();if(!key)co_return key.error();
+    if(getSize()<0 || getHash().size()!=32 || !dsfm::validCheckpointInterval(interval))co_return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
+    auto &storage=DsEngine::instance().getFileManager()->storage();auto held=storage.holdOperation();
+    auto ready=co_await storage.ready();if(!ready)co_return ready.error();
+    dsfm::TransferDescription description{key.value(),quint64(getSize()),getHash(),interval,
+        getDirection()==OUTGOING?dsfm::TransferSide::Sender:dsfm::TransferSide::Receiver};
+    co_return co_await storage.transferProgress().create(std::move(description));
+}
+QCoro::Task<dsfm::Result<void>> File::recordCheckpoint(QUuid attempt,dsfm::DurableCheckpoint checkpoint,dsfm::CheckpointPhase phase) {
+    auto self=shared_from_this();auto key=checkpointKey();if(!key)co_return key.error();
+    auto &storage=DsEngine::instance().getFileManager()->storage();auto held=storage.holdOperation();
+    auto recorded=co_await storage.transferProgress().record(key.value(),attempt,checkpoint,phase);
+    if(!recorded)co_return recorded.error();
+    if(phase==dsfm::CheckpointPhase::MutuallyConfirmed) {
+        emit durableCheckpointConfirmed(checkpoint);
+        // The generic journal is authoritative; the application row is a
+        // recoverable UI mirror, never a source of chargeable progress.
+        if((!checkpoint_attempt_ || checkpoint_attempt_->id == attempt) &&
+            checkpoint.offset>quint64(qMax<qlonglong>(0,data_->bytesTransferred))) {
+            try{updateIf("bytes_transferred", qlonglong(checkpoint.offset), data_->bytesTransferred,
+                         this, &File::bytesTransferredChanged);}
+            catch(...){LFLOG_WARN << "Transfer checkpoint UI mirror update deferred";}
+        }
+    }
+    co_return dsfm::Result<void>{};
+}
+QCoro::Task<dsfm::Result<void>> File::failCheckpoint(dsfm::TransferFailureReason reason) {
+    auto self=shared_from_this();auto key=checkpointKey();if(!key)co_return key.error();
+    // A peer's assertion is never local proof of changed source bytes.
+    if(reason==dsfm::TransferFailureReason::SourceIntegrityMismatch && getDirection()!=OUTGOING)
+        co_return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
+    auto &storage=DsEngine::instance().getFileManager()->storage();auto held=storage.holdOperation();
+    auto recorded=co_await storage.transferProgress().fail(key.value(),reason);if(!recorded)co_return recorded.error();
+    if(reason==dsfm::TransferFailureReason::SourceIntegrityMismatch)emit sourceIntegrityFailed();
+    co_return dsfm::Result<void>{};
+}
+QCoro::Task<dsfm::Result<QByteArray>> File::checkpointIncomingPrefix(quint64 length) {
+    auto self=shared_from_this();
+    auto operation=DsEngine::instance().getFileManager()->storage().holdOperation();
+    if(!writer_ || storage_busy_)co_return dsfm::Error{dsfm::ErrorCode::Busy};
+    storage_busy_=true;
+    struct Guard { File *file;~Guard(){file->storage_busy_=false;} } guard{this};
+    co_return co_await writer_->hashPrefix(length,storage_cancel_);
 }
 QCoro::Task<dsfm::Result<void>> File::checkpointIncoming() {
     auto self = shared_from_this();
@@ -985,6 +1073,7 @@ void File::validateHash()
     commitIncoming(shared_from_this());
 }
 QCoro::Task<void> File::commitIncoming(File::ptr_t self) {
+    const auto attempt = checkpoint_attempt_;
     auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
     storage_busy_ = true;
     auto result = co_await writer_->commit(storage_cancel_);
@@ -999,6 +1088,18 @@ QCoro::Task<void> File::commitIncoming(File::ptr_t self) {
     writer_.reset();
     data_->pending_id = {};
     try { saveStorage(); } catch (...) { transferFailed(tr("Unable to save completed transfer metadata."), FS_FAILED); co_return; }
+    if (attempt) {
+        auto &progress = DsEngine::instance().getFileManager()->storage().transferProgress();
+        auto key = checkpointKey();
+        auto completed = key ? co_await progress.complete(key.value(), attempt->id, true, true)
+                             : dsfm::Result<void>{key.error()};
+        if (!completed) {
+            // Publication is authoritative. Keep its metadata for recovery, but
+            // do not acknowledge completion without the durable final certificate.
+            transferFailed(tr("Unable to persist verified transfer completion."), FS_FAILED);
+            co_return;
+        }
+    }
     transferComplete(); // A definite publication wins a simultaneous cancellation.
 }
 

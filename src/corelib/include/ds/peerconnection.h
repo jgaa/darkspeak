@@ -11,6 +11,7 @@
 #include "ds/dscert.h"
 #include "ds/message.h"
 #include "ds/userinfo.h"
+#include <dsfilemanager/transfercheckpoint.h>
 
 namespace ds{
 namespace core {
@@ -117,6 +118,7 @@ struct PeerFileOfferResponse : public PeerReq
 
     QByteArray fileId;
     FileOfferResponseStatus status = FileOfferResponseStatus::Rejected;
+    std::optional<dsfm::TransferAttempt> checkpoint_attempt;
 };
 
 struct PeerFileAck : public PeerReq
@@ -159,6 +161,8 @@ struct PeerFileResume : public PeerReq
     quint64 nextOffset = 0;
     QByteArray sha256;
     quint64 fileSize = 0;
+    quint32 checkpoint_interval = 0;
+    QVector<dsfm::DurableCheckpoint> retained_checkpoints;
 };
 
 enum class FileResumeStatus {
@@ -181,6 +185,8 @@ struct PeerFileResumeResult : public PeerReq
     FileResumeStatus status = FileResumeStatus::Rejected;
     quint64 nextOffset = 0;
     FileCancelReason error = FileCancelReason::UserAction;
+    std::optional<dsfm::TransferAttempt> checkpoint_attempt;
+    dsfm::TransferPauseReason pause = dsfm::TransferPauseReason::None;
 };
 
 struct PeerMessage : public PeerReq
@@ -236,6 +242,7 @@ struct PeerFileOffer : public PeerReq
     QByteArray sha512;
     QByteArray thumbnail_for;
     QByteArray manifest_id;
+    std::optional<dsfm::TransferAttempt> checkpoint_attempt;
 };
 
 struct PeerUserInfo : public PeerReq
@@ -313,6 +320,7 @@ public:
                                           quint64 nextOffset,
                                           FileCancelReason error) = 0;
     virtual bool isConnected() const noexcept = 0;
+    virtual quint32 checkpointInterval() const noexcept { return 0; }
     virtual uint64_t sendUserInfo(const core::UserInfo &userInfo) = 0;
     virtual uint64_t requestBio() = 0;
     virtual uint64_t sendBioResponse(quint64 responseToRequestId,

@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "native_pool_p.h"
 #include <QCryptographicHash>
 #include <QJsonDocument>
 #include <logfault/logfault.h>
@@ -63,6 +64,11 @@ static void applyCatalog(Namespace& ns, Catalog& db, const QJsonObject& op) {
         db.query("INSERT INTO entries(id,parent,name,name_key,type,size,created,modified,sha,generation,dev,ino,mtime) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
             {id, parent, name, nameKey(name).value(), kind == "mkdir" ? 1 : 0, op["size"].toString().toLongLong(), now, now,
              QByteArray::fromHex(op["sha"].toString().toLatin1()), qlonglong(generation), op["dev"].toString(), op["ino"].toString(), op["mtime"].toString()});
+    } else if(kind=="artifact") {
+        db.query("UPDATE temporaries SET state=1,size=?,sha=?,revision=?,dev=?,ino=?,mtime=? WHERE id=?",{op["size"].toString().toLongLong(),QByteArray::fromHex(op["sha"].toString().toLatin1()),qlonglong(generation),op["dev"].toString(),op["ino"].toString(),op["mtime"].toString(),id});
+    } else if(kind=="artifact_delete") {
+        db.query("DELETE FROM temporary_leases WHERE artifact=?",{id});
+        db.query("DELETE FROM temporaries WHERE id=?",{id});
     } else if (kind == "replace") {
         db.query("UPDATE entries SET size=?,modified=?,sha=?,generation=?,dev=?,ino=?,mtime=?,status=0 WHERE id=?",
             {op["size"].toString().toLongLong(), now, QByteArray::fromHex(op["sha"].toString().toLatin1()), qlonglong(generation), op["dev"].toString(), op["ino"].toString(), op["mtime"].toString(), id});
@@ -71,6 +77,11 @@ static void applyCatalog(Namespace& ns, Catalog& db, const QJsonObject& op) {
     } else if (kind == "abort") {}
     else if (kind == "delete") db.query("DELETE FROM entries WHERE id=?", {id});
     else fail(ErrorCode::Corruption);
+    if(kind=="mkdir")db.setMeta("directory_count",QString::number(db.meta("directory_count").toULongLong()+1));
+    if(kind=="delete" && op["directory"].toBool()){auto count=db.meta("directory_count").toULongLong();require(count>1,ErrorCode::Corruption);db.setMeta("directory_count",QString::number(count-1));}
+    if((kind=="create" || kind=="replace") && op.contains("pool_reservation"))
+        db.query("INSERT INTO pool_objects VALUES(?,?) ON CONFLICT(file_id) DO UPDATE SET reservation=excluded.reservation",{id,op["pool_reservation"].toString()});
+    if(kind=="delete")db.query("DELETE FROM pool_objects WHERE file_id=?",{id});
     if (op.contains("pending_id")) db.query("DELETE FROM pending WHERE id=?", {op["pending_id"].toString()});
     Q_UNUSED(ns);
 }
@@ -78,7 +89,7 @@ static void validateOperationPath(const QString& path) {
     require(!path.isEmpty() && path.size() <= 32768 && !path.startsWith('/'), ErrorCode::Corruption);
     const auto parts = path.split('/');
     if (parts[0] == ".filemanager") {
-        require(parts.size() == 3 && (parts[1] == "staging" || parts[1] == "recovery"), ErrorCode::Corruption);
+        require(parts.size() == 3 && (parts[1] == "staging" || parts[1] == "recovery" || parts[1]=="artifacts"), ErrorCode::Corruption);
         const auto id = QUuid(parts[2]); require(!id.isNull() && uuid(id) == parts[2], ErrorCode::Corruption);
     } else if (parts[0] == "objects") {
         require(parts.size() == 3 && parts[1].size() == 2, ErrorCode::Corruption);
@@ -96,9 +107,9 @@ static MutationResult finishOperation(Namespace& ns, Catalog& db, QJsonObject op
     const bool directory = op["directory"].toBool();
     const bool catalog_only = op["catalog_only"].toBool();
     require(!QUuid(operation_id).isNull() && !QUuid(op["file_id"].toString()).isNull(), ErrorCode::Corruption);
-    require(kind == "create" || kind == "replace" || kind == "mkdir" || kind == "rename" || kind == "move" || kind == "delete" || kind == "abort", ErrorCode::Corruption);
+    require(kind == "create" || kind == "replace" || kind == "mkdir" || kind == "rename" || kind == "move" || kind == "delete" || kind == "abort" || kind=="artifact" || kind=="artifact_delete", ErrorCode::Corruption);
     if (!catalog_only) { validateOperationPath(from); validateOperationPath(to); }
-    else require(kind != "create" && kind != "replace", ErrorCode::Corruption);
+    else require(kind != "create" && kind != "replace" && kind!="artifact", ErrorCode::Corruption);
     bool sync_failed = op["sync_failed"].toBool();
     if (phase == "DurabilityPending") {
         try {
@@ -118,7 +129,7 @@ static MutationResult finishOperation(Namespace& ns, Catalog& db, QJsonObject op
                     db.query("UPDATE operations SET phase='RolledBack' WHERE id=?", {operation_id});
                     fail(ErrorCode::Conflict);
                 }
-                if (recovering && (kind == "create" || kind == "replace")) {
+                if (recovering && (kind == "create" || kind == "replace" || kind=="artifact")) {
                     PendingInfo pending;
                     pending.final_size = op["size"].toString().toULongLong();
                     pending.content.expected_sha256 = QByteArray::fromHex(op["sha"].toString().toLatin1());
@@ -152,7 +163,7 @@ static MutationResult finishOperation(Namespace& ns, Catalog& db, QJsonObject op
         phase = "FilesystemApplied";
         fault("after_filesystem_record");
     }
-    if (recovering && (kind == "create" || kind == "replace") && phase != "Complete") {
+    if (recovering && (kind == "create" || kind == "replace" || kind=="artifact") && phase != "Complete") {
         PendingInfo pending;
         pending.final_size = op["size"].toString().toULongLong();
         pending.content.expected_sha256 = QByteArray::fromHex(op["sha"].toString().toLatin1());
@@ -160,6 +171,11 @@ static MutationResult finishOperation(Namespace& ns, Catalog& db, QJsonObject op
         verifyContent(ns, db, pending, to, {});
     }
     if (phase == "FilesystemApplied") {
+        if (kind == "artifact") {
+            auto immutable = openBeneath(ns.root.value, to, O_RDONLY | O_NONBLOCK);
+            ioCheck(::fchmod(immutable.value, 0400) == 0);
+            ioCheck(::fsync(immutable.value) == 0);
+        }
         Transaction transaction(db);
         applyCatalog(ns, db, op);
         op["generation"] = QString::number(db.generation());
@@ -171,23 +187,32 @@ static MutationResult finishOperation(Namespace& ns, Catalog& db, QJsonObject op
     }
     if (phase == "CatalogApplied" || phase == "CleanupPending") {
         db.query("UPDATE operations SET phase='CleanupPending' WHERE id=?", {operation_id});
-        if (!catalog_only && (kind == "delete" || kind == "abort" || kind == "replace")) {
+        if (!catalog_only && (kind == "delete" || kind == "abort" || kind == "replace" || kind=="artifact_delete")) {
             const auto cleanup = kind == "replace" ? from : to;
             auto found = inspect(ns, cleanup, directory);
             if (found) {
                 require(matches(found, op, kind == "replace" ? "old_" : ""), ErrorCode::ExternalModification);
                 unlinkSafe(ns.root.value, cleanup, directory);
+                try{syncDirectory(ns.root.value,parentPath(cleanup));}catch(const Failure&){sync_failed=true;}
             }
         }
         fault("after_cleanup");
         op["sync_failed"] = sync_failed;
         db.query("UPDATE operations SET phase=?,payload=? WHERE id=?", {sync_failed ? "DurabilityPending" : "Complete", QString::fromUtf8(QJsonDocument(op).toJson(QJsonDocument::Compact)), operation_id});
     }
+    fault("after_complete_record");
+    if(ns.config.storage_pool && !sync_failed) {
+        QString release;
+        if(kind=="replace")release=op["old_pool_reservation"].toString();
+        else if(kind=="delete" || kind=="abort" || kind=="artifact_delete")release=op["pool_reservation"].toString();
+        if(!release.isEmpty()){auto result=PoolAccess::release(*ns.config.storage_pool,QUuid(release),kind=="artifact_delete" ? QUuid(op["pool_owner"].toString()) : ns.config.id);if(!result)throw Failure{result.error()};}
+    }
     // Fixed status-history bound; active records are never evicted.
     db.query("DELETE FROM operations WHERE phase IN('Complete','RolledBack') AND sequence < (SELECT COALESCE(max(sequence),0)-1024 FROM operations)");
     return {QUuid(operation_id), op["generation"].toString().toULongLong(), sync_failed ? Durability::SyncFailed : Durability::Synchronized};
 }
 MutationResult applyOperation(Namespace& ns, Catalog& db, QJsonObject op) {
+    poolMetadata(ns,&db);
     const auto id = QUuid::createUuid(); op["id"] = uuid(id); op["version"] = 1;
     require(db.scalar("SELECT count(*) FROM operations WHERE phase NOT IN('Complete','RolledBack')").toUInt() < ns.config.limits.max_operations, ErrorCode::QueueFull);
     db.query("INSERT INTO operations(id,phase,payload) VALUES(?,'Prepared',?)", {uuid(id), QString::fromUtf8(QJsonDocument(op).toJson(QJsonDocument::Compact))});

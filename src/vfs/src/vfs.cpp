@@ -358,8 +358,9 @@ struct Vfs::Impl : std::enable_shared_from_this<Impl> {
     QVector<std::shared_ptr<CatalogExport::State>> exports;
     std::shared_ptr<IFileManager> export_backend;
     NamespaceId export_ns;
-    DirectoryId export_root;
     quint32 active_exports = 0;
+    QHash<QUuid, quint32> identity_exports;
+    QHash<QByteArray, quint32> contact_exports;
     quint32 refresh_mount_cursor = 0, refresh_subscription_cursor = 0;
     explicit Impl(Vfs *object, QString root, Limits bounded) : owner(object), path(std::move(root)), limits(bounded) {}
     Result<void> available() const {
@@ -1212,7 +1213,8 @@ QCoro::Task<Result<void>> Vfs::open() {
     if (!l.max_mounts || l.max_mounts > 1024 || !l.max_depth || l.max_depth > 128 || !l.max_page_size ||
         l.max_page_size > 1000 || !l.max_batch || l.max_batch > 1000 || !l.max_cursors || l.max_cursors > 1024 ||
         !l.max_subscriptions || l.max_subscriptions > 1024 || !l.max_requests || l.max_requests > 128 ||
-        !l.max_readers || l.max_readers > 1024 || !l.reader_lifetime_ms || !l.max_exports || l.max_exports > 16 ||
+        !l.max_readers || l.max_readers > 1024 || !l.reader_lifetime_ms || !l.max_exports || l.max_exports > 16 || !l.max_exports_per_identity || l.max_exports_per_identity > 16 ||
+        !l.max_exports_per_contact || l.max_exports_per_contact > 16 ||
         !l.max_export_entries || l.max_export_entries > 10000000 || l.max_export_bytes < 65536 ||
         l.max_export_bytes > (1ULL << 32) || l.max_record_bytes < 1024 || l.max_record_bytes > 65536 ||
         !l.request_timeout_ms || !l.export_timeout_ms || !l.export_lifetime_ms || !l.export_idle_ms ||
@@ -1662,6 +1664,7 @@ QCoro::Task<Result<NodeInfo>> Vfs::Impl::inspect(QUuid identity, NodeId id, Requ
     if (!namespace_info)
         co_return namespace_info.error();
     result.capabilities = namespace_info.value().capabilities;
+    result.capabilities.setFlag(Capability::TemporaryArtifacts,false);
     if (id[0] == 2) {
         auto routing = parseRoute(id);
         if (!routing)
@@ -2853,6 +2856,17 @@ class Writer final : public IFileWriter {
             co_return check.error();
         co_return co_await writer_->checkpoint(cancel);
     }
+    QCoro::Task<Result<void>> discardSuffix(quint64 length,CancellationToken cancel) override {
+        auto checked=co_await access();if(!checked)co_return checked.error();
+        auto result=co_await writer_->discardSuffix(length,cancel);if(!result)co_return result.error();
+        co_return co_await access();
+    }
+    QCoro::Task<Result<QByteArray>> hashPrefix(quint64 length,CancellationToken cancel) override {
+        auto checked=co_await access();if(!checked)co_return checked.error();
+        auto prefix=co_await writer_->hashPrefix(length,cancel);
+        auto current=co_await access();if(!current)co_return current.error();
+        co_return prefix;
+    }
     QCoro::Task<Result<void>> suspend(CancellationToken cancel) override {
         auto check = co_await access();
         if (!check)
@@ -3546,7 +3560,9 @@ struct CatalogExport::State {
     NamespaceId ns;
     FileId file;
     QByteArray lease = QUuid::createUuid().toRfc4122();
-    FileInfo info;
+    TemporaryInfo info;
+    TemporaryAccess access;
+    Target export_target;
     Request request;
     QUuid identity;
     QVector<Target> mounts;
@@ -3565,6 +3581,8 @@ struct CatalogExport::State {
             if (!service || closed || service->stopping || !request.current() || now() > expires ||
                 now() - touched > service->limits.export_idle_ms)
                 return false;
+            auto export_grant = service->allowed(export_target, Operation::Export, request);
+            if (!export_grant || !export_grant.value()) return false;
             for (const auto &predicate : privacy_guards)
                 if (predicate && !predicate({}))
                     return false;
@@ -3577,7 +3595,7 @@ struct CatalogExport::State {
                     if (!current || current->mount.parent != mount_parents.value(target.mount))
                         return false;
                 }
-                auto approved = service->allowed(target, Operation::Export, request);
+                auto approved = service->allowed(target, Operation::Inspect, request);
                 if (!approved || !approved.value())
                     return false;
             }
@@ -3600,6 +3618,7 @@ bool CatalogExport::isAuthorized() const { return state_->authorized(); }
 bool CatalogExport::requiresUtf8() const { return state_->requires_utf8; }
 QCoro::Task<Result<dsfm::PreparedRead>> CatalogExport::prepareRead(ReadPreparationOptions options) {
     auto state = state_;
+    if (options.cancel.cancelled()) co_return err(ErrorCode::Cancelled);
     state->readers.removeIf([](auto weak) {
         auto reader = weak.lock();
         return !reader || !reader->reader;
@@ -3614,11 +3633,10 @@ QCoro::Task<Result<dsfm::PreparedRead>> CatalogExport::prepareRead(ReadPreparati
     if (options.expected_sha256 != state->info.sha256 ||
         (!options.resume_lease.isEmpty() && options.resume_lease != state->lease))
         co_return err(ErrorCode::ExternalModification);
-    options.resume_lease.clear();
-    if (options.expected_generation && *options.expected_generation != state->info.generation)
+    if (options.expected_generation && *options.expected_generation != state->info.revision)
         co_return err(ErrorCode::Conflict);
-    options.expected_generation = state->info.generation;
-    auto reader = co_await state->backend->prepareRead(state->ns, state->file, options);
+    auto reader = co_await state->backend->leaseTemporary(state->ns, state->file,
+        {quint32(std::max<qint64>(1, state->expires - now())), options.resume_lease}, state->access);
     if (!reader)
         co_return reader.error();
     if (!state->authorized()) {
@@ -3640,8 +3658,19 @@ QCoro::Task<Result<dsfm::PreparedRead>> CatalogExport::prepareRead(ReadPreparati
     guarded->state->current = [state] { return state->authorized(); };
     state->readers.append(guarded->state);
     reader.value().reader = std::move(guarded);
-    reader.value().resume_lease = state->lease;
-    co_return std::move(reader).value();
+    state->lease = reader.value().lease;
+    dsfm::PreparedRead prepared;
+    prepared.info.namespace_id = state->ns;
+    prepared.info.id = state->file;
+    prepared.info.size = state->info.size;
+    prepared.info.sha256 = state->info.sha256;
+    prepared.info.generation = state->info.revision;
+    prepared.info.type = EntryType::File;
+    prepared.info.status = EntryStatus::Available;
+    prepared.consistency = ReadConsistency::Snapshot;
+    prepared.reader = std::move(reader.value().reader);
+    prepared.resume_lease = state->lease;
+    co_return prepared;
 }
 QCoro::Task<Result<void>> CatalogExport::close() {
     auto state = state_;
@@ -3652,7 +3681,7 @@ QCoro::Task<Result<void>> CatalogExport::close() {
     if (state->cleaning || state->cleaned)
         co_return Result<void>{};
     state->cleaning = true;
-    auto result = co_await state->backend->remove(state->ns, state->file);
+    auto result = co_await state->backend->discardTemporary(state->ns, state->file, state->access);
     state->cleaning = false;
     if (!result && result.error().code != ErrorCode::MissingEntry) {
         if (result.error().code != ErrorCode::Busy)
@@ -3662,16 +3691,15 @@ QCoro::Task<Result<void>> CatalogExport::close() {
     co_return Result<void>{};
 }
 
-Result<void> Vfs::setExportStore(std::shared_ptr<IFileManager> backend, NamespaceId ns, DirectoryId directory) {
+Result<void> Vfs::setExportStore(std::shared_ptr<IFileManager> backend, NamespaceId ns) {
     auto available = impl_->available();
     if (!available)
         return available.error();
-    if (!backend || ns.isNull() || directory.isNull() || impl_->active_exports ||
+    if (!backend || ns.isNull() || impl_->active_exports ||
         impl_->config.load()->backends.contains(ns))
         return err(ErrorCode::InvalidArgument);
     impl_->export_backend = std::move(backend);
     impl_->export_ns = ns;
-    impl_->export_root = directory;
     return {};
 }
 QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid identity, NodeId node, bool recursive,
@@ -3682,7 +3710,10 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
         co_return available.error();
     if (!self->export_backend)
         co_return err(ErrorCode::StorageUnavailable);
-    if (self->active_exports >= self->limits.max_exports || self->active_requests >= self->limits.max_requests)
+    const auto contact_key = identity.toRfc4122() + request.scope.toRfc4122();
+    if (self->active_exports >= self->limits.max_exports || self->active_requests >= self->limits.max_requests ||
+        self->identity_exports.value(identity) >= self->limits.max_exports_per_identity ||
+        self->contact_exports.value(contact_key) >= self->limits.max_exports_per_contact)
         co_return err(ErrorCode::QueueFull);
     Target starting{identity, {}, {}, {}};
     if (node != root(identity) && !(request.effective && request.effective->navigation.contains(node))) {
@@ -3695,12 +3726,17 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
     if (!approved || !approved.value())
         co_return err(ErrorCode::MissingEntry);
     ++self->active_exports;
+    ++self->identity_exports[identity];
+    ++self->contact_exports[contact_key];
     Admission admission(self);
     OperationCancellation cancellation(self, cancel);
     bool retained = false;
     auto release = qScopeGuard([&] {
-        if (!retained)
+        if (!retained) {
             --self->active_exports;
+            if (!--self->identity_exports[identity]) self->identity_exports.remove(identity);
+            if (!--self->contact_exports[contact_key]) self->contact_exports.remove(contact_key);
+        }
     });
     auto info = co_await self->inspect(identity, node, request);
     if (!info)
@@ -3713,11 +3749,14 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
     if (!export_info.value().config.limits.max_io_bytes)
         co_return err(ErrorCode::InvalidArgument);
     const auto io_chunk = std::min<quint32>(65536, export_info.value().config.limits.max_io_bytes);
-    auto staged = co_await self->export_backend->createFile(
-        self->export_ns, {self->export_root,
-                          QStringLiteral("catalog-%1.jsonl").arg(uuid(QUuid::createUuid())),
-                          ConflictPolicy::Fail,
-                          {}});
+    if (!export_info.value().capabilities.testFlag(Capability::TemporaryArtifacts))
+        co_return err(ErrorCode::UnsupportedCapability);
+    TemporaryAccess artifact_access{
+        QUuid::fromRfc4122(QCryptographicHash::hash(identity.toRfc4122() + request.scope.toRfc4122(),
+                                                    QCryptographicHash::Sha256).first(16)),
+        [request] { return request.current(); }};
+    auto staged = co_await self->export_backend->beginTemporary(self->export_ns,
+        {self->limits.max_export_bytes, StorageClass::Temporary, self->limits.export_lifetime_ms}, artifact_access);
     if (!staged)
         co_return staged.error();
     auto writer = std::move(staged.value().writer);
@@ -3763,6 +3802,7 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
                                   '\n');
     if (!header) {
         co_await writer->abort();
+        co_await self->export_backend->discardTemporary(self->export_ns, staged.value().info.id, artifact_access);
         co_return header.error();
     }
     auto export_root_info = info.value();
@@ -3771,6 +3811,7 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
     auto root_record = co_await append(json(record(export_root_info)) + '\n');
     if (!root_record) {
         co_await writer->abort();
+        co_await self->export_backend->discardTemporary(self->export_ns, staged.value().info.id, artifact_access);
         co_return root_record.error();
     }
     struct Frame {
@@ -3783,6 +3824,7 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
     auto first = co_await self->buildView(identity, node, request, cancel);
     if (!first) {
         co_await writer->abort();
+        co_await self->export_backend->discardTemporary(self->export_ns, staged.value().info.id, artifact_access);
         co_return first.error();
     }
     QVector<Frame> stack{{node, first.value(), 0, 0, starting}};
@@ -3811,7 +3853,7 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
                 mounts.append({identity, mount_id, mount->mount.namespace_id, mount->mount.source_directory});
             }
         }
-        auto access = co_await self->routedAccess(identity, id, request, Operation::Export);
+        auto access = co_await self->routedAccess(identity, id, request, Operation::Inspect);
         if (!access)
             co_return access.error();
         auto backend = self->config.load()->backends.value(target.value().namespace_id).manager;
@@ -3842,12 +3884,14 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
     if (!captured) {
         co_await self->eraseView(first.value());
         co_await writer->abort();
+        co_await self->export_backend->discardTemporary(self->export_ns, staged.value().info.id, artifact_access);
         co_return captured.error();
     }
     auto fail = [&](Error error) -> QCoro::Task<Result<std::shared_ptr<CatalogExport>>> {
         for (const auto &frame : stack)
             co_await self->eraseView(frame.view);
         co_await writer->abort();
+        co_await self->export_backend->discardTemporary(self->export_ns, staged.value().info.id, artifact_access);
         co_return error;
     };
     while (!stack.isEmpty()) {
@@ -3893,9 +3937,9 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
                     frame.target.namespace_id == target.value().namespace_id &&
                     frame.target.source == target.value().source)
                     co_return co_await fail(err(ErrorCode::Conflict));
-            auto grant = self->allowed(target.value(), Operation::Export, request);
-            if (!grant || !grant.value())
-                co_return co_await fail(err(ErrorCode::MissingEntry));
+            auto grant = self->allowed(target.value(), Operation::List, request);
+            if (!grant) co_return co_await fail(grant.error());
+            if (!grant.value()) continue;
             bool known = false;
             for (const auto &mount : mounts)
                 if (mount.mount == target.value().mount)
@@ -3918,11 +3962,13 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
         auto written = co_await writer->writeAt(offset, buffer, cancel);
         if (!written || written.value() != buffer.size()) {
             co_await writer->abort();
+        co_await self->export_backend->discardTemporary(self->export_ns, staged.value().info.id, artifact_access);
             co_return written ? err(ErrorCode::IoError) : written.error();
         }
         auto verified = co_await writer->markVerified({offset, quint64(buffer.size())});
         if (!verified) {
             co_await writer->abort();
+        co_await self->export_backend->discardTemporary(self->export_ns, staged.value().info.id, artifact_access);
             co_return verified.error();
         }
         offset += quint64(buffer.size());
@@ -3930,22 +3976,21 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
     }
     if (!request.current() || cancel.cancelled()) {
         co_await writer->abort();
+        co_await self->export_backend->discardTemporary(self->export_ns, staged.value().info.id, artifact_access);
         co_return err(cancel.cancelled() ? ErrorCode::Cancelled : ErrorCode::MissingEntry);
     }
     auto sized = co_await writer->setFinalSize(offset);
     if (!sized) {
         co_await writer->abort();
+        co_await self->export_backend->discardTemporary(self->export_ns, staged.value().info.id, artifact_access);
         co_return sized.error();
     }
-    auto committed = co_await writer->commit(cancel);
-    if (!committed) {
+    auto selected = co_await self->export_backend->finalizeTemporary(self->export_ns, staged.value().info.id,
+                                                                    artifact_access, cancel);
+    if (!selected) {
         co_await writer->abort();
-        co_return committed.error();
-    }
-    auto selected = co_await self->export_backend->stat(self->export_ns, staged.value().info.file_id);
-    if (!selected || selected.value().sha256.size() != 32) {
-        co_await self->export_backend->remove(self->export_ns, staged.value().info.file_id);
-        co_return err(ErrorCode::IntegrityError);
+        co_await self->export_backend->discardTemporary(self->export_ns, staged.value().info.id, artifact_access);
+        co_return selected.error();
     }
     auto state = std::make_shared<CatalogExport::State>();
     state->owner = self;
@@ -3953,6 +3998,8 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
     state->ns = self->export_ns;
     state->file = selected.value().id;
     state->info = selected.value();
+    state->access = artifact_access;
+    state->export_target = starting;
     state->requires_utf8 = requires_utf8;
     state->identity = identity;
     state->request = request;
@@ -3961,7 +4008,7 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
         if (!target.mount.isNull()) {
             auto current = self->mounted(target.identity, target.mount, request);
             if (!current) {
-                co_await self->export_backend->remove(state->ns, state->file);
+                co_await self->export_backend->discardTemporary(state->ns, state->file, state->access);
                 co_return err(ErrorCode::MissingEntry);
             }
             state->mount_parents.insert(target.mount, current->mount.parent);
@@ -3972,7 +4019,7 @@ QCoro::Task<Result<std::shared_ptr<CatalogExport>>> Vfs::exportCatalog(QUuid ide
     state->touched = now();
     // Retain cleanup state until the timer reclaims the managed export.
     if (!state->authorized()) {
-        co_await self->export_backend->remove(state->ns, state->file);
+        co_await self->export_backend->discardTemporary(state->ns, state->file, state->access);
         co_return err(ErrorCode::MissingEntry);
     }
     LFLOG_DEBUG << "VFS catalog export finalized; entries=" << entries << ", bytes=" << offset;
@@ -4006,7 +4053,7 @@ QCoro::Task<Result<void>> Vfs::refresh() {
         if (state->cleaning || state->cleaned)
             continue;
         state->cleaning = true;
-        auto removed = co_await state->backend->remove(state->ns, state->file);
+        auto removed = co_await state->backend->discardTemporary(state->ns, state->file, state->access);
         state->cleaning = false;
         if (removed || removed.error().code == ErrorCode::MissingEntry)
             state->cleaned = true;
@@ -4015,6 +4062,9 @@ QCoro::Task<Result<void>> Vfs::refresh() {
         if (!state->cleaned)
             return false;
         --self->active_exports;
+        if (!--self->identity_exports[state->identity]) self->identity_exports.remove(state->identity);
+        const auto key = state->identity.toRfc4122() + state->request.scope.toRfc4122();
+        if (!--self->contact_exports[key]) self->contact_exports.remove(key);
         return true;
     });
     for (auto id : self->enumerations.keys())
@@ -4146,13 +4196,15 @@ QCoro::Task<Result<void>> Vfs::shutdown() {
         for (auto weak : state->readers)
             if (auto reader = weak.lock())
                 co_await Reader::closeState(reader);
-        auto removed = co_await state->backend->remove(state->ns, state->file);
+        auto removed = co_await state->backend->discardTemporary(state->ns, state->file, state->access);
         if (!removed && removed.error().code != ErrorCode::MissingEntry)
             co_return removed.error();
         state->cleaned = true;
     }
     self->exports.clear();
     self->active_exports = 0;
+    self->identity_exports.clear();
+    self->contact_exports.clear();
     self->opened = false;
     auto disk = std::move(self->disk);
     co_return co_await detail::work<void>([disk]() -> Result<void> {

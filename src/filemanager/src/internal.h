@@ -81,6 +81,8 @@ public:
     PendingInfo pending(PendingId id);
     QVector<ByteRange> ranges(PendingId id, RangeKind kind);
     void putRanges(PendingId id, RangeKind kind, const QVector<ByteRange>& ranges);
+    bool private_access = false;
+    int private_class = 0;
     QSqlDatabase db;
 private:
     QString connection_;
@@ -96,6 +98,7 @@ struct Transaction {
 struct Namespace {
     NamespaceConfig config;
     DirectoryId root_id;
+    QUuid pool_id;
     Fd root;
     Fd internal;
     Fd owner_lock;
@@ -103,7 +106,9 @@ struct Namespace {
     std::mutex mutex;
     QSet<PendingId> active_writers;
     QHash<FileId, quint32> readers;
+    QHash<QByteArray,std::shared_ptr<std::atomic_bool>> temporary_leases;
     quint64 handles = 0;
+    quint64 directory_count = 1;
     quint64 untracked_staging = 0;
     bool staging_scan_truncated = false;
     QString catalogPath() const { return QStringLiteral("/proc/self/fd/%1/catalog.db").arg(internal.value); }

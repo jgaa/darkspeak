@@ -128,3 +128,22 @@ identity/group/contact overlays, permission precedence/group conflicts,
 nonrecursive parents and navigation-only reopening, bounded empty-page
 continuations, and assignment-gated external-file symlinks. These cases are part
 of the existing CTest target and require no additional runner dependency.
+
+`storage_pool` exercises shared filesystem admission, independent usage classes,
+namespace identity checks, materialized/outstanding accounting, retained claims
+across restart, per-authority owner locking and independent concurrent profile authorities. It runs sequentially with temporary
+private journals and no real profiles or network access.
+
+`temporary_artifacts` covers private native publication, immutable finalized reads,
+owner-bound resume leases, revocation, expiry with open handles, class isolation,
+read-only snapshots sharing the pool, and process death during creation,
+publication and deletion. `transfer_checkpoints` covers the independent durable
+progress journal, sender-selected retained checkpoints, final/empty confirmation,
+late duplicates, stale attempts (including delayed pause writes), interval bounds, and withheld-checkpoint fences.
+`managed_storage` additionally exercises the sender and receiver channel fences,
+ordinary ACKs without durable progress or per-ACK SQL updates, incorrect receiver
+digests without source-integrity refunds, and final/empty-file confirmation before
+publication and final acknowledgement. It also exchanges a complete payload
+between real sender/receiver channels, exercises clipped chunks after a short
+paused prefix, and retries the final chunk after publication.
+Both use isolated private SQLite journals and process-kill fault injection.

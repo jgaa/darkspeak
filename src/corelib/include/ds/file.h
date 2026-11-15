@@ -7,6 +7,7 @@
 #include <QUuid>
 #include <QObject>
 #include <chrono>
+#include <dsfilemanager/transfercheckpoint.h>
 #include <dsfilemanager/filemanager.h>
 
 #include "ds/conversation.h"
@@ -109,6 +110,7 @@ public:
     void setSize(const qlonglong size);
     qlonglong getBytesTransferred() const noexcept;
     void setBytesTransferred(const qlonglong bytes);
+    void setFlowProgress(quint64 bytes);
     void addBytesTransferred(const size_t bytes);
     void clearBytesTransferred(); // Before start transfer
     void setAckTime(const QDateTime& when);
@@ -136,6 +138,15 @@ public:
     QCoro::Task<dsfm::Result<quint64>> prepareIncoming();
     QCoro::Task<dsfm::Result<qsizetype>> writeIncoming(quint64 offset, QByteArray bytes);
     QCoro::Task<dsfm::Result<void>> checkpointIncoming();
+    QCoro::Task<dsfm::Result<QByteArray>> checkpointIncomingPrefix(quint64 length);
+    dsfm::Result<dsfm::TransferKey> checkpointKey() const;
+    const std::optional<dsfm::TransferAttempt> &checkpointAttempt() const { return checkpoint_attempt_; }
+    dsfm::Result<void> setCheckpointAttempt(dsfm::TransferAttempt attempt);
+    QCoro::Task<dsfm::Result<void>> selectIncomingCheckpoint(dsfm::TransferAttempt attempt);
+    QCoro::Task<dsfm::Result<dsfm::DurableTransferProgress>> prepareCheckpointProgress(quint32 interval);
+    QCoro::Task<dsfm::Result<void>> recordCheckpoint(QUuid attempt, dsfm::DurableCheckpoint checkpoint,
+                                                   dsfm::CheckpointPhase phase);
+    QCoro::Task<dsfm::Result<void>> failCheckpoint(dsfm::TransferFailureReason reason);
     QCoro::Task<dsfm::Result<void>> suspendIncoming();
     QCoro::Task<dsfm::Result<void>> abortIncoming();
     QCoro::Task<dsfm::Result<void>> validateSourceSnapshot();
@@ -168,6 +179,8 @@ public:
 
 
 signals:
+    void durableCheckpointConfirmed(dsfm::DurableCheckpoint checkpoint);
+    void sourceIntegrityFailed();
     void stateChanged();
     void isActiveChanged();
     void nameChanged();
@@ -205,6 +218,8 @@ private:
 
     int id_ = 0;
     std::unique_ptr<FileData> data_;
+    std::optional<dsfm::TransferAttempt> checkpoint_attempt_;
+    std::optional<quint64> flow_progress_;
     quint32 channel_ = 0;
     qlonglong bytesAdded_ = {};
     std::unique_ptr<std::chrono::steady_clock::time_point> nextFlush_;

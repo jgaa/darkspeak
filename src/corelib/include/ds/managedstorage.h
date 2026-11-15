@@ -1,6 +1,8 @@
 #pragma once
 
 #include <dsfilemanager/filemanager.h>
+#include <dsfilemanager/storagepool.h>
+#include <dsfilemanager/transfercheckpoint.h>
 #include <dsfilemanager/readonlyfilemanager.h>
 #include <dsvfs/vfs.h>
 #include <QHash>
@@ -40,6 +42,7 @@ public:
     QCoro::Task<dsfm::Result<dsvfs::Vfs*>> openVfs();
     dsvfs::Vfs* vfs() const { return vfs_.get(); }
     dsfm::IFileManager& manager() { return *manager_; }
+    dsfm::TransferProgressStore &transferProgress() { return *transfer_progress_; }
     // Application-wide external-source backend. Hosts supply requester contexts;
     // opening a source never grants a contact access to it.
     dsfm::IFileManager* readOnlyManager() { return readonly_manager_.get(); }
@@ -83,6 +86,10 @@ private:
     QStringList host_private_roots_;
     QString export_root_;
     std::shared_ptr<dsfm::NativeFileManager> manager_ = std::make_shared<dsfm::NativeFileManager>();
+    std::shared_ptr<dsfm::StoragePool> storage_pool_;
+    bool pool_open_ = false;
+    std::unique_ptr<dsfm::TransferProgressStore> transfer_progress_;
+    bool progress_open_ = false;
     dsfm::NamespaceConfig configs_[2];
     dsfm::DirectoryId roots_[2];
     bool initializing_ = false;

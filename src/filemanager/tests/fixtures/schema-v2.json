@@ -1,5 +1,5 @@
 {
-  "version": "1",
+  "version": "2",
   "tables": {
     "meta": [
       "key",
@@ -35,7 +35,8 @@
       "reserved",
       "range_generation",
       "dev",
-      "ino"
+      "ino",
+      "private"
     ],
     "ranges": [
       "pending",
@@ -48,6 +49,32 @@
       "id",
       "phase",
       "payload"
+    ],
+    "temporaries": [
+      "id",
+      "pending",
+      "owner",
+      "class",
+      "limit_bytes",
+      "created",
+      "expires",
+      "state",
+      "size",
+      "sha",
+      "revision",
+      "dev",
+      "ino",
+      "mtime"
+    ],
+    "temporary_leases": [
+      "token",
+      "artifact",
+      "owner",
+      "expires"
+    ],
+    "pool_objects": [
+      "file_id",
+      "reservation"
     ]
   },
   "operation_version": 1,

@@ -92,12 +92,41 @@ bool same(const struct stat& a, const struct stat& b) {
 QString uuid(QUuid id) { return id.toString(QUuid::WithoutBraces); }
 } // namespace
 
+namespace {
+dsfm::StoragePoolLimits storagePoolLimits(QSettings &settings) {
+    dsfm::StoragePoolLimits limits;
+    auto bytes = [&](const QString &key, quint64 fallback) {
+        bool ok = false;
+        const auto value = settings.value("storage/pool/" + key, QVariant::fromValue(fallback)).toULongLong(&ok);
+        return ok ? value : std::numeric_limits<quint64>::max();
+    };
+    auto count = [&](const QString &key, quint32 fallback) {
+        auto value = bytes(key, fallback);
+        return value <= std::numeric_limits<quint32>::max() ? quint32(value) : std::numeric_limits<quint32>::max();
+    };
+    limits.minimum_available_bytes = bytes("minimumAvailableBytes", limits.minimum_available_bytes);
+    limits.minimum_available_percent = std::max(ResourceLimits::fromSettings(settings).minimumFreeSpacePercent,
+        count("minimumAvailablePercent", limits.minimum_available_percent));
+    limits.maximum_owned_bytes = bytes("maximumOwnedBytes", limits.maximum_owned_bytes);
+    limits.recovery_headroom = bytes("recoveryHeadroom", limits.recovery_headroom);
+    const QStringList classes{"permanent", "incoming", "temporary", "cache"};
+    for (int i=0;i<classes.size();++i) {
+        auto &budget=limits.classes[size_t(i)];const auto prefix=classes[i]+"/";
+        budget.bytes=bytes(prefix+"bytes",budget.bytes);
+        budget.objects=count(prefix+"objects",budget.objects);
+        budget.reservations=count(prefix+"reservations",budget.reservations);
+    }
+    return limits;
+}
+}
 ManagedStorage::Operation ManagedStorage::holdOperation() { ++active_; return Operation{this}; }
 ManagedStorage::Operation::~Operation() { if (storage_) { --storage_->active_; emit storage_->drained(); } }
 
 ManagedStorage::ManagedStorage(QSettings& settings, QObject* parent)
     : QObject(parent), settings_(settings) {
     const auto base = QFileInfo(settings.value("dbpath").toString()).absolutePath();
+    storage_pool_ = std::make_shared<dsfm::StoragePool>(QDir(base).filePath("storage-pools-v1"), storagePoolLimits(settings));
+    transfer_progress_=std::make_unique<dsfm::TransferProgressStore>(QDir(base).filePath("transfer-progress-v1"),4096,storage_pool_);
     const auto runtime = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
     export_root_ = runtime.isEmpty() ? QDir::tempPath() + QStringLiteral("/darkspeak-open-%1").arg(::geteuid()) : QDir(runtime).filePath("darkspeak-open");
     configs_[Downloads].storage_root = QDir(settings.value("downloadLocation").toString()).absoluteFilePath("Managed-v1");
@@ -107,6 +136,7 @@ ManagedStorage::ManagedStorage(QSettings& settings, QObject* parent)
     configs_[Private].naming = dsfm::PhysicalNaming::FileId;
     for (int area = 0; area < 2; ++area) {
         auto& config = configs_[area];
+        config.storage_pool = storage_pool_;
         config.repair_permissions = settings.value("storage/repairPermissions", true).toBool();
         QSqlQuery query;
         query.prepare("SELECT id,naming FROM managed_namespace WHERE storage_root=:root");
@@ -147,24 +177,8 @@ QCoro::Task<Result<dsvfs::Vfs*>> ManagedStorage::openVfs() {
     auto opened = co_await vfs->open(); if (!opened) co_return opened.error();
     connect(vfs.get(), &dsvfs::Vfs::conflictDetected, this, &ManagedStorage::vfsConflictDetected);
     connect(vfs.get(), &dsvfs::Vfs::conflictResolved, this, &ManagedStorage::vfsConflictResolved);
-    auto export_directory = co_await manager_->mkdir(configs_[Private].id, roots_[Private], "vfs-catalogs");
-    dsfm::DirectoryId export_root;
-    if (export_directory) export_root = export_directory.value();
-    else if (export_directory.error().code == ErrorCode::Conflict) {
-        auto entry = co_await manager_->lookup(configs_[Private].id, "vfs-catalogs");
-        if (!entry || entry.value().type != dsfm::EntryType::Directory) co_return StorageError{ErrorCode::Corruption};
-        export_root = entry.value().id;
-    } else co_return export_directory.error();
-    // Derived exports are disposable after restart. Reclaim a bounded batch;
-    // callers retry if interrupted cleanup still occupies the private quota.
-    auto stale = co_await manager_->list(configs_[Private].id, export_root);
-    if (!stale) co_return stale.error();
-    for (auto entry : stale.value().entries) {
-        auto removed = co_await manager_->remove(configs_[Private].id, entry.id);
-        if (!removed) co_return removed.error();
-    }
     auto manager = std::static_pointer_cast<dsfm::IFileManager>(manager_);
-    auto store = vfs->setExportStore(manager, configs_[Private].id, export_root);
+    auto store = vfs->setExportStore(manager, configs_[Private].id);
     if (!store) co_return store.error();
     if (readonly_manager_) {
         auto namespaces = co_await readonly_manager_->namespaces(); if (!namespaces) co_return namespaces.error();
@@ -179,6 +193,7 @@ QCoro::Task<Result<dsvfs::Vfs*>> ManagedStorage::openVfs() {
 QCoro::Task<Result<dsfm::NamespaceInfo>> ManagedStorage::openReadOnlySource(dsfm::ReadOnlyNamespaceConfig config, bool create) {
     auto initialized = co_await ready(); if (!initialized) co_return initialized.error();
     auto operation = holdOperation();
+    config.common.storage_pool = storage_pool_;
     if (!readonly_manager_) {
         const auto base = QFileInfo(settings_.value("dbpath").toString()).absolutePath();
         QStringList paths{base, QFileInfo(settings_.fileName()).absolutePath(), QStandardPaths::writableLocation(QStandardPaths::AppDataLocation), dsfm::NativeFileManager::lockRegistryRoot()};
@@ -250,6 +265,23 @@ QCoro::Task<Result<void>> ManagedStorage::ready() {
     if (ready_) co_return Result<void>{};
     if (initialization_error_) co_return *initialization_error_;
     initializing_ = true;
+    if (!pool_open_) {
+        auto opened = co_await storage_pool_->open();
+        if (!opened) initialization_error_ = opened.error();
+        else pool_open_ = true;
+    }
+    if (pool_open_ && !initialization_error_) {
+        auto pools=co_await storage_pool_->pools();
+        if(!pools) initialization_error_=pools.error();
+        else for(const auto &id:pools.value()) {
+            auto applied=co_await storage_pool_->setLimits(id,storagePoolLimits(settings_));
+            if(!applied){initialization_error_=applied.error();break;}
+        }
+    }
+    if (!initialization_error_ && !progress_open_) {
+        auto opened=co_await transfer_progress_->open();
+        if(!opened)initialization_error_=opened.error();else progress_open_=true;
+    }
     QSqlQuery query;
     for (int area = 0; area < 2; ++area) {
         query.prepare("SELECT COUNT(*),COALESCE(MAX(id=:id),0) FROM managed_namespace");
@@ -795,6 +827,8 @@ QCoro::Task<Result<void>> ManagedStorage::collectGarbage() {
     if (!spaces) co_return spaces.error();
     quint32 orphan_budget = 32;
     for (const auto& space : spaces.value()) {
+        auto reclaimed = co_await manager_->reclaimTemporary(space.config.id, 32);
+        if (!reclaimed) co_return reclaimed.error();
         if (!orphan_budget) break;
         auto pending = co_await manager_->listPending(space.config.id);
         if (!pending) continue;
@@ -826,6 +860,16 @@ QCoro::Task<Result<void>> ManagedStorage::shutdown() {
     }
     auto stopped = co_await manager_->shutdown();
     if (readonly_manager_) { auto external_stopped = co_await readonly_manager_->shutdown(); if (!external_stopped && stopped) stopped = external_stopped; }
+    if(progress_open_) {
+        auto progress_stopped=co_await transfer_progress_->shutdown();
+        if(!progress_stopped && stopped)stopped=progress_stopped;
+        progress_open_=false;
+    }
+    if (pool_open_) {
+        auto pool_stopped = co_await storage_pool_->shutdown();
+        if (!pool_stopped && stopped) stopped = pool_stopped;
+        pool_open_ = false;
+    }
     if (!stopped) shutdown_error_ = stopped.error();
     closed_ = true;
     emit drained();

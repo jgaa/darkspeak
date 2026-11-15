@@ -546,7 +546,7 @@ void schemaAndPermissions() {
     for (auto relative : {"", "/.filemanager", "/.filemanager/staging", "/.filemanager/recovery", "/.filemanager/catalog.db"}) {
         struct stat st{}; CHECK(::lstat((f.config.storage_root + relative).toUtf8(), &st) == 0); CHECK((st.st_mode & 0077) == 0);
     }
-    QFile fixture(QStringLiteral(DSFM_TEST_SOURCE_DIR) + "/fixtures/schema-v1.json"); CHECK(fixture.open(QIODevice::ReadOnly));
+    QFile fixture(QStringLiteral(DSFM_TEST_SOURCE_DIR) + "/fixtures/schema-v2.json"); CHECK(fixture.open(QIODevice::ReadOnly));
     const auto expected = QJsonDocument::fromJson(fixture.readAll()).object();
     const auto statuses = expected["entry_status"].toObject();
     CHECK(statuses["Available"].toInt() == int(EntryStatus::Available));

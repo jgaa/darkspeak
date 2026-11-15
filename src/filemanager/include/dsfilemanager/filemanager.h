@@ -66,6 +66,9 @@ public:
 private:
     std::shared_ptr<std::atomic_bool> state_;
 };
+class StoragePool;
+enum class StorageClass { Permanent = 0, Incoming = 1, Temporary = 2, Cache = 3 };
+using TempId = QUuid;
 enum class PhysicalNaming { OriginalName, FileId };
 enum class EntryType { File, Directory };
 // Explicit values are persisted by the native catalog.
@@ -74,7 +77,7 @@ enum class HashState { Missing, Stale, Computing, Verified };
 enum class NamespaceStatus { Updating, Ready, Failed };
 enum class Capability : quint32 {
     Read = 1U << 0, Write = 1U << 1, PreparedRead = 1U << 2,
-    DirectorySubscriptions = 1U << 3, SnapshotReads = 1U << 4, ResumeLeases = 1U << 5
+    DirectorySubscriptions = 1U << 3, SnapshotReads = 1U << 4, ResumeLeases = 1U << 5, TemporaryArtifacts = 1U << 6
 };
 Q_DECLARE_FLAGS(Capabilities, Capability)
 Q_DECLARE_OPERATORS_FOR_FLAGS(Capabilities)
@@ -105,6 +108,12 @@ struct NamespaceLimits {
     quint32 max_collision_attempts = 100;
     quint32 max_notifications = 128;
     quint32 max_batch = 100;
+    quint64 max_temporary_bytes = 256ULL << 20;
+    quint64 max_cache_bytes = 256ULL << 20;
+    quint32 max_temporary_objects = 128;
+    quint32 max_cache_objects = 128;
+    quint32 max_temporary_leases = 64;
+    quint32 max_temporary_lifetime_ms = 300000;
 };
 struct NamespaceConfig {
     NamespaceId id;
@@ -113,6 +122,7 @@ struct NamespaceConfig {
     NamespaceLimits limits;
     std::optional<NamespaceLimits> limits_override; // Explicit override on reopen; otherwise use persisted limits.
     bool repair_permissions = false; // Local runtime policy: tighten owned entries on access; never change ownership.
+    std::shared_ptr<StoragePool> storage_pool; // Runtime authority; required on reopen once bound.
 };
 struct NamespaceInfo {
     NamespaceConfig config;
@@ -228,6 +238,12 @@ public:
     virtual QCoro::Task<Result<void>> setFinalSize(quint64 size) = 0;
     virtual QCoro::Task<Result<void>> markVerified(ByteRange range) = 0;
     virtual QCoro::Task<Result<void>> checkpoint(CancellationToken cancel = {}) = 0;
+    // Sync and hash exactly the durable contiguous prefix using bounded I/O.
+    // No implementation-specific hashing state crosses the storage boundary.
+    virtual QCoro::Task<Result<QByteArray>> hashPrefix(quint64 length, CancellationToken cancel = {});
+    // Retain only an already durable prefix for a sender-selected resume.
+    // Immutable expected final size/hash and the pending identity are preserved.
+    virtual QCoro::Task<Result<void>> discardSuffix(quint64 length, CancellationToken cancel = {});
     virtual QCoro::Task<Result<void>> suspend(CancellationToken cancel = {}) = 0;
     virtual QCoro::Task<Result<CommitResult>> commit(CancellationToken cancel = {}) = 0;
     virtual QCoro::Task<Result<void>> abort(CancellationToken cancel = {}) = 0;
@@ -320,6 +336,28 @@ struct AccessContext {
         return !current_generation || current_generation->load() == generation;
     }
 };
+struct TemporaryAccess {
+    QUuid owner_scope;
+    std::function<bool()> current;
+    bool allowed() const noexcept {
+        try { return !owner_scope.isNull() && current && current(); } catch (...) { return false; }
+    }
+};
+struct TemporaryOptions {
+    quint64 size_limit = 0;
+    StorageClass storage_class = StorageClass::Temporary;
+    quint32 lifetime_ms = 300000;
+};
+struct TemporaryInfo {
+    TempId id;
+    quint64 size = 0;
+    QByteArray sha256;
+    quint64 revision = 0;
+    QDateTime expires;
+};
+struct TemporaryFile { TemporaryInfo info; std::unique_ptr<IFileWriter> writer; };
+struct TemporaryLeaseOptions { quint32 lifetime_ms = 300000; QByteArray resume_lease; };
+struct TemporaryRead { TemporaryInfo info; std::unique_ptr<IFileReader> reader; QByteArray lease; };
 class IFileManager {
 public:
     IFileManager();
@@ -362,6 +400,12 @@ public:
     virtual bool supportsStableEnumeration() const noexcept { return false; }
     virtual QCoro::Task<Result<void>> discardDirectoryCursor(NamespaceId ns, QByteArray cursor);
     virtual QCoro::Task<Result<AccessContext>> descendantAccess(NamespaceId ns, DirectoryId directory, AccessContext access);
+    virtual QCoro::Task<Result<TemporaryFile>> beginTemporary(NamespaceId ns, TemporaryOptions options, TemporaryAccess access);
+    virtual QCoro::Task<Result<TemporaryInfo>> finalizeTemporary(NamespaceId ns, TempId id, TemporaryAccess access, CancellationToken cancel = {});
+    virtual QCoro::Task<Result<TemporaryRead>> leaseTemporary(NamespaceId ns, TempId id, TemporaryLeaseOptions options, TemporaryAccess access);
+    virtual QCoro::Task<Result<void>> releaseTemporary(NamespaceId ns, QByteArray lease, TemporaryAccess access);
+    virtual QCoro::Task<Result<void>> discardTemporary(NamespaceId ns, TempId id, TemporaryAccess access);
+    virtual QCoro::Task<Result<void>> reclaimTemporary(NamespaceId ns, quint32 limit = 100);
     virtual QCoro::Task<Result<void>> shutdown() = 0;
 protected:
     using FilesystemGuard = std::function<QCoro::Task<Result<void>>() >;
@@ -394,6 +438,13 @@ public:
     using IFileManager::subscribeDirectory;
     bool supportsStableEnumeration() const noexcept override { return true; }
     NativeFileManager();
+    QCoro::Task<Result<TemporaryFile>> beginTemporary(NamespaceId ns, TemporaryOptions options, TemporaryAccess access) override;
+    QCoro::Task<Result<TemporaryInfo>> finalizeTemporary(NamespaceId ns, TempId id, TemporaryAccess access, CancellationToken cancel = {}) override;
+    QCoro::Task<Result<TemporaryRead>> leaseTemporary(NamespaceId ns, TempId id, TemporaryLeaseOptions options, TemporaryAccess access) override;
+    QCoro::Task<Result<void>> releaseTemporary(NamespaceId ns, QByteArray lease, TemporaryAccess access) override;
+    QCoro::Task<Result<void>> discardTemporary(NamespaceId ns, TempId id, TemporaryAccess access) override;
+    QCoro::Task<Result<void>> reclaimTemporary(NamespaceId ns, quint32 limit = 100) override;
+
     // Host privacy policies must also exclude this shared backend metadata root.
     static QString lockRegistryRoot();
     ~NativeFileManager() override;

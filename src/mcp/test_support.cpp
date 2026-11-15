@@ -340,7 +340,7 @@ void TestSupport::submit(const QString& name, const QJsonObject& args, std::shar
                             {"direction", files.value(2).toInt()},
                             {"thumbnail_for", QString::fromLatin1(file->dataThumbnailFor().toHex())},
                             {"preview_available", !file->previewSource().isEmpty()},
-                            {"bytes", files.value(3).toDouble()}, {"size", files.value(4).toDouble()},
+                            {"bytes", double(file->getBytesTransferred())}, {"confirmed_bytes", files.value(3).toDouble()}, {"size", files.value(4).toDouble()},
                             {"resumed_from", resumed_offsets_.value(QString::fromLatin1(files.value(0).toByteArray().toHex()))},
                             {"identity", engine_.getIdentityManager()->identityFromId(files.value(5).toInt())->getUuid().toString(QUuid::WithoutBraces)},
                             {"contact", engine_.getContactManager()->getContact(files.value(6).toInt())->getUuid().toString(QUuid::WithoutBraces)}});

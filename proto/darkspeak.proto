@@ -58,6 +58,8 @@ message Envelope {
     Avatar avatar = 25;
     MessageReceipt message_receipt = 26;
     FileOfferResponse file_offer_response = 27;
+    FileCheckpoint file_checkpoint = 30;
+    FilePause file_pause = 31;
   }
 }
 
@@ -74,6 +76,10 @@ message Capabilities {
   // Valid protocol-v3 range: 4096..1048576 bytes. This value can only lower,
   // never raise, the peer's local hard receive ceiling.
   uint32 max_record_bytes = 3;
+
+  // Nonzero only with named capability "file-checkpoint-v1". Locally preferred
+  // interval: 65536..16777216, a multiple of 65536. This is a resource ceiling.
+  uint32 checkpoint_interval_bytes = 4;
 }
 
 // Empty by design. Keepalive records receive the same encrypted randomized
@@ -297,6 +303,10 @@ message FileOffer {
   // parameters, whitespace, comments, or controls; each component contains
   // only ASCII letters, digits, and !#$&^_.+-. Maximum 127 bytes.
   string mime_type = 7;
+
+  // Present only after explicit bilateral file-checkpoint-v1 negotiation.
+  // Transport parameters are not authored attachment presentation metadata.
+  CheckpointParameters checkpoints = 8;
 }
 
 message FileOfferResponse {
@@ -307,6 +317,10 @@ message FileOfferResponse {
     FILE_OFFER_REJECTED = 2;
   }
   Status status = 2; // REJECTED deliberately carries no reason.
+  // Required on accepted checkpoint transfers, including resumed readiness.
+  // Echo the sender-selected immutable attempt, interval and verified prefix.
+  CheckpointParameters checkpoints = 3;
+  CheckpointReference selected_checkpoint = 4;
 }
 
 
@@ -334,6 +348,10 @@ message FileChunk {
   // offset + data.size() must equal the immutable offered size. No later chunk
   // is valid after a final chunk has been accepted.
   bool final = 5;
+
+  // Exactly 16 bytes on checkpoint transfers; absent in segregated legacy mode.
+  // An old attempt's chunks can never affect a replacement/resumed channel.
+  bytes attempt_id = 6;
 }
 
 message FileAck {
@@ -342,6 +360,7 @@ message FileAck {
   uint64 next_offset = 3;   // Next byte offset expected; initially 0.
   // True only after complete content and final SHA-256 validation.
   bool final = 4;
+  bytes attempt_id = 5; // Exactly 16 bytes on checkpoint transfers; absent in legacy mode.
 }
 
 message UserSecurityPreferences {
@@ -398,12 +417,17 @@ message UserInfo {
 enum FileError {
   FILE_ERROR_UNSPECIFIED = 0;
 
-  // Sender's immutable source snapshot no longer matches, the source was
-  // deleted/replaced, or it became unavailable.
+  // On checkpoint transfers: locally proved prefix/full source-integrity
+  // mismatch. Unavailability and timestamp changes use FilePause instead.
   SOURCE_CHANGED = 1;
 
   // A local user explicitly cancelled the transfer.
   USER_ACTION = 2;
+
+  // Receiver-supplied checkpoint digest disagrees with the sender's own hash.
+  // This never proves source corruption and never requests an automatic refund.
+  RECEIVER_CHECKPOINT_MISMATCH = 3;
+  UNSUPPORTED_TRANSFER_VERSION = 4;
 }
 
 message FileResume {
@@ -419,6 +443,12 @@ message FileResume {
 
   // Immutable complete offered size. Zero is valid for an empty file.
   uint64 file_size = 4;
+
+  // Checkpoint mode never treats next_offset as a chosen resume position.
+  // At most 64 distinct retained references, always including byte zero.
+  repeated CheckpointReference available_checkpoints = 5;
+  uint32 checkpoint_version = 6;
+  uint32 checkpoint_interval_bytes = 7;
 }
 
 message FileResumeResult {
@@ -427,6 +457,7 @@ message FileResumeResult {
     RESUME_ACCEPTED = 1;
     RESUME_REJECTED = 2;
     RESUME_CANCELLED = 3;
+    RESUME_PAUSED = 4;
   }
 
   bytes file_id = 1;
@@ -442,6 +473,9 @@ message FileResumeResult {
   // FILE_ERROR_UNSPECIFIED unless status/reason semantics require a known
   // FileError. Unknown values must not be guessed; the result is unsupported.
   FileError error = 4;
+  CheckpointReference selected_checkpoint = 5;
+  CheckpointParameters checkpoints = 6;
+  FilePauseReason pause_reason = 7;
 }
 
 message FileCancel {
@@ -450,6 +484,51 @@ message FileCancel {
   // Must be a known non-UNSPECIFIED reason. Unknown values are not interpreted
   // as a known cancellation reason.
   FileError reason = 2;
+}
+
+// Version-one generic checkpoint contract. The transport remains independent
+// of VFS, exchange accounting and feature-purpose policy.
+message CheckpointParameters {
+  uint32 version = 1; // Exactly 1.
+  uint32 interval_bytes = 2; // Frozen; no larger than either endpoint preference.
+  bytes attempt_id = 3; // Exactly 16 random nonzero bytes, chosen by the sender.
+  uint64 next_checkpoint_sequence = 4; // Positive and locally bounded on resume.
+}
+message CheckpointReference {
+  uint64 sequence = 1; // Zero reserved for the empty-prefix reference.
+  uint64 next_offset = 2;
+  bytes prefix_sha256 = 3; // Exactly 32 bytes over [0,next_offset).
+  bool final = 4; // Only at immutable EOF, including offset zero for empty files.
+  bool pause_boundary = 5; // An explicitly agreed shorter prefix on deliberate pause.
+}
+message FileCheckpoint {
+  enum Phase {
+    CHECKPOINT_PHASE_UNSPECIFIED = 0;
+    CHECKPOINT_PROPOSED = 1;
+    CHECKPOINT_SENDER_CONFIRMED = 2;
+    CHECKPOINT_RECEIVER_CONFIRMED = 3;
+  }
+  bytes file_id = 1;
+  bytes attempt_id = 2;
+  CheckpointReference checkpoint = 3;
+  bytes expected_sha256 = 4; // Immutable offered full-file digest, exactly 32 bytes.
+  Phase phase = 5;
+}
+enum FilePauseReason {
+  FILE_PAUSE_UNSPECIFIED = 0;
+  SOURCE_UNAVAILABLE = 1;
+  SOURCE_REVALIDATION_REQUIRED = 2;
+  TRANSFER_RESOURCE_UNAVAILABLE = 3;
+  TRANSFER_AUTHORIZATION_WITHDRAWN = 4;
+  TRANSFER_DISCONNECTED = 5;
+  TRANSFER_FEATURE_PAUSED = 6;
+}
+message FilePause {
+  bytes file_id = 1;
+  bytes attempt_id = 2;
+  FilePauseReason reason = 3;
+  // Advisory only; cannot advance a durable/chargeable checkpoint by itself.
+  CheckpointReference confirmed_checkpoint = 4;
 }
 
 // Requests the current avatar from the server

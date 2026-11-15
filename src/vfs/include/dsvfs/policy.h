@@ -26,13 +26,40 @@ struct PermissionRule {
     QUuid principal;
     QHash<Operation, Decision> permissions;
     Decision denied = Decision::Unspecified;
+    QUuid id = QUuid::createUuid();
+};
+inline constexpr quint32 authorization_format_version = 1;
+enum class AuthorizationOutcome { Allowed, Denied, Hidden, TemporarilyUnavailable };
+enum class AuthorizationReason { Granted, DefaultDenied, PermissionDenied, PathDenied, InvalidContext, Unavailable };
+struct PermissionContribution {
+    QUuid rule;
+    Tier tier = Tier::Identity;
+    QUuid principal;
+    QString path;
+    Decision permission = Decision::Unspecified;
+    Decision barrier = Decision::Unspecified;
+    bool most_specific = false;
+    bool decisive = false;
+    bool identity_default = false;
+};
+struct AuthorizationDecision {
+    AuthorizationOutcome outcome = AuthorizationOutcome::Denied;
+    AuthorizationReason reason = AuthorizationReason::InvalidContext;
+    quint64 policy_generation = 0;
+    QVector<PermissionContribution> contributions;
+    bool allowed() const noexcept { return outcome == AuthorizationOutcome::Allowed; }
 };
 struct PermissionPolicy {
     QVector<PermissionRule> rules;
     // All operation defaults must be definitive. ConfigureMounts is always a
     // separate host administrative decision, never a contact permission.
     QHash<Operation, Decision> defaults;
+    quint64 generation = 1;
     dsfm::Result<void> validate() const;
+    dsfm::Result<QByteArray> serialize() const;
+    static dsfm::Result<PermissionPolicy> deserialize(QByteArray bytes);
+    AuthorizationDecision explain(QUuid contact, const QSet<QUuid> &groups, QStringView path,
+                                  Operation operation) const;
     Decision resolve(QUuid contact, const QSet<QUuid> &groups, QStringView path, Operation operation) const;
     bool navigable(QUuid contact, const QSet<QUuid> &groups, QStringView path) const;
 };

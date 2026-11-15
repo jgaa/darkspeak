@@ -1037,35 +1037,56 @@ ordered stream already handles transport loss, and secretstream records
 cannot be replayed in place. A delayed acknowledgement does not by
 itself indicate that a chunk was lost.
 
-The sender does not mark the transfer complete until the final
-cumulative acknowledgement is received and the receiver has validated
-the final hash.
+For checkpoint-enabled transfers, both sides require final hash verification and **mutual confirmation of the final durable checkpoint at `offset = file_size`** before declaring completion, in addition to the final cumulative `FileAck`. This includes empty files, whose final checkpoint covers the empty prefix. A final ordinary acknowledgement alone cannot complete a checkpoint-enabled transfer. Lost final checkpoint confirmations are retried idempotently or recovered through checkpoint negotiation; the generic durable transfer-progress record retains the final outcome independently of optional feature accounting. Keep terminal receiver acknowledgement state under a strict local count limit (initially two per connection) and a 30-second monotonic retry lifetime; duplicate final chunks cannot alter published bytes. Once this state expires, reconnect recovery uses the durable final outcome. A segregated legacy transfer retains its separately defined legacy completion rules.
 
-Network acknowledgements and **durable verified checkpoints** are separate. Ordinary `FileAck` keeps the eight-chunk flow-control window moving without forcing `fsync()` or a hash computation per 8 KiB chunk. At bounded configurable intervals (and on deliberate pause or completion), the receiver durably checkpoints its contiguous accepted prefix, recomputes/obtains SHA-256 of exactly bytes `[0, offset)`, and sends a checkpoint confirmation bound to transfer ID, full expected SHA-256, offset and prefix SHA-256. A checkpoint is not valid merely because an offset was acknowledged: sender and receiver must verify matching prefix digests, and the sender must durably commit the agreed offset/digest with its accounting-progress recovery record before regarding it as confirmed. Do not acknowledge a checkpoint ahead of the receiver's durable persisted bytes. No peer-selected allocation, disk sync rate or hash work is unbounded.
+Network acknowledgements and **durable verified checkpoints** are separate. Ordinary `FileAck` keeps the existing eight-chunk flow-control window moving without forcing `fsync()` or a hash computation per 8 KiB chunk. Checkpoint-enabled transfers default to **1 MiB checkpoint intervals**. Protocol bounds are **64 KiB through 16 MiB**, in multiples of 64 KiB; each endpoint configures its preferred interval locally within those bounds. Before payload transmission, negotiate and freeze a per-transfer interval no larger than either endpoint's locally selected interval (normally their minimum). Validate this value before allocating state or admitting work. Regular checkpoint boundaries are multiples of that interval from byte zero; final EOF and deliberately paused shorter prefixes may be additional explicitly agreed boundaries. Their count, rate and hash/synchronization work remain locally bounded.
 
-The sender incrementally hashes logical source bytes in ascending order, exactly once per prefix, excluding retransmissions. It retains the sender-calculated prefix digest for confirmation. At checkpoint confirmation, compare the receiver's prefix digest before durable acceptance; mismatch fails the transfer as an integrity error. The sender's accepted checkpoint is its authoritative resume boundary; ordinary flow-control acknowledgements beyond it are not automatically durable/chargeable. Multiple checkpoints may be retained with strict count/byte/age budgets, including offset zero. Recovery never trusts an implementation-specific serialized hash context without revalidating it against source bytes. See `specs/fileshare_authorization.md` for optional FileShare-only credit settlement; message attachments and all other generic transfers use these checkpoints without exchange accounting.
+Checkpoint backpressure is independent of both the ordinary eight-chunk window and exchange accounting, and applies to **all checkpoint-enabled generic transfers**, including message/profile attachments, previews and catalogs. Let `D` be the sender's last durably confirmed checkpoint offset and `P` the end of its already admitted logical payload, including queued/in-flight chunks. The maximum uncheckpointed progress is the negotiated interval `I`: enforce `P - D <= I` with checked arithmetic **before** producing/queuing another chunk, clipping a chunk at the checkpoint boundary if necessary. Ordinary acknowledgements never advance `D` or enlarge this allowance. When the limit is reached, stop producing payload until a new durable checkpoint is mutually confirmed. Control traffic and checkpoint messages remain independently schedulable; a stalled/withholding peer is handled by bounded deadlines and resumable interruption. At a mutually agreed resume offset, initialize `P = D` for the new stream; retransmitted bytes must obey this same ceiling without becoming new feature charges.
+
+At each agreed boundary (and on deliberate pause or completion), the receiver durably checkpoints its contiguous accepted prefix, recomputes/obtains SHA-256 of exactly bytes `[0, offset)`, and proposes a checkpoint bound to transfer ID, full expected SHA-256, offset and prefix SHA-256. The sender compares its own retained digest, durably commits the agreed offset/digest to a **durable transfer-progress record**, and explicitly confirms acceptance. The receiver durably records that confirmation before treating the checkpoint as mutually confirmed. Never propose a checkpoint ahead of receiver-persisted bytes; duplicate proposals/confirmations are idempotent. FileShare accounting attaches separately to durable checkpoint events through its recovery coordinator and is never a dependency of the generic transfer engine.
+
+The sender incrementally hashes logical source bytes in ascending order, exactly once per prefix, excluding retransmissions, and retains its prefix digest at each agreed boundary. An incorrect receiver-supplied prefix digest fails or rejects the checkpoint as `RECEIVER_CHECKPOINT_MISMATCH`; it does not advance progress and is **not proof of a source-integrity mismatch** or grounds for automatic credit refund. A sender's own digest mismatch against its trusted persisted checkpoint or original expected content is a distinct source-integrity failure. The sender's accepted checkpoint is its authoritative resume boundary; ordinary flow-control acknowledgements beyond it are not automatically durable/chargeable. Retain multiple checkpoints, including offset zero, under strict count/byte/age budgets. Recovery never trusts an implementation-specific serialized hash context without revalidating it against source bytes. Optional FileShare-only credit settlement is defined in `fileshare_authorization.md`; unrelated generic transfers need no ledger.
 
 Checkpoint-enabled resume is a **wire-protocol revision** and requires explicit negotiated support/versioning. Existing peers must not silently interpret the old receiver-chosen offset as a mutually verified checkpoint; use a clearly segregated legacy transfer mode where supported or reject resumption with a typed unsupported-version outcome. Credit-charged FileShare downloads require checkpoint-capable peers; never downgrade chargeable transfers to a legacy mode that bypasses accounting verification. Preserve ordinary message attachments and other existing generic transfers during migration.
 
-**Wire schema change required before implementation:** retain the existing `FileAck` fields and add a distinct durable checkpoint message (recommended `FileCheckpoint` with `file_id`, `next_offset`, `prefix_sha256`, `expected_sha256`, and a bounded monotonically increasing checkpoint sequence/ID). It must have a typed response/confirmation or an equivalent explicit two-way confirmation, so the receiver can know which checkpoint the sender durably accepted. Define new protobuf fields/oneof tags in `proto/darkspeak.proto` without renumbering existing fields. Reject malformed digests, unknown transfer IDs, stale generations, noncontiguous checkpoints and non-monotonic confirmation; duplicate confirmations are idempotent.
+The version-one wire contract is defined in `proto/darkspeak.proto`, without renumbering existing fields:
+
+| Message/field | Tag | Contract |
+| --- | --- | --- |
+| `Capabilities.checkpoint_interval_bytes` | 4 | Nonzero only with bilateral `file-checkpoint-v1` support; a bounded local preference. |
+| `FileOffer.checkpoints` | 8 | Frozen version, interval, sender-chosen attempt ID and next checkpoint sequence. |
+| `FileOfferResponse.checkpoints`, `selected_checkpoint` | 3, 4 | Accepted readiness echoes the selected attempt and verified prefix. |
+| `FileChunk.attempt_id`, `FileAck.attempt_id` | 6, 5 | Reject data and ordinary acknowledgements from stale attempts before channel dispatch. |
+| `FileResume.available_checkpoints`, `checkpoint_version`, `checkpoint_interval_bytes` | 5–7 | At most 64 distinct retained references, including zero; legacy offset is advisory. |
+| `FileResumeResult.selected_checkpoint`, `checkpoints`, `pause_reason` | 5–7 | Sender-selected recovery or a typed persistent pause. |
+| `Envelope.file_checkpoint` | 30 | Distinct proposal, sender confirmation and receiver confirmation phases. |
+| `Envelope.file_pause` | 31 | Persistent generic pause; its advisory checkpoint cannot advance progress. |
+
+`CheckpointParameters.version` is exactly 1. The sender chooses a fresh, nonzero 16-byte attempt ID; every readiness, chunk and checkpoint is bound to that attempt. Prefix and full-file digests are exactly 32 bytes. Checkpoint sequence zero identifies the empty prefix; positive sequences are bounded below `2^60`, with local monotonic issuance and idempotent retained references. A resumed attempt carries its sender-selected next sequence; it must exceed retained mutually confirmed sequences and remains below the fixed sequence ceiling; sequence gaps never determine an allocation or loop count. Unconfirmed records from a superseded attempt cannot establish progress. Deliberately paused shorter prefixes are explicitly marked and require local agreement, rather than permission inferred from a peer flag.
+
+The receiver durably proposes a prefix, the sender verifies and persists it before `CHECKPOINT_SENDER_CONFIRMED`, and the receiver durably records that confirmation before `CHECKPOINT_RECEIVER_CONFIRMED`. The sender releases checkpoint backpressure after that receipt. Both endpoints retain sufficient durable state to retry or recover lost confirmations. The implicit initial zero reference never substitutes for final confirmation of an empty file. Reject malformed digests, unknown transfer IDs, stale attempts, noncontiguous checkpoints and non-monotonic confirmation; retained duplicate confirmations are idempotent.
+
+`FilePause` distinguishes source unavailability, source revalidation, resource unavailability, authorization withdrawal, disconnection and an owning feature's pause. It is not `FileCancel`. Receiver checkpoint mismatch and unsupported transfer version have distinct `FileError` values. A peer assertion of source failure never becomes locally proved source corruption or an automatic refund. Checkpoint fields received without negotiated support are rejected before feature dispatch; they are never silently treated as legacy offsets or acknowledgements.
 
 
-Before offering or sending a file, the sender records a source snapshot
-that includes the file's size and modification time. During transfer it
-must detect source deletion, read failure, size changes,
-modification-time changes, and changes detected by content hashing. If
-any of these occur, the sender stops sending chunks and cancels the
-transfer with the `SOURCE_CHANGED` file error. The same error is used
-whether the source was modified, replaced, deleted, or became
-unavailable. A modification-time change is sufficient to cancel even if
-the size is unchanged; it is a conservative change detector, while the
-SHA-256 hash remains the content-integrity check.
+Before offering or sending a file, bind its prepared reader to the immutable offered size and SHA-256 and retain source evidence suitable for its storage backend. Stop new payload admission when evidence changes or reads fail, and distinguish these outcomes:
+
+| Condition | Required outcome |
+| --- | --- |
+| Source temporarily unavailable, including a transient missing source or read failure | Persist a resumable pause; reauthorize and revalidate when available. No automatic integrity refund. |
+| Modification timestamp or other metadata/identity evidence changes without proven content mismatch | Pause for bounded revalidation against the original offered content. Metadata change alone is not proof of corruption and never automatically triggers a refund. |
+| Sender proves its source prefix/full content differs from its trusted checkpoint or original expected content | Fail as `SOURCE_CHANGED` / source-integrity mismatch; FileShare refunds associated settled debits exactly once. |
+| Receiver supplies an incorrect checkpoint digest | Fail/reject as `RECEIVER_CHECKPOINT_MISMATCH`; no automatic refund and no checkpoint advancement. |
+
+Resume never silently substitutes another content version or weakens current authorization. A backend's conservative `ExternalModification`/staleness signal can stop its reader and require fresh read preparation; that signal alone does not prove a refundable content mismatch. Pause and revalidation preserve the original transfer identity and its bounded recoverable state. The wire revision must represent source-unavailable/revalidation pauses separately from terminal cancellation; a pause must not dispatch through `FileCancel`'s partial-discard path.
 
 ``` proto
 enum FileError {
   FILE_ERROR_UNSPECIFIED = 0;
-  SOURCE_CHANGED = 1;
+  SOURCE_CHANGED = 1;  // Locally proven source-integrity mismatch.
   USER_ACTION = 2;
+  RECEIVER_CHECKPOINT_MISMATCH = 3; // No automatic source-integrity refund.
+  UNSUPPORTED_TRANSFER_VERSION = 4;
 }
 
 message FileCancel {
@@ -1082,14 +1103,17 @@ message FileResume {
   uint64 next_offset = 2;  // Legacy advisory; NOT authoritative on checkpoint-enabled sessions.
   bytes sha256 = 3;        // Expected full-file SHA-256.
   uint64 file_size = 4;
-  // Wire revision: add bounded available_checkpoint_ids (or an equivalent
-  // compact mutually verifiable checkpoint negotiation representation).
+  repeated CheckpointReference available_checkpoints = 5; // At most 64, including zero.
+  uint32 checkpoint_version = 6; // Exactly 1 for checkpoint transfers.
+  uint32 checkpoint_interval_bytes = 7;
 }
 ```
 
 `next_offset` in historical `FileResume` is advisory only on checkpoint-enabled sessions. The receiver can report its durable retained prefix and bounded checkpoint identifiers; the sender chooses a previously confirmed checkpoint at or below that prefix, never an arbitrary peer-proposed offset. Both parties validate the selected offset and prefix SHA-256. A receiver with more unconfirmed bytes discards its suffix; with fewer durable bytes, it can negotiate an earlier retained checkpoint in bounded rounds, or restart a new transfer at zero. The offered full-file SHA-256, size and transfer ID remain immutable.
 
-The sender checks current feature-specific authorization and immutable file metadata, reopens the original source, and recomputes SHA-256 through the selected checkpoint offset. If this prefix differs from its persisted checkpoint, fail the original transfer with `SOURCE_CHANGED` and (for FileShare chargeable content) refund its settled debits idempotently. Do not silently switch source versions. The receiver independently recomputes its retained prefix and compares it with the sender-selected digest before signaling readiness. The existing `FileOfferResponse(ACCEPTED)` readiness message is retained only after the selected checkpoint has been mutually verified. Maintain the existing bound of two readiness waits per contact, each with a 30-second monotonic deadline. Unavailable sources may be paused distinctly from proven source-integrity failures.
+For recovery from a lost confirmation, the receiver may include a durably written proposal among its retained candidates. The sender may select it only if its own journal already contains the matching locally verified, durably accepted checkpoint. Selection alone never charges credits: the new handshake independently verifies the source and receiver prefixes before establishing the agreed resume position. Unaccepted peer candidates cannot advance the sender's position. An already completed receiver can verify its committed content and repeat an EOF-only completion handshake; it cannot silently restart an earlier portion of a completed charge identity.
+
+The sender checks current feature-specific authorization and immutable file metadata, reopens the original source, and recomputes SHA-256 through the selected checkpoint offset. If this prefix differs from its persisted checkpoint, fail the original transfer with `SOURCE_CHANGED` and (for FileShare chargeable content) refund its settled debits idempotently. Do not silently switch source versions. The receiver independently recomputes its retained prefix and compares it with the sender-selected digest before signaling readiness. The existing `FileOfferResponse(ACCEPTED)` readiness message is retained only after the selected checkpoint has been mutually verified. Maintain the existing bound of two readiness waits per contact, each with a 30-second monotonic deadline. Unavailable sources must pause distinctly from proven source-integrity failures; metadata changes require revalidation as specified above.
 
 Sender-side final SHA-256 covers the complete logical file bytes, in ascending order and exactly once; transmitted duplicate/retried chunks do not contribute twice. A resumed sender rebuilds the hashing context from the same source's validated prefix, then hashes new content as transmitted. A saved digest is an integrity checkpoint, not serializable SHA-256 internal state. Any out-of-order transfer must separately establish this complete ordered byte stream or fail. Both sender and receiver compare their full-file digests with the originally announced SHA-256; only the receiver publishes content after its own successful verification. Sender-detected prefix or final mismatch fails the transfer and triggers an idempotent full refund for its FileShare-specific debits; receiver-reported mismatch alone cannot force a refund.
 
@@ -1098,25 +1122,24 @@ For example:
 ``` proto
 message FileResumeResult {
   enum Status {
-    STATUS_UNSPECIFIED = 0;
-    ACCEPTED = 1;
-    REJECTED = 2;
-    CANCELLED = 3;
+    RESUME_STATUS_UNSPECIFIED = 0;
+    RESUME_ACCEPTED = 1;
+    RESUME_REJECTED = 2;
+    RESUME_CANCELLED = 3;
+    RESUME_PAUSED = 4;
   }
 
   bytes file_id = 1;
   Status status = 2;
   uint64 next_offset = 3;  // Sender-selected confirmed checkpoint offset.
   FileError error = 4;
-  // Wire revision: add selected_prefix_sha256 and checkpoint_id, and
-  // receiver confirmation of selected checkpoint before any chunks flow.
+  CheckpointReference selected_checkpoint = 5;
+  CheckpointParameters checkpoints = 6;
+  FilePauseReason pause_reason = 7;
 }
 ```
 
-When resume metadata differs, the sender sets `status` to `CANCELLED`
-and `error` to `SOURCE_CHANGED`. It sends no further chunks for that
-transfer. The same `FileCancel` message and `SOURCE_CHANGED` reason are
-used when the sender detects a source change during an active transfer.
+If peer resume metadata differs from the immutable offer, reject that resume request without treating the peer assertion as proof that the sender's source changed or as grounds for refund. Proven sender-source integrity mismatch sets `status` to `CANCELLED` and `error` to `SOURCE_CHANGED`, stops payload and invokes the owning feature's failure handling. The same terminal reason applies to locally proven source-integrity failure during active transmission. Source-unavailable and revalidation-required outcomes use a separate typed persistent pause in the wire revision, retaining partial data/checkpoints; they must not be encoded as terminal `CANCELLED`.
 
 A cancellation is acted on only for the current authenticated connection.
 Cancelling an incoming transfer discards its unpublished partial. Duplicate
@@ -1124,8 +1147,7 @@ cancellations and cancellations for completed or rejected files do not change
 those terminal states or remove published content.
 
 `USER_ACTION` is used when the local user explicitly cancels a transfer.
-The enum is shared by active-transfer cancellation and resume results; the
-protobuf schema defines the message-specific valid uses of each value.
+`FileError` is shared by terminal transfer outcomes. Resumable pauses use the separate `FilePauseReason` enum and `FilePause`; they are invalid in `FileCancel`.
 
 The receiver may discard its partial file when the sender cancels or
 when resume metadata does not match. Chunks received again after resume
@@ -1234,7 +1256,7 @@ negotiation, pre-approval authorization, public and contact-only bio
 visibility, per-connection and global rate/resource limits,
 connection-request state transitions, exact identifier/hash lengths,
 hostile filenames, disk quotas, file chunk bounds, disconnects, resume
-checkpoints, source mutation and deletion during transfer, transfer
+checkpoints (64 KiB/1 MiB/16 MiB boundaries, final and empty-file mutual confirmation, withheld checkpoints despite ordinary acknowledgements, queued/in-flight ceiling enforcement, and duplicate/lost confirmations), metadata-only revalidation versus proven source-integrity failure, temporary source unavailability and receiver-digest mismatch without automatic refunds, source mutation and deletion during transfer, transfer
 fairness, output queue bounds, scheduling-class priority, and
 interactive traffic while file transfers are active.
 
