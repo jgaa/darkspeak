@@ -4,9 +4,11 @@
 #include <array>
 #include <limits>
 #include <map>
+#include <set>
 #include <chrono>
 #include <atomic>
 #include <QTimer>
+#include <QDeadlineTimer>
 #include <QByteArray>
 
 #include "ds/protocolmanager.h"
@@ -62,6 +64,7 @@ public:
             throw std::runtime_error("Checkpoint for a legacy transfer");
         }
         virtual void onTimeout(Peer& peer) { Q_UNUSED(peer) }
+        virtual void stopPayload() {}
         virtual qlonglong resumeOffset() const noexcept { return 0; }
         virtual void onTransferDone(Peer& peer, bool success) {
             Q_UNUSED(peer)
@@ -72,7 +75,9 @@ public:
     Peer(ConnectionSocket::ptr_t connection,
          core::ConnectData connectionData);
     ~Peer() override;
-    QCoro::Task<void> prepareReceive(core::File::ptr_t file, std::shared_ptr<Peer> self);
+    QCoro::Task<void> prepareReceive(core::File::ptr_t file, std::shared_ptr<Peer> self,
+                                    std::optional<dsfm::TransferAttempt> resume = {},
+                                    std::shared_ptr<core::FileTransferWork> work = {});
 
     ConnectionSocket& getConnection() {
         if (!connection_) {
@@ -122,6 +127,14 @@ public slots:
                             core::FileCancelReason reason) override;
     uint64_t sendFileResume(const QByteArray& fileId, quint64 nextOffset,
                             const QByteArray& sha256, quint64 fileSize) override;
+    uint64_t sendCheckpointResume(const QByteArray &file_id, const QByteArray &sha256, quint64 size, quint32 interval,
+                                  QVector<dsfm::DurableCheckpoint> retained, std::shared_ptr<core::FileTransferWork> work) override;
+    uint64_t sendCheckpointResumeResult(quint64 request_id, const QByteArray &file_id, core::FileResumeStatus status,
+                                        std::optional<dsfm::TransferAttempt> attempt = {},
+                                        dsfm::TransferPauseReason pause = dsfm::TransferPauseReason::None,
+                                        core::FileCancelReason error = core::FileCancelReason::UserAction) override;
+    uint64_t startCheckpointReceive(core::File &file, dsfm::TransferAttempt attempt,
+                                    std::shared_ptr<core::FileTransferWork> work) override;
     uint64_t sendFileResumeResult(quint64 responseToRequestId,
                                   const QByteArray& fileId,
                                   core::FileResumeStatus status,
@@ -129,6 +142,7 @@ public slots:
                                   core::FileCancelReason error) override;
     uint64_t sendFileOfferResponse(const QByteArray& fileId,
                                    core::FileOfferResponseStatus status) override;
+    uint64_t sendCheckpointOfferResponse(const QByteArray &file_id, const dsfm::TransferAttempt &attempt) override;
 
 signals:
     void incomingPeer(const std::shared_ptr<PeerConnection>& peer);
@@ -139,6 +153,15 @@ private slots:
     void onCloseLater();
 
 protected:
+    // Release gate: production stays disabled until paired wire/recovery tests
+    // pass. Test endpoints can exercise the complete adapter independently.
+    virtual quint32 localCheckpointPreference() const noexcept { return 0; }
+    core::File::ptr_t checkpointFile(const QByteArray &file_id, const QByteArray &attempt_id,
+                                    core::File::Direction direction);
+    std::optional<dsfm::TransferAttempt> offeredCheckpointAttempt(const ds::protocol::FileOffer &offer);
+    void setOfferedCheckpoint(ds::protocol::FileOffer &offer, const core::File &file);
+    QCoro::Task<void> acceptCheckpointPause(core::File::ptr_t file, QUuid attempt,
+                                          dsfm::TransferPauseReason reason, std::shared_ptr<Peer> self);
     void onReceivedData(const quint32 channel, const quint64 id,
                         const mview_t& data, const bool final);
     void onReceivedEnvelope(const ds::protocol::Envelope& envelope);
@@ -168,6 +191,9 @@ protected:
     struct PendingRequest {
         RequestType type;
         std::chrono::steady_clock::time_point expires;
+        QByteArray file_id;
+        quint64 file_size = 0;
+        quint32 checkpoint_interval = 0;
     };
 
     InState inState_ = InState::DISABLED;
@@ -189,6 +215,9 @@ protected:
     std::map<quint32, std::chrono::steady_clock::time_point> completed_incoming_;
     bool notificationsDisabled_ = false;
     bool capabilitiesReceived_ = false;
+    quint32 advertised_checkpoint_interval_ = 0;
+    quint32 peer_checkpoint_interval_ = 0;
+    std::set<QByteArray> pending_checkpoint_pauses_;
     bool inboundFinalReceived_ = false;
     bool applicationAuthorizationPending_ = false;
     bool unapprovedBudgetHeld_ = false;
@@ -209,6 +238,7 @@ public:
                                     const QString& message = {}) override;
     uint64_t sendMessageReceipt(const QByteArray& messageId) override;
     bool isConnected() const noexcept override;
+    quint32 checkpointInterval() const noexcept override;
     uint64_t sendUserInfo(const core::UserInfo &userInfo) override;
     uint64_t requestBio() override;
     uint64_t sendBioResponse(quint64 responseToRequestId,

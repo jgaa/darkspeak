@@ -102,7 +102,7 @@ production authorization, approvals, durable operation handling and domain servi
 | `bio_probe` | `read_profiles` | Approved outbound public-bio probe using `sharing_id` |
 | `bio_preview` | `read_profiles` | Approved read of the local probe result, bound to `sharing_id` |
 | `file_offer` | `send_files` | Import/offer a provisioned `asset` to `contact` |
-| `file_resume` | `read_files` | Resume a failed incoming transfer through normal domain services |
+| `file_resume` | `read_files` | Request resume of a resumable incoming transfer through normal domain services |
 | `file_accept` | `read_files` | Accept incoming `transfer` for `contact`, subject to local policy |
 | `files` | `read_files` | Approved sensitive inspection, at most 64 records for `contact` |
 
@@ -168,8 +168,11 @@ provisioning file; controller credentials remain separate. Optional protected
 bootstrap fields `identity_count` (1–2) and `public_bio` (boolean) select fixtures.
 The optional fields do not change defaults for the original happy path.
 
-Test-only `file_resume` calls the ordinary incoming failed-file resume action,
+Test-only `file_resume` calls the ordinary incoming resumable-file action,
 with the same contact scope, approval and idempotency requirements as acceptance.
+Existing file decisions scope lookup by transfer direction before selecting the
+file ID. Cancellation also accepts paused outgoing checkpoint transfers, whose
+resume is initiated by the receiver.
 The fixed input allowlist additionally permits generated `resume.jpg`; imports
 and controller hash verification are bounded to 32 MiB. Controller state includes
 identity/contact ownership, persisted transfer byte counts and observed nonzero

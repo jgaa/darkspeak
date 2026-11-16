@@ -134,7 +134,7 @@ public:
     enum Values { LOG, IDENTITIES, CONTACTS, HOME, CONVERSATIONS, CHAT,
                   ERROR, WARNING, INFO, N_ADDME, N_MESSAGE, MESSAGE, INCOMING, OUTGOING,
                   FS_OFFERED, FS_FAILED, FS_QUEUED, FS_TRANSFERRING, FS_HASHING,
-                  FS_WAITING, FS_DONE, MS_REJECTED };
+                  FS_WAITING, FS_DONE, MS_REJECTED, FS_PAUSED, FS_WAITING_FOR_CREDIT, FS_PAUSED_INSUFFICIENT_CREDIT };
     Q_ENUM(Values)
 };
 
@@ -144,6 +144,8 @@ class MockEntity : public MockBackendTypes {
     Q_PROPERTY(QString name MEMBER name NOTIFY changed)
     Q_PROPERTY(QString displayName MEMBER name NOTIFY changed)
     Q_PROPERTY(QString previewSource MEMBER preview_source NOTIFY changed)
+    Q_PROPERTY(QString pauseReasonText MEMBER pause_reason_text NOTIFY changed)
+    Q_PROPERTY(bool resumable MEMBER resumable NOTIFY changed)
     Q_PROPERTY(QString nickName MEMBER name NOTIFY changed)
     Q_PROPERTY(QString topic MEMBER topic NOTIFY changed)
     Q_PROPERTY(QString notes MEMBER notes NOTIFY changed)
@@ -186,6 +188,8 @@ public:
     QString name = QStringLiteral("Alice <b>plain text</b>"), topic = QStringLiteral("A conversation with long translated labels"), notes;
     QString bio = QStringLiteral("A disposable bio fixture."), handle = QString(64, QChar('x'));
     QString preview_source;
+    QString pause_reason_text;
+    bool resumable = false;
     QString address = QString(56, QChar('a')) + QStringLiteral(".onion");
     QStringList mime_types{QStringLiteral("*")};
     QImage avatar;

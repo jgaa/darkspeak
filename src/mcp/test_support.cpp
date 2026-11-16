@@ -183,9 +183,9 @@ QJsonObject TestSupport::execute(const QString& name, Identity* owner, const QJs
         return {{"reference", QString::fromLatin1(file->getFileId().toHex())}};
     }
     if (name == "file_reject" || name == "file_cancel_incoming" || name == "file_cancel_outgoing") {
-        const auto file = engine_.getFileManager()->getFileFromId(
-            QByteArray::fromHex(args.value("transfer").toString().toLatin1()), *contact);
         const auto direction = name == "file_cancel_outgoing" ? File::OUTGOING : File::INCOMING;
+        const auto file = engine_.getFileManager()->getFileFromId(
+            QByteArray::fromHex(args.value("transfer").toString().toLatin1()), *contact, direction);
         if (!file || file->getDirection() != direction)
             throw Error("InvalidTransferState");
         const auto state = file->getState();
@@ -194,7 +194,9 @@ QJsonObject TestSupport::execute(const QString& name, Identity* owner, const QJs
             file->reject();
         } else {
             if (state != File::FS_WAITING && state != File::FS_OFFERED &&
-                state != File::FS_QUEUED && state != File::FS_TRANSFERRING)
+                state != File::FS_QUEUED && state != File::FS_TRANSFERRING && state != File::FS_PAUSED &&
+                state != File::FS_WAITING_FOR_CREDIT && state != File::FS_PAUSED_INSUFFICIENT_CREDIT &&
+                !(state == File::FS_FAILED && file->failureReason() == int(dsfm::TransferFailureReason::None)))
                 throw Error("InvalidTransferState");
             file->cancel();
         }
@@ -202,15 +204,15 @@ QJsonObject TestSupport::execute(const QString& name, Identity* owner, const QJs
     }
     if (name == "file_resume") {
         const auto file = engine_.getFileManager()->getFileFromId(
-            QByteArray::fromHex(args.value("transfer").toString().toLatin1()), *contact);
-        if (!file || file->getDirection() != File::INCOMING || file->getState() != File::FS_FAILED)
+            QByteArray::fromHex(args.value("transfer").toString().toLatin1()), *contact, File::INCOMING);
+        if (!file || file->getDirection() != File::INCOMING || !file->isResumable())
             throw Error("InvalidTransferState");
         file->resume();
         return {{"reference", args.value("transfer")}};
     }
     if (name == "file_accept") {
         const auto file = engine_.getFileManager()->getFileFromId(
-            QByteArray::fromHex(args.value("transfer").toString().toLatin1()), *contact);
+            QByteArray::fromHex(args.value("transfer").toString().toLatin1()), *contact, File::INCOMING);
         if (!file || file->getDirection() != File::INCOMING || file->getState() != File::FS_OFFERED)
             throw Error("InvalidTransferState");
         QString reason;

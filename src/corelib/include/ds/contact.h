@@ -187,6 +187,12 @@ public:
     void sendFileOfferResponse(const QByteArray& fileId, FileOfferResponseStatus status);
     void sendFileCancel(const QByteArray& fileId, FileCancelReason reason);
     void resumeFile(File& file);
+    dsfm::Result<std::shared_ptr<FileTransferWork>> acquireFileWork(const std::shared_ptr<File> &file);
+    bool ownsFileWork(const File &file, const std::shared_ptr<FileTransferWork> &work) const;
+    bool retryCheckpointSelection(const std::shared_ptr<File> &file, const dsfm::TransferAttempt &failed,
+                                  const std::shared_ptr<FileTransferWork> &work);
+    void checkpointSelectionReady(const File &file, const dsfm::TransferAttempt &attempt,
+                                  const std::shared_ptr<FileTransferWork> &work);
 
     /*! Add the new Identity to the database. */
     void addToDb();
@@ -261,6 +267,15 @@ private slots:
 private:
     bool avatar_edited_ = false;
     QCoro::Task<void> processFileResume(PeerFileResume resume, Contact::ptr_t self);
+    QCoro::Task<void> processCheckpointResume(PeerFileResume resume, std::shared_ptr<File> file, Contact::ptr_t self);
+    QCoro::Task<void> requestCheckpointResume(std::shared_ptr<File> file, Contact::ptr_t self);
+    void onCheckpointResumeResult(const PeerFileResumeResult &result, const std::shared_ptr<File> &file);
+    void trackTransfer(const std::shared_ptr<File> &file);
+    QCoro::Task<void> finishCheckpointReadiness(PeerFileOfferResponse response, std::shared_ptr<File> file,
+                                               std::shared_ptr<FileTransferWork> work, Contact::ptr_t self);
+    QCoro::Task<void> prepareCheckpointOffer(std::shared_ptr<File> file, PeerConnection::ptr_t peer, Contact::ptr_t self);
+    size_t fileWorkSlots() const;
+    void updateFileWorkTimer();
     static void bind(QSqlQuery& query, ContactData& data);
     void loadMessageQueue();
     void loadFileQueue();
@@ -312,8 +327,26 @@ private:
     struct PendingResume {
         std::shared_ptr<File> file;
         QDeadlineTimer deadline{30000};
+        QUuid operation = QUuid::createUuid();
+        bool awaiting_readiness = false;
+        bool committing_readiness = false;
+        bool deadline_reported = false;
+        std::shared_ptr<FileTransferWork> work;
+        quint32 resume_rounds = 0;
     };
     std::map<QByteArray, PendingResume> pending_resume_receivers_;
+    std::map<int, std::weak_ptr<FileTransferWork>> file_work_;
+    struct CheckpointRequest {
+        std::shared_ptr<File> file;
+        PeerConnection::ptr_t peer;
+        std::shared_ptr<FileTransferWork> work;
+        quint64 request_id = 0;
+        QVector<dsfm::DurableCheckpoint> candidates;
+        int previous_state = 0;
+        std::optional<dsfm::TransferAttempt> selection;
+        quint32 rounds = 1;
+    };
+    std::map<QByteArray, CheckpointRequest> checkpoint_requests_;
     QTimer resume_readiness_timer_;
     static constexpr size_t maxConcurrentTransfers_ = 2;
 };

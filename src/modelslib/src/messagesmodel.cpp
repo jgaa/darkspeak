@@ -541,9 +541,10 @@ void MessagesModel::onFileChanged(const File *file, const int role)
 QString MessagesModel::getStateName(const MessagesModel::Row &r) const
 {
     const std::array<QString, 5> mnames = {tr("Composed"), tr("Queued"), tr("Sent"), tr("Delivered"), tr("Rejected")};
-    const std::array<QString, 10> fnames = {tr("Created"), tr("Hashing"), tr("Waiting"), tr("Offered"), tr("Queued"),
+    const std::array<QString, 13> fnames = {tr("Created"), tr("Hashing"), tr("Waiting"), tr("Offered"), tr("Queued"),
                                                   tr("Transferring"), tr("Done"), tr("Failed"), tr("Rejected"),
-                                                  tr("Cancelled")};
+                                                  tr("Cancelled"), tr("Paused"), tr("Waiting for credit"),
+                                                  tr("Paused: insufficient credit")};
 
     if (r.type_ == MESSAGE) {
         if (r.data_->direction == Message::OUTGOING) {

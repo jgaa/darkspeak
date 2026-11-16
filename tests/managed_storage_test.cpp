@@ -16,6 +16,8 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <iostream>
+#include <logfault/logfault.h>
 #include "ds/dsclient.h"
 #include "ds/dsserver.h"
 #include "ds/peer.h"
@@ -216,6 +218,19 @@ class CheckpointSendingPeer final : public ds::prot::Peer {
     File::ptr_t file_;
     quint32 channel_ = 0;
 };
+class CheckpointFixtureReader final : public dsfm::IFileReader {
+  public:
+    explicit CheckpointFixtureReader(QByteArray bytes) : bytes_(std::move(bytes)) {}
+    QCoro::Task<dsfm::Result<QByteArray>> readAt(quint64 offset, qsizetype count, dsfm::CancellationToken cancel) override {
+        if (cancel.cancelled()) co_return dsfm::Error{dsfm::ErrorCode::Cancelled};
+        if (count < 0 || count > 65536 || offset > quint64(bytes_.size()))
+            co_return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
+        co_return bytes_.mid(qsizetype(offset), count);
+    }
+    QCoro::Task<dsfm::Result<void>> close() override { co_return dsfm::Result<void>{}; }
+  private:
+    QByteArray bytes_;
+};
 class ResumePeer final : public ds::prot::Peer {
   public:
     ResumePeer() : Peer(std::make_shared<ds::prot::ConnectionSocket>(), {}) {}
@@ -251,6 +266,41 @@ class LoopbackListener final : public QTcpServer {
             accepted(std::move(socket));
     }
 };
+class CheckpointWireClient final : public ds::prot::DsClient {
+  public:
+    using DsClient::DsClient;
+    quint32 preference = dsfm::default_checkpoint_interval;
+    quint64 admitted_end = 0;
+    uint64_t sendCheckpointChunk(const QByteArray &file_id, QUuid attempt, quint64 sequence,
+                                quint64 offset, const QByteArray &bytes, bool final) override {
+        admitted_end = qMax(admitted_end, offset + quint64(bytes.size()));
+        return DsClient::sendCheckpointChunk(file_id, attempt, sequence, offset, bytes, final);
+    }
+  protected:
+    quint32 localCheckpointPreference() const noexcept override { return preference; }
+};
+class CheckpointWireServer final : public ds::prot::DsServer {
+  public:
+    using DsServer::DsServer;
+    quint32 preference = dsfm::default_checkpoint_interval;
+    bool withhold_proposals = false;
+    bool withhold_receipts = false;
+    std::function<void()> withheld;
+    uint64_t sendFileCheckpoint(const QByteArray &file_id, const QByteArray &sha256,
+                                const dsfm::TransferAttempt &attempt, dsfm::DurableCheckpoint checkpoint,
+                                dsfm::CheckpointPhase phase) override {
+        if ((withhold_proposals && phase == dsfm::CheckpointPhase::Proposed) ||
+            (withhold_receipts && phase == dsfm::CheckpointPhase::MutuallyConfirmed)) {
+            withheld = [this, file_id, sha256, attempt, checkpoint, phase] {
+                DsServer::sendFileCheckpoint(file_id, sha256, attempt, checkpoint, phase);
+            };
+            return 0;
+        }
+        return DsServer::sendFileCheckpoint(file_id, sha256, attempt, checkpoint, phase);
+    }
+  protected:
+    quint32 localCheckpointPreference() const noexcept override { return preference; }
+};
 class QueueProtocol final : public ProtocolManager {
   public:
     int attempts = 0;
@@ -271,6 +321,9 @@ class ManagedStorageTest final : public QObject {
     Q_OBJECT
   private slots:
     void initTestCase() {
+        if (qEnvironmentVariableIsSet("DS_TEST_TRACE"))
+            logfault::LogManager::Instance().AddHandler(
+                std::make_unique<logfault::StreamHandler>(std::clog, logfault::LogLevel::TRACE));
         QVERIFY(directory_.isValid());
         qputenv("DARKSPEAK_PROFILE_ROOT", directory_.path().toUtf8());
         qputenv("DARKSPEAK_TEST_SECRETSTORE_PASSPHRASE", "managed-storage-disposable-fixture");
@@ -376,6 +429,32 @@ class ManagedStorageTest final : public QObject {
         QCOMPARE(rejected.value().confirmed_offset, quint64(dsfm::minimum_checkpoint_interval));
         QTest::qWait(10);
         file->deleteFromDb();
+    }
+    void file_work_budget_survives_connection_teardown() {
+        auto first = incoming("a", "work-budget-first");
+        auto second = incoming("b", "work-budget-second");
+        auto third = incoming("c", "work-budget-third");
+        auto a = contact_->acquireFileWork(first);
+        auto b = contact_->acquireFileWork(second);
+        QVERIFY(a); QVERIFY(b);
+        QVERIFY(!contact_->acquireFileWork(third));
+        contact_->disconnectFromContact(true);
+        QVERIFY(a.value()->cancel.cancelled());
+        QVERIFY(b.value()->cancel.cancelled());
+        QVERIFY(!contact_->acquireFileWork(third));
+        QVERIFY(!contact_->acquireFileWork(first)); // Retired work for the same file still owns its slot.
+        a.value().reset();
+        auto c = contact_->acquireFileWork(third);
+        QVERIFY(c);
+        // Expiration also retains admission until the actual owner returns.
+        b.value()->deadline = QDeadlineTimer(QDeadlineTimer::Forever);
+        b.value()->deadline.setRemainingTime(0);
+        QVERIFY(!b.value()->current());
+        QVERIFY(!contact_->acquireFileWork(first));
+        b.value().reset();
+        QVERIFY(contact_->acquireFileWork(first));
+        c.value().reset();
+        first->deleteFromDb(); second->deleteFromDb(); third->deleteFromDb();
     }
     void checkpoint_channels_exchange_complete_payload_and_final_certificate() {
         const QByteArray bytes(2 * dsfm::minimum_checkpoint_interval + 7, 'e');
@@ -538,6 +617,94 @@ class ManagedStorageTest final : public QObject {
         QVERIFY(peer->completed);
         QVERIFY(peer->final_journal_complete);
     }
+    void rejected_checkpoint_selection_preserves_partial_content() {
+        const QByteArray bytes("retained partial content");
+        auto file = incoming(bytes, "checkpoint-rejected-selection.bin");
+        QVERIFY(waitTask(file->prepareIncoming()));
+        auto progress = waitTask(file->prepareCheckpointProgress(dsfm::minimum_checkpoint_interval));
+        QVERIFY(progress);
+        const auto key = file->checkpointKey().value();
+        const auto zero = progress.value().checkpoints.first();
+        const dsfm::TransferAttempt original{QUuid::createUuid(), dsfm::minimum_checkpoint_interval, 1, zero};
+        QVERIFY(waitTask(storage().transferProgress().beginAttempt(key, original.id, zero)));
+        QVERIFY(file->setCheckpointAttempt(original));
+        QVERIFY(waitTask(file->writeIncoming(0, bytes)));
+        QVERIFY(waitTask(file->checkpointIncomingPrefix(bytes.size())));
+        const dsfm::DurableCheckpoint prefix{1, 3,
+            QCryptographicHash::hash(bytes.first(3), QCryptographicHash::Sha256), false, true};
+        QVERIFY(waitTask(file->recordCheckpoint(original.id, prefix, dsfm::CheckpointPhase::MutuallyConfirmed)));
+
+        // Valid digest and boundary shape do not authorize deleting a suffix.
+        const dsfm::DurableCheckpoint unknown{2, 2,
+            QCryptographicHash::hash(bytes.first(2), QCryptographicHash::Sha256), false, true};
+        dsfm::TransferAttempt replacement{QUuid::createUuid(), original.interval, 3, unknown};
+        auto rejected = waitTask(file->selectIncomingCheckpoint(replacement));
+        QVERIFY(!rejected);
+        QCOMPARE(rejected.error().code, dsfm::ErrorCode::IntegrityError);
+        auto whole = waitTask(file->checkpointIncomingPrefix(bytes.size()));
+        QVERIFY(whole);
+        QCOMPARE(whole.value(), file->getHash());
+        QCOMPARE(*file->checkpointAttempt(), original);
+
+        // Even a retained zero must pass sequence admission before truncation.
+        replacement.selected = zero;
+        replacement.next_sequence = 1;
+        rejected = waitTask(file->selectIncomingCheckpoint(replacement));
+        QVERIFY(!rejected);
+        QCOMPARE(rejected.error().code, dsfm::ErrorCode::InvalidArgument);
+        whole = waitTask(file->checkpointIncomingPrefix(bytes.size()));
+        QVERIFY(whole);
+        QCOMPARE(whole.value(), file->getHash());
+        auto durable = waitTask(storage().transferProgress().load(key));
+        QVERIFY(durable);
+        QCOMPARE(durable.value().attempt, original.id);
+        QCOMPARE(durable.value().confirmed_offset, prefix.offset);
+
+        replacement.selected = prefix;
+        replacement.next_sequence = 2;
+        QVERIFY(waitTask(file->selectIncomingCheckpoint(replacement)));
+        QCOMPARE(*file->checkpointAttempt(), replacement);
+        QCOMPARE(file->getBytesTransferred(), qlonglong(prefix.offset));
+        QVERIFY(!waitTask(file->checkpointIncomingPrefix(bytes.size())));
+        QVERIFY(waitTask(file->checkpointIncomingPrefix(prefix.offset)));
+        file->cancel();
+        file->deleteFromDb();
+    }
+    void superseded_checkpoint_selection_does_not_restore_an_old_attempt() {
+        const QByteArray bytes("partial content");
+        auto file = incoming(bytes, "checkpoint-superseded-selection.bin");
+        QVERIFY(waitTask(file->prepareIncoming()));
+        auto progress = waitTask(file->prepareCheckpointProgress(dsfm::minimum_checkpoint_interval));
+        QVERIFY(progress);
+        const auto key = file->checkpointKey().value();
+        const dsfm::TransferAttempt original{QUuid::createUuid(), dsfm::minimum_checkpoint_interval, 1,
+                                             progress.value().checkpoints.first()};
+        QVERIFY(waitTask(storage().transferProgress().beginAttempt(key, original.id, original.selected)));
+        QVERIFY(file->setCheckpointAttempt(original));
+        QVERIFY(waitTask(file->writeIncoming(0, bytes)));
+        QVERIFY(waitTask(file->checkpointIncomingPrefix(bytes.size())));
+        auto replacement = original;
+        replacement.id = QUuid::createUuid();
+        std::optional<dsfm::Result<void>> result;
+        file->selectIncomingCheckpoint(replacement).then([&](auto value) { result.emplace(std::move(value)); });
+        QVERIFY(!result.has_value());
+        QCOMPARE(*file->checkpointAttempt(), original); // Validation never installs an unverified attempt.
+        auto superseding = original;
+        superseding.id = QUuid::createUuid();
+        QVERIFY(file->setCheckpointAttempt(superseding));
+        QTRY_VERIFY_WITH_TIMEOUT(result.has_value(), 5000);
+        QVERIFY(!*result);
+        QCOMPARE(result->error().code, dsfm::ErrorCode::Cancelled);
+        QCOMPARE(*file->checkpointAttempt(), superseding);
+        auto whole = waitTask(file->checkpointIncomingPrefix(bytes.size()));
+        QVERIFY(whole);
+        QCOMPARE(whole.value(), file->getHash());
+        auto durable = waitTask(storage().transferProgress().load(key));
+        QVERIFY(durable);
+        QCOMPARE(durable.value().attempt, original.id);
+        file->cancel();
+        file->deleteFromDb();
+    }
     void empty_incoming_requires_explicit_final_checkpoint() {
         auto file = incoming({}, "checkpoint-empty.bin");
         QVERIFY(waitTask(file->prepareIncoming()));
@@ -580,6 +747,122 @@ class ManagedStorageTest final : public QObject {
             QCOMPARE(peer->retainedCompletedCount(), size_t(qMin(n + 1, 2)));
             QCOMPARE(peer->incomingChannelCount(), size_t(qMin(n + 1, 2)));
         }
+    }
+    void checkpoint_pause_retains_partial_and_rejects_stale_attempt() {
+        auto file = incoming("abcdef", "pause-fixture");
+        auto saved = waitTask(file->prepareCheckpointProgress(dsfm::minimum_checkpoint_interval));
+        QVERIFY(saved);
+        auto key = file->checkpointKey().value();
+        dsfm::TransferAttempt attempt{QUuid::createUuid(), dsfm::minimum_checkpoint_interval, 1,
+                                      saved.value().checkpoints.first()};
+        QVERIFY(waitTask(storage().transferProgress().beginAttempt(key, attempt.id, attempt.selected)));
+        QVERIFY(file->setCheckpointAttempt(attempt));
+        QVERIFY(waitTask(file->prepareIncoming()));
+        QVERIFY(waitTask(file->writeIncoming(0, "abc")));
+        QVERIFY(waitTask(file->checkpointIncomingPrefix(3)));
+        const auto pending = file->pendingId();
+        file->setState(File::FS_TRANSFERRING);
+        QVERIFY(waitTask(file->pauseTransfer(attempt.id, dsfm::TransferPauseReason::SourceUnavailable)));
+        QCOMPARE(file->getState(), File::FS_PAUSED);
+        QVERIFY(file->isResumable());
+        QCOMPARE(file->dataPauseReason(), dsfm::TransferPauseReason::SourceUnavailable);
+        QCOMPARE(file->pendingId(), pending);
+        auto durable = waitTask(storage().transferProgress().load(key));
+        QVERIFY(durable);
+        QCOMPARE(durable.value().pause, dsfm::TransferPauseReason::SourceUnavailable);
+        QVERIFY(!durable.value().complete);
+        // Reopen independently from the live object's runtime attempt.
+        auto loaded = File::load(*engine_->getFileManager(), file->getId());
+        QCOMPARE(loaded->getState(), File::FS_PAUSED);
+        QCOMPARE(loaded->checkpointInterval(), dsfm::minimum_checkpoint_interval);
+        QCOMPARE(loaded->dataPauseReason(), dsfm::TransferPauseReason::SourceUnavailable);
+        QVERIFY(!loaded->checkpointAttempt());
+        QVERIFY(waitTask(file->prepareIncoming()));
+        auto replacement = attempt; replacement.id = QUuid::createUuid();
+        QVERIFY(waitTask(storage().transferProgress().beginAttempt(key, replacement.id, replacement.selected)));
+        QVERIFY(file->setCheckpointAttempt(replacement));
+        file->setState(File::FS_TRANSFERRING);
+        QVERIFY(!waitTask(file->pauseTransfer(attempt.id, dsfm::TransferPauseReason::Disconnected)));
+        QCOMPARE(file->getState(), File::FS_TRANSFERRING);
+        QVERIFY(waitTask(file->pauseTransfer(replacement.id, dsfm::TransferPauseReason::ResourceUnavailable)));
+        file->cancel();
+        QCOMPARE(file->getState(), File::FS_CANCELLED);
+        QVERIFY(!file->isResumable());
+        auto remaining = waitTask(storage().manager().listPending(file->storageNamespace()));
+        QVERIFY(remaining);
+        QVERIFY(std::none_of(remaining.value().entries.begin(), remaining.value().entries.end(),
+                            [&](const auto& item) { return item.id == pending; }));
+        auto cancelled = waitTask(storage().transferProgress().load(key));
+        QVERIFY(cancelled);
+        QCOMPARE(cancelled.value().failure, dsfm::TransferFailureReason::UserAction);
+        file->deleteFromDb();
+    }
+    void durable_pause_survives_application_mirror_failure() {
+        auto file = incoming("paused", "pause-mirror-fixture");
+        auto saved = waitTask(file->prepareCheckpointProgress(dsfm::minimum_checkpoint_interval));
+        QVERIFY(saved);
+        dsfm::TransferAttempt attempt{QUuid::createUuid(), dsfm::minimum_checkpoint_interval, 1,
+                                      saved.value().checkpoints.first()};
+        const auto key = file->checkpointKey().value();
+        QVERIFY(waitTask(storage().transferProgress().beginAttempt(key, attempt.id, attempt.selected)));
+        QVERIFY(file->setCheckpointAttempt(attempt));
+        file->setState(File::FS_TRANSFERRING);
+        QSqlQuery query;
+        QVERIFY(query.exec("CREATE TEMP TRIGGER reject_pause_mirror BEFORE UPDATE ON file_transfer_v1 "
+                           "BEGIN SELECT RAISE(FAIL,'test pause mirror failure'); END"));
+        const auto cleanup = qScopeGuard([] { QSqlQuery query; query.exec("DROP TRIGGER IF EXISTS reject_pause_mirror"); });
+        QVERIFY(waitTask(file->pauseTransfer(attempt.id, dsfm::TransferPauseReason::SourceUnavailable)));
+        QCOMPARE(file->getState(), File::FS_PAUSED);
+        QCOMPARE(file->dataPauseReason(), dsfm::TransferPauseReason::SourceUnavailable);
+        auto durable = waitTask(storage().transferProgress().load(key));
+        QVERIFY(durable);
+        QCOMPARE(durable.value().pause, dsfm::TransferPauseReason::SourceUnavailable);
+        QVERIFY(query.exec("DROP TRIGGER reject_pause_mirror"));
+        auto loaded = File::load(*engine_->getFileManager(), file->getId());
+        QTRY_COMPARE_WITH_TIMEOUT(loaded->dataPauseReason(), dsfm::TransferPauseReason::SourceUnavailable, 5000);
+        QCOMPARE(loaded->getState(), File::FS_PAUSED);
+        file->deleteFromDb();
+    }
+    void network_transfer_lookup_is_scoped_before_selecting_an_id() {
+        auto first = incoming("first", "first");
+        auto cert = ds::crypto::DsCert::create();
+        auto data = std::make_unique<ContactData>();
+        data->identity = identity_->getId(); data->name = "Collision peer";
+        data->cert = ds::crypto::DsCert::createFromPubkey(cert->getSigningPubKey().toByteArray());
+        data->address = "fixture-not-networked"; data->autoConnect = false;
+        auto* other = engine_->getContactManager()->addContact(std::move(data));
+        auto second_data = std::make_unique<FileData>();
+        second_data->direction = File::INCOMING; second_data->state = File::FS_OFFERED;
+        second_data->identity = identity_->getId(); second_data->contact = other->getId();
+        second_data->conversation = engine_->getConversationManager()->getConversation(other)->getId();
+        second_data->fileId = first->getFileId(); second_data->name = "second"; second_data->size = 1;
+        second_data->hash = QCryptographicHash::hash("x", QCryptographicHash::Sha256);
+        auto* manager = engine_->getFileManager();
+        auto second = manager->addFile(std::move(second_data));
+        QCOMPARE(manager->getFileFromId(first->getFileId(), *contact_, File::INCOMING), first);
+        QCOMPARE(manager->getFileFromId(first->getFileId(), *other, File::INCOMING), second);
+        QVERIFY(!manager->getFileFromId(first->getFileId(), *other, File::OUTGOING));
+        QVERIFY(!manager->getFileFromPeer(first->getFileId(), QUuid::createUuid(), other->getHash(), File::INCOMING));
+        IdentityData identity_data;
+        identity_data.uuid = QUuid::createUuid(); identity_data.name = "Scoped collision identity";
+        identity_data.cert = ds::crypto::DsCert::create(); identity_data.hash = identity_data.cert->getHash().toByteArray();
+        identity_data.autoConnect = false;
+        auto* identity = engine_->getIdentityManager()->addIdentity(identity_data);
+        auto third_contact = std::make_unique<ContactData>();
+        third_contact->identity = identity->getId(); third_contact->name = "Same peer on another identity";
+        third_contact->cert = ds::crypto::DsCert::createFromPubkey(cert->getSigningPubKey().toByteArray());
+        third_contact->address = "fixture-not-networked"; third_contact->autoConnect = false;
+        auto* other_identity_peer = engine_->getContactManager()->addContact(std::move(third_contact));
+        auto third_data = std::make_unique<FileData>();
+        third_data->direction = File::INCOMING; third_data->state = File::FS_OFFERED;
+        third_data->identity = identity->getId(); third_data->contact = other_identity_peer->getId();
+        third_data->conversation = engine_->getConversationManager()->getConversation(other_identity_peer)->getId();
+        third_data->fileId = first->getFileId(); third_data->name = "third"; third_data->size = 1;
+        third_data->hash = QCryptographicHash::hash("x", QCryptographicHash::Sha256);
+        auto third = manager->addFile(std::move(third_data));
+        QCOMPARE(manager->getFileFromPeer(first->getFileId(), identity_->getUuid(), other->getHash(), File::INCOMING), second);
+        QCOMPARE(manager->getFileFromPeer(first->getFileId(), identity->getUuid(), other->getHash(), File::INCOMING), third);
+        first->deleteFromDb(); second->deleteFromDb(); third->deleteFromDb();
     }
     void generic_progress_is_durable_and_feature_neutral() {
         auto make_file = [&](File::Direction direction) {
@@ -629,6 +912,11 @@ class ManagedStorageTest final : public QObject {
         QSignalSpy proven(outgoing.get(), &File::sourceIntegrityFailed);
         QVERIFY(waitTask(outgoing->failCheckpoint(dsfm::TransferFailureReason::SourceIntegrityMismatch)));
         QCOMPARE(proven.count(), 1);
+        outgoing->setState(File::FS_FAILED);
+        QVERIFY(!outgoing->isResumable());
+        auto restored = File::load(*engine_->getFileManager(), outgoing->getId());
+        QCOMPARE(restored->failureReason(), int(dsfm::TransferFailureReason::SourceIntegrityMismatch));
+        QVERIFY(!restored->isResumable());
         incoming->deleteFromDb();
         outgoing->deleteFromDb();
     }
@@ -980,6 +1268,418 @@ class ManagedStorageTest final : public QObject {
         QTRY_VERIFY_WITH_TIMEOUT(!socket->isOpen(), 5000);
         server->close();
         QCoreApplication::processEvents();
+    }
+    void authenticated_checkpoint_wire_transfer_data() {
+        QTest::addColumn<quint32>("interval");
+        QTest::addColumn<bool>("empty");
+        QTest::addColumn<bool>("withhold");
+        QTest::addColumn<bool>("signed_offer");
+        QTest::addColumn<QString>("control");
+        QTest::newRow("64KiB") << dsfm::minimum_checkpoint_interval << false << false << false << QString{};
+        QTest::newRow("1MiB") << dsfm::default_checkpoint_interval << false << false << false << QString{};
+        QTest::newRow("16MiB") << dsfm::maximum_checkpoint_interval << false << false << false << QString{};
+        QTest::newRow("empty") << dsfm::minimum_checkpoint_interval << true << false << false << QString{};
+        QTest::newRow("withheld") << dsfm::minimum_checkpoint_interval << false << true << false << QString{};
+        QTest::newRow("signed-manifest") << dsfm::minimum_checkpoint_interval << false << false << true << QString{};
+        QTest::newRow("stale-ack") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("stale-ack");
+        QTest::newRow("resume-fields") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("resume-fields");
+        QTest::newRow("advisory-pause") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("pause");
+        QTest::newRow("duplicate-readiness") << dsfm::minimum_checkpoint_interval << false << false << false << QStringLiteral("duplicate-readiness");
+        QTest::newRow("receiver-mismatch") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("receiver-mismatch");
+        QTest::newRow("unsupported-version") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("unsupported-version");
+        QTest::newRow("remote-source-cancel") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("remote-source-cancel");
+        QTest::newRow("resume-lost") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("resume");
+        QTest::newRow("resume-missing") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("resume-missing");
+        QTest::newRow("resume-corrupt") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("resume-corrupt");
+        QTest::newRow("resume-source") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("resume-source");
+        QTest::newRow("resume-metadata") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("resume-metadata");
+        QTest::newRow("resume-rewind-source") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("resume-rewind-source");
+        QTest::newRow("resume-short-prefix") << dsfm::minimum_checkpoint_interval << false << true << false << QStringLiteral("resume-short-prefix");
+    }
+    void authenticated_checkpoint_wire_transfer() {
+        QFETCH(quint32, interval);
+        QFETCH(bool, empty);
+        QFETCH(bool, withhold);
+        QFETCH(bool, signed_offer);
+        QFETCH(QString, control);
+        const bool resume_case = control == "resume" || control == "resume-missing" || control == "resume-corrupt" ||
+                                 control == "resume-source" || control == "resume-metadata" || control == "resume-rewind-source" ||
+                                 control == "resume-short-prefix";
+        const auto old_auto_accept = engine_->settings().value("autoAcceptIncomingFiles");
+        engine_->settings().setValue("autoAcceptIncomingFiles", false);
+        IdentityData receiver_data;
+        receiver_data.uuid = QUuid::createUuid();
+        receiver_data.name = QStringLiteral("Wire rx %1").arg(QTest::currentDataTag());
+        receiver_data.cert = ds::crypto::DsCert::create(); receiver_data.hash = receiver_data.cert->getHash().toByteArray();
+        receiver_data.autoConnect = false;
+        auto *receiver_identity = engine_->getIdentityManager()->addIdentity(receiver_data);
+        QVERIFY(receiver_identity);
+        receiver_identity->setPreviewImages(signed_offer);
+        const auto add_contact = [&](Identity *owner, Identity *remote) {
+            auto data = std::make_unique<ContactData>();
+            data->identity = owner->getId(); data->name = "Checkpoint wire peer";
+            data->cert = ds::crypto::DsCert::createFromPubkey(remote->getCert()->getSigningPubKey().toByteArray());
+            data->address = "fixture-no-public-network"; data->autoConnect = false; data->state = Contact::ACCEPTED;
+            auto *contact = engine_->getContactManager()->addContact(std::move(data));
+            contact->setPeerVerified(true);
+            return engine_->getContactManager()->getContact(contact->getUuid());
+        };
+        auto sender_contact = add_contact(identity_, receiver_identity);
+        auto receiver_contact = add_contact(receiver_identity, identity_);
+        auto sender_conversation = engine_->getConversationManager()->getConversation(sender_contact.get());
+        const auto cleanup = qScopeGuard([&] {
+            sender_contact->disconnectFromContact(true);
+            receiver_contact->disconnectFromContact(true);
+            engine_->settings().setValue("autoAcceptIncomingFiles", old_auto_accept);
+            engine_->getContactManager()->deleteContact(sender_contact->getUuid());
+            engine_->getContactManager()->deleteContact(receiver_contact->getUuid());
+        });
+        LoopbackListener listener;
+        QVERIFY(listener.listen(QHostAddress::LocalHost, 0));
+        std::shared_ptr<CheckpointWireServer> server;
+        bool recovering = false;
+        quint64 recovered_offset = std::numeric_limits<quint64>::max();
+        FileResumeStatus resume_status = FileResumeStatus::Rejected;
+        dsfm::TransferPauseReason remote_pause = dsfm::TransferPauseReason::None;
+        QObject observations;
+        QVector<std::optional<dsfm::TransferAttempt>> signed_attempts;
+        listener.accepted = [&](ds::prot::ConnectionSocket::ptr_t socket) {
+            ConnectData data;
+            data.service = receiver_identity->getUuid(); data.identitysCert = receiver_identity->getCert();
+            server = std::make_shared<CheckpointWireServer>(std::move(socket), data);
+            server->preference = interval;
+            server->withhold_proposals = withhold && !resume_case && !recovering;
+            server->withhold_receipts = resume_case && !recovering;
+            connect(server.get(), &PeerConnection::receivedFileResumeResult, &observations, [&](const PeerFileResumeResult &result) {
+                if (result.checkpoint_attempt) recovered_offset = result.checkpoint_attempt->selected.offset;
+                resume_status = result.status;
+                remote_pause = result.pause;
+            });
+            connect(server.get(), &PeerConnection::receivedMessage, &observations, [&](const PeerMessage &message) {
+                signed_attempts = message.attachment_attempts;
+            });
+            connect(server.get(), &ds::prot::Peer::incomingPeer, receiver_contact.get(), &Contact::onIncomingPeer);
+        };
+        ds::prot::ConnectionSocket::ptr_t socket;
+        std::shared_ptr<CheckpointWireClient> client;
+        int repeated_readiness = 0;
+        const auto connect_wire = [&] {
+            socket = std::make_shared<ds::prot::ConnectionSocket>();
+            ConnectData data;
+            data.service = identity_->getUuid(); data.identitysCert = identity_->getCert();
+            data.contactsCert = receiver_identity->getCert();
+            client = std::make_shared<CheckpointWireClient>(socket, data);
+            client->preference = dsfm::maximum_checkpoint_interval;
+            connect(client.get(), &PeerConnection::receivedFileOfferResponse, &observations,
+                    [&](const PeerFileOfferResponse &response) {
+                if (control == "duplicate-readiness" && !repeated_readiness &&
+                    response.status == FileOfferResponseStatus::Accepted) {
+                    // This observer precedes Contact's signal connection. Start
+                    // its journal commit, then let normal dispatch deliver the
+                    // same exact readiness before that asynchronous work ends.
+                    ++repeated_readiness;
+                    emit client->receivedFileOfferResponse(response);
+                }
+            });
+            connect(client.get(), &ds::prot::Peer::connectedToPeer, sender_contact.get(), &Contact::onConnectedToPeer);
+            socket->connectToHost(QHostAddress::LocalHost, listener.serverPort());
+        };
+        connect_wire();
+        QTRY_COMPARE_WITH_TIMEOUT(client->checkpointInterval(), interval, 5000);
+        QVERIFY(server);
+        QTRY_COMPARE_WITH_TIMEOUT(server->checkpointInterval(), interval, 5000);
+        QByteArray bytes(empty ? 0 : qsizetype(interval) + 7, 'w');
+        QImage image(16, 16, QImage::Format_RGB32);
+        image.fill(Qt::green);
+        if (signed_offer) {
+            bytes.clear();
+            QBuffer encoded(&bytes); QVERIFY(encoded.open(QIODevice::WriteOnly));
+            QVERIFY(image.save(&encoded, "PNG"));
+        }
+        const auto source_name = QStringLiteral("checkpoint-wire-source-%1").arg(QTest::currentDataTag());
+        const auto path = directory_.filePath(source_name);
+        QFile source(path);
+        QVERIFY(source.open(QIODevice::WriteOnly));
+        QCOMPARE(source.write(bytes), bytes.size()); source.close();
+        auto imported = waitTask(storage().importFile(path, source_name));
+        QVERIFY(imported);
+        auto file_data = std::make_unique<FileData>();
+        file_data->state = File::FS_WAITING; file_data->identity = identity_->getId();
+        file_data->contact = sender_contact->getId(); file_data->conversation = sender_conversation->getId();
+        file_data->storage_namespace = imported.value().namespace_id; file_data->storage_id = imported.value().file.id;
+        file_data->name = QStringLiteral("wire-transfer-%1.bin").arg(QTest::currentDataTag());
+        file_data->size = bytes.size();
+        file_data->mime_type = signed_offer ? "image/png" : "application/octet-stream";
+        file_data->hash = imported.value().file.sha256;
+        auto outgoing = engine_->getFileManager()->addFile(std::move(file_data));
+        QSignalSpy local_proof(outgoing.get(), &File::sourceIntegrityFailed);
+        File::ptr_t thumbnail;
+        if (signed_offer) {
+            QByteArray jpeg; QBuffer encoded(&jpeg); QVERIFY(encoded.open(QIODevice::WriteOnly));
+            QVERIFY(image.save(&encoded, "JPEG"));
+            auto preview = std::make_unique<FileData>();
+            preview->state = File::FS_HASHING; preview->identity = identity_->getId();
+            preview->contact = sender_contact->getId(); preview->conversation = sender_conversation->getId();
+            preview->name = "preview.jpg"; preview->mime_type = "image/jpeg"; preview->size = jpeg.size();
+            preview->hash = QCryptographicHash::hash(jpeg, QCryptographicHash::Sha256);
+            preview->thumbnail_for = outgoing->getFileId(); preview->manifest_id = ds::crypto::Crypto::getRandomBytes(32);
+            thumbnail = engine_->getFileManager()->addFile(std::move(preview));
+            QVERIFY(waitTask(thumbnail->importThumbnail(jpeg)));
+        }
+        sender_contact->queueFile(outgoing);
+        File::ptr_t received;
+        QTRY_VERIFY_WITH_TIMEOUT((received = engine_->getFileManager()->getFileFromId(
+            outgoing->getFileId(), *receiver_contact, File::INCOMING)), 5000);
+        QCOMPARE(outgoing->checkpointInterval(), interval);
+        QCOMPARE(received->checkpointInterval(), interval);
+        QVERIFY(received->checkpointAttempt());
+        QCOMPARE(*received->checkpointAttempt(), *outgoing->checkpointAttempt());
+        if (signed_offer) {
+            QCOMPARE(signed_attempts.size(), 2);
+            QVERIFY(signed_attempts[0]); QVERIFY(signed_attempts[1]);
+            QCOMPARE(*signed_attempts[0], *outgoing->checkpointAttempt());
+            QCOMPARE(*signed_attempts[1], *thumbnail->checkpointAttempt());
+        }
+        const auto attempt = *outgoing->checkpointAttempt();
+        const auto sender_key = outgoing->checkpointKey().value();
+        auto before = waitTask(storage().transferProgress().load(sender_key));
+        QVERIFY(before);
+        QCOMPARE(before.value().attempt, attempt.id); // Persisted before initial offer.
+        received->accept();
+        if (withhold) {
+            QTRY_VERIFY_WITH_TIMEOUT(bool(server->withheld), 5000);
+            QTRY_COMPARE_WITH_TIMEOUT(outgoing->getBytesTransferred(), qlonglong(interval), 5000);
+            QCOMPARE(client->admitted_end, quint64(interval));
+            QTest::qWait(100);
+            QCOMPARE(client->admitted_end, quint64(interval)); // Ordinary ACKs cannot release the durable window.
+            if (control == "receiver-mismatch" || control == "unsupported-version" || control == "remote-source-cancel") {
+                QSignalSpy remote_proof(received.get(), &File::sourceIntegrityFailed);
+                const auto reason = control == "receiver-mismatch" ? dsfm::TransferFailureReason::ReceiverCheckpointMismatch
+                    : control == "unsupported-version" ? dsfm::TransferFailureReason::UnsupportedVersion
+                                                       : dsfm::TransferFailureReason::RemoteSourceChanged;
+                if (control == "receiver-mismatch") {
+                    const dsfm::DurableCheckpoint incorrect{1, interval, QByteArray(32, 'x'), false};
+                    server->withhold_proposals = false;
+                    server->sendFileCheckpoint(outgoing->getFileId(), outgoing->getHash(), attempt, incorrect,
+                                               dsfm::CheckpointPhase::Proposed);
+                    QTRY_COMPARE_WITH_TIMEOUT(outgoing->getState(), File::FS_FAILED, 5000);
+                    QCOMPARE(outgoing->failureReason(), int(reason));
+                } else {
+                    client->sendFileCancel(outgoing->getFileId(), control == "unsupported-version"
+                        ? FileCancelReason::UnsupportedTransferVersion : FileCancelReason::SourceChanged);
+                }
+                QTRY_COMPARE_WITH_TIMEOUT(received->getState(), File::FS_FAILED, 5000);
+                QCOMPARE(received->failureReason(), int(reason));
+                QCOMPARE(local_proof.count(), 0); QCOMPARE(remote_proof.count(), 0);
+                QVERIFY(!received->isResumable());
+                auto saved = waitTask(storage().transferProgress().load(received->checkpointKey().value()));
+                QVERIFY(saved); QCOMPARE(saved.value().failure, reason);
+                QCOMPARE(saved.value().verified_prefix, quint64(0));
+                QVERIFY(socket->isOpen()); // These are supported terminal outcomes.
+                outgoing->cancel();
+                outgoing->deleteFromDb(); received->deleteFromDb();
+                return;
+            }
+            if (control == "stale-ack") {
+                server->sendCheckpointAck(outgoing->getFileId(), QUuid::createUuid(), 8, interval, false);
+                QTRY_VERIFY_WITH_TIMEOUT(!socket->isOpen(), 5000);
+                auto saved = waitTask(storage().transferProgress().load(sender_key));
+                QVERIFY(saved);
+                QCOMPARE(saved.value().confirmed_offset, quint64(0));
+                QCOMPARE(saved.value().failure, dsfm::TransferFailureReason::None);
+                outgoing->cancel(); received->cancel();
+                outgoing->deleteFromDb(); received->deleteFromDb();
+                return;
+            }
+            if (control == "resume-fields") {
+                QSignalSpy dispatched(client.get(), &PeerConnection::receivedFileResume);
+                ds::protocol::FileResume request;
+                request.setFileId(outgoing->getFileId()); request.setFileSize(bytes.size());
+                request.setSha256(outgoing->getHash()); request.setCheckpointVersion(1);
+                request.setCheckpointIntervalBytes(interval);
+                const auto zero = ds::prot::codec::checkpointReference(attempt.selected);
+                request.setAvailableCheckpoints({zero, zero});
+                ds::protocol::Envelope envelope;
+                envelope.setProtocolVersion(ds::prot::codec::protocolVersion);
+                envelope.setRequestId(server->nextRequestId(ds::prot::Peer::RequestType::FileResumeResult));
+                envelope.setFileResume(std::move(request));
+                server->send(envelope);
+                QTRY_VERIFY_WITH_TIMEOUT(!socket->isOpen(), 5000);
+                QCOMPARE(dispatched.count(), 0); // Malformed checkpoint metadata never enters the legacy path.
+                outgoing->cancel(); received->cancel();
+                outgoing->deleteFromDb(); received->deleteFromDb();
+                return;
+            }
+            if (control == "pause") {
+                // Even a well-shaped advisory EOF cannot establish progress or
+                // turn a peer's source assertion into locally proved corruption.
+                const dsfm::DurableCheckpoint advisory{2, quint64(bytes.size()), outgoing->getHash(), true};
+                server->sendFilePause(outgoing->getFileId(), attempt.id, advisory, dsfm::TransferPauseReason::SourceUnavailable);
+                QTRY_COMPARE_WITH_TIMEOUT(outgoing->getState(), File::FS_PAUSED, 5000);
+                auto saved = waitTask(storage().transferProgress().load(sender_key));
+                QVERIFY(saved);
+                QCOMPARE(saved.value().confirmed_offset, quint64(0));
+                QCOMPARE(saved.value().failure, dsfm::TransferFailureReason::None);
+                QCOMPARE(saved.value().pause, dsfm::TransferPauseReason::SourceUnavailable);
+                QVERIFY(!saved.value().complete);
+                server->sendFilePause(outgoing->getFileId(), attempt.id, advisory, dsfm::TransferPauseReason::SourceUnavailable);
+                QTest::qWait(50);
+                QVERIFY(socket->isOpen());
+                outgoing->cancel(); received->cancel();
+                outgoing->deleteFromDb(); received->deleteFromDb();
+                return;
+            }
+            if (resume_case) {
+                auto saved = waitTask(storage().transferProgress().load(sender_key));
+                QVERIFY(saved);
+                QCOMPARE(saved.value().confirmed_offset, quint64(0));
+                QVERIFY(std::any_of(saved.value().accepted_checkpoints.begin(), saved.value().accepted_checkpoints.end(),
+                                    [&](const auto &checkpoint) { return checkpoint.offset == interval; }));
+                if (control == "resume-short-prefix") {
+                    const dsfm::DurableCheckpoint shorter{2, 8190,
+                        QCryptographicHash::hash(bytes.first(8190), QCryptographicHash::Sha256), false, true};
+                    QVERIFY(waitTask(storage().transferProgress().record(sender_key, attempt.id, shorter,
+                                                                         dsfm::CheckpointPhase::SenderConfirmed)));
+                }
+                sender_contact->disconnectFromContact(true);
+                QTRY_COMPARE_WITH_TIMEOUT(outgoing->getState(), File::FS_PAUSED, 5000);
+                QTRY_COMPARE_WITH_TIMEOUT(received->getState(), File::FS_PAUSED, 5000);
+                QSignalSpy remote_proof(received.get(), &File::sourceIntegrityFailed);
+                QVERIFY(!outgoing->isResumable()); // Only the receiver initiates checkpoint recovery.
+                if (control == "resume-missing")
+                    QVERIFY(waitTask(storage().manager().remove(outgoing->storageNamespace(), outgoing->storageId())));
+                if (control == "resume-corrupt" || control == "resume-rewind-source" || control == "resume-short-prefix") {
+                    QVERIFY(waitTask(received->prepareIncoming()));
+                    QVERIFY(waitTask(received->writeIncoming(0, "x")));
+                    QVERIFY(waitTask(received->checkpointIncoming()));
+                    QVERIFY(waitTask(received->suspendIncoming()));
+                }
+                if (control == "resume-source" || control == "resume-metadata" || control == "resume-rewind-source") {
+                    auto changed = bytes;
+                    changed[0] = 'x';
+                    const auto expected = outgoing->getHash();
+                    const bool metadata_refusal = control == "resume-metadata";
+                    const bool changes_after_selection = control == "resume-rewind-source";
+                    auto preparations = std::make_shared<int>(0);
+                    QVERIFY(outgoing->setPreparedSource(identity_->getUuid(), sender_contact->getUuid(), [] { return true; },
+                        [bytes, changed, expected, metadata_refusal, changes_after_selection, preparations](dsfm::ReadPreparationOptions options) -> QCoro::Task<dsfm::Result<dsfm::PreparedRead>> {
+                            if (options.cancel.cancelled()) co_return dsfm::Error{dsfm::ErrorCode::Cancelled};
+                            if (metadata_refusal) co_return dsfm::Error{dsfm::ErrorCode::IntegrityError}; // Conservative backend/cache refusal.
+                            dsfm::FileInfo info;
+                            info.size = changed.size(); info.sha256 = expected;
+                            const auto &content = changes_after_selection && ++*preparations == 1 ? bytes : changed;
+                            co_return dsfm::PreparedRead{info, std::make_unique<CheckpointFixtureReader>(content)};
+                        }));
+                }
+                recovering = true;
+                connect_wire();
+                QTRY_COMPARE_WITH_TIMEOUT(client->checkpointInterval(), interval, 5000);
+                QTRY_COMPARE_WITH_TIMEOUT(server->checkpointInterval(), interval, 5000);
+                received->resume();
+                if (control == "resume-rewind-source") {
+                    QTRY_COMPARE_WITH_TIMEOUT(recovered_offset, quint64(0), 5000);
+                    QTRY_COMPARE_WITH_TIMEOUT(outgoing->getState(), File::FS_FAILED, 5000);
+                    QTRY_COMPARE_WITH_TIMEOUT(received->getState(), File::FS_FAILED, 5000);
+                    QCOMPARE(outgoing->failureReason(), int(dsfm::TransferFailureReason::SourceIntegrityMismatch));
+                    QCOMPARE(received->failureReason(), int(dsfm::TransferFailureReason::RemoteSourceChanged));
+                    QCOMPARE(local_proof.count(), 1); QCOMPARE(remote_proof.count(), 0);
+                    // Catch the trusted retained-prefix mismatch before its
+                    // boundary is sent, rather than waiting for full EOF.
+                    QVERIFY(client->admitted_end < quint64(interval));
+                    outgoing->deleteFromDb(); received->deleteFromDb();
+                    return;
+                }
+                if (control == "resume-source") {
+                    QTRY_COMPARE_WITH_TIMEOUT(resume_status, FileResumeStatus::Cancelled, 5000);
+                    QTRY_COMPARE_WITH_TIMEOUT(received->getState(), File::FS_FAILED, 5000);
+                    QCOMPARE(outgoing->getState(), File::FS_FAILED);
+                    QCOMPARE(outgoing->failureReason(), int(dsfm::TransferFailureReason::SourceIntegrityMismatch));
+                    QCOMPARE(received->failureReason(), int(dsfm::TransferFailureReason::RemoteSourceChanged));
+                    QCOMPARE(local_proof.count(), 1);
+                    QCOMPARE(remote_proof.count(), 0);
+                    QVERIFY(!received->isResumable());
+                    outgoing->deleteFromDb(); received->deleteFromDb();
+                    return;
+                }
+                if (control == "resume-missing" || control == "resume-metadata") {
+                    const auto expected_pause = control == "resume-missing" ? dsfm::TransferPauseReason::SourceUnavailable
+                                                                           : dsfm::TransferPauseReason::SourceRevalidationRequired;
+                    QTRY_COMPARE_WITH_TIMEOUT(resume_status, FileResumeStatus::Paused, 5000);
+                    QCOMPARE(remote_pause, expected_pause);
+                    QTRY_COMPARE_WITH_TIMEOUT(received->getState(), File::FS_PAUSED, 5000);
+                    QCOMPARE(outgoing->getState(), File::FS_PAUSED);
+                    auto local = waitTask(storage().transferProgress().load(sender_key));
+                    auto remote = waitTask(storage().transferProgress().load(received->checkpointKey().value()));
+                    QVERIFY(local); QVERIFY(remote);
+                    QCOMPARE(local.value().pause, expected_pause);
+                    QCOMPARE(remote.value().pause, expected_pause);
+                    QCOMPARE(local.value().failure, dsfm::TransferFailureReason::None);
+                    QCOMPARE(remote.value().failure, dsfm::TransferFailureReason::None);
+                    QCOMPARE(local.value().confirmed_offset, quint64(0));
+                    QCOMPARE(local_proof.count(), 0); QCOMPARE(remote_proof.count(), 0);
+                    QVERIFY(!received->pendingId().isNull());
+                    outgoing->cancel(); received->cancel();
+                    outgoing->deleteFromDb(); received->deleteFromDb();
+                    return;
+                }
+                QTRY_COMPARE_WITH_TIMEOUT(recovered_offset,
+                    control == "resume-corrupt" || control == "resume-short-prefix" ? quint64(0) : quint64(interval), 5000);
+                QTRY_VERIFY_WITH_TIMEOUT(outgoing->checkpointAttempt()->id != attempt.id, 5000);
+                QTRY_VERIFY_WITH_TIMEOUT(received->checkpointAttempt()->id != attempt.id, 5000);
+                QCOMPARE(outgoing->getFileId(), received->getFileId());
+            } else {
+                server->withhold_proposals = false;
+                auto deliver = std::move(server->withheld);
+                deliver();
+            }
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(received->getState(), File::FS_DONE, 60000);
+        QTRY_COMPARE_WITH_TIMEOUT(outgoing->getState(), File::FS_DONE, 5000);
+        if (control == "duplicate-readiness") {
+            QCOMPARE(repeated_readiness, 1);
+            QVERIFY(socket->isOpen());
+        }
+        server->sendFileOfferResponse(outgoing->getFileId(), FileOfferResponseStatus::Rejected);
+        QTest::qWait(50);
+        QCOMPARE(outgoing->getState(), File::FS_DONE); // A delayed offer rejection cannot rewrite a final outcome.
+        auto sent = waitTask(storage().transferProgress().load(sender_key));
+        auto accepted = waitTask(storage().transferProgress().load(received->checkpointKey().value()));
+        QVERIFY(sent); QVERIFY(accepted);
+        QVERIFY(sent.value().complete); QVERIFY(accepted.value().complete);
+        QCOMPARE(sent.value().confirmed_offset, quint64(bytes.size()));
+        QCOMPARE(accepted.value().confirmed_offset, quint64(bytes.size()));
+        auto reader = waitTask(storage().manager().openRead(received->storageNamespace(), received->storageId()));
+        QVERIFY(reader);
+        // Verify complete content in locally bounded reads, including empty EOF.
+        for (qsizetype offset = 0; offset < bytes.size(); offset += 65536) {
+            auto block = waitTask(reader.value()->readAt(offset, qMin<qsizetype>(65536, bytes.size() - offset)));
+            QVERIFY(block); QCOMPARE(block.value(), bytes.mid(offset, block.value().size()));
+        }
+        QVERIFY(waitTask(reader.value()->close()));
+        if (thumbnail) {
+            QTRY_COMPARE_WITH_TIMEOUT(thumbnail->getState(), File::FS_DONE, 5000);
+            thumbnail->deleteFromDb();
+        }
+        outgoing->deleteFromDb(); received->deleteFromDb();
+    }
+    void remote_source_failure_is_terminal_without_local_integrity_proof() {
+        auto file = incoming("bytes", "remote-source-failure.bin");
+        auto progress = waitTask(file->prepareCheckpointProgress(dsfm::minimum_checkpoint_interval));
+        QVERIFY(progress);
+        QSignalSpy proof(file.get(), &File::sourceIntegrityFailed);
+        QVERIFY(!waitTask(file->failCheckpoint(dsfm::TransferFailureReason::SourceIntegrityMismatch)));
+        QVERIFY(waitTask(file->failCheckpoint(dsfm::TransferFailureReason::RemoteSourceChanged)));
+        file->transferFailed("remote source changed", File::FS_FAILED);
+        QCOMPARE(proof.count(), 0);
+        QVERIFY(!file->isResumable());
+        auto loaded = File::load(*engine_->getFileManager(), file->getId());
+        QCOMPARE(loaded->failureReason(), int(dsfm::TransferFailureReason::RemoteSourceChanged));
+        QCOMPARE(loaded->getState(), File::FS_FAILED);
+        QVERIFY(!loaded->isResumable());
+        auto saved = waitTask(storage().transferProgress().load(file->checkpointKey().value()));
+        QVERIFY(saved);
+        QCOMPARE(saved.value().failure, dsfm::TransferFailureReason::RemoteSourceChanged);
+        file->deleteFromDb();
     }
     void incoming_channel_can_suspend_between_windows_and_resume() {
         const QByteArray bytes(8192 + 3, 'r');
@@ -1381,6 +2081,87 @@ class ManagedStorageTest final : public QObject {
         auto content = waitTask(readable.value()->readAt(0, bytes.size()));
         QVERIFY(content); QCOMPARE(content.value(), bytes);
         QVERIFY(waitTask(readable.value()->close()));
+    }
+    void resume_validation_reserves_slots_before_asynchronous_io() {
+        auto peer_data = std::make_unique<ContactData>();
+        peer_data->identity = identity_->getId(); peer_data->name = "Bounded resume peer";
+        const auto cert = ds::crypto::DsCert::create();
+        peer_data->cert = ds::crypto::DsCert::createFromPubkey(cert->getSigningPubKey().toByteArray());
+        peer_data->address = "fixture-no-network"; peer_data->autoConnect = false;
+        peer_data->state = Contact::ACCEPTED;
+        auto* created = engine_->getContactManager()->addContact(std::move(peer_data));
+        auto contact = engine_->getContactManager()->getContact(created->getUuid());
+        auto conversation = engine_->getConversationManager()->getConversation(contact.get());
+        const auto cleanup = qScopeGuard([&] {
+            contact->disconnectFromContact(true);
+            engine_->getContactManager()->deleteContact(contact->getUuid());
+        });
+        auto imported = waitTask(storage().importFile(QStringLiteral(DS_STORAGE_FIXTURES) + "/../assets/mcp/earth.jpg", "bounded-resume.jpg"));
+        QVERIFY(imported);
+        auto peer = std::make_shared<ResumePeer>();
+        contact->onConnectedToPeer(peer);
+        UserInfo info;
+        info.nickName = "Fixture peer"; info.allowFiles = true; info.allowMimeTypes = {"image/jpeg"};
+        emit peer->receivedUserInfo(PeerUserInfo(peer, peer->getConnectionId(), 0, info));
+        std::array<File::ptr_t, 3> files;
+        for (auto& file : files) {
+            auto data = std::make_unique<FileData>();
+            data->state = File::FS_FAILED; data->identity = identity_->getId(); data->contact = contact->getId();
+            data->conversation = conversation->getId(); data->name = "bounded-resume.jpg"; data->mime_type = "image/jpeg";
+            data->storage_namespace = imported.value().namespace_id; data->storage_id = imported.value().file.id;
+            data->size = imported.value().file.size; data->hash = imported.value().file.sha256;
+            file = engine_->getFileManager()->addFile(std::move(data));
+        }
+        // No event-loop turns between requests: the first validations are still
+        // awaiting workers. The third request must fail before starting I/O.
+        for (size_t n = 0; n < files.size(); ++n)
+            emit peer->receivedFileResume(PeerFileResume(peer, peer->getConnectionId(), n + 1,
+                files[n]->getFileId(), 8192, files[n]->getHash(), quint64(files[n]->getSize())));
+        QCOMPARE(peer->responses, 1);
+        QVERIFY(!peer->accepted);
+        QCOMPARE(files[2]->getState(), File::FS_FAILED);
+        QTRY_COMPARE_WITH_TIMEOUT(peer->responses, 3, 5000);
+        QCOMPARE(peer->starts, 0);
+        QCOMPARE(files[0]->getState(), File::FS_QUEUED);
+        QCOMPARE(files[1]->getState(), File::FS_QUEUED);
+        contact->disconnectFromContact(true);
+        for (auto& file : files) QCOMPARE(file->getState(), File::FS_FAILED);
+    }
+    void hashing_and_incoming_slots_do_not_spin_the_scheduler() {
+        auto data = std::make_unique<ContactData>();
+        data->identity = identity_->getId(); data->name = "Hashing slot peer";
+        auto cert = ds::crypto::DsCert::create();
+        data->cert = ds::crypto::DsCert::createFromPubkey(cert->getSigningPubKey().toByteArray());
+        data->address = "fixture-no-network"; data->autoConnect = false; data->state = Contact::ACCEPTED;
+        auto *added = engine_->getContactManager()->addContact(std::move(data));
+        auto contact = engine_->getContactManager()->getContact(added->getUuid());
+        auto conversation = engine_->getConversationManager()->getConversation(contact.get());
+        auto peer = std::make_shared<ResumePeer>();
+        const auto cleanup = qScopeGuard([&] {
+            contact->disconnectFromContact(true);
+            engine_->getContactManager()->deleteContact(contact->getUuid());
+        });
+        contact->onConnectedToPeer(peer);
+        UserInfo preferences;
+        preferences.nickName = "Fixture"; preferences.allowFiles = true; preferences.allowMimeTypes = {"*"};
+        emit peer->receivedUserInfo(PeerUserInfo(peer, peer->getConnectionId(), 0, preferences));
+        std::array<File::ptr_t, 3> files;
+        for (size_t index = 0; index < files.size(); ++index) {
+            auto file = std::make_unique<FileData>();
+            file->state = index < 2 ? File::FS_QUEUED : File::FS_OFFERED;
+            file->direction = File::INCOMING; file->identity = identity_->getId(); file->contact = contact->getId();
+            file->conversation = conversation->getId(); file->name = QStringLiteral("slot-%1").arg(index);
+            file->size = 1; file->hash = QCryptographicHash::hash("x", QCryptographicHash::Sha256);
+            files[index] = engine_->getFileManager()->addFile(std::move(file));
+        }
+        contact->queueFile(files[0]); contact->queueFile(files[1]);
+        QTRY_COMPARE_WITH_TIMEOUT(peer->starts, 2, 5000);
+        const auto first = std::less<File::ptr_t>{}(files[0], files[1]) ? files[0] : files[1];
+        first->setState(File::FS_HASHING);
+        emit peer->outputBufferEmptied(); // Must return with a hashing entry and a live incoming entry.
+        QVERIFY(!contact->acquireFileWork(files[2])); // Hashing/publication still consumes its slot.
+        first->setState(File::FS_DONE);
+        QVERIFY(contact->acquireFileWork(files[2]));
     }
     void resumed_sender_waits_for_receiver_channel_readiness() {
         auto peer_data = std::make_unique<ContactData>();

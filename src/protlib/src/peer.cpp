@@ -20,6 +20,8 @@
 #include <QTime>
 #include <QTimeZone>
 #include <QtEndian>
+#include <QCryptographicHash>
+#include <QScopeGuard>
 
 #include "ds/peer.h"
 #include "ds/bio.h"
@@ -94,6 +96,51 @@ bool validAsciiMessage(const QByteArray& content)
     return true;
 }
 
+using WireFileError = ds::protocol::FileErrorGadget::FileError;
+WireFileError wireFileError(FileCancelReason reason) {
+    switch (reason) {
+    case FileCancelReason::SourceChanged: return WireFileError::SOURCE_CHANGED;
+    case FileCancelReason::UserAction: return WireFileError::USER_ACTION;
+    case FileCancelReason::ReceiverCheckpointMismatch: return WireFileError::RECEIVER_CHECKPOINT_MISMATCH;
+    case FileCancelReason::UnsupportedTransferVersion: return WireFileError::UNSUPPORTED_TRANSFER_VERSION;
+    }
+    throw Error("Unknown local transfer failure reason");
+}
+std::optional<FileCancelReason> localFileError(WireFileError reason) {
+    switch (reason) {
+    case WireFileError::SOURCE_CHANGED: return FileCancelReason::SourceChanged;
+    case WireFileError::USER_ACTION: return FileCancelReason::UserAction;
+    case WireFileError::RECEIVER_CHECKPOINT_MISMATCH: return FileCancelReason::ReceiverCheckpointMismatch;
+    case WireFileError::UNSUPPORTED_TRANSFER_VERSION: return FileCancelReason::UnsupportedTransferVersion;
+    default: return {};
+    }
+}
+
+using WirePauseReason = ds::protocol::FilePauseReasonGadget::FilePauseReason;
+WirePauseReason wirePauseReason(dsfm::TransferPauseReason reason) {
+    switch (reason) {
+    case dsfm::TransferPauseReason::None: return WirePauseReason::FILE_PAUSE_UNSPECIFIED;
+    case dsfm::TransferPauseReason::SourceUnavailable: return WirePauseReason::SOURCE_UNAVAILABLE;
+    case dsfm::TransferPauseReason::SourceRevalidationRequired: return WirePauseReason::SOURCE_REVALIDATION_REQUIRED;
+    case dsfm::TransferPauseReason::ResourceUnavailable: return WirePauseReason::TRANSFER_RESOURCE_UNAVAILABLE;
+    case dsfm::TransferPauseReason::AuthorizationWithdrawn: return WirePauseReason::TRANSFER_AUTHORIZATION_WITHDRAWN;
+    case dsfm::TransferPauseReason::Disconnected: return WirePauseReason::TRANSFER_DISCONNECTED;
+    case dsfm::TransferPauseReason::FeaturePaused: return WirePauseReason::TRANSFER_FEATURE_PAUSED;
+    }
+    throw Error("Unknown local transfer pause reason");
+}
+std::optional<dsfm::TransferPauseReason> localPauseReason(WirePauseReason reason) {
+    switch (reason) {
+    case WirePauseReason::SOURCE_UNAVAILABLE: return dsfm::TransferPauseReason::SourceUnavailable;
+    case WirePauseReason::SOURCE_REVALIDATION_REQUIRED: return dsfm::TransferPauseReason::SourceRevalidationRequired;
+    case WirePauseReason::TRANSFER_RESOURCE_UNAVAILABLE: return dsfm::TransferPauseReason::ResourceUnavailable;
+    case WirePauseReason::TRANSFER_AUTHORIZATION_WITHDRAWN: return dsfm::TransferPauseReason::AuthorizationWithdrawn;
+    case WirePauseReason::TRANSFER_DISCONNECTED: return dsfm::TransferPauseReason::Disconnected;
+    case WirePauseReason::TRANSFER_FEATURE_PAUSED: return dsfm::TransferPauseReason::FeaturePaused;
+    default: return {};
+    }
+}
+
 class IncomingFileChannel : public Peer::Channel {
   public:
     explicit IncomingFileChannel(core::File::ptr_t file) : file_{std::move(file)} {
@@ -114,7 +161,9 @@ class IncomingFileChannel : public Peer::Channel {
         }
     }
     ~IncomingFileChannel() override = default;
+    void stopPayload() override { stopping_ = true; }
     void onIncoming(Peer &peer, quint64, const Peer::mview_t &data, bool final) override {
+        if (stopping_) return;
         if (data.size() < Peer::file_chunk_header_bytes)
             throw Error("Invalid file chunk header");
         quint64 sequence{}, offset{};
@@ -237,19 +286,14 @@ class IncomingFileChannel : public Peer::Channel {
     }
     QCoro::Task<void> pauseCheckpoint(std::shared_ptr<IncomingFileChannel> self, std::shared_ptr<Peer> peer,
                                       dsfm::TransferPauseReason reason) {
-        auto &storage = DsEngine::instance().getFileManager()->storage();
-        auto held = storage.holdOperation();
-        auto key = file_->checkpointKey();
-        if (key)
-            co_await storage.transferProgress().pause(key.value(), attempt_->id, reason);
-        if (currentAttempt()) {
+        auto saved = co_await file_->pauseTransfer(attempt_->id, reason);
+        if (saved && currentAttempt()) {
             if (peer->isConnected()) {
                 try {
                     peer->sendFilePause(file_->getFileId(), attempt_->id, last_checkpoint_, reason);
                 } catch (...) {
                 }
             }
-            file_->transferFailed(QObject::tr("The incoming transfer is paused."), File::FS_FAILED);
         }
         Q_UNUSED(self);
     }
@@ -258,7 +302,7 @@ class IncomingFileChannel : public Peer::Channel {
         auto saved =
             co_await file_->recordCheckpoint(attempt_->id, checkpoint, dsfm::CheckpointPhase::MutuallyConfirmed);
         checkpoint_busy_ = false;
-        if (!currentAttempt())
+        if (stopping_ || !currentAttempt())
             co_return;
         if (!saved || !checkpoint_window_->confirm(checkpoint.offset)) {
             stopping_ = true;
@@ -289,7 +333,7 @@ class IncomingFileChannel : public Peer::Channel {
     }
     QCoro::Task<void> drain(std::shared_ptr<IncomingFileChannel> self, std::shared_ptr<Peer> peer) {
         try {
-            while (!queue_.empty() && file_->getState() == File::FS_TRANSFERRING && peer->isConnected()) {
+            while (!stopping_ && !queue_.empty() && file_->getState() == File::FS_TRANSFERRING && peer->isConnected()) {
                 auto chunk = std::move(queue_.front());
                 queue_.pop_front();
                 const auto start_offset = chunk.offset;
@@ -304,7 +348,7 @@ class IncomingFileChannel : public Peer::Channel {
                     chunk.final = next.final;
                 }
                 auto written = co_await file_->writeIncoming(start_offset, chunk.bytes);
-                if (file_->getState() != File::FS_TRANSFERRING || !peer->isConnected())
+                if (stopping_ || file_->getState() != File::FS_TRANSFERRING || !peer->isConnected())
                     break;
                 if (!written || written.value() != chunk.bytes.size()) {
                     if (!written) {
@@ -334,7 +378,7 @@ class IncomingFileChannel : public Peer::Channel {
                                                 false);
                     if (chunk.final || durable_offset_ % attempt_->interval == 0) {
                         auto digest = co_await file_->checkpointIncomingPrefix(durable_offset_);
-                        if (!currentAttempt() || file_->getState() != File::FS_TRANSFERRING || !peer->isConnected())
+                        if (stopping_ || !currentAttempt() || file_->getState() != File::FS_TRANSFERRING || !peer->isConnected())
                             break;
                         if (!digest) {
                             stopping_ = true;
@@ -345,7 +389,7 @@ class IncomingFileChannel : public Peer::Channel {
                                                                  chunk.final, false};
                         auto saved =
                             co_await file_->recordCheckpoint(attempt_->id, checkpoint, dsfm::CheckpointPhase::Proposed);
-                        if (!currentAttempt() || file_->getState() != File::FS_TRANSFERRING || !peer->isConnected())
+                        if (stopping_ || !currentAttempt() || file_->getState() != File::FS_TRANSFERRING || !peer->isConnected())
                             break;
                         if (!saved) {
                             stopping_ = true;
@@ -415,6 +459,7 @@ class IncomingFileChannel : public Peer::Channel {
 
 class OutgoingFileChannel : public Peer::Channel {
   public:
+    void stopPayload() override { stopping_ = true; }
     explicit OutgoingFileChannel(core::File::ptr_t file) : file_{std::move(file)} {
         const auto offset = file_->getBytesTransferred();
         if (file_->getDirection() != File::OUTGOING || offset < 0 || offset > file_->getSize() ||
@@ -464,11 +509,36 @@ class OutgoingFileChannel : public Peer::Channel {
                 file_->transferFailed(QObject::tr("File storage is unavailable."), File::FS_FAILED);
                 co_return;
             }
+            if (attempt_) {
+                const auto key = file_->checkpointKey();
+                if (!key) {
+                    pumping_ = false;
+                    reportSourceChanged(*peer, false, dsfm::TransferPauseReason::ResourceUnavailable);
+                    co_return;
+                }
+                auto saved = co_await storage.transferProgress().load(key.value());
+                if (stopping_ || !currentAttempt() || !peer->isConnected() ||
+                    file_->getState() != File::FS_TRANSFERRING) { pumping_ = false; co_return; }
+                if (!saved || saved.value().attempt != attempt_->id ||
+                    saved.value().description.size != quint64(file_->getSize()) ||
+                    saved.value().description.sha256 != file_->getHash() ||
+                    saved.value().description.interval != attempt_->interval ||
+                    saved.value().description.side != dsfm::TransferSide::Sender) {
+                    pumping_ = false;
+                    reportSourceChanged(*peer, false, dsfm::TransferPauseReason::ResourceUnavailable);
+                    co_return;
+                }
+                // A rewind does not invalidate our accepted hashes above the
+                // selected prefix. Recheck them against the rebuilt byte stream
+                // before sending their boundary, including short pause prefixes.
+                trusted_prefixes_ = saved.value().accepted_checkpoints;
+            }
             dsfm::ReadPreparationOptions preparation;
             preparation.expected_sha256 = file_->getHash();
             preparation.cancel = file_->outgoingCancellation();
             auto opened = co_await file_->prepareOutgoingRead(preparation);
-            if (!opened || opened.value().info.size != quint64(file_->getSize())) {
+            if (!opened || opened.value().info.size != quint64(file_->getSize()) ||
+                opened.value().info.sha256 != file_->getHash()) {
                 pumping_ = false;
                 if (!opened)
                     sourceReadError(*peer, opened.error().code);
@@ -511,7 +581,7 @@ class OutgoingFileChannel : public Peer::Channel {
                 }
             }
         }
-        while (file_->getState() == File::FS_TRANSFERRING && peer->isConnected() && currentAttempt() &&
+        while (!stopping_ && file_->getState() == File::FS_TRANSFERRING && peer->isConnected() && currentAttempt() &&
                inFlight_.size() < Peer::file_window_chunks && !endQueued_) {
             const auto allowance =
                 checkpoint_window_ ? checkpoint_window_->allowance() : quint64(Peer::file_chunk_bytes);
@@ -523,33 +593,36 @@ class OutgoingFileChannel : public Peer::Channel {
                 sourceReadError(*peer, read.error().code);
                 break;
             }
-            if (file_->getState() != File::FS_TRANSFERRING || !peer->isConnected())
+            if (stopping_ || file_->getState() != File::FS_TRANSFERRING || !peer->isConnected())
                 break;
             const auto count = quint64(read.value().size());
-            if (nextOffset_ > quint64(file_->getSize()) || count > quint64(file_->getSize()) - nextOffset_ ||
+            if (count > quint64(requested) || nextOffset_ > quint64(file_->getSize()) || count > quint64(file_->getSize()) - nextOffset_ ||
                 (!count && nextOffset_ != quint64(file_->getSize()))) {
                 reportSourceChanged(*peer);
                 break;
             }
             const bool final = nextOffset_ + count == quint64(file_->getSize());
-            auto checked = co_await verifier_->add(nextOffset_, read.value());
-            const bool checking_full = bool(checked) && final;
+            auto checked = co_await addVerifiedBytes(nextOffset_, read.value(), peer);
+            if (stopping_ || file_->getState() != File::FS_TRANSFERRING || !peer->isConnected() || !currentAttempt())
+                break;
             if (checked && final)
-                checked = co_await verifier_->finish();
+                checked = co_await verifier_->finish(file_->outgoingCancellation());
             if (!checked) {
-                const bool proven = checking_full && checked.error().code == dsfm::ErrorCode::IntegrityError;
+                const bool proven = checked.error().code == dsfm::ErrorCode::IntegrityError;
                 if (proven || !attempt_)
                     co_await reader_->invalidate();
                 reportSourceChanged(*peer, proven);
                 break;
             }
-            if (file_->getState() != File::FS_TRANSFERRING || !peer->isConnected() || !currentAttempt())
+            if (stopping_ || file_->getState() != File::FS_TRANSFERRING || !peer->isConnected() || !currentAttempt())
                 break;
             if (checkpoint_window_) {
                 if (!checkpoint_window_->admit(nextOffset_, count))
                     throw Error("Checkpoint admission fence violated");
                 if (!checkpoint_window_->allowance() || final) {
                     auto prefix = co_await verifier_->prefix();
+                    if (stopping_ || !currentAttempt() || !peer->isConnected() ||
+                        file_->getState() != File::FS_TRANSFERRING) break;
                     if (!prefix) {
                         reportSourceChanged(*peer);
                         break;
@@ -751,6 +824,49 @@ class OutgoingFileChannel : public Peer::Channel {
     }
 
   private:
+    QCoro::Task<dsfm::Result<void>> addVerifiedBytes(quint64 offset, QByteArray bytes, std::shared_ptr<Peer> peer) {
+        using dsfm::Error;
+        using dsfm::ErrorCode;
+        const auto current = [&] {
+            return !stopping_ && currentAttempt() && peer->isConnected() &&
+                   file_->getState() == File::FS_TRANSFERRING && !file_->outgoingCancellation().cancelled();
+        };
+        quint64 position = offset;
+        qsizetype consumed = 0;
+        do {
+            auto end = offset + quint64(bytes.size());
+            for (const auto &trusted : trusted_prefixes_)
+                if (trusted.offset > position) end = std::min(end, trusted.offset);
+            const auto length = qsizetype(end - position);
+            auto added = co_await verifier_->add(position, bytes.mid(consumed, length), file_->outgoingCancellation());
+            if (!current()) co_return Error{ErrorCode::Cancelled};
+            if (!added) {
+                auto error = added.error();
+                if (error.code == ErrorCode::IntegrityError) error.code = ErrorCode::ExternalModification;
+                co_return error;
+            }
+            bool retained_boundary = false;
+            for (const auto &trusted : trusted_prefixes_) retained_boundary |= trusted.offset == end;
+            if (retained_boundary) {
+                auto prefix = co_await verifier_->prefix(file_->outgoingCancellation());
+                if (!current()) co_return Error{ErrorCode::Cancelled};
+                if (!prefix) {
+                    auto error = prefix.error();
+                    if (error.code == ErrorCode::IntegrityError) error.code = ErrorCode::ExternalModification;
+                    co_return error;
+                }
+                if (prefix.value().size != end) co_return Error{ErrorCode::Corruption};
+                for (const auto &trusted : trusted_prefixes_)
+                    if (trusted.offset == end && trusted.sha256 != prefix.value().sha256)
+                        co_return Error{ErrorCode::IntegrityError};
+            }
+            // Split hashing at retained pause boundaries inside this chunk;
+            // transmission retains the ordinary bounded chunk shape.
+            consumed += length;
+            position = end;
+        } while (consumed < bytes.size());
+        co_return dsfm::Result<void>{};
+    }
     void reportSourceChanged(Peer &peer, bool proven = false,
                              dsfm::TransferPauseReason reason = dsfm::TransferPauseReason::SourceRevalidationRequired) {
         if (sourceChanged_) {
@@ -791,19 +907,13 @@ class OutgoingFileChannel : public Peer::Channel {
     }
     QCoro::Task<void> pauseCheckpoint(std::shared_ptr<OutgoingFileChannel> self, std::shared_ptr<Peer> peer,
                                       dsfm::TransferPauseReason reason) {
-        auto key = file_->checkpointKey();
-        auto &storage = DsEngine::instance().getFileManager()->storage();
-        auto held = storage.holdOperation();
-        if (key)
-            co_await storage.transferProgress().pause(key.value(), attempt_->id, reason);
-        if (currentAttempt() && peer->isConnected()) {
+        auto saved = co_await file_->pauseTransfer(attempt_->id, reason);
+        if (saved && currentAttempt() && peer->isConnected()) {
             try {
                 peer->sendFilePause(file_->getFileId(), attempt_->id, last_checkpoint_, reason);
             } catch (...) {
             }
         }
-        if (currentAttempt())
-            file_->transferFailed(QObject::tr("The source is unavailable; the transfer is paused."), File::FS_FAILED);
         Q_UNUSED(self);
     }
     QCoro::Task<void> failSourceCheckpoint(std::shared_ptr<OutgoingFileChannel> self, std::shared_ptr<Peer> peer) {
@@ -826,7 +936,7 @@ class OutgoingFileChannel : public Peer::Channel {
         stopping_ = true;
         co_await file_->failCheckpoint(dsfm::TransferFailureReason::ReceiverCheckpointMismatch);
         try {
-            peer->sendFileCancel(file_->getFileId(), FileCancelReason::UserAction);
+            peer->sendFileCancel(file_->getFileId(), FileCancelReason::ReceiverCheckpointMismatch);
         } catch (...) {
         }
         file_->transferFailed(QObject::tr("The receiver supplied an incorrect checkpoint digest."), File::FS_FAILED);
@@ -838,6 +948,7 @@ class OutgoingFileChannel : public Peer::Channel {
                                                       receipt ? dsfm::CheckpointPhase::MutuallyConfirmed
                                                               : dsfm::CheckpointPhase::SenderConfirmed);
         checkpoint_busy_ = false;
+        if (stopping_) co_return;
         if (!saved || !currentAttempt() || !peer->isConnected() || file_->getState() != File::FS_TRANSFERRING) {
             if (!saved && currentAttempt())
                 file_->transferFailed(QObject::tr("Unable to persist the transfer checkpoint."), File::FS_FAILED);
@@ -910,6 +1021,7 @@ class OutgoingFileChannel : public Peer::Channel {
     bool payload_verified_ = false;
     bool pumping_ = false;
     File::ptr_t file_;
+    QVector<dsfm::DurableCheckpoint> trusted_prefixes_;
     std::map<quint64, PendingChunk> inFlight_;
     quint64 nextSequence_ = {};
     quint64 nextOffset_ = {};
@@ -1142,12 +1254,14 @@ uint64_t Peer::sendFileChunk(const QByteArray& fileId, const quint64 sequence,
 
 uint64_t Peer::sendCheckpointChunk(const QByteArray &fileId,QUuid attempt,quint64 sequence,
     quint64 offset,const QByteArray &data,bool final) {
+    if (!checkpointInterval()) throw Error("Checkpoint payload is not negotiated");
     if(fileId.size()!=16 || attempt.isNull() || data.size()>qsizetype(file_chunk_bytes))throw Error("Invalid checkpoint chunk");
     ds::protocol::FileChunk chunk;chunk.setFileId(fileId);chunk.setAttemptId(attempt.toRfc4122());
     chunk.setSequence(sequence);chunk.setOffset(offset);chunk.setData(data);chunk.setFinal(final);
     ds::protocol::Envelope envelope;envelope.setProtocolVersion(codec::protocolVersion);envelope.setFileChunk(std::move(chunk));return send(envelope);
 }
 uint64_t Peer::sendCheckpointAck(const QByteArray &fileId,QUuid attempt,quint64 nextSequence,quint64 nextOffset,bool final) {
+    if (!checkpointInterval()) throw Error("Checkpoint acknowledgement is not negotiated");
     if(fileId.size()!=16 || attempt.isNull())throw Error("Invalid checkpoint acknowledgement");
     ds::protocol::FileAck ack;ack.setFileId(fileId);ack.setAttemptId(attempt.toRfc4122());ack.setNextSequence(nextSequence);
     ack.setNextOffset(nextOffset);ack.setFinal(final);
@@ -1155,6 +1269,7 @@ uint64_t Peer::sendCheckpointAck(const QByteArray &fileId,QUuid attempt,quint64 
 }
 uint64_t Peer::sendFileCheckpoint(const QByteArray &fileId,const QByteArray &expectedSha256,const dsfm::TransferAttempt &attempt,
     dsfm::DurableCheckpoint checkpoint,dsfm::CheckpointPhase phase) {
+    if (!checkpointInterval()) throw Error("Checkpoint confirmation is not negotiated");
     if(fileId.size()!=16 || expectedSha256.size()!=32 || attempt.id.isNull() || int(phase)<0 || int(phase)>2)throw Error("Invalid checkpoint confirmation");
     ds::protocol::FileCheckpoint message;message.setFileId(fileId);message.setAttemptId(attempt.id.toRfc4122());
     message.setCheckpoint(codec::checkpointReference(checkpoint));message.setExpectedSha256(expectedSha256);
@@ -1163,6 +1278,7 @@ uint64_t Peer::sendFileCheckpoint(const QByteArray &fileId,const QByteArray &exp
 }
 uint64_t Peer::sendFilePause(const QByteArray &fileId,QUuid attempt,dsfm::DurableCheckpoint checkpoint,
     dsfm::TransferPauseReason reason) {
+    if (!checkpointInterval()) throw Error("Checkpoint pause is not negotiated");
     if(fileId.size()!=16 || attempt.isNull() || reason==dsfm::TransferPauseReason::None)throw Error("Invalid transfer pause");
     ds::protocol::FilePause message;message.setFileId(fileId);message.setAttemptId(attempt.toRfc4122());
     message.setConfirmedCheckpoint(codec::checkpointReference(checkpoint));
@@ -1213,6 +1329,22 @@ uint64_t Peer::sendFileOfferResponse(const QByteArray& fileId,
     return send(envelope);
 }
 
+uint64_t Peer::sendCheckpointOfferResponse(const QByteArray &file_id, const dsfm::TransferAttempt &attempt)
+{
+    if (!checkpointInterval() || file_id.size() != 16 ||
+        !codec::validateCheckpointParameters(codec::checkpointParameters(attempt)))
+        throw Error("Invalid checkpoint readiness parameters");
+    ds::protocol::FileOfferResponse response;
+    response.setFileId(file_id);
+    response.setStatus(ds::protocol::FileOfferResponse::Status::FILE_OFFER_ACCEPTED);
+    response.setCheckpoints(codec::checkpointParameters(attempt));
+    response.setSelectedCheckpoint(codec::checkpointReference(attempt.selected));
+    ds::protocol::Envelope envelope;
+    envelope.setProtocolVersion(codec::protocolVersion);
+    envelope.setFileOfferResponse(std::move(response));
+    return send(envelope);
+}
+
 uint64_t Peer::sendFileCancel(const QByteArray& fileId,
                               const core::FileCancelReason reason)
 {
@@ -1221,9 +1353,7 @@ uint64_t Peer::sendFileCancel(const QByteArray& fileId,
     }
     ds::protocol::FileCancel cancel;
     cancel.setFileId(fileId);
-    cancel.setReason(reason == core::FileCancelReason::SourceChanged
-                     ? ds::protocol::FileErrorGadget::FileError::SOURCE_CHANGED
-                     : ds::protocol::FileErrorGadget::FileError::USER_ACTION);
+    cancel.setReason(wireFileError(reason));
     ds::protocol::Envelope envelope;
     envelope.setProtocolVersion(codec::protocolVersion);
     envelope.setFileCancel(std::move(cancel));
@@ -1245,8 +1375,71 @@ uint64_t Peer::sendFileResume(const QByteArray& fileId, const quint64 nextOffset
     resume.setFileSize(fileSize);
     ds::protocol::Envelope envelope;
     envelope.setProtocolVersion(codec::protocolVersion);
-    envelope.setRequestId(nextRequestId(RequestType::FileResumeResult));
+    const auto request_id = nextRequestId(RequestType::FileResumeResult);
+    auto &pending = outstandingRequests_.at(request_id);
+    pending.file_id = fileId; pending.file_size = fileSize;
+    envelope.setRequestId(request_id);
     envelope.setFileResume(std::move(resume));
+    return send(envelope);
+}
+
+uint64_t Peer::sendCheckpointResume(const QByteArray &file_id, const QByteArray &sha256, quint64 size, quint32 interval,
+                                   QVector<dsfm::DurableCheckpoint> retained, std::shared_ptr<FileTransferWork> work)
+{
+    if (!checkpointInterval() || !work || !work->current() || retained.size() > dsfm::maximum_retained_checkpoints)
+        throw Error("Checkpoint resume is not admitted");
+    ds::protocol::FileResume resume;
+    resume.setFileId(file_id); resume.setSha256(sha256); resume.setFileSize(size);
+    resume.setCheckpointVersion(dsfm::checkpoint_format_version); resume.setCheckpointIntervalBytes(interval);
+    QList<ds::protocol::CheckpointReference> references;
+    quint64 retained_end = 0;
+    for (const auto &checkpoint : retained) {
+        references.append(codec::checkpointReference(checkpoint));
+        retained_end = std::max(retained_end, checkpoint.offset);
+    }
+    resume.setNextOffset(retained_end); resume.setAvailableCheckpoints(std::move(references));
+    if (!codec::validateResumeCheckpoints(resume)) throw Error("Invalid retained checkpoint resume metadata");
+    const auto request_id = nextRequestId(RequestType::FileResumeResult);
+    auto &pending = outstandingRequests_.at(request_id);
+    pending.file_id = file_id; pending.file_size = size; pending.checkpoint_interval = interval;
+    pending.expires = std::chrono::steady_clock::now() + std::chrono::milliseconds(work->deadline.remainingTime());
+    ds::protocol::Envelope envelope;
+    envelope.setProtocolVersion(codec::protocolVersion); envelope.setRequestId(request_id);
+    envelope.setFileResume(std::move(resume));
+    send(envelope);
+    return request_id;
+}
+
+uint64_t Peer::sendCheckpointResumeResult(quint64 request_id, const QByteArray &file_id, FileResumeStatus status,
+                                         std::optional<dsfm::TransferAttempt> attempt, dsfm::TransferPauseReason pause,
+                                         FileCancelReason error)
+{
+    if (!checkpointInterval() || !request_id || file_id.size() != 16 ||
+        (status == FileResumeStatus::Accepted ? !attempt : bool(attempt)) ||
+        (status == FileResumeStatus::Paused ? pause == dsfm::TransferPauseReason::None : pause != dsfm::TransferPauseReason::None))
+        throw Error("Invalid checkpoint resume outcome");
+    using Status = ds::protocol::FileResumeResult::Status;
+    ds::protocol::FileResumeResult result;
+    result.setFileId(file_id);
+    switch (status) {
+    case FileResumeStatus::Accepted: result.setStatus(Status::RESUME_ACCEPTED); break;
+    case FileResumeStatus::Rejected: result.setStatus(Status::RESUME_REJECTED); break;
+    case FileResumeStatus::Cancelled: result.setStatus(Status::RESUME_CANCELLED); break;
+    case FileResumeStatus::Paused: result.setStatus(Status::RESUME_PAUSED); break;
+    }
+    if (attempt) {
+        if (!codec::validateCheckpointParameters(codec::checkpointParameters(*attempt)))
+            throw Error("Invalid selected resume attempt");
+        result.setCheckpoints(codec::checkpointParameters(*attempt));
+        result.setSelectedCheckpoint(codec::checkpointReference(attempt->selected));
+        result.setNextOffset(attempt->selected.offset);
+    }
+    result.setPauseReason(wirePauseReason(pause));
+    if (status == FileResumeStatus::Cancelled)
+        result.setError(wireFileError(error));
+    ds::protocol::Envelope envelope;
+    envelope.setProtocolVersion(codec::protocolVersion); envelope.setResponseToRequestId(request_id);
+    envelope.setFileResumeResult(std::move(result));
     return send(envelope);
 }
 
@@ -1270,9 +1463,7 @@ uint64_t Peer::sendFileResumeResult(const quint64 responseToRequestId,
                                : ds::protocol::FileResumeResult::Status::RESUME_REJECTED);
     result.setNextOffset(nextOffset);
     result.setError(status == core::FileResumeStatus::Cancelled
-                        ? (error == core::FileCancelReason::SourceChanged
-                               ? ds::protocol::FileErrorGadget::FileError::SOURCE_CHANGED
-                               : ds::protocol::FileErrorGadget::FileError::USER_ACTION)
+                        ? wireFileError(error)
                         : ds::protocol::FileErrorGadget::FileError::FILE_ERROR_UNSPECIFIED);
     ds::protocol::Envelope envelope;
     envelope.setProtocolVersion(codec::protocolVersion);
@@ -1499,7 +1690,7 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
             || envelope.hasAvatarRequest() || envelope.hasAvatarResponse()
             || envelope.hasAvatar() || envelope.hasMessageReceipt()
             || envelope.hasFileOfferResponse() || envelope.hasBioRequest()
-            || envelope.hasBioResponse();
+            || envelope.hasBioResponse() || envelope.hasFileCheckpoint() || envelope.hasFilePause();
     if (envelope.protocolVersion() != codec::protocolVersion || !hasBody) {
         protocolError(QStringLiteral("Invalid v3 envelope"));
     }
@@ -1512,6 +1703,7 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         }
         capabilitiesReceived_ = true;
         peerMaxRecordBytes_ = envelope.capabilities().maxRecordBytes();
+        peer_checkpoint_interval_ = envelope.capabilities().checkpointIntervalBytes();
         return;
     }
     if ((envelope.hasRequestId() && !envelope.hasConnectionRequest()
@@ -1528,8 +1720,8 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
     if (applicationAuthorizationPending_) {
         protocolError(QStringLiteral("Application packet received before authorization"));
     }
-    // Do not silently reinterpret a checkpoint transfer as a legacy transfer.
-    // Capability advertisement is enabled with the checkpoint channel adapter.
+    // Explicit bilateral negotiation is required before any checkpoint fields
+    // are interpreted. Legacy mode remains segregated per transfer.
     const bool checkpoint_fields = envelope.hasFileCheckpoint() || envelope.hasFilePause() ||
         (envelope.hasFileOffer() && envelope.fileOffer().hasCheckpoints()) ||
         (envelope.hasFileChunk() && !envelope.fileChunk().attemptId().isEmpty()) ||
@@ -1537,13 +1729,13 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         (envelope.hasFileOfferResponse() && (envelope.fileOfferResponse().hasCheckpoints() || envelope.fileOfferResponse().hasSelectedCheckpoint())) ||
         (envelope.hasFileResume() && (envelope.fileResume().checkpointVersion()!=0 || envelope.fileResume().checkpointIntervalBytes()!=0 || !envelope.fileResume().availableCheckpoints().isEmpty())) ||
         (envelope.hasFileResumeResult() && (envelope.fileResumeResult().hasCheckpoints() || envelope.fileResumeResult().hasSelectedCheckpoint() || int(envelope.fileResumeResult().pauseReason())!=0));
-    if(checkpoint_fields)protocolError(QStringLiteral("Checkpoint transfer version has not been negotiated"));
+    if(checkpoint_fields && !checkpointInterval())protocolError(QStringLiteral("Checkpoint transfer version has not been negotiated"));
     if(envelope.hasMessage()) {
         const auto &attachments=envelope.message().attachments();
         if(attachments.size()>16)protocolError(QStringLiteral("Too many message attachments"));
         for(const auto &attachment:attachments) {
             if(!attachment.hasFileOffer())protocolError(QStringLiteral("Missing attachment offer"));
-            if(attachment.fileOffer().hasCheckpoints())protocolError(QStringLiteral("Checkpoint attachment version has not been negotiated"));
+            if(attachment.fileOffer().hasCheckpoints() && !checkpointInterval())protocolError(QStringLiteral("Checkpoint attachment version has not been negotiated"));
         }
     }
     if (envelope.hasKeepAlive()) {
@@ -1649,6 +1841,8 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
                              message.content(), message.senderId(), encoding,
                              message.signature()};
         incoming.data.attachments = std::move(signedData.attachments);
+        for (const auto &entry : message.attachments())
+            incoming.attachment_attempts.append(offeredCheckpointAttempt(entry.fileOffer()));
         emit receivedMessage(incoming);
         return;
     }
@@ -1667,11 +1861,25 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
                                offer.conversationId(), offer.fileId(), offer.name(),
                                static_cast<qlonglong>(offer.size()),
                                offer.mimeType(), offer.sha256()};
+        incoming.checkpoint_attempt = offeredCheckpointAttempt(offer);
         emit receivedFileOffer(incoming);
         return;
     }
     if (envelope.hasFileResume()) {
         const auto& resume = envelope.fileResume();
+        const bool checkpoint_mode = resume.checkpointVersion() || resume.checkpointIntervalBytes() || !resume.availableCheckpoints().isEmpty();
+        if (checkpoint_mode) {
+            if (!envelope.hasRequestId() || !codec::validateResumeCheckpoints(resume))
+                protocolError(QStringLiteral("Invalid checkpoint resume request"));
+            PeerFileResume incoming{shared_from_this(), getConnectionId(), requestId, resume.fileId(),
+                                    resume.nextOffset(), resume.sha256(), resume.fileSize()};
+            incoming.checkpoint_interval = resume.checkpointIntervalBytes();
+            for (const auto &reference : resume.availableCheckpoints())
+                incoming.retained_checkpoints.append({reference.sequence(), reference.nextOffset(), reference.prefixSha256(),
+                                                      reference.final(), reference.pauseBoundary()});
+            emit receivedFileResume(incoming);
+            return;
+        }
         if (!envelope.hasRequestId() || resume.fileId().size() != 16
                 || resume.sha256().size() != crypto_hash_sha256_BYTES
                 || resume.fileSize() > ResourceLimits::hardAcceptedFileBytes
@@ -1690,9 +1898,12 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         if (chunk.fileId().size() != 16 || chunk.data().size() > static_cast<qsizetype>(file_chunk_bytes)) {
             protocolError(QStringLiteral("Invalid v3 file chunk"));
         }
-        const auto file = DsEngine::instance().getFileManager()->getFileFromId(
-            chunk.fileId(), File::INCOMING);
-        if (!file || !file->getContact() || !getPeerCert()
+        const auto file = DsEngine::instance().getFileManager()->getFileFromPeer(
+            chunk.fileId(), getIdentityId(), getPeerCert() ? getPeerCert()->getHash().toByteArray() : QByteArray{}, File::INCOMING);
+        if (!chunk.attemptId().isEmpty()) {
+            checkpointFile(chunk.fileId(), chunk.attemptId(), File::INCOMING);
+        }
+        if (!file || (file->checkpointInterval() && chunk.attemptId().isEmpty()) || !file->getContact() || !getPeerCert()
                 || file->getContact()->getCert()->getHash().toByteArray()
                     != getPeerCert()->getHash().toByteArray()
                 || file->getChannel() == 0) {
@@ -1787,10 +1998,80 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         if (ack.fileId().size() != 16) {
             protocolError(QStringLiteral("Invalid v3 file acknowledgement"));
         }
-        handleFileAck(ack.fileId(), ack.nextSequence(), ack.nextOffset(), ack.final());
+        if (!ack.attemptId().isEmpty()) {
+            const auto file = checkpointFile(ack.fileId(), ack.attemptId(), File::OUTGOING);
+            if (!ack.nextSequence() || ack.nextOffset() > quint64(file->getSize()))
+                protocolError(QStringLiteral("Invalid checkpoint flow acknowledgement"));
+            const auto channel = outChannels_.find(file->getChannel());
+            if (channel == outChannels_.end())
+                protocolError(QStringLiteral("Checkpoint acknowledgement has no active channel"));
+            channel->second->onAck(*this, ack.nextSequence() - 1, qlonglong(ack.nextOffset()), ack.final());
+            emit outputBufferEmptied();
+        } else {
+            handleFileAck(ack.fileId(), ack.nextSequence(), ack.nextOffset(), ack.final());
+        }
         emit receivedFileAck(PeerFileAck{shared_from_this(), getConnectionId(), requestId,
                                          ack.fileId(), ack.nextSequence(), ack.nextOffset(),
                                          ack.final()});
+        return;
+    }
+    if (envelope.hasFileCheckpoint()) {
+        const auto &checkpoint = envelope.fileCheckpoint();
+        using Phase = ds::protocol::FileCheckpoint::Phase;
+        const auto direction = checkpoint.phase() == Phase::CHECKPOINT_SENDER_CONFIRMED
+                                   ? File::INCOMING : File::OUTGOING;
+        const auto file = checkpointFile(checkpoint.fileId(), checkpoint.attemptId(), direction);
+        if (!codec::validateFileCheckpoint(checkpoint, quint64(file->getSize()), file->checkpointInterval()) ||
+            checkpoint.expectedSha256() != file->getHash())
+            protocolError(QStringLiteral("Invalid checkpoint confirmation"));
+        const auto &channels = direction == File::INCOMING ? inChannels_ : outChannels_;
+        const auto channel = channels.find(file->getChannel());
+        if (channel == channels.end())
+            protocolError(QStringLiteral("Checkpoint confirmation has no active channel"));
+        channel->second->onCheckpoint(*this, checkpoint);
+        return;
+    }
+    if (envelope.hasFilePause()) {
+        const auto &pause = envelope.filePause();
+        if (pause.fileId().size() != 16 || pause.attemptId().size() != 16)
+            protocolError(QStringLiteral("Invalid checkpoint pause identity"));
+        File::ptr_t selected;
+        // Pause has no direction field. Resolve the nonce within each scoped
+        // direction and reject ambiguity rather than selecting the first ID.
+        for (const auto direction : {File::INCOMING, File::OUTGOING}) {
+            const auto file = DsEngine::instance().getFileManager()->getFileFromPeer(
+                pause.fileId(), getIdentityId(), getPeerCert() ? getPeerCert()->getHash().toByteArray() : QByteArray{}, direction);
+            if (!file || !file->checkpointAttempt() ||
+                file->checkpointAttempt()->id.toRfc4122() != pause.attemptId()) continue;
+            if (selected) protocolError(QStringLiteral("Ambiguous checkpoint pause"));
+            selected = checkpointFile(pause.fileId(), pause.attemptId(), direction);
+        }
+        if (!selected || !codec::validateFilePause(pause, quint64(selected->getSize()), selected->checkpointInterval()))
+            protocolError(QStringLiteral("Invalid checkpoint pause"));
+        // This reference is advisory. It never writes or advances progress.
+        using Reason = ds::protocol::FilePauseReasonGadget::FilePauseReason;
+        dsfm::TransferPauseReason reason;
+        switch (pause.reason()) {
+        case Reason::SOURCE_UNAVAILABLE: reason = dsfm::TransferPauseReason::SourceUnavailable; break;
+        case Reason::SOURCE_REVALIDATION_REQUIRED: reason = dsfm::TransferPauseReason::SourceRevalidationRequired; break;
+        case Reason::TRANSFER_RESOURCE_UNAVAILABLE: reason = dsfm::TransferPauseReason::ResourceUnavailable; break;
+        case Reason::TRANSFER_AUTHORIZATION_WITHDRAWN: reason = dsfm::TransferPauseReason::AuthorizationWithdrawn; break;
+        case Reason::TRANSFER_DISCONNECTED: reason = dsfm::TransferPauseReason::Disconnected; break;
+        case Reason::TRANSFER_FEATURE_PAUSED: reason = dsfm::TransferPauseReason::FeaturePaused; break;
+        default: protocolError(QStringLiteral("Unknown checkpoint pause reason"));
+        }
+        if (selected->getState() == File::FS_PAUSED && selected->dataPauseReason() == reason) return;
+        auto &channels = selected->getDirection() == File::INCOMING ? inChannels_ : outChannels_;
+        const auto channel = channels.find(selected->getChannel());
+        if (channel == channels.end()) protocolError(QStringLiteral("Checkpoint pause has no active channel"));
+        const auto token = pause.fileId() + pause.attemptId();
+        if (pending_checkpoint_pauses_.contains(token)) return;
+        if (pending_checkpoint_pauses_.size() >= 2)
+            protocolError(QStringLiteral("Too many pending checkpoint pauses"));
+        pending_checkpoint_pauses_.insert(token);
+        channel->second->stopPayload();
+        acceptCheckpointPause(selected, QUuid::fromRfc4122(pause.attemptId()), reason,
+                              std::static_pointer_cast<Peer>(shared_from_this()));
         return;
     }
     if (envelope.hasMessageReceipt()) {
@@ -1809,29 +2090,46 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
                     && response.status() != ds::protocol::FileOfferResponse::Status::FILE_OFFER_REJECTED)) {
             protocolError(QStringLiteral("Invalid v3 file-offer response"));
         }
-        auto file = DsEngine::instance().getFileManager()->getFileFromId(
-            response.fileId(), File::OUTGOING);
-        Q_UNUSED(file)
-        emit receivedFileOfferResponse(PeerFileOfferResponse{
+        PeerFileOfferResponse incoming{
             shared_from_this(), getConnectionId(), requestId, response.fileId(),
             response.status() == ds::protocol::FileOfferResponse::Status::FILE_OFFER_ACCEPTED
                 ? core::FileOfferResponseStatus::Accepted
-                : core::FileOfferResponseStatus::Rejected});
+                : core::FileOfferResponseStatus::Rejected};
+        if (response.hasCheckpoints() || response.hasSelectedCheckpoint()) {
+            if (!response.hasCheckpoints() || !response.hasSelectedCheckpoint() ||
+                incoming.status != FileOfferResponseStatus::Accepted)
+                protocolError(QStringLiteral("Incomplete checkpoint readiness"));
+            const auto file = DsEngine::instance().getFileManager()->getFileFromPeer(
+                response.fileId(), getIdentityId(), getPeerCert() ? getPeerCert()->getHash().toByteArray() : QByteArray{}, File::OUTGOING);
+            if (!file || !file->checkpointAttempt())
+                protocolError(QStringLiteral("Checkpoint readiness has no pending attempt"));
+            auto attempt = codec::checkpointAttempt(response.checkpoints(), response.selectedCheckpoint(), quint64(file->getSize()));
+            if (!attempt || attempt.value() != *file->checkpointAttempt())
+                protocolError(QStringLiteral("Checkpoint readiness differs from selected attempt"));
+            incoming.checkpoint_attempt = attempt.value();
+        }
+        emit receivedFileOfferResponse(incoming);
         return;
     }
     if (envelope.hasFileResumeResult()) {
         const auto& result = envelope.fileResumeResult();
+        expireOutstandingRequests();
+        const auto request = outstandingRequests_.find(requestId);
+        if (request == outstandingRequests_.end() || request->second.type != RequestType::FileResumeResult ||
+            request->second.file_id != result.fileId())
+            protocolError(QStringLiteral("Resume outcome does not match its pending transfer"));
+        const auto pending = request->second;
+        const bool checkpoint_mode = pending.checkpoint_interval != 0;
         if (!envelope.hasResponseToRequestId() || requestId == 0
                 || result.fileId().size() != 16
                 || (result.status() != ds::protocol::FileResumeResult::Status::RESUME_ACCEPTED
                     && result.status() != ds::protocol::FileResumeResult::Status::RESUME_REJECTED
-                    && result.status() != ds::protocol::FileResumeResult::Status::RESUME_CANCELLED)
+                    && result.status() != ds::protocol::FileResumeResult::Status::RESUME_CANCELLED
+                    && !(checkpoint_mode && result.status() == ds::protocol::FileResumeResult::Status::RESUME_PAUSED))
                 || result.nextOffset() > ResourceLimits::hardAcceptedFileBytes
-                || result.nextOffset() % file_chunk_bytes != 0) {
+                || result.nextOffset() > pending.file_size
+                || (!checkpoint_mode && result.nextOffset() % file_chunk_bytes != 0)) {
             protocolError(QStringLiteral("Invalid v3 file resume result"));
-        }
-        if (!consumeRequest(requestId, RequestType::FileResumeResult)) {
-            protocolError(QStringLiteral("Unsolicited, duplicate, expired, or mismatched file resume result"));
         }
         FileResumeStatus status;
         switch (result.status()) {
@@ -1844,12 +2142,14 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
         case ds::protocol::FileResumeResult::Status::RESUME_CANCELLED:
             status = FileResumeStatus::Cancelled;
             break;
+        case ds::protocol::FileResumeResult::Status::RESUME_PAUSED:
+            status = FileResumeStatus::Paused;
+            break;
         default:
             protocolError(QStringLiteral("Unknown file resume result status"));
         }
-        if (result.error() != ds::protocol::FileErrorGadget::FileError::FILE_ERROR_UNSPECIFIED
-                && result.error() != ds::protocol::FileErrorGadget::FileError::SOURCE_CHANGED
-                && result.error() != ds::protocol::FileErrorGadget::FileError::USER_ACTION) {
+        const auto error = localFileError(result.error());
+        if (result.error() != WireFileError::FILE_ERROR_UNSPECIFIED && !error) {
             protocolError(QStringLiteral("Unknown file resume result error"));
         }
         if ((result.status() == ds::protocol::FileResumeResult::Status::RESUME_CANCELLED
@@ -1858,10 +2158,30 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
                     && result.error() != ds::protocol::FileErrorGadget::FileError::FILE_ERROR_UNSPECIFIED)) {
             protocolError(QStringLiteral("Invalid file resume result error"));
         }
-        emit receivedFileResumeResult(PeerFileResumeResult{
+        PeerFileResumeResult incoming{
             shared_from_this(), getConnectionId(), requestId, result.fileId(), status,
-            result.nextOffset(), result.error() == ds::protocol::FileErrorGadget::FileError::SOURCE_CHANGED
-                ? FileCancelReason::SourceChanged : FileCancelReason::UserAction});
+            result.nextOffset(), error.value_or(FileCancelReason::UserAction)};
+        if (checkpoint_mode && status == FileResumeStatus::Accepted) {
+            if (!result.hasCheckpoints() || !result.hasSelectedCheckpoint() ||
+                result.checkpoints().intervalBytes() != pending.checkpoint_interval || int(result.pauseReason()))
+                protocolError(QStringLiteral("Incomplete checkpoint resume outcome"));
+            auto attempt = codec::checkpointAttempt(result.checkpoints(), result.selectedCheckpoint(), pending.file_size);
+            if (!attempt || result.nextOffset() != attempt.value().selected.offset)
+                protocolError(QStringLiteral("Invalid selected resume checkpoint"));
+            incoming.checkpoint_attempt = attempt.value();
+        } else if (result.hasCheckpoints() || result.hasSelectedCheckpoint()) {
+            protocolError(QStringLiteral("Unexpected checkpoint resume selection"));
+        }
+        if (status == FileResumeStatus::Paused) {
+            const auto reason = localPauseReason(result.pauseReason());
+            if (!checkpoint_mode || !reason) protocolError(QStringLiteral("Invalid checkpoint resume pause"));
+            incoming.pause = *reason;
+        } else if (int(result.pauseReason())) protocolError(QStringLiteral("Unexpected resume pause reason"));
+        if (checkpoint_mode && status != FileResumeStatus::Accepted && result.nextOffset())
+            protocolError(QStringLiteral("Unaccepted resume outcome carries progress"));
+        if (!consumeRequest(requestId, RequestType::FileResumeResult))
+            protocolError(QStringLiteral("Expired checkpoint resume outcome"));
+        emit receivedFileResumeResult(incoming);
         return;
     }
     if (envelope.hasConnectionResponse()) {
@@ -1896,16 +2216,13 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
     }
     if (envelope.hasFileCancel()) {
         const auto& cancel = envelope.fileCancel();
-        if (cancel.fileId().size() != 16
-                || (cancel.reason() != ds::protocol::FileErrorGadget::FileError::SOURCE_CHANGED
-                    && cancel.reason() != ds::protocol::FileErrorGadget::FileError::USER_ACTION)) {
+        const auto reason = localFileError(cancel.reason());
+        if (cancel.fileId().size() != 16 || !reason) {
             protocolError(QStringLiteral("Invalid v3 file cancellation"));
         }
         emit receivedFileCancel(PeerFileCancel{
             shared_from_this(), getConnectionId(), requestId, cancel.fileId(),
-            cancel.reason() == ds::protocol::FileErrorGadget::FileError::SOURCE_CHANGED
-                ? core::FileCancelReason::SourceChanged
-                : core::FileCancelReason::UserAction});
+            *reason});
         return;
     }
     if (envelope.hasAvatar()) {
@@ -1969,9 +2286,78 @@ void Peer::onReceivedEnvelope(const ds::protocol::Envelope& envelope)
 
 void Peer::sendCapabilities()
 {
-    send(codec::makeCapabilities({QStringLiteral("file-chunks-v3"),
-                                  QStringLiteral("keepalive-v3")},
-                                 static_cast<quint32>(max_record_bytes)));
+    const auto preference = localCheckpointPreference();
+    if (preference && !dsfm::validCheckpointInterval(preference))
+        throw Error("Invalid local checkpoint preference");
+    QStringList capabilities{QStringLiteral("file-chunks-v3"), QStringLiteral("keepalive-v3")};
+    if (preference) capabilities.append(QStringLiteral("file-checkpoint-v1"));
+    send(codec::makeCapabilities(capabilities, static_cast<quint32>(max_record_bytes), preference));
+    advertised_checkpoint_interval_ = preference;
+}
+
+quint32 Peer::checkpointInterval() const noexcept
+{
+    if (!capabilitiesReceived_ || !advertised_checkpoint_interval_ || !peer_checkpoint_interval_)
+        return 0;
+    return std::min(advertised_checkpoint_interval_, peer_checkpoint_interval_);
+}
+
+File::ptr_t Peer::checkpointFile(const QByteArray &file_id, const QByteArray &attempt_id,
+                                File::Direction direction)
+{
+    if (!checkpointInterval() || file_id.size() != 16 || file_id == QByteArray(16, '\0') ||
+        attempt_id.size() != 16 || attempt_id == QByteArray(16, '\0') || !getPeerCert())
+        protocolError(QStringLiteral("Checkpoint transfer has no negotiated scope"));
+    const auto file = DsEngine::instance().getFileManager()->getFileFromPeer(
+        file_id, getIdentityId(), getPeerCert()->getHash().toByteArray(), direction);
+    if (!file || !file->checkpointInterval() || !file->checkpointAttempt() ||
+        file->checkpointAttempt()->interval != file->checkpointInterval() ||
+        file->checkpointAttempt()->id.toRfc4122() != attempt_id || !file->getChannel() ||
+        !file->getContact() || file->getContact()->iBlocked() || file->getContact()->getState() != Contact::ACCEPTED)
+        protocolError(QStringLiteral("Checkpoint transfer does not match the active authorized attempt"));
+    return file;
+}
+
+std::optional<dsfm::TransferAttempt> Peer::offeredCheckpointAttempt(const ds::protocol::FileOffer &offer)
+{
+    if (!offer.hasCheckpoints()) return {};
+    if (!checkpointInterval() || offer.fileId().size() != 16 || offer.fileId() == QByteArray(16, '\0') ||
+        !codec::validateCheckpointParameters(offer.checkpoints()) ||
+        offer.checkpoints().intervalBytes() > checkpointInterval() || offer.checkpoints().nextCheckpointSequence() != 1)
+        protocolError(QStringLiteral("Invalid initial checkpoint offer parameters"));
+    ds::protocol::CheckpointReference zero;
+    zero.setPrefixSha256(QCryptographicHash::hash(QByteArray{}, QCryptographicHash::Sha256));
+    auto attempt = codec::checkpointAttempt(offer.checkpoints(), zero, offer.size());
+    if (!attempt) protocolError(QStringLiteral("Invalid initial checkpoint offer"));
+    return attempt.value();
+}
+
+void Peer::setOfferedCheckpoint(ds::protocol::FileOffer &offer, const File &file)
+{
+    if (!file.checkpointInterval()) return;
+    if (!checkpointInterval() || !file.checkpointAttempt() ||
+        file.checkpointAttempt()->interval != file.checkpointInterval() ||
+        file.checkpointAttempt()->interval > checkpointInterval() ||
+        file.checkpointAttempt()->selected.offset != 0 || file.checkpointAttempt()->selected.final ||
+        file.checkpointAttempt()->next_sequence != 1)
+        throw Error("Checkpoint initial offer has no prepared negotiated attempt");
+    offer.setCheckpoints(codec::checkpointParameters(*file.checkpointAttempt()));
+}
+
+QCoro::Task<void> Peer::acceptCheckpointPause(File::ptr_t file, QUuid attempt,
+                                           dsfm::TransferPauseReason reason, std::shared_ptr<Peer> self)
+{
+    const auto token = file->getFileId() + attempt.toRfc4122();
+    bool paused = false;
+    try {
+        paused = bool(co_await file->pauseTransfer(attempt, reason));
+    } catch (...) {
+        LFLOG_WARN << "Unable to persist an incoming transfer pause";
+    }
+    pending_checkpoint_pauses_.erase(token);
+    if (!paused && isConnected() && file->checkpointAttempt() && file->checkpointAttempt()->id == attempt)
+        close(); // Payload is stopped; do not resume after persistence failure.
+    Q_UNUSED(self);
 }
 
 [[noreturn]] void Peer::protocolError(const QString& reason)
@@ -2330,20 +2716,88 @@ uint64_t Peer::startReceive(File &file)
     prepareReceive(fileManager->getFile(file.getId()), std::static_pointer_cast<Peer>(shared_from_this()));
     return 0;
 }
-QCoro::Task<void> Peer::prepareReceive(File::ptr_t file, std::shared_ptr<Peer> self) {
+uint64_t Peer::startCheckpointReceive(File &file, dsfm::TransferAttempt attempt, std::shared_ptr<FileTransferWork> work)
+{
+    if (!checkpointInterval() || !file.getContact() || !file.getContact()->ownsFileWork(file, work) ||
+        !work->current() || file.getDirection() != File::INCOMING)
+        throw Error("Checkpoint receive recovery is not admitted");
+    prepareReceive(DsEngine::instance().getFileManager()->getFile(file.getId()),
+                   std::static_pointer_cast<Peer>(shared_from_this()), attempt, std::move(work));
+    return 0;
+}
+
+QCoro::Task<void> Peer::prepareReceive(File::ptr_t file, std::shared_ptr<Peer> self,
+                                     std::optional<dsfm::TransferAttempt> resume, std::shared_ptr<FileTransferWork> work) {
+    auto storage_operation = DsEngine::instance().getFileManager()->storage().holdOperation();
     // Reserve the transfer state before suspension so duplicate offers cannot start another writer.
-    if (file->getState() == File::FS_TRANSFERRING || file->getState() == File::FS_HASHING) co_return;
+    if (file->getState() == File::FS_TRANSFERRING || file->getState() == File::FS_HASHING || file->getState() == File::FS_DONE) co_return;
+    const auto previous = file->checkpointAttempt();
+    const auto attempt = resume ? resume : previous;
+    if (file->checkpointInterval() && (!checkpointInterval() || !attempt)) co_return;
+    auto *owner = file->getContact();
+    if (!owner) co_return;
+    if (!work) {
+        auto acquired = owner->acquireFileWork(file);
+        if (!acquired) co_return;
+        work = acquired.value();
+    }
+    if (!owner->ownsFileWork(*file, work) || !work->current()) co_return;
     file->setState(File::FS_TRANSFERRING);
-    auto offset = co_await file->prepareIncoming();
-    if (!offset || !isConnected() || file->getState() != File::FS_TRANSFERRING) {
-        if (file->getState() == File::FS_TRANSFERRING) file->transferFailed(QObject::tr("Unable to prepare incoming storage."), File::FS_FAILED);
+    const auto current = [&] {
+        if (!work->current() || !isConnected() || file->getState() != File::FS_TRANSFERRING) return false;
+        if (!attempt) return true;
+        const auto contact = file->getContact();
+        const auto identity = contact ? contact->getIdentity() : nullptr;
+        return (file->checkpointAttempt() == previous || file->checkpointAttempt() == attempt) && contact && !contact->iBlocked() &&
+               contact->getState() == Contact::ACCEPTED && identity && identity->getAllowFiles() &&
+               (identity->getAllowMimeTypes().contains(QStringLiteral("*")) ||
+                identity->getAllowMimeTypes().contains(file->getMimeType()));
+    };
+    if (attempt) {
+        auto saved = co_await file->prepareCheckpointProgress(attempt->interval);
+        if (!saved || !current()) {
+            if (file->getState() == File::FS_TRANSFERRING)
+                file->transferFailed(QObject::tr("Unable to prepare durable transfer progress."), File::FS_FAILED);
+            co_return;
+        }
+    }
+    auto offset = co_await file->prepareIncoming(work->cancel);
+    if (!offset || !current()) {
+        if (file->getState() == File::FS_TRANSFERRING) {
+            if (attempt) co_await file->pauseCheckpointProgress(dsfm::TransferPauseReason::ResourceUnavailable);
+            else file->transferFailed(QObject::tr("Unable to prepare incoming storage."), File::FS_FAILED);
+        }
         co_await file->suspendIncoming();
         co_return;
+    }
+    if (attempt) {
+        auto selected = co_await file->selectIncomingCheckpoint(*attempt);
+        if (!selected || !current()) {
+            if (!selected && resume && current() && (selected.error().code == dsfm::ErrorCode::IntegrityError ||
+                                                     selected.error().code == dsfm::ErrorCode::IncompleteContent)) {
+                auto suspended = co_await file->suspendIncoming();
+                if (suspended && current() && owner->retryCheckpointSelection(file, *attempt, work)) co_return;
+            }
+            if (file->getState() == File::FS_TRANSFERRING)
+                co_await file->pauseCheckpointProgress(dsfm::TransferPauseReason::ResourceUnavailable);
+            co_await file->suspendIncoming();
+            co_return;
+        }
+        if (resume) {
+            auto confirmed = co_await file->recordCheckpoint(attempt->id, attempt->selected, dsfm::CheckpointPhase::MutuallyConfirmed);
+            if (!confirmed || !current()) {
+                if (file->getState() == File::FS_TRANSFERRING)
+                    co_await file->pauseCheckpointProgress(dsfm::TransferPauseReason::ResourceUnavailable);
+                co_return;
+            }
+        }
     }
     try {
         auto channel = createChannel(*file);
         file->setChannel(channel);
-        sendFileOfferResponse(file->getFileId(), FileOfferResponseStatus::Accepted);
+        if (attempt) sendCheckpointOfferResponse(file->getFileId(), *attempt);
+        else sendFileOfferResponse(file->getFileId(), FileOfferResponseStatus::Accepted);
+        if (resume) owner->checkpointSelectionReady(*file, *attempt, work);
     } catch (...) { file->transferFailed(QObject::tr("Unable to start incoming transfer."), File::FS_FAILED); }
 }
 
@@ -2515,6 +2969,9 @@ uint64_t Peer::sendMessage(const core::Message &message)
         offer.setFileId(attachment.file_id); offer.setMessageId(message.getData().messageId);
         offer.setName(attachment.name); offer.setSize(attachment.size);
         offer.setSha256(attachment.sha256); offer.setMimeType(attachment.mime_type);
+        const auto file = DsEngine::instance().getFileManager()->getFileFromPeer(
+            attachment.file_id, getIdentityId(), getPeerCert() ? getPeerCert()->getHash().toByteArray() : QByteArray{}, File::OUTGOING);
+        if (file) setOfferedCheckpoint(offer, *file);
         ds::protocol::MessageAttachment entry;
         entry.setFileOffer(std::move(offer));
         if (attachment.thumbnail_for) entry.setThumbnailForAttachmentIndex(*attachment.thumbnail_for);
@@ -2697,6 +3154,7 @@ uint64_t Peer::offerFile(const File &file)
     offer.setSize(static_cast<quint64>(file.getSize()));
     offer.setSha256(file.getHash());
     offer.setMimeType(mimeType);
+    setOfferedCheckpoint(offer, file);
     ds::protocol::Envelope envelope;
     envelope.setProtocolVersion(codec::protocolVersion);
     envelope.setFileOffer(std::move(offer));
@@ -2771,9 +3229,9 @@ uint64_t Peer::sendSome(File &file)
 void Peer::handleFileAck(const QByteArray& fileId, const quint64 nextSequence,
                          const quint64 nextOffset, const bool final)
 {
-    const auto file = DsEngine::instance().getFileManager()->getFileFromId(
-        fileId, File::OUTGOING);
-    if (file && file->getContact() && getPeerCert()
+    const auto file = DsEngine::instance().getFileManager()->getFileFromPeer(
+        fileId, getIdentityId(), getPeerCert() ? getPeerCert()->getHash().toByteArray() : QByteArray{}, File::OUTGOING);
+    if (file && !file->checkpointInterval() && file->getContact() && getPeerCert()
             && file->getContact()->getCert()->getHash().toByteArray()
                 == getPeerCert()->getHash().toByteArray()) {
         const auto it = outChannels_.find(file->getChannel());

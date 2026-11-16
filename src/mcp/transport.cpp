@@ -236,7 +236,7 @@ struct Transport::Impl {
                     "a client path. file_accept accepts an incoming 32-hex transfer "
                     "reference for contact. file_reject rejects an offered incoming transfer. "
                     "file_cancel_incoming and file_cancel_outgoing cancel only the named direction through normal domain services. "
-                    "file_resume invokes the normal incoming failed-file resume action. "
+                    "file_resume requests the normal incoming resumable-file action. "
                     "files returns at most 64 sensitive file records for contact. "
                     "Test file records include thumbnail_for (empty for primary files) and preview_available; "
                     "the latter reports only local, preference-gated thumbnail availability, never image bytes or paths. "

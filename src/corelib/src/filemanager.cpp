@@ -87,21 +87,51 @@ File::ptr_t FileManager::getFileFromId(const QByteArray &fileId, const File::Dir
 File::ptr_t FileManager::getFileFromId(const QByteArray &fileId, const Contact &contact)
 {
     QSqlQuery query;
-    query.prepare("SELECT id FROM file WHERE file_id=:fid AND contact_id=:cid");
+    query.prepare("SELECT id FROM file WHERE file_id=:fid AND contact_id=:cid AND identity_id=:identity LIMIT 2");
     query.bindValue(":fid", fileId);
     query.bindValue(":cid", contact.getId());
+    query.bindValue(":identity", contact.getIdentity()->getId());
     query.exec();
 
     if (query.next()) {
-        return getFile(query.value(0).toInt());
+        const auto id = query.value(0).toInt();
+        if (query.next()) return {};
+        return getFile(id);
     }
 
     return {};
 }
 
-File::ptr_t FileManager::addFile(std::unique_ptr<FileData> data)
+File::ptr_t FileManager::getFileFromId(const QByteArray& file_id, const Contact& contact, File::Direction direction)
+{
+    return getFileFromPeer(file_id, contact.getIdentity()->getUuid(),
+                           contact.getCert()->getHash().toByteArray(), direction);
+}
+
+File::ptr_t FileManager::getFileFromPeer(const QByteArray& file_id, QUuid identity,
+                                       const QByteArray& peer_hash, File::Direction direction)
+{
+    if (file_id.size() != 16 || identity.isNull() || peer_hash.isEmpty()) return {};
+    QSqlQuery query;
+    query.prepare("SELECT f.id FROM file f JOIN contact c ON c.id=f.contact_id "
+                  "JOIN identity i ON i.id=f.identity_id WHERE f.file_id=:file "
+                  "AND f.direction=:direction AND c.identity=i.id AND i.uuid=:identity AND c.hash=:peer LIMIT 2");
+    query.bindValue(":file", file_id);
+    query.bindValue(":direction", int(direction));
+    query.bindValue(":identity", identity);
+    query.bindValue(":peer", peer_hash);
+    if (!query.exec()) throw Error("Cannot resolve scoped transfer");
+    if (!query.next()) return {};
+    const auto id = query.value(0).toInt();
+    // Ambiguous local state must never select an arbitrary authority.
+    if (query.next()) return {};
+    return getFile(id);
+}
+
+File::ptr_t FileManager::addFile(std::unique_ptr<FileData> data, std::optional<dsfm::TransferAttempt> attempt)
 {
     auto file = make_shared<File>(*this, move(data));
+    if (attempt && !file->setCheckpointAttempt(*attempt)) throw Error("Invalid initial checkpoint attempt");
     file->addToDb();
     registry_.add(file->getId(), file);
     touch(file);
@@ -192,9 +222,9 @@ QCoro::Task<dsfm::Result<File::ptr_t>> FileManager::addVfsTransfer(Conversation&
 void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOffer &offer)
 {
     if (!offer.thumbnail_for.isEmpty()) {
-        auto primary = getFileFromId(offer.thumbnail_for, conversation);
+        auto primary = getFileFromId(offer.thumbnail_for, *conversation.getFirstParticipant(), File::INCOMING);
         const auto* identity = conversation.getIdentity();
-        const auto allowed = primary && !primary->isThumbnail() && primary->getDirection() == File::INCOMING
+        const auto allowed = primary && primary->getConversationId() == conversation.getId() && !primary->isThumbnail() && primary->getDirection() == File::INCOMING
             && primary->getState() != File::FS_REJECTED && primary->getState() != File::FS_CANCELLED
             && ((primary->getMimeType().startsWith("image/") && identity->getPreviewImages())
                 || (media_preview::isVideoCandidate(primary->getMimeType()) && identity->getPreviewVideo()));
@@ -207,11 +237,20 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
 
     // Check if we have the file.
     try {
-        if (auto file = getFileFromId(offer.fileId, conversation)) {
-            if (file->getSize() != offer.size || file->getHash() != offer.sha512 || file->getName() != offer.name
+        if (auto file = getFileFromId(offer.fileId, *conversation.getFirstParticipant(), File::INCOMING)) {
+            if (file->getConversationId() != conversation.getId() || file->getSize() != offer.size || file->getHash() != offer.sha512 || file->getName() != offer.name
                 || file->getMimeType() != offer.type || file->dataThumbnailFor() != offer.thumbnail_for) {
                 recordPeerEvent(*offer.peer, EventJournal::PolicyRejection, EventJournal::Incoming, EventJournal::Rejected);
                 offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
+                return;
+            }
+            if (file->checkpointInterval() || offer.checkpoint_attempt) {
+                // Repeated initial offers cannot downgrade or reset a running,
+                // paused or completed checkpoint transfer. Recovery uses resume.
+                if (!offer.checkpoint_attempt || !file->checkpointInterval() ||
+                    file->checkpointInterval() != offer.checkpoint_attempt->interval ||
+                    !file->checkpointAttempt() || *file->checkpointAttempt() != *offer.checkpoint_attempt)
+                    offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
                 return;
             }
             if (file->getState() == File::FS_REJECTED) {
@@ -282,8 +321,9 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
     data->hash = offer.sha512;
     data->mime_type = offer.type;
     data->thumbnail_for = offer.thumbnail_for; data->manifest_id = offer.manifest_id;
+    if (offer.checkpoint_attempt) data->checkpoint_interval = offer.checkpoint_attempt->interval;
 
-    auto file = addFile(move(data));
+    auto file = addFile(move(data), offer.checkpoint_attempt);
     if (file) {
         if (file->isThumbnail()) {
             file->accept(); // Explicit per-identity preview consent; never accepts the primary.

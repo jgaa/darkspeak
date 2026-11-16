@@ -75,6 +75,15 @@ Item {
                 visible: cFile && (cFile.state === File.FS_QUEUED || cFile.state === File.FS_TRANSFERRING || cFile.state === File.FS_HASHING)
                 Accessible.name: qsTr("File transfer progress")
             }
+            Label {
+                objectName: "transferPauseReason"
+                text: cFile ? cFile.pauseReasonText : ""
+                visible: cFile && cFile.state === File.FS_PAUSED && text.length > 0
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+                color: appearance.secondaryText
+            }
             RowLayout {
                 Layout.fillWidth: true
                 Button {
@@ -88,8 +97,9 @@ Item {
                     onClicked: cFile.reject()
                 }
                 Button {
+                    objectName: "transferResume"
                     text: qsTr("Resume")
-                    visible: cFile && cFile.state === File.FS_FAILED
+                    visible: cFile && cFile.resumable
                     onClicked: cFile.resume()
                 }
                 Item {
@@ -112,7 +122,7 @@ Item {
                 contextFileSendMenu.file.cancel();
             }
 
-            enabled: (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_WAITING) || (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_OFFERED) || (contextFileSendMenu.file && contextFileSendMenu.file.state === File.FS_TRANSFERRING)
+            enabled: contextFileSendMenu.file && (contextFileSendMenu.file.resumable || contextFileSendMenu.file.state === File.FS_WAITING || contextFileSendMenu.file.state === File.FS_OFFERED || contextFileSendMenu.file.state === File.FS_TRANSFERRING)
             text: qsTr("Cancel")
         }
 
@@ -153,14 +163,15 @@ Item {
 
         MenuItem {
             onTriggered: {
-                if (contextFileReceiveMenu.file && contextFileReceiveMenu.file.state == File.FS_TRANSFERRING) {
+                if (contextFileReceiveMenu.file && (contextFileReceiveMenu.file.resumable || contextFileReceiveMenu.file.state == File.FS_TRANSFERRING)) {
                     contextFileReceiveMenu.file.cancel();
                 } else {
                     contextFileReceiveMenu.file.reject();
                 }
             }
 
-            text: (contextFileReceiveMenu.file && contextFileReceiveMenu.file.state == File.FS_TRANSFERRING) ? qsTr("Cancel") : qsTr("Reject")
+            text: (contextFileReceiveMenu.file && (contextFileReceiveMenu.file.resumable || contextFileReceiveMenu.file.state == File.FS_TRANSFERRING)) ? qsTr("Cancel") : qsTr("Reject")
+            enabled: contextFileReceiveMenu.file && (contextFileReceiveMenu.file.resumable || contextFileReceiveMenu.file.state == File.FS_TRANSFERRING || contextFileReceiveMenu.file.state == File.FS_OFFERED)
         }
 
         MenuItem {

@@ -2,11 +2,13 @@
 #define PEERCONNECTION_H
 
 #include <memory>
+#include <stdexcept>
 
 #include <QUuid>
 #include <QObject>
 #include <QVariantMap>
 #include <QImage>
+#include <QDeadlineTimer>
 
 #include "ds/dscert.h"
 #include "ds/message.h"
@@ -19,6 +21,15 @@ namespace core {
 class PeerConnection;
 class Message;
 class File;
+
+// Owned by the complete asynchronous operation, including retired connections.
+// Contact retains a weak reference so cancellation never frees a live slot.
+struct FileTransferWork {
+    QUuid operation = QUuid::createUuid();
+    QDeadlineTimer deadline{30000};
+    dsfm::CancellationToken cancel;
+    bool current() const noexcept { return !cancel.cancelled() && !deadline.hasExpired(); }
+};
 
 struct PeerReq
 {
@@ -81,7 +92,9 @@ enum class FileOfferResponseStatus {
 
 enum class FileCancelReason {
     SourceChanged,
-    UserAction
+    UserAction,
+    ReceiverCheckpointMismatch,
+    UnsupportedTransferVersion
 };
 
 struct PeerConnectionResponse : public PeerReq
@@ -168,7 +181,8 @@ struct PeerFileResume : public PeerReq
 enum class FileResumeStatus {
     Accepted,
     Rejected,
-    Cancelled
+    Cancelled,
+    Paused
 };
 
 struct PeerFileResumeResult : public PeerReq
@@ -211,6 +225,9 @@ struct PeerMessage : public PeerReq
     }
 
     MessageData data;
+    // Connection attempt parameters are transport metadata, outside the signed
+    // content identity and persistent message attachment manifest.
+    QVector<std::optional<dsfm::TransferAttempt>> attachment_attempts;
 };
 
 struct PeerFileOffer : public PeerReq
@@ -308,12 +325,28 @@ public:
     virtual uint64_t sendMessageReceipt(const QByteArray& messageId) = 0;
     virtual uint64_t sendFileOfferResponse(const QByteArray& fileId,
                                            FileOfferResponseStatus status) = 0;
+    virtual uint64_t sendCheckpointOfferResponse(const QByteArray &, const dsfm::TransferAttempt &) {
+        throw std::runtime_error("Checkpoint readiness is unsupported");
+    }
     virtual uint64_t sendFileAck(const QByteArray& fileId, quint64 nextSequence,
                                  quint64 nextOffset, bool final) = 0;
     virtual uint64_t sendFileCancel(const QByteArray& fileId,
                                     FileCancelReason reason) = 0;
     virtual uint64_t sendFileResume(const QByteArray& fileId, quint64 nextOffset,
                                     const QByteArray& sha256, quint64 fileSize) = 0;
+    virtual uint64_t sendCheckpointResume(const QByteArray &, const QByteArray &, quint64, quint32,
+                                         QVector<dsfm::DurableCheckpoint>, std::shared_ptr<FileTransferWork>) {
+        throw std::runtime_error("Checkpoint resume is unsupported");
+    }
+    virtual uint64_t sendCheckpointResumeResult(quint64, const QByteArray &, FileResumeStatus,
+                                                std::optional<dsfm::TransferAttempt> = {},
+                                                dsfm::TransferPauseReason = dsfm::TransferPauseReason::None,
+                                                FileCancelReason = FileCancelReason::UserAction) {
+        throw std::runtime_error("Checkpoint resume results are unsupported");
+    }
+    virtual uint64_t startCheckpointReceive(File &, dsfm::TransferAttempt, std::shared_ptr<FileTransferWork>) {
+        throw std::runtime_error("Checkpoint receive recovery is unsupported");
+    }
     virtual uint64_t sendFileResumeResult(quint64 responseToRequestId,
                                           const QByteArray& fileId,
                                           FileResumeStatus status,

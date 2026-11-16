@@ -13,6 +13,13 @@
 #include "ds/message.h"
 #include "ds/dscert.h"
 
+class EnvelopePeer final : public ds::prot::Peer {
+  public:
+    EnvelopePeer() : Peer(std::make_shared<ds::prot::ConnectionSocket>(), {}) {}
+    using Peer::onReceivedEnvelope;
+    Direction getDirection() const noexcept override { return OUTGOING; }
+};
+
 class ProtocolV3Test final : public QObject
 {
     Q_OBJECT
@@ -63,6 +70,23 @@ private slots:
         checkpoint.setPhase(ds::protocol::FileCheckpoint::Phase::CHECKPOINT_PROPOSED);
         QVERIFY(codec::validateFileCheckpoint(checkpoint,131072,65536));
         checkpoint.setPhase(ds::protocol::FileCheckpoint::Phase(99));QVERIFY(!codec::validateFileCheckpoint(checkpoint,131072,65536));
+    }
+    void unilateralCheckpointCapabilityCannotAuthorizeDispatch() {
+        auto peer = std::make_shared<EnvelopePeer>();
+        peer->onReceivedEnvelope(ds::prot::codec::makeCapabilities(
+            {QStringLiteral("file-checkpoint-v1")}, ds::prot::codec::maxRecordBytes, 65536));
+        QCOMPARE(peer->checkpointInterval(), quint32(0));
+        QSignalSpy offered(peer.get(), &ds::core::PeerConnection::receivedFileOffer);
+        ds::protocol::FileOffer offer;
+        offer.setFileId(QByteArray(16, 'f')); offer.setConversationId(QByteArray(32, 'c'));
+        offer.setName("file.bin"); offer.setSha256(QByteArray(32, 'h')); offer.setMimeType("application/octet-stream");
+        const dsfm::TransferAttempt attempt{QUuid::createUuid(), 65536, 1,
+            {0, 0, QCryptographicHash::hash(QByteArray{}, QCryptographicHash::Sha256)}};
+        offer.setCheckpoints(ds::prot::codec::checkpointParameters(attempt));
+        ds::protocol::Envelope envelope;
+        envelope.setProtocolVersion(ds::prot::codec::protocolVersion); envelope.setFileOffer(offer);
+        QVERIFY_EXCEPTION_THROWN(peer->onReceivedEnvelope(envelope), std::exception);
+        QCOMPARE(offered.count(), 0);
     }
     void resumeCheckpointSetsAreBounded() {
         using namespace ds::prot;

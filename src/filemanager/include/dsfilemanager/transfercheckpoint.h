@@ -3,17 +3,19 @@
 
 namespace dsfm {
 inline constexpr quint32 checkpoint_format_version = 1;
+inline constexpr quint32 transfer_progress_format_version = 2;
 inline constexpr quint32 minimum_checkpoint_interval = 64U << 10;
 inline constexpr quint32 default_checkpoint_interval = 1U << 20;
 inline constexpr quint32 maximum_checkpoint_interval = 16U << 20;
 inline constexpr quint32 maximum_retained_checkpoints = 64;
 bool validCheckpointInterval(quint32 interval) noexcept;
 Result<quint32> negotiateCheckpointInterval(quint32 local, quint32 remote);
+enum class TransferSide { Sender, Receiver };
 struct TransferKey {
     QUuid local_scope, remote_scope, transfer;
+    TransferSide side = TransferSide::Sender;
     bool operator==(const TransferKey &) const = default;
 };
-enum class TransferSide { Sender, Receiver };
 struct TransferDescription {
     TransferKey key;
     quint64 size = 0;
@@ -33,6 +35,7 @@ struct TransferAttempt {
     quint32 interval = default_checkpoint_interval;
     quint64 next_sequence = 1;
     DurableCheckpoint selected;
+    bool operator==(const TransferAttempt &) const = default;
 };
 enum class CheckpointPhase { Proposed, SenderConfirmed, MutuallyConfirmed };
 enum class TransferPauseReason {
@@ -49,12 +52,14 @@ enum class TransferFailureReason {
     SourceIntegrityMismatch,
     ReceiverCheckpointMismatch,
     UnsupportedVersion,
-    UserAction
+    UserAction,
+    RemoteSourceChanged // Counterparty assertion; never local corruption/refund proof.
 };
 struct DurableTransferProgress {
     TransferDescription description;
     QUuid attempt;
-    quint64 confirmed_offset = 0;
+    quint64 confirmed_offset = 0; // Current attempt's confirmed stream fence; may rewind on resume.
+    quint64 verified_prefix = 0; // Highest mutually verified prefix, monotonic across attempts/retention.
     quint64 next_checkpoint_sequence = 1;
     QVector<DurableCheckpoint> checkpoints; // Mutually confirmed, including zero.
     QVector<DurableCheckpoint> accepted_checkpoints; // Sender-persisted confirmations.
@@ -92,6 +97,9 @@ class TransferProgressStore {
     QCoro::Task<Result<DurableTransferProgress>> create(TransferDescription description);
     QCoro::Task<Result<DurableTransferProgress>> load(TransferKey key);
     QCoro::Task<Result<DurableCheckpoint>> selectResume(TransferKey key, QVector<DurableCheckpoint> retained);
+    // Non-mutating preflight before prefix hashing or suffix invalidation. This
+    // does not reserve an attempt; beginAttempt rechecks under its transaction.
+    QCoro::Task<Result<void>> validateAttempt(TransferKey key, TransferAttempt attempt);
     QCoro::Task<Result<void>> beginAttempt(TransferKey key, QUuid attempt, DurableCheckpoint selected, quint64 next_sequence = 0);
     QCoro::Task<Result<void>> record(TransferKey key, QUuid attempt, DurableCheckpoint checkpoint,
                                      CheckpointPhase phase);

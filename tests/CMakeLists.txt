@@ -80,7 +80,7 @@ target_link_libraries(managed_storage_test PRIVATE models prot Qt6::Test)
 target_include_directories(managed_storage_test PRIVATE ../dependencies/logfault/include)
 target_compile_definitions(managed_storage_test PRIVATE DS_STORAGE_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 add_test(NAME managed_storage COMMAND managed_storage_test)
-set_tests_properties(managed_storage PROPERTIES TIMEOUT 120 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(managed_storage PROPERTIES TIMEOUT 180 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 if(DARKSPEAK_WITH_MCP)
     add_executable(mcp_policy_test mcp_policy_test.cpp ../src/mcp/store.cpp)

@@ -86,6 +86,9 @@ Database::Database(QSettings& settings)
     exec("CREATE TABLE IF NOT EXISTS file_thumbnail_v1 (file_id INTEGER PRIMARY KEY REFERENCES file(id) ON DELETE CASCADE,primary_id INTEGER NOT NULL UNIQUE REFERENCES file(id) ON DELETE CASCADE,manifest_id BLOB NOT NULL)");
     exec("CREATE INDEX IF NOT EXISTS ix_thumbnail_manifest_v1 ON file_thumbnail_v1(manifest_id)");
     exec("CREATE TRIGGER IF NOT EXISTS primary_thumbnail_delete_v1 BEFORE DELETE ON file BEGIN DELETE FROM file WHERE id IN(SELECT file_id FROM file_thumbnail_v1 WHERE primary_id=OLD.id); END");
+    // Versioned application mirror of generic progress. The generic journal
+    // remains authoritative for attempts, verified offsets and final outcomes.
+    exec("CREATE TABLE IF NOT EXISTS file_transfer_v1 (file_id INTEGER PRIMARY KEY REFERENCES file(id) ON DELETE CASCADE,checkpoint_interval INTEGER NOT NULL CHECK(checkpoint_interval>=65536 AND checkpoint_interval<=16777216 AND checkpoint_interval%65536=0),pause_reason INTEGER NOT NULL DEFAULT 0 CHECK(pause_reason BETWEEN 0 AND 6),failure_reason INTEGER NOT NULL DEFAULT 0 CHECK(failure_reason BETWEEN 0 AND 5))");
     prepareData();
 
 }
@@ -153,11 +156,13 @@ void Database::prepareData()
         // would reset the sender to zero. An unaccepted outgoing offer may be
         // advertised again without claiming a resumed channel.
         QSqlQuery query(db_);
-        query.prepare("UPDATE file SET state=CASE WHEN direction=:out AND state=:offered "
+        query.prepare("UPDATE file SET state=CASE WHEN id IN(SELECT file_id FROM file_transfer_v1) "
+                      "THEN :paused WHEN direction=:out AND state=:offered "
                       "THEN :waiting ELSE :failed END WHERE state IN(:transferring,:queued) "
                       "OR (direction=:out AND state=:offered)");
         query.bindValue(":waiting", static_cast<int>(File::FS_WAITING));
         query.bindValue(":failed", static_cast<int>(File::FS_FAILED));
+        query.bindValue(":paused", static_cast<int>(File::FS_PAUSED));
         query.bindValue(":out", static_cast<int>(File::OUTGOING));
         query.bindValue(":transferring", static_cast<int>(File::FS_TRANSFERRING));
         query.bindValue(":queued", static_cast<int>(File::FS_QUEUED));
@@ -165,6 +170,11 @@ void Database::prepareData()
         if (!query.exec()) {
             throw Error(QStringLiteral("SQL query failed: %1").arg(query.lastError().text()));
         }
+        query.prepare("UPDATE file_transfer_v1 SET pause_reason=:reason WHERE pause_reason=0 "
+                      "AND file_id IN(SELECT id FROM file WHERE state=:paused)");
+        query.bindValue(":reason", int(dsfm::TransferPauseReason::Disconnected));
+        query.bindValue(":paused", int(File::FS_PAUSED));
+        if (!query.exec()) throw Error("Cannot recover transfer pause reason");
     }
 
     // Re-enable auto-connect for all contacts with that flag.

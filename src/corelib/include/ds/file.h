@@ -50,7 +50,10 @@ public:
         FS_DONE,
         FS_FAILED,
         FS_REJECTED,
-        FS_CANCELLED
+        FS_CANCELLED,
+        FS_PAUSED,
+        FS_WAITING_FOR_CREDIT,
+        FS_PAUSED_INSUFFICIENT_CREDIT
     };
     Q_ENUM(State)
 
@@ -66,6 +69,10 @@ public:
     Q_PROPERTY(int id READ getId CONSTANT)
     Q_PROPERTY(QByteArray fileId READ getFileId CONSTANT)
     Q_PROPERTY(State state READ getState NOTIFY stateChanged)
+    Q_PROPERTY(int pauseReason READ pauseReason NOTIFY stateChanged)
+    Q_PROPERTY(int failureReason READ failureReason NOTIFY stateChanged)
+    Q_PROPERTY(QString pauseReasonText READ pauseReasonText NOTIFY stateChanged)
+    Q_PROPERTY(bool resumable READ isResumable NOTIFY stateChanged)
     Q_PROPERTY(Direction direction READ getDirection CONSTANT)
     Q_PROPERTY(bool active READ isActive NOTIFY isActiveChanged)
     Q_PROPERTY(QString name READ getName WRITE setName NOTIFY nameChanged)
@@ -90,6 +97,12 @@ public:
     int getId() const noexcept;
     QByteArray getFileId() const noexcept;
     State getState() const noexcept;
+    bool isResumable() const noexcept;
+    int pauseReason() const noexcept { return int(dataPauseReason()); }
+    int failureReason() const noexcept;
+    QString pauseReasonText() const;
+    dsfm::TransferPauseReason dataPauseReason() const noexcept;
+    quint32 checkpointInterval() const noexcept;
     void setState(const State state);
     Direction getDirection() const noexcept;
     QString getName() const noexcept;
@@ -135,7 +148,7 @@ public:
     dsfm::NamespaceId storageNamespace() const;
     dsfm::FileId storageId() const;
     dsfm::PendingId pendingId() const;
-    QCoro::Task<dsfm::Result<quint64>> prepareIncoming();
+    QCoro::Task<dsfm::Result<quint64>> prepareIncoming(dsfm::CancellationToken cancel = {});
     QCoro::Task<dsfm::Result<qsizetype>> writeIncoming(quint64 offset, QByteArray bytes);
     QCoro::Task<dsfm::Result<void>> checkpointIncoming();
     QCoro::Task<dsfm::Result<QByteArray>> checkpointIncomingPrefix(quint64 length);
@@ -147,9 +160,16 @@ public:
     QCoro::Task<dsfm::Result<void>> recordCheckpoint(QUuid attempt, dsfm::DurableCheckpoint checkpoint,
                                                    dsfm::CheckpointPhase phase);
     QCoro::Task<dsfm::Result<void>> failCheckpoint(dsfm::TransferFailureReason reason);
+    QCoro::Task<dsfm::Result<void>> pauseTransfer(QUuid attempt, dsfm::TransferPauseReason reason);
     QCoro::Task<dsfm::Result<void>> suspendIncoming();
     QCoro::Task<dsfm::Result<void>> abortIncoming();
     QCoro::Task<dsfm::Result<void>> validateSourceSnapshot();
+    QCoro::Task<dsfm::Result<void>> verifyOutgoingCheckpoint(dsfm::DurableCheckpoint selected,
+                                                          dsfm::CancellationToken cancel,
+                                                          std::function<bool()> current);
+    QCoro::Task<dsfm::Result<void>> beginOutgoingCheckpointAttempt(dsfm::TransferAttempt attempt,
+                                                                dsfm::CancellationToken cancel);
+    QCoro::Task<dsfm::Result<void>> pauseCheckpointProgress(dsfm::TransferPauseReason reason);
     QCoro::Task<dsfm::Result<void>> importThumbnail(QByteArray jpeg);
 
 
@@ -205,6 +225,9 @@ private:
     bool previewAllowed() const;
     QCoro::Task<void> loadPreview(File::ptr_t self);
     QCoro::Task<void> recoverStorage(File::ptr_t self);
+    QCoro::Task<void> recoverCheckpointProgress(File::ptr_t self);
+    dsfm::Result<void> validateCheckpointAttempt(const dsfm::TransferAttempt &attempt) const;
+    void clearCheckpointPause();
     std::shared_ptr<dsvfs::CatalogExport> catalog_source_;
     std::function<bool()> source_current_;
     PrepareSource source_prepare_;
@@ -241,6 +264,9 @@ struct FileData {
     QString mime_type;
     QByteArray thumbnail_for;
     QByteArray manifest_id;
+    quint32 checkpoint_interval = 0; // Zero is the explicitly segregated legacy mode.
+    dsfm::TransferPauseReason pause_reason = dsfm::TransferPauseReason::None;
+    dsfm::TransferFailureReason failure_reason = dsfm::TransferFailureReason::None;
     qlonglong size = {};
     qlonglong bytesTransferred = {}; // REST offset
     QDateTime fileTime;

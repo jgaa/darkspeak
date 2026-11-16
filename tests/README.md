@@ -37,6 +37,53 @@ files with a fake transport: offline identities, disabled contact auto-connect,
 connection-attempt coalescing, manual cancellation, blocks and inbound-only work.
 It does not contact Tor or a peer for these checks.
 
+Transfer lifecycle coverage also checks persisted checkpoint mode, typed pauses,
+partial-content retention, cancellation, terminal failure recovery, stale-attempt
+isolation and recovery when the application pause mirror fails. Scoped
+transfer-ID collision tests use separate contacts without network access.
+`database_recovery` checks real SQLite reopen and idempotent restart recovery of
+checkpoint, legacy and credit-wait states. Numeric states and the versioned
+application mirror schema are frozen in `fixtures/transfer-lifecycle-v1.json`.
+The managed-storage suite checks that asynchronous resume validation takes a
+concurrency slot before filesystem work. UI component tests check pause reasons
+and resume visibility without opening real profiles or Tor connections.
+These extend existing CTest registrations and require no runner changes.
+
+Checkpoint recovery tests additionally enforce exact retained references (including
+final/pause flags), EOF-only selection for completed transfers after restart, and
+empty-file final references. `transfer_checkpoints` verifies that attempt preflight
+does not mutate progress and that commit rechecks terminal failures.
+`managed_storage` verifies that unretained checkpoints and stale sequence choices
+cannot invalidate partial bytes, and that superseded validation cannot install or
+restore an old runtime attempt. These use the existing bounded CTest registrations;
+`run-all-tests.sh` needs no new targets, flags or dependencies.
+
+The managed-storage checkpoint matrix also runs real authenticated encrypted
+loopback peers through the application contact queues: 64 KiB, 1 MiB and 16 MiB
+intervals, empty EOF, signed primary/preview manifests, withheld checkpoints,
+stale-attempt ACK rejection and advisory pauses without progress advancement.
+The matrix also exercises nonterminal checkpoint resume after a lost mutual
+receipt, bounded fallback after receiver-prefix corruption, source absence,
+locally proved source mismatch and conservative backend revalidation refusal. Rewind
+coverage rechecks accepted source prefixes before their boundaries are sent, including
+short pause prefixes inside ordinary chunks. Known checkpoint mismatch, unsupported
+version and remote source-failure cancellations retain typed outcomes without producing
+local corruption/refund proof.
+Malformed retained candidates fail closed before legacy application dispatch;
+duplicate exact readiness coalesces while its journal commit is pending, and
+late offer rejection cannot rewrite a completed outcome. Shared contact work
+budgets remain occupied until cancelled asynchronous work actually returns.
+The format-two progress journal fixture covers direction-scoped key bytes and a
+monotonic verified prefix through resume rewinds and checkpoint retention. Empty
+format-one catalogs can be reinitialized transactionally; populated catalogs
+remain untouched and unsupported, including across an injected commit failure. Corrupt
+catalog scalar values, attempts, sequences and completion claims fail closed on load.
+Production capability advertisement stays disabled pending reconnect/restart and
+terminal replay coverage. `protocol_v3` rejects unilateral checkpoint capability
+before application dispatch. The existing managed-storage CTest timeout is 180
+seconds for this expanded matrix; the full runner already honors it and needs no
+additional dependencies or flags. Set `DS_TEST_TRACE=1` for fixture trace logging.
+
 Install the normal C++/Qt/MCP dependencies, Python 3.12+ with venv/pip, `tor` and
 `tor-gencert` and `ffmpeg` first. Video decoding tests need a Linux kernel with
 Landlock and seccomp support. The script does not install system packages. Dependency

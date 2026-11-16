@@ -29,8 +29,11 @@ public:
     File::ptr_t getFileFromId(const QByteArray& fileId, Conversation& conversation);
     File::ptr_t getFileFromId(const QByteArray& fileId, const File::Direction direction);
     File::ptr_t getFileFromId(const QByteArray& fileId, const Contact& contact);
+    File::ptr_t getFileFromId(const QByteArray& fileId, const Contact& contact, File::Direction direction);
+    File::ptr_t getFileFromPeer(const QByteArray& fileId, QUuid identity, const QByteArray& peer_hash,
+                              File::Direction direction);
 
-    File::ptr_t addFile(std::unique_ptr<FileData> data);
+    File::ptr_t addFile(std::unique_ptr<FileData> data, std::optional<dsfm::TransferAttempt> attempt = {});
     static QString transferName(QString logical_name);
     QCoro::Task<dsfm::Result<File::ptr_t>> addVfsTransfer(Conversation& conversation, dsvfs::Vfs& vfs, dsvfs::NodeId node,
                                                        dsvfs::Request request, QString mime_type = "application/octet-stream");

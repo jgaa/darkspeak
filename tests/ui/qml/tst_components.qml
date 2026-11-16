@@ -118,6 +118,26 @@ TestCase {
         compare(preview.Layout.preferredHeight, 0);
         compare(view.cFile.state, File.FS_OFFERED);
     }
+    function test_paused_transfer_explains_reason_and_offers_resume() {
+        const view = createTemporaryObject(fileCardFixture, testCase);
+        verify(view !== null);
+        const resume = findChild(view, "transferResume");
+        const reason = findChild(view, "transferPauseReason");
+        verify(resume !== null);
+        verify(reason !== null);
+        compare(resume.visible, false);
+        compare(reason.visible, false);
+        view.cFile.state = File.FS_PAUSED;
+        view.cFile.resumable = true;
+        view.cFile.pauseReasonText = "Source temporarily unavailable";
+        tryCompare(resume, "visible", true);
+        tryCompare(reason, "visible", true);
+        compare(reason.text, "Source temporarily unavailable");
+        view.cFile.state = File.FS_DONE;
+        view.cFile.resumable = false;
+        tryCompare(resume, "visible", false);
+        tryCompare(reason, "visible", false);
+    }
     function test_scale_bounds_and_cancel() {
         appearance.beginPreview();
         appearance.scale = 2000;
