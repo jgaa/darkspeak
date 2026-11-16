@@ -41,7 +41,7 @@ Fetch `yahat-cpp` with CMake `FetchContent` only when MCP is enabled, from
 `https://github.com/jgaa/yahat-cpp.git`, initially pinned to commit
 `67cb6c31c13f695fc548c71f7789a0619b1333d4`. Set `YAHAT_ENABLE_MCP=ON`,
 `YAHAT_WITH_TESTS=OFF`, and `YAHAT_WITH_EXAMPLES=OFF` before making it available;
-disable unneeded metrics. Link `yahat-cpp::yahat-cpp`. Follow existing external
+configure yahat metrics according to `specs/metrics.md` (application-wide metrics are independent of whether MCP is enabled). Link `yahat-cpp::yahat-cpp`. Follow existing external
 library integration patterns. Do not assume an installed package, use a sibling
 checkout as a build dependency, or automatically discover local source trees.
 `../yahat-cpp` is reference material for its usage skill, documentation, and API
