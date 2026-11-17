@@ -1,55 +1,26 @@
 # File transfer implementation worklist
 
-Tracks work against current specifications; **not** a new source of requirements. Baseline: `b2205ca`. Follow `agents.md`: only owner-approved tasks may be added or materially expanded. Maintain `- [x]` for verified completion, `- [ ]` for unfinished work. Record evidence briefly; Git history contains detailed change logs.
+This is a **remaining-work checklist**, not a development diary or a new feature specification. Follow `agents.md` for explicit owner approval before adding, reopening or materially expanding tasks. Check items off only on evidence. Do not restore the superseded checkpoint branch's phase-by-phase checklist; its history is in Git (`b2205ca`, `90dc949`, `3b5f825`). The old tests are evidence of required *behavior*, not a mandate to preserve the failed ownership implementation.
 
-## Milestone routing — do not implement future FTP work early
+## ACTIVE: coroutine-owned generic transfer refactor
 
-The agreed order after completing the **generic transfer gate** is: **FileShare normal administration UI** (`specs/fileshare_ui.md`, with its required storage/VFS/group/policy foundations) → **application metrics** (`specs/metrics.md`) → **remaining FTP transfer queue/server/browser/uploads/exchange** (additional specifications to be prepared) → **dashboard last**. The wizard is later. Unspecified future feature details must not be inferred or proactively filled in.
+**Read first:** [`doc/file-transfer-coroutine-refactor.md`](file-transfer-coroutine-refactor.md). Owner has approved replacing distributed attempt ownership, not broadening protocol scope. No legacy clients or compatibility fallback. The code currently disables production checkpoints (`Peer::localCheckpointPreference() == 0`); production transfer readiness is the acceptance gate.
 
-**Worklist status is not authorization to implement every unchecked item.** Only §2 is active for the current generic milestone. In §3, storage-pool correctness directly required by the administration UI belongs to the upcoming UI milestone; remote export, catalog leases and server-specific recovery belong to the later FTP/server milestone. §4 is a UI foundation, but server enforcement and remote integration wait for the server specification. §§5–6 belong to later FTP uploads/exchange, not generic file transfers or metrics. §7 is cross-milestone: execute each part only when its owning feature is in scope. These are **existing tasks routed to their owning milestones**, not additional tasks. Owner approval is required to change scope, add items or pull future work forward.
+- [ ] Map active transfer-state writers, event entry points and resource owners; present a concise new single-owner session boundary and migration sequence before major code changes.
+- [ ] Implement one coroutine-owned session per active attempt, with awaited/joined subordinate work, bounded wire/command event delivery and one writer of execution outcomes. Preserve transport, hashing, storage and journal helpers where appropriate.
+- [ ] Move **incoming** preparation, receiving, checkpoints, full-file validation, publication, cancellation and termination under that owner; keep synchronous authorization/publication safeguards.
+- [ ] Move **outgoing** offer/accept/resume, bounded sending, checkpoint confirmation, source validation, completion and termination under that owner.
+- [ ] Eliminate displaced competing callbacks/coroutine controllers, polling, reentrancy flags and scattered reservation-handoff logic; preserve required validation and typed errors. Do not maintain parallel old/new engines.
+- [ ] Demonstrate existing wire/security/restart guarantees through deterministic targeted tests, including checkpoint resume, cancellation vs publication, lost confirmations, failure/revocation and bounded resource lifetimes. Update CTest runner registrations when changing tests.
+- [ ] Enable production mandatory checkpoints and verify an actual two-instance attachment transfer and restart/resume; report completed test evidence and stop. Follow existing build restrictions; coordinate full application build with owner.
 
-## Current milestone: finish the generic checkpoint release gate
+**Pending owner decision, separate from this architectural refactor:** generic terminal-journal expiry/compaction (previous proposal: 30 days). Do not implement retention policy without approval. Preserve records needed by active recovery in the meantime; future FileShare accounting evidence belongs to the exchange milestone. This decision must not justify recreating autonomous recovery machinery or delaying a working production path without a demonstrated correctness blocker.
 
-**Production blocker:** `Peer::localCheckpointPreference()` still returns zero; checkpoint support is mandatory for every file transfer, so normal production transfers cannot run until enabled. **Protocol-level backward compatibility is a non-goal:** no legacy peers, old transfer mode, fallback, or compatibility work. Reject unsupported/unversioned file traffic safely; do not build legacy tests except tests that verify rejection.
+## NEXT MILESTONES — NOT ACTIVE
 
-**Remaining gate:** terminal mirror recovery, durable-failure notifications, cancellation/publication races, typed timeout/error cleanup, bounded local interval settings, an owner decision on minimum safe terminal retention, and production activation/validation. Do not implement FileShare upload, credits or remote server logic to close this gate. The detailed, owner-approved checkbox worklist follows in §1–7; **do not append new requirements or reopen checked items without owner approval**. New findings should be reported with scope and blocker evidence, not silently added.
+Order: **FileShare normal administration UI** (`specs/fileshare_ui.md`, including its storage/VFS/group/permission foundations) → **application metrics** (`specs/metrics.md`) → **remaining FTP queues, server, browser, uploads, credits** (specification discussions to continue) → **first-class dashboard last**. Wizard later. Sections 3–7 below are deferred requirements, **not** tasks to complete during the generic refactor. Do not implement unspecified features just to tick boxes.
 
-## Completed-work evidence (concise)
-
-- [x] Core mandatory checkpoint wire mode, flow backpressure, attempt binding, persistent progress, sender-selected resume and mutual SHA-256 confirmation implemented behind the disabled production gate.
-- [x] Distinct pause/source-failure outcomes, restart/EOF replay, signed preview offers, lost-offer retry and scoped transfer lifetime handling implemented with targeted regression coverage.
-- [x] Tests `transfer_checkpoints`, `protocol_v3`, `managed_storage`, `checkpoint_restart` (24 isolated restart scenarios) and `database_recovery` reported passing on latest recorded run (176.31 s). **This is Codex's reported result, not a full production application build or independent verification.**
-- [x] Production/non-test wire rejects unversioned data by policy; tests cover rejection. No legacy interoperability is required.
-- [x] Socket teardown last-owner lifetime fixed with deferred deletion and loopback regressions.
-
-Source changes and prior investigative details: commits `b2205ca`, `90dc949`, `3b5f825` and test fixtures. Keep this summary short; do not duplicate an incremental diary in this file.
-
-## 1. Persistent generic transfer lifecycle — reported complete; regression only
-
-- [x] Preserve existing numeric states; add distinct paused, waiting-for-credit and insufficient-credit states, machine-readable reasons and resume eligibility.
-- [x] Persist negotiation mode and interval independently of live channel attempts. Restart must not downgrade a checkpoint transfer to legacy or equate interruption with corruption.
-- [x] Scope all network transfer lookups to authenticated identity, contact and direction. An identifier collision with another contact must neither authorize access nor prevent the correct scoped lookup.
-- [x] Persist typed pauses before reporting them; old attempts cannot pause new ones. Cancellation remains terminal and removes partial content, whereas pauses retain it.
-- [x] Keep QML, history, notifications and existing MCP metadata consistent. Generic attachments do not consult FileShare credit policy.
-
-Acceptance: restart and stale-attempt tests, colliding transfer IDs across contacts/identities/directions, pause/cancel distinction, unchanged attachment acceptance.
-
-## 2. Generic checkpoint wire and recovery gate — ACTIVE NOW
-
-- [x] Negotiate bilateral `file-checkpoint-v1`, bounded local preferences and immutable per-transfer interval. Carry parameters through standalone and signed attachment offers without changing signed content identity.
-- [x] Bound asynchronous initial/readiness/resume work to two per contact with 30-second monotonic deadlines; recheck connection, authorization and state after every await.
-- [x] Persist initial progress and sender attempt before offering. Receiver opens storage and verifies selected prefix before ACCEPTED; sender validates the exact readiness echo before admitting chunks.
-- [x] Dispatch checkpoint/pause controls and attempt-bound chunks/ACKs only after negotiation, shape, scope, direction and nonce validation.
-- [x] Resume reports bounded retained durable candidates; sender selects only its own accepted checkpoint and revalidates actual source bytes. Receiver verifies its actual durable prefix, invalidates extra suffix, persists the fresh attempt and signals readiness.
-- [x] Recover lost confirmations, duplicate offers and completed EOF-only replay without resetting transfer identity or charged ranges. Completed content is independently reverified; it cannot restart an earlier prefix.
-- [x] Persist source unavailability/revalidation separately from locally proved source-integrity mismatch; peer digest errors never cause an automatic refund.
-- [ ] Define minimum safe bounded terminal retention for the **generic** journal without evicting active recovery evidence. **Owner decision pending:** proposed 30-day expiry; ask before implementing the retention policy. FileShare accounting/refund-specific compaction belongs to §6 later and must not expand this generic task.
-- [ ] Close the finite release gate: reconcile journal terminal failures to all application mirror states (including Offered/Cancelled), make durable-failure notifications reliable, test cancellation at native publication boundaries, verify typed error/timeout resource cleanup and bounded local interval configuration. Fix defects found within these approved contracts; request approval before adding new worklist items.
-- [ ] Run agreed targeted tests plus one production application-level checkpoint transfer with checkpoint advertisement enabled; record results and **enable mandatory checkpoint advertisement** after the preceding checks pass. No fallback for non-checkpoint peers.
-
-Acceptance: paired authenticated wire tests, 64 KiB/1 MiB/16 MiB intervals, withheld checkpoints despite flow ACKs, empty/final completion, prefix mutation, unavailable source, malformed/stale controls, concurrent resume and dropped final controls. Reject unsupported/unversioned file traffic without a legacy fallback.
-
-## 3. Storage and VFS recovery audit — UI prerequisites / later FTP
+## 3. Storage and VFS recovery audit — DEFERRED (UI prerequisites / later FTP)
 
 **Route carefully:** reservation accounting and basic storage recovery are prerequisites for managing storage in the normal administration UI. Mount revocation and assignment isolation are prerequisites for the mount/permission editor; **remote catalog lease/export/revocation scenarios are deferred to the FTP server/browser specification**. Do not treat all the broad acceptance examples below as generic transfer-release blockers.
 
@@ -59,7 +30,7 @@ Acceptance: paired authenticated wire tests, 64 KiB/1 MiB/16 MiB intervals, with
 
 Acceptance: crash injection at intent/allocation/publication/cleanup boundaries, lowered quotas, independent processes, hard-link/mount/symlink aliases, hidden generations and export revocation.
 
-## 4. Persistent FileShare authorization — UI foundation, not generic gate
+## 4. Persistent FileShare authorization — DEFERRED (UI foundation)
 
 Implement persistent identity/group/contact configuration and provenance only when building `specs/fileshare_ui.md`. Existing policy code may be reused. **Remote FileShare server enforcement** is a later integration when its specification exists; do not build speculative server endpoints to satisfy this section.
 
