@@ -1100,7 +1100,7 @@ When a connection carrying an active transfer is disconnected, both sides retain
 ``` proto
 message FileResume {
   bytes file_id = 1;
-  uint64 next_offset = 2;  // Legacy advisory; NOT authoritative on checkpoint-enabled sessions.
+  uint64 next_offset = 2;  // Reserved historical field; ignored for resume selection.
   bytes sha256 = 3;        // Expected full-file SHA-256.
   uint64 file_size = 4;
   repeated CheckpointReference available_checkpoints = 5; // At most 64, including zero.
@@ -1109,7 +1109,7 @@ message FileResume {
 }
 ```
 
-`next_offset` in historical `FileResume` is advisory only on checkpoint-enabled sessions. The receiver can report its durable retained prefix and bounded checkpoint identifiers; the sender chooses a previously confirmed checkpoint at or below that prefix, never an arbitrary peer-proposed offset. Both parties validate the selected offset and prefix SHA-256. A receiver with more unconfirmed bytes discards its suffix; with fewer durable bytes, it can negotiate an earlier retained checkpoint in bounded rounds, or restart a new transfer at zero. The offered full-file SHA-256, size and transfer ID remain immutable.
+`next_offset` in `FileResume` is ignored for resume selection; there is no non-checkpoint mode or backward-compatibility obligation. The receiver can report its durable retained prefix and bounded checkpoint identifiers; the sender chooses a previously confirmed checkpoint at or below that prefix, never an arbitrary peer-proposed offset. Both parties validate the selected offset and prefix SHA-256. A receiver with more unconfirmed bytes discards its suffix; with fewer durable bytes, it can negotiate an earlier retained checkpoint in bounded rounds, or restart a new transfer at zero. The offered full-file SHA-256, size and transfer ID remain immutable.
 
 For recovery from a lost confirmation, the receiver may include a durably written proposal among its retained candidates. The sender may select it only if its own journal already contains the matching locally verified, durably accepted checkpoint. Selection alone never charges credits: the new handshake independently verifies the source and receiver prefixes before establishing the agreed resume position. Unaccepted peer candidates cannot advance the sender's position. An already completed receiver can verify its committed content and repeat an EOF-only completion handshake; it cannot silently restart an earlier portion of a completed charge identity.
 
