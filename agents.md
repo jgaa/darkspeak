@@ -47,6 +47,25 @@ build-directory convention.
 - Keep ordinary runs isolated from real profiles and public Tor. Preserve
   sequential execution until parallel test isolation has been verified.
 
+## Specification loading: minimize context
+
+**Do not read all of `specs/` by default.** Read this index first, then load only the spec(s)/sections governing the task; use targeted `rg`/headings and line ranges for cross-references. Read additional specs only when an actual API, data-flow, security, or test dependency requires them. For small fixes, consult the relevant section rather than rereading entire large documents. Reuse already-read current content; refresh if its revision changed. Do not omit relevant security contracts just to save context. `specs/obsolete/` is historical, **never authoritative** unless specifically requested.
+
+| Spec | Load when working on |
+| --- | --- |
+| `file_manager.md` | `IFileManager`, managed writable storage, temporary artifacts, reservations/quotas, writers/reads, crash recovery, persistence and namespace APIs. |
+| `read_only_file_manager.md` | External read-only directory indexing, hashing/freshness, symlinks, exclusions, subscriptions and read-only backend tests. |
+| `vfs.md` | Storage registry/identity assignments, mount topology and overlays, derived per-contact VFS, virtual IDs, browsing, filtering and catalog exports. |
+| `fileshare_architecture.md` | **Orientation for cross-component FileShare work only**: ownership, integration boundaries and implementation order; not needed for isolated component fixes. |
+| `fileshare_authorization.md` | FileShare permissions, group/contact policy precedence, upload acceptance, quotas, byte credits/ledger, reservations, refunds, coordinator and policy UI. |
+| `fileshare_ui.md` | Normal FileShare administration UI: read-only/mutable storage dialogs, mounts, rules, groups, credit/upload controls, C++ models and test-MCP coverage. Not dashboard or wizard. |
+| `mcp_and_testing.md` | MCP integration, production approvals/capabilities, test-only MCP, acceptance harness, authorization and MCP-facing model operations. For ordinary non-MCP tests, use this file only when its test harness contract matters. |
+| `metrics.md` | Application-wide yahat metrics class, instrumentation, typed snapshots, optional OpenMetrics HTTP endpoint, metric privacy and tests. |
+| `media_previews.md` | Image/video thumbnail creation, offers/rendering, preview policy and verification; not ordinary file-transfer changes. |
+| `protocol.md` | Tor handshake, records, wire types, signatures, message/offer delivery, generic file-transfer checkpoint/ack/resume, wire-level validation. Also inspect `proto/darkspeak.proto` for actual wire declarations when changing protocol code. |
+
+**Typical combinations:** FileShare mount editor → `fileshare_ui.md` + relevant `vfs.md`/`fileshare_authorization.md` sections; storage dialogs → `fileshare_ui.md` + relevant backend spec; FileShare credits → `fileshare_authorization.md` (+ protocol checkpoint section only if needed); file-transfer wire logic → `protocol.md` + `proto/darkspeak.proto`; metrics → `metrics.md`; MCP test endpoints → relevant feature spec + `mcp_and_testing.md`. The FileShare dashboard and wizard are not yet specified here; do not infer contracts from unrelated specs. Read linked documents **selectively** rather than recursively loading every reference.
+
 ## Protocol specification:
  - Definition and rules: `specs/protocol.md`
  - Protofile: `proto/darkspeak.proto`
