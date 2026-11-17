@@ -19,6 +19,7 @@ namespace ds {
 namespace core {
 
 struct FileData;
+struct FileTransferWork;
 
 class File : public QObject, public std::enable_shared_from_this<File>
 {
@@ -103,6 +104,8 @@ public:
     QString pauseReasonText() const;
     dsfm::TransferPauseReason dataPauseReason() const noexcept;
     quint32 checkpointInterval() const noexcept;
+    QUuid offeredConnection() const noexcept;
+    void markOutgoingOffer(QUuid connection);
     void setState(const State state);
     Direction getDirection() const noexcept;
     QString getName() const noexcept;
@@ -159,7 +162,8 @@ public:
     QCoro::Task<dsfm::Result<dsfm::DurableTransferProgress>> prepareCheckpointProgress(quint32 interval);
     QCoro::Task<dsfm::Result<void>> recordCheckpoint(QUuid attempt, dsfm::DurableCheckpoint checkpoint,
                                                    dsfm::CheckpointPhase phase);
-    QCoro::Task<dsfm::Result<void>> failCheckpoint(dsfm::TransferFailureReason reason);
+    QCoro::Task<dsfm::Result<void>> failCheckpoint(dsfm::TransferFailureReason reason,
+        std::optional<QUuid> expected_attempt = {}, dsfm::CancellationToken cancel = {});
     QCoro::Task<dsfm::Result<void>> pauseTransfer(QUuid attempt, dsfm::TransferPauseReason reason);
     QCoro::Task<dsfm::Result<void>> suspendIncoming();
     QCoro::Task<dsfm::Result<void>> abortIncoming();
@@ -169,6 +173,12 @@ public:
                                                           std::function<bool()> current);
     QCoro::Task<dsfm::Result<void>> beginOutgoingCheckpointAttempt(dsfm::TransferAttempt attempt,
                                                                 dsfm::CancellationToken cancel);
+    QCoro::Task<dsfm::Result<void>> selectCompletedCheckpoint(dsfm::TransferAttempt attempt,
+                                                            dsfm::CancellationToken cancel,
+                                                            std::function<bool()> current);
+    QCoro::Task<dsfm::Result<bool>> recoverPublishedCheckpoint(dsfm::DurableTransferProgress saved,
+                                                             dsfm::CancellationToken cancel,
+                                                             std::function<bool()> current);
     QCoro::Task<dsfm::Result<void>> pauseCheckpointProgress(dsfm::TransferPauseReason reason);
     QCoro::Task<dsfm::Result<void>> importThumbnail(QByteArray jpeg);
 
@@ -190,6 +200,7 @@ public:
     void queueForTransfer();
 
     void transferComplete();
+    void setTransferWork(const std::shared_ptr<FileTransferWork> &work);
     void transferFailed(const QString& reason, const State state = FS_CANCELLED);
 
     // Asyncroneously hash he file and verify that it i cirrect.
@@ -218,7 +229,6 @@ private:
     void flushBytesAdded();
     QCoro::Task<void> importSource(File::ptr_t self, hash_cb_t callback);
     QCoro::Task<void> commitIncoming(File::ptr_t self);
-    QCoro::Task<void> resumeIncoming(File::ptr_t self);
     QCoro::Task<void> openExternal(File::ptr_t self, bool folder);
     void saveStorage();
     void observePreviewPolicy();
@@ -232,6 +242,7 @@ private:
     std::function<bool()> source_current_;
     PrepareSource source_prepare_;
     std::unique_ptr<dsfm::IFileWriter> writer_;
+    std::weak_ptr<FileTransferWork> transfer_work_;
     dsfm::CancellationToken storage_cancel_;
     bool storage_busy_ = false;
     bool preview_loading_ = false;
@@ -241,6 +252,8 @@ private:
 
     int id_ = 0;
     std::unique_ptr<FileData> data_;
+    QCoro::Task<dsfm::Result<void>> verifyPublishedContent(dsfm::CancellationToken cancel,
+                                                         std::function<bool()> current);
     std::optional<dsfm::TransferAttempt> checkpoint_attempt_;
     std::optional<quint64> flow_progress_;
     quint32 channel_ = 0;
@@ -265,6 +278,7 @@ struct FileData {
     QByteArray thumbnail_for;
     QByteArray manifest_id;
     quint32 checkpoint_interval = 0; // Zero is the explicitly segregated legacy mode.
+    QUuid offered_connection; // Runtime-only: an initial readiness belongs to this connection.
     dsfm::TransferPauseReason pause_reason = dsfm::TransferPauseReason::None;
     dsfm::TransferFailureReason failure_reason = dsfm::TransferFailureReason::None;
     qlonglong size = {};

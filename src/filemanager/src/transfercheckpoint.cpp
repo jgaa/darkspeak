@@ -66,14 +66,16 @@ bool validCheckpoint(const TransferDescription &d, const DurableCheckpoint &c) {
 DurableCheckpoint checkpointRow(JournalStatement &q) {
     return {q.number(0), q.number(1), q.blob(2), bool(q.number(3)), bool(q.number(4))};
 }
-constexpr auto progress_schema_v2 =
-    "CREATE TABLE meta(version INTEGER NOT NULL);INSERT INTO meta VALUES(2);"
+constexpr auto progress_schema_v3 =
+    "CREATE TABLE meta(version INTEGER NOT NULL);INSERT INTO meta VALUES(3);"
     "CREATE TABLE transfers(key BLOB PRIMARY KEY CHECK(length(key)=49),size INTEGER NOT NULL CHECK(size>=0),"
     "sha BLOB NOT NULL CHECK(length(sha)=32),interval INTEGER NOT NULL,attempt BLOB,"
     "confirmed INTEGER NOT NULL DEFAULT 0 CHECK(confirmed>=0),complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN(0,1)),"
     "pause INTEGER NOT NULL DEFAULT 0 CHECK(pause BETWEEN 0 AND 6),failure INTEGER NOT NULL DEFAULT 0 CHECK(failure BETWEEN 0 AND 5),"
     "next_sequence INTEGER NOT NULL DEFAULT 1 CHECK(next_sequence BETWEEN 1 AND 1152921504606846976),"
     "side INTEGER NOT NULL DEFAULT 0 CHECK(side IN(0,1)),verified_prefix INTEGER NOT NULL DEFAULT 0,"
+    "empty_final_accepted INTEGER NOT NULL DEFAULT 0 CHECK(empty_final_accepted IN(0,1)),"
+    "CHECK(empty_final_accepted=0 OR (size=0 AND side=0)),"
     "CHECK(confirmed<=verified_prefix AND verified_prefix<=size),CHECK(complete=0 OR verified_prefix=size),"
     "CHECK((side=0 AND substr(key,49,1)=x'00') OR (side=1 AND substr(key,49,1)=x'01')));"
     "CREATE TABLE checkpoints(key BLOB NOT NULL REFERENCES transfers(key),sequence INTEGER NOT NULL,offset INTEGER NOT NULL,"
@@ -149,7 +151,7 @@ struct TransferProgressStore::Impl : std::enable_shared_from_this<TransferProgre
         ready();
         auto token = keyBytes(key);
         JournalStatement q(disk->journal.db,
-                           "SELECT size,sha,interval,attempt,confirmed,complete,pause,failure,next_sequence,side,verified_prefix FROM "
+                           "SELECT size,sha,interval,attempt,confirmed,complete,pause,failure,next_sequence,side,verified_prefix,empty_final_accepted FROM "
                            "transfers WHERE key=?");
         q.blob(1, token);
         require(q.next(), ErrorCode::MissingEntry);
@@ -192,6 +194,12 @@ struct TransferProgressStore::Impl : std::enable_shared_from_this<TransferProgre
             if(cp.number(5)==quint64(CheckpointPhase::MutuallyConfirmed))result.checkpoints.append(c);
         }
         require(!result.checkpoints.isEmpty() && result.checkpoints.front().offset == 0, ErrorCode::Corruption);
+        require(q.number(11) <= 1 && (!q.number(11) ||
+                    (result.description.size == 0 && result.description.side == TransferSide::Sender)), ErrorCode::Corruption);
+        if (q.number(11)) {
+            const DurableCheckpoint empty_final{0, 0, emptyDigest(), true, false};
+            if (!result.accepted_checkpoints.contains(empty_final)) result.accepted_checkpoints.append(empty_final);
+        }
         if (result.complete) {
             const auto final = std::ranges::any_of(result.checkpoints, [&](const auto &checkpoint) {
                 return checkpoint.final && checkpoint.offset == result.description.size &&
@@ -231,7 +239,7 @@ QCoro::Task<Result<void>> TransferProgressStore::open() {
         s.disk->journal.open(s.disk->root.value, create);
         if (create) {
             JournalTransaction tx(s.disk->journal);
-            s.disk->journal.exec(progress_schema_v2);
+            s.disk->journal.exec(progress_schema_v3);
             tx.commit();
             ioCheck(::fsync(s.disk->root.value) == 0);
         }
@@ -242,10 +250,10 @@ QCoro::Task<Result<void>> TransferProgressStore::open() {
             stored_version = version.number(0);
             require(!version.next(), ErrorCode::UnsupportedCapability);
         }
-        if (stored_version == 1) {
-            // The disabled capability still created empty v1 journals in normal
-            // profiles. Reinitialize only a proved-empty catalog. Populated v1
-            // progress is retained untouched and requires explicit recovery.
+        if (stored_version == 1 || stored_version == 2) {
+            // The disabled capability created earlier empty journals. Reinitialize
+            // only a proved-empty catalog; populated experimental progress is
+            // retained untouched and requires explicit recovery.
             {
                 JournalStatement transfers(s.disk->journal.db, "SELECT 1 FROM transfers LIMIT 1");
                 JournalStatement checkpoints(s.disk->journal.db, "SELECT 1 FROM checkpoints LIMIT 1");
@@ -253,7 +261,7 @@ QCoro::Task<Result<void>> TransferProgressStore::open() {
             }
             JournalTransaction tx(s.disk->journal);
             s.disk->journal.exec("DROP TABLE checkpoints;DROP TABLE transfers;DROP TABLE meta;");
-            s.disk->journal.exec(progress_schema_v2);
+            s.disk->journal.exec(progress_schema_v3);
             fault("before_empty_transfer_journal_reinitialize_commit");
             tx.commit();
             stored_version = transfer_progress_format_version;
@@ -419,6 +427,14 @@ QCoro::Task<Result<void>> TransferProgressStore::record(TransferKey key, QUuid a
         put.number(6, cp.pause_boundary);
         put.number(7, int(phase));
         put.next();
+        if (cp.final && cp.offset == 0 && saved.description.side == TransferSide::Sender &&
+            phase >= CheckpointPhase::SenderConfirmed) {
+            // Sequence-zero's implicit mutual prefix is not final acceptance.
+            // Retain explicit sender acceptance separately until its receipt.
+            JournalStatement accepted(s.disk->journal.db, "UPDATE transfers SET empty_final_accepted=1 WHERE key=?");
+            accepted.blob(1, token);
+            accepted.next();
+        }
         if (phase == CheckpointPhase::MutuallyConfirmed) {
             JournalStatement update(s.disk->journal.db, "UPDATE transfers SET confirmed=?,verified_prefix=max(verified_prefix,?) WHERE key=?");
             update.number(1, cp.offset);
@@ -441,13 +457,15 @@ QCoro::Task<Result<void>> TransferProgressStore::record(TransferKey key, QUuid a
     });
 }
 QCoro::Task<Result<void>> TransferProgressStore::complete(TransferKey key, QUuid attempt, bool verified,
-                                                          bool acknowledged) {
+                                                          bool acknowledged, bool publication_recovered) {
     return impl_->run<void>([=](Impl &s) -> Result<void> {
         s.ready();
         JournalTransaction tx(s.disk->journal);
         auto saved = s.load(key);
         require(verified && acknowledged && saved.attempt == attempt && !attempt.isNull() &&
-                    saved.failure == TransferFailureReason::None && saved.pause == TransferPauseReason::None,
+                    saved.failure == TransferFailureReason::None &&
+                    (!publication_recovered || saved.description.side == TransferSide::Receiver) &&
+                    (saved.pause == TransferPauseReason::None || (publication_recovered && saved.description.side == TransferSide::Receiver)),
                 ErrorCode::IncompleteContent);
         bool final = false;
         for (const auto &cp : saved.checkpoints)
@@ -468,7 +486,10 @@ QCoro::Task<Result<void>> TransferProgressStore::pause(TransferKey key, QUuid at
         s.ready();
         JournalTransaction tx(s.disk->journal);
         auto saved = s.load(key);
-        require(!attempt.isNull() && saved.attempt == attempt && !saved.complete &&
+        const bool unstarted = saved.attempt.isNull() && saved.confirmed_offset == 0 && saved.verified_prefix == 0 &&
+            saved.next_checkpoint_sequence == 1 && saved.durable_checkpoints.size() == 1 &&
+            saved.durable_checkpoints.first().sequence == 0 && !saved.durable_checkpoints.first().final;
+        require((!attempt.isNull() || unstarted) && saved.attempt == attempt && !saved.complete &&
                     saved.failure == TransferFailureReason::None, ErrorCode::Conflict);
         JournalStatement update(s.disk->journal.db, "UPDATE transfers SET pause=? WHERE key=?");
         LFLOG_DEBUG << "Generic transfer state changed; reason=" << int(reason);
@@ -479,18 +500,22 @@ QCoro::Task<Result<void>> TransferProgressStore::pause(TransferKey key, QUuid at
         return {};
     });
 }
-QCoro::Task<Result<void>> TransferProgressStore::fail(TransferKey key, TransferFailureReason reason) {
+QCoro::Task<Result<void>> TransferProgressStore::fail(TransferKey key, TransferFailureReason reason,
+                                                     std::optional<QUuid> expected_attempt, CancellationToken cancel) {
     return impl_->run<void>([=](Impl &s) -> Result<void> {
+        require(!cancel.cancelled(), ErrorCode::Cancelled);
         require(int(reason) > 0 && reason <= TransferFailureReason::RemoteSourceChanged, ErrorCode::InvalidArgument);
         s.ready();
         JournalTransaction tx(s.disk->journal);
         auto saved = s.load(key);
+        require(!expected_attempt || saved.attempt == *expected_attempt, ErrorCode::Conflict);
         require(!saved.complete && (saved.failure == TransferFailureReason::None || saved.failure == reason),
                 ErrorCode::Conflict);
         JournalStatement update(s.disk->journal.db, "UPDATE transfers SET failure=?,pause=0 WHERE key=?");
         LFLOG_DEBUG << "Generic transfer state changed; reason=" << int(reason);
         update.number(1, int(reason));
         update.blob(2, keyBytes(key));
+        require(!cancel.cancelled(), ErrorCode::Cancelled);
         update.next();
         tx.commit();
         return {};

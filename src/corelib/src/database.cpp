@@ -156,7 +156,9 @@ void Database::prepareData()
         // would reset the sender to zero. An unaccepted outgoing offer may be
         // advertised again without claiming a resumed channel.
         QSqlQuery query(db_);
-        query.prepare("UPDATE file SET state=CASE WHEN id IN(SELECT file_id FROM file_transfer_v1) "
+        query.prepare("UPDATE file SET state=CASE WHEN direction=:out AND state=:offered AND bytes_transferred=0 "
+                      "AND id IN(SELECT file_id FROM file_transfer_v1) THEN :offered "
+                      "WHEN id IN(SELECT file_id FROM file_transfer_v1) "
                       "THEN :paused WHEN direction=:out AND state=:offered "
                       "THEN :waiting ELSE :failed END WHERE state IN(:transferring,:queued) "
                       "OR (direction=:out AND state=:offered)");

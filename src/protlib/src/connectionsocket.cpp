@@ -9,6 +9,13 @@ using namespace std;
 namespace ds {
 namespace prot {
 
+ConnectionSocket::ptr_t ConnectionSocket::create(QByteArray host, quint16 port, const QUuid &uuid)
+{
+    return ptr_t(new ConnectionSocket(std::move(host), port, uuid), [](ConnectionSocket *socket) {
+        socket->deleteLater();
+    });
+}
+
 ConnectionSocket::ConnectionSocket(QByteArray host,
                                    quint16 port, const QUuid &uuid)
     : host_{move(host)}, port_{port}

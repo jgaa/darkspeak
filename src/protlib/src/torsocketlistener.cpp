@@ -14,7 +14,7 @@ TorSocketListener::TorSocketListener(TorSocketListener::on_new_connection_fn_t f
 
 void TorSocketListener::incomingConnection(qintptr handle)
 {
-    auto connection = make_shared<ConnectionSocket>();
+    auto connection = ConnectionSocket::create();
     connection->setSocketDescriptor(handle);
 
     on_new_connection_fn_(move(connection));

@@ -20,7 +20,9 @@ public:
     using ptr_t = std::shared_ptr<ConnectionSocket>;
     using data_t = crypto::MemoryView<uint8_t>;
 
-    ConnectionSocket(QByteArray host = {}, quint16 port = {}, const QUuid& uuid = {});
+    // The last peer may release its socket inside a Qt network callback.
+    // Always defer QObject deletion until that callback has returned.
+    static ptr_t create(QByteArray host = {}, quint16 port = {}, const QUuid& uuid = {});
     ~ConnectionSocket();
 
     const QUuid& getUuid() const noexcept {
@@ -62,6 +64,7 @@ private slots:
     void onSocketFailed(SocketError socketError);
 
 private:
+    ConnectionSocket(QByteArray host, quint16 port, const QUuid& uuid);
     void processInput();
     void sendMore();
 

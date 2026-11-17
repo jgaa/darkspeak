@@ -1,6 +1,7 @@
 #include "ds/textpolicy.h"
 
 #include <chrono>
+#include <algorithm>
 
 #include "ds/errors.h"
 #include "ds/dsengine.h"
@@ -166,7 +167,9 @@ void File::accept()
 
     LFLOG_DEBUG << "Accepted file #" << getId();
 
-    queueForTransfer();
+    if (checkpointInterval()) {
+        if (auto contact = getContact()) contact->acceptCheckpointFile(*this);
+    } else queueForTransfer();
     getConversation()->touchLastActivity();
     } catch (const std::exception& ex) {
         LFLOG_ERROR << "Failed to accept file #" << getId() << ": " << ex.what();
@@ -211,26 +214,8 @@ void File::resume()
         return;
     }
 
-    if (checkpointInterval()) {
-        if (auto *contact = getContact(); contact && getDirection() == INCOMING && contact->isOnline() &&
-            contact->getState() == Contact::ACCEPTED) contact->resumeFile(*this);
-        return;
-    }
-
-    auto contact = getContact();
-    if (!contact || !contact->isOnline() || contact->getState() != Contact::ACCEPTED) {
-        return;
-    }
-
-    if (getDirection() == OUTGOING) {
-        // Manual outbound retry re-offers the existing transfer. The receiver
-        // validates its durable partial before creating a new channel.
-        setState(FS_WAITING);
-        contact->queueFile(DsEngine::instance().getFileManager()->getFile(getId()));
-        return;
-    }
-
-    resumeIncoming(shared_from_this());
+    if (auto *contact = getContact(); contact && contact->isOnline() && contact->getState() == Contact::ACCEPTED)
+        contact->resumeFile(*this);
     } catch (const std::exception& ex) {
         LFLOG_ERROR << "Failed to resume file #" << getId() << ": " << ex.what();
         DsEngine::instance().reportStatus(
@@ -277,7 +262,7 @@ File::State File::getState() const noexcept
 
 bool File::isResumable() const noexcept
 {
-    return (getDirection() == INCOMING || !checkpointInterval()) &&
+    return getDirection() == INCOMING && checkpointInterval() &&
         data_->failure_reason == dsfm::TransferFailureReason::None &&
         (getState() == FS_FAILED || getState() == FS_PAUSED ||
          getState() == FS_WAITING_FOR_CREDIT || getState() == FS_PAUSED_INSUFFICIENT_CREDIT);
@@ -285,6 +270,11 @@ bool File::isResumable() const noexcept
 
 dsfm::TransferPauseReason File::dataPauseReason() const noexcept { return data_->pause_reason; }
 quint32 File::checkpointInterval() const noexcept { return data_->checkpoint_interval; }
+QUuid File::offeredConnection() const noexcept { return data_->offered_connection; }
+void File::markOutgoingOffer(QUuid connection) {
+    if (getDirection() != OUTGOING || connection.isNull()) throw Error("Invalid outgoing offer connection");
+    data_->offered_connection = connection;
+}
 int File::failureReason() const noexcept { return int(data_->failure_reason); }
 
 QString File::pauseReasonText() const {
@@ -549,6 +539,7 @@ QCoro::Task<dsfm::Result<quint64>> File::prepareIncoming(dsfm::CancellationToken
         offset = qMin(offset, quint64(qMax<qlonglong>(0, getBytesTransferred())));
         offset -= offset % (8 * 1024);
     } else {
+        if (!storageId().isNull()) co_return Error{ErrorCode::Conflict}; // A published reference cannot become a new partial.
         auto directory = storage.root(ManagedStorage::Downloads);
         if (DsEngine::instance().settings().value("includeConversationNameInDownloadPath", false).toBool()) {
             const auto name = QStringLiteral("conversation-%1").arg(getConversationId());
@@ -686,9 +677,11 @@ QCoro::Task<dsfm::Result<dsfm::DurableTransferProgress>> File::prepareCheckpoint
 }
 
 QCoro::Task<dsfm::Result<void>> File::pauseTransfer(QUuid attempt, dsfm::TransferPauseReason reason) {
+    auto retained_work = transfer_work_.lock();
     auto self = shared_from_this();
     const auto previous = checkpoint_attempt_;
     if ((previous ? previous->id != attempt : !checkpointInterval()) ||
+        (getDirection() == INCOMING && getState() == FS_HASHING) ||
         getState() == FS_DONE || getState() == FS_CANCELLED || getState() == FS_REJECTED)
         co_return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
     auto key = checkpointKey(); if (!key) co_return key.error();
@@ -696,6 +689,7 @@ QCoro::Task<dsfm::Result<void>> File::pauseTransfer(QUuid attempt, dsfm::Transfe
     auto saved = co_await storage.transferProgress().pause(key.value(), attempt, reason);
     if (!saved) co_return saved.error();
     if (checkpoint_attempt_ != previous ||
+        (getDirection() == INCOMING && getState() == FS_HASHING) ||
         getState() == FS_DONE || getState() == FS_CANCELLED || getState() == FS_REJECTED)
         co_return dsfm::Error{dsfm::ErrorCode::Cancelled};
     QSqlQuery mirror;
@@ -731,6 +725,9 @@ void File::clearCheckpointPause()
 
 QCoro::Task<dsfm::Result<void>> File::pauseCheckpointProgress(dsfm::TransferPauseReason reason)
 {
+    auto retained_work = transfer_work_.lock();
+    if (reason == dsfm::TransferPauseReason::None || reason > dsfm::TransferPauseReason::FeaturePaused)
+        co_return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
     auto self = shared_from_this();
     auto &storage = DsEngine::instance().getFileManager()->storage();
     auto held = storage.holdOperation();
@@ -740,7 +737,22 @@ QCoro::Task<dsfm::Result<void>> File::pauseCheckpointProgress(dsfm::TransferPaus
     if (!key) co_return key.error();
     auto saved = co_await storage.transferProgress().load(key.value());
     if (checkpoint_attempt_ != previous || getState() != state) co_return dsfm::Error{dsfm::ErrorCode::Cancelled};
-    if (!saved) co_return saved.error();
+    if (!saved) {
+        // An unaccepted receiver has no generic record yet. Its versioned
+        // offer mirror can retain an admission pause without inventing any
+        // nonce, durable bytes or checkpoint authority.
+        if (saved.error().code != dsfm::ErrorCode::MissingEntry || getDirection() != INCOMING ||
+            !pendingId().isNull() || !storageId().isNull()) co_return saved.error();
+        QSqlQuery mirror;
+        mirror.prepare("UPDATE file_transfer_v1 SET pause_reason=? WHERE file_id=? AND checkpoint_interval=? AND failure_reason=0");
+        mirror.addBindValue(int(reason)); mirror.addBindValue(getId()); mirror.addBindValue(checkpointInterval());
+        if (!mirror.exec() || mirror.numRowsAffected() != 1) co_return dsfm::Error{dsfm::ErrorCode::IoError};
+        data_->pause_reason = reason;
+        storage_cancel_.cancel();
+        setState(FS_PAUSED);
+        emit transferDone(this, false);
+        co_return dsfm::Result<void>{};
+    }
     if (saved.value().description.size != quint64(getSize()) || saved.value().description.sha256 != getHash() ||
         saved.value().description.interval != checkpointInterval()) co_return dsfm::Error{dsfm::ErrorCode::Conflict};
     auto attempt = saved.value().attempt;
@@ -773,6 +785,140 @@ QCoro::Task<dsfm::Result<void>> File::beginOutgoingCheckpointAttempt(dsfm::Trans
     clearCheckpointPause();
     co_return dsfm::Result<void>{};
 }
+QCoro::Task<dsfm::Result<void>> File::verifyPublishedContent(dsfm::CancellationToken cancel,
+                                                             std::function<bool()> current)
+{
+    auto self = shared_from_this();
+    auto &storage = DsEngine::instance().getFileManager()->storage(); auto held = storage.holdOperation();
+    using dsfm::Error; using dsfm::ErrorCode;
+    if (!current || getDirection() != INCOMING || storageId().isNull() || getSize() < 0 || getHash().size() != 32)
+        co_return Error{ErrorCode::InvalidArgument};
+    const auto ns = storageNamespace(); const auto id = storageId();
+    const auto size = getSize(); const auto sha = getHash();
+    const auto eligible = [&] {
+        return !cancel.cancelled() && current() && storageNamespace() == ns && storageId() == id &&
+               getSize() == size && getHash() == sha;
+    };
+    if (!eligible()) co_return Error{ErrorCode::Cancelled};
+    // Read the published object without opening a pending writer or reserving
+    // replacement storage. Completion replay never republishes this content.
+    auto opened = co_await storage.manager().openRead(ns, id);
+    if (!opened) co_return opened.error();
+    auto reader = std::move(opened).value();
+    dsfm::TransferVerifier verifier(quint64(getSize()), getHash());
+    dsfm::Result<void> result;
+    quint64 offset = 0;
+    while (result && offset < quint64(getSize())) {
+        if (!eligible()) { result = Error{ErrorCode::Cancelled}; break; }
+        const auto count = qsizetype(std::min<quint64>(65536, quint64(getSize()) - offset));
+        auto bytes = co_await reader->readAt(offset, count, cancel);
+        if (!eligible()) { result = Error{ErrorCode::Cancelled}; break; }
+        if (!bytes) { result = bytes.error(); break; }
+        if (bytes.value().size() != count) { result = Error{ErrorCode::IncompleteContent}; break; }
+        result = co_await verifier.add(offset, std::move(bytes).value(), cancel);
+        if (!eligible()) { result = Error{ErrorCode::Cancelled}; break; }
+        offset += quint64(count);
+    }
+    if (result && eligible()) result = co_await verifier.finish(cancel);
+    else if (result) result = Error{ErrorCode::Cancelled};
+    auto closed = co_await reader->close();
+    if (!eligible()) co_return Error{ErrorCode::Cancelled};
+    if (!result) co_return result.error();
+    if (!closed) co_return closed.error();
+    co_return dsfm::Result<void>{};
+}
+
+QCoro::Task<dsfm::Result<bool>> File::recoverPublishedCheckpoint(dsfm::DurableTransferProgress saved,
+                                                                dsfm::CancellationToken cancel,
+                                                                std::function<bool()> current)
+{
+    auto self = shared_from_this();
+    auto &storage = DsEngine::instance().getFileManager()->storage(); auto held = storage.holdOperation();
+    using dsfm::Error; using dsfm::ErrorCode;
+    const auto key = checkpointKey(); if (!key) co_return key.error();
+    if (!current || getDirection() != INCOMING || saved.description.key != key.value() ||
+        saved.description.size != quint64(getSize()) || saved.description.sha256 != getHash() ||
+        saved.description.interval != checkpointInterval() || saved.failure != dsfm::TransferFailureReason::None ||
+        saved.attempt.isNull() || storageId().isNull()) co_return false;
+    const bool final = std::ranges::any_of(saved.checkpoints, [&](const auto &checkpoint) {
+        return checkpoint.final && checkpoint.offset == quint64(getSize()) && checkpoint.sha256 == getHash();
+    });
+    if (!final) co_return false;
+    const auto previous = checkpoint_attempt_; const auto state = getState();
+    const auto ns = storageNamespace(); const auto id = storageId();
+    const auto eligible = [&] {
+        return !cancel.cancelled() && current() && getState() == state && checkpoint_attempt_ == previous &&
+               storageNamespace() == ns && storageId() == id && state != FS_CANCELLED && state != FS_REJECTED;
+    };
+    if (!eligible()) co_return Error{ErrorCode::Cancelled};
+    auto published = co_await storage.manager().stat(ns, id);
+    if (!eligible()) co_return Error{ErrorCode::Cancelled};
+    if (!published) {
+        if (published.error().code == ErrorCode::MissingEntry) co_return false;
+        co_return published.error();
+    }
+    if (published.value().status == dsfm::EntryStatus::Updating) co_return false;
+    if (published.value().type != dsfm::EntryType::File || published.value().status != dsfm::EntryStatus::Available ||
+        published.value().hash_state != dsfm::HashState::Verified) co_return Error{ErrorCode::StorageUnavailable};
+    if (published.value().size != quint64(getSize()) || published.value().sha256 != getHash())
+        co_return Error{ErrorCode::IntegrityError};
+    auto verified = co_await verifyPublishedContent(cancel, eligible);
+    if (!eligible()) co_return Error{ErrorCode::Cancelled};
+    if (!verified) co_return verified.error();
+    auto completed = co_await storage.transferProgress().complete(key.value(), saved.attempt, true, true, true);
+    if (!eligible()) co_return Error{ErrorCode::Cancelled};
+    if (!completed) co_return completed.error();
+    // Publication is authoritative: repair the references and terminal mirror,
+    // without opening another writer, discarding a suffix or republishing.
+    data_->pending_id = {};
+    try { saveStorage(); }
+    catch (...) { co_return Error{ErrorCode::IoError}; }
+    clearCheckpointPause();
+    transferComplete();
+    LFLOG_DEBUG << "Recovered a verified published checkpoint transfer";
+    co_return true;
+}
+
+QCoro::Task<dsfm::Result<void>> File::selectCompletedCheckpoint(dsfm::TransferAttempt attempt,
+                                                               dsfm::CancellationToken cancel,
+                                                               std::function<bool()> current)
+{
+    auto self = shared_from_this();
+    auto &storage = DsEngine::instance().getFileManager()->storage();
+    auto held = storage.holdOperation();
+    using dsfm::Error;
+    using dsfm::ErrorCode;
+    auto valid = validateCheckpointAttempt(attempt);
+    if (!valid) co_return valid.error();
+    if (getDirection() != INCOMING || getState() != FS_DONE || storageId().isNull() ||
+        !attempt.selected.final || attempt.selected.offset != quint64(getSize()) ||
+        attempt.selected.sha256 != getHash() || !current) co_return Error{ErrorCode::Conflict};
+    const auto previous = checkpoint_attempt_;
+    const auto ns = storageNamespace();
+    const auto id = storageId();
+    const auto eligible = [&] {
+        return !cancel.cancelled() && current() && getState() == FS_DONE &&
+               checkpoint_attempt_ == previous && storageNamespace() == ns && storageId() == id;
+    };
+    auto key = checkpointKey(); if (!key) co_return key.error();
+    auto preflight = co_await storage.transferProgress().validateAttempt(key.value(), attempt);
+    if (!eligible()) co_return Error{ErrorCode::Cancelled};
+    if (!preflight) co_return preflight.error();
+    auto verified = co_await verifyPublishedContent(cancel, eligible);
+    if (!eligible()) co_return Error{ErrorCode::Cancelled};
+    if (!verified) co_return verified.error();
+    auto begun = co_await storage.transferProgress().beginAttempt(key.value(), attempt.id, attempt.selected, attempt.next_sequence);
+    if (!eligible()) co_return Error{ErrorCode::Cancelled};
+    if (!begun) co_return begun.error();
+    auto confirmed = co_await storage.transferProgress().record(key.value(), attempt.id, attempt.selected,
+                                                               dsfm::CheckpointPhase::MutuallyConfirmed);
+    if (!eligible()) co_return Error{ErrorCode::Cancelled};
+    if (!confirmed) co_return confirmed.error();
+    checkpoint_attempt_ = attempt;
+    LFLOG_DEBUG << "Published transfer verified for EOF-only completion recovery";
+    co_return dsfm::Result<void>{};
+}
+
 QCoro::Task<dsfm::Result<void>> File::recordCheckpoint(QUuid attempt,dsfm::DurableCheckpoint checkpoint,dsfm::CheckpointPhase phase) {
     auto self=shared_from_this();auto key=checkpointKey();if(!key)co_return key.error();
     auto &storage=DsEngine::instance().getFileManager()->storage();auto held=storage.holdOperation();
@@ -791,15 +937,48 @@ QCoro::Task<dsfm::Result<void>> File::recordCheckpoint(QUuid attempt,dsfm::Durab
     }
     co_return dsfm::Result<void>{};
 }
-QCoro::Task<dsfm::Result<void>> File::failCheckpoint(dsfm::TransferFailureReason reason) {
+void File::setTransferWork(const std::shared_ptr<FileTransferWork> &work) {
+    const auto owner = getContact();
+    if (!owner || !owner->ownsFileWork(*this, work)) throw Error("File work has no matching contact reservation");
+    transfer_work_ = work;
+}
+
+QCoro::Task<dsfm::Result<void>> File::failCheckpoint(dsfm::TransferFailureReason reason,
+    std::optional<QUuid> expected_attempt, dsfm::CancellationToken cancel) {
+    auto retained_work = transfer_work_.lock();
     auto self=shared_from_this();auto key=checkpointKey();if(!key)co_return key.error();
+    const auto previous = checkpoint_attempt_;
+    const auto initial_state = getState();
+    const auto current = [&] {
+        return checkpoint_attempt_ == previous && getState() != FS_DONE &&
+            getState() != FS_REJECTED && (getState() != FS_CANCELLED || initial_state == FS_CANCELLED ||
+                                         reason == dsfm::TransferFailureReason::UserAction);
+    };
+    if (!current() || cancel.cancelled()) co_return dsfm::Error{dsfm::ErrorCode::Cancelled};
     // A peer's assertion is never local proof of changed source bytes.
     if(reason==dsfm::TransferFailureReason::SourceIntegrityMismatch && getDirection()!=OUTGOING)
         co_return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
     if(reason==dsfm::TransferFailureReason::RemoteSourceChanged && getDirection()!=INCOMING)
         co_return dsfm::Error{dsfm::ErrorCode::InvalidArgument};
     auto &storage=DsEngine::instance().getFileManager()->storage();auto held=storage.holdOperation();
-    auto recorded=co_await storage.transferProgress().fail(key.value(),reason);if(!recorded)co_return recorded.error();
+    if (!expected_attempt) {
+        auto saved = co_await storage.transferProgress().load(key.value());
+        if (!saved) co_return saved.error();
+        if (!current() || cancel.cancelled()) co_return dsfm::Error{dsfm::ErrorCode::Cancelled};
+        expected_attempt = saved.value().attempt;
+    }
+    // An offline-approved initial receiver offer still has its sender's hint
+    // in memory, while its own authoritative journal has no attempt yet.
+    const bool unstarted_offer = expected_attempt->isNull() && getDirection() == INCOMING &&
+        (getState() == FS_OFFERED || getState() == FS_QUEUED) && storageId().isNull() && pendingId().isNull() &&
+        previous && previous->next_sequence == 1 && previous->selected.sequence == 0 && previous->selected.offset == 0 &&
+        !previous->selected.final && !previous->selected.pause_boundary &&
+        previous->selected.sha256 == QCryptographicHash::hash(QByteArray{}, QCryptographicHash::Sha256);
+    if (previous && previous->id != *expected_attempt && !unstarted_offer && reason != dsfm::TransferFailureReason::UserAction)
+        co_return dsfm::Error{dsfm::ErrorCode::Conflict};
+    auto recorded=co_await storage.transferProgress().fail(key.value(),reason,expected_attempt,cancel);
+    if(!recorded)co_return recorded.error();
+    if (!current()) co_return dsfm::Error{dsfm::ErrorCode::Cancelled};
     QSqlQuery mirror;
     mirror.prepare("UPDATE file_transfer_v1 SET failure_reason=?,pause_reason=0 WHERE file_id=?");
     mirror.addBindValue(int(reason)); mirror.addBindValue(getId());
@@ -826,6 +1005,7 @@ QCoro::Task<dsfm::Result<void>> File::checkpointIncoming() {
     co_return co_await writer_->checkpoint(storage_cancel_);
 }
 QCoro::Task<dsfm::Result<void>> File::suspendIncoming() {
+    auto retained_work = transfer_work_.lock();
     auto self = shared_from_this();
     auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
     if (storage_busy_) co_return dsfm::Error{dsfm::ErrorCode::Busy};
@@ -837,6 +1017,7 @@ QCoro::Task<dsfm::Result<void>> File::suspendIncoming() {
     co_return result;
 }
 QCoro::Task<dsfm::Result<void>> File::abortIncoming() {
+    auto retained_work = transfer_work_.lock();
     auto self = shared_from_this();
     auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
     if (writer_) {
@@ -999,14 +1180,6 @@ QCoro::Task<dsfm::Result<void>> File::importThumbnail(QByteArray jpeg) {
     co_return dsfm::Result<void>{};
 }
 
-QCoro::Task<void> File::resumeIncoming(File::ptr_t self) {
-    auto offset = co_await prepareIncoming();
-    if (!offset) { DsEngine::instance().reportStatus(tr("Unable to reopen the pending transfer."), DsEngine::ERROR); co_return; }
-    auto suspended = co_await suspendIncoming();
-    if (!suspended) co_return;
-    if (auto* contact = getContact(); contact && contact->isOnline()) contact->resumeFile(*this);
-}
-
 Contact *File::getContact() const
 {
     return DsEngine::instance().getContactManager()->getContact(getContactId()).get();
@@ -1082,6 +1255,7 @@ void File::addToDb()
 void File::deleteFromDb()
 {
     if (id_ > 0) {
+        const auto retained = weak_from_this().lock();
         QSqlQuery query;
         query.prepare("DELETE FROM file WHERE id=:id");
         query.bindValue(":id", id_);
@@ -1089,6 +1263,7 @@ void File::deleteFromDb()
             throw Error(QStringLiteral("SQL Failed to delete file: %1").arg(
                             query.lastError().text()));
         }
+        if (query.numRowsAffected() > 0) emit DsEngine::instance().getFileManager()->fileDeleted(id_);
         preview_source_.clear(); preview_attempted_ = true;
         emit previewChanged();
     }
@@ -1227,10 +1402,14 @@ File::ptr_t File::load(QObject &parent, const std::function<void (QSqlQuery &)> 
 }
 
 QCoro::Task<void> File::recoverCheckpointProgress(File::ptr_t self) {
+    const auto previous = checkpoint_attempt_;
+    const auto state = getState();
+    const auto current = [&] { return checkpoint_attempt_ == previous && getState() == state; };
     auto& storage = DsEngine::instance().getFileManager()->storage(); auto held = storage.holdOperation();
-    if (!co_await storage.ready()) co_return;
+    if (!co_await storage.ready() || !current()) co_return;
     auto key = checkpointKey(); if (!key) co_return;
     auto saved = co_await storage.transferProgress().load(key.value());
+    if (!current()) co_return;
     if (!saved || saved.value().description.size != quint64(getSize()) ||
         saved.value().description.sha256 != getHash() || saved.value().description.interval != checkpointInterval())
         co_return; // Retain the partial for explicit recovery; never fall back to legacy.
@@ -1245,6 +1424,50 @@ QCoro::Task<void> File::recoverCheckpointProgress(File::ptr_t self) {
         else emit stateChanged();
         co_return;
     }
+    if (saved.value().complete) {
+        if (getDirection() == INCOMING && (getState() == FS_PAUSED || !pendingId().isNull()))
+            co_await recoverStorage(self);
+        else if (getDirection() == OUTGOING && getState() == FS_PAUSED) {
+            clearCheckpointPause();
+            transferComplete();
+        }
+        if (getState() == FS_DONE) clearCheckpointPause();
+        if (getDirection() == INCOMING && state == FS_PAUSED && getState() == FS_DONE) {
+            QTimer::singleShot(0, this, [weak = std::weak_ptr<File>(self)] {
+                if (auto file = weak.lock(); file && file->getState() == FS_DONE)
+                    if (auto contact = file->getContact()) contact->recoverCompletedFile(*file);
+            });
+        }
+        co_return;
+    }
+    if (getDirection() == INCOMING && getState() == FS_PAUSED &&
+        std::ranges::any_of(saved.value().checkpoints, [&](const auto &checkpoint) {
+            return checkpoint.final && checkpoint.offset == quint64(getSize()) && checkpoint.sha256 == getHash();
+        })) {
+        if (auto contact = getContact()) {
+            auto acquired = contact->acquireFileWork(self);
+            if (acquired) {
+                const auto work = acquired.value();
+                auto published = co_await recoverPublishedCheckpoint(saved.value(), work->cancel,
+                    [&] { return current() && work->current(); });
+                if (published && published.value()) {
+                    QTimer::singleShot(0, this, [weak = std::weak_ptr<File>(self)] {
+                        if (auto file = weak.lock(); file && file->getState() == FS_DONE)
+                            if (auto owner = file->getContact()) owner->recoverCompletedFile(*file);
+                    });
+                    co_return;
+                }
+                if (!current()) co_return;
+            }
+        }
+    }
+    // Persist a crash interruption before repairing its UI mirror. The saved
+    // nonce guards a concurrent fresh attempt; no live channel is restored.
+    if (getState() == FS_PAUSED && saved.value().pause == dsfm::TransferPauseReason::None && !saved.value().attempt.isNull()) {
+        auto paused = co_await storage.transferProgress().pause(key.value(), saved.value().attempt, dsfm::TransferPauseReason::Disconnected);
+        if (!current() || !paused) co_return;
+        saved.value().pause = dsfm::TransferPauseReason::Disconnected;
+    }
     // Recover the app mirror only. A live attempt is never restored across restart.
     const auto reason = saved.value().pause == dsfm::TransferPauseReason::None
         ? dsfm::TransferPauseReason::Disconnected : saved.value().pause;
@@ -1256,10 +1479,6 @@ QCoro::Task<void> File::recoverCheckpointProgress(File::ptr_t self) {
         if (!mirror.exec()) LFLOG_WARN << "Recovered transfer pause UI mirror update deferred";
         emit stateChanged();
     }
-    // Native publication may have completed before the generic completion
-    // record. Do not manufacture transfer success from publication alone.
-    if (saved.value().complete && getDirection() == INCOMING && !pendingId().isNull())
-        co_await recoverStorage(self);
 }
 QCoro::Task<void> File::recoverStorage(File::ptr_t self) {
     auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
@@ -1359,11 +1578,16 @@ void File::transferFailed(const QString &reason, const File::State state)
 
 void File::validateHash()
 {
-    if (getDirection() != INCOMING || getState() != FS_TRANSFERRING || !writer_) return;
+    if (getDirection() != INCOMING || getState() != FS_TRANSFERRING || !writer_ || storage_cancel_.cancelled()) return;
+    // The transport reservation remains held through publication, but its
+    // cancellation token belongs to the retired connection. Publication has
+    // its own token so disconnect cannot cancel a fully received file.
+    storage_cancel_ = {};
     setState(FS_HASHING);
     commitIncoming(shared_from_this());
 }
 QCoro::Task<void> File::commitIncoming(File::ptr_t self) {
+    auto retained_work = transfer_work_.lock();
     const auto attempt = checkpoint_attempt_;
     auto operation = DsEngine::instance().getFileManager()->storage().holdOperation();
     storage_busy_ = true;
@@ -1382,7 +1606,7 @@ QCoro::Task<void> File::commitIncoming(File::ptr_t self) {
     if (attempt) {
         auto &progress = DsEngine::instance().getFileManager()->storage().transferProgress();
         auto key = checkpointKey();
-        auto completed = key ? co_await progress.complete(key.value(), attempt->id, true, true)
+        auto completed = key ? co_await progress.complete(key.value(), attempt->id, true, true, true)
                              : dsfm::Result<void>{key.error()};
         if (!completed) {
             // Publication is authoritative. Keep its metadata for recovery, but

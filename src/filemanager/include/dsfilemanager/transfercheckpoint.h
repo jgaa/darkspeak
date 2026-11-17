@@ -3,7 +3,7 @@
 
 namespace dsfm {
 inline constexpr quint32 checkpoint_format_version = 1;
-inline constexpr quint32 transfer_progress_format_version = 2;
+inline constexpr quint32 transfer_progress_format_version = 3;
 inline constexpr quint32 minimum_checkpoint_interval = 64U << 10;
 inline constexpr quint32 default_checkpoint_interval = 1U << 20;
 inline constexpr quint32 maximum_checkpoint_interval = 16U << 20;
@@ -103,9 +103,13 @@ class TransferProgressStore {
     QCoro::Task<Result<void>> beginAttempt(TransferKey key, QUuid attempt, DurableCheckpoint selected, quint64 next_sequence = 0);
     QCoro::Task<Result<void>> record(TransferKey key, QUuid attempt, DurableCheckpoint checkpoint,
                                      CheckpointPhase phase);
-    QCoro::Task<Result<void>> complete(TransferKey key, QUuid attempt, bool full_hash_verified, bool final_flow_ack);
+    // A verified receiver publication is irreversible and may recover forward
+    // through a pause; sender completion still requires an active stream.
+    QCoro::Task<Result<void>> complete(TransferKey key, QUuid attempt, bool full_hash_verified, bool final_flow_ack,
+                                      bool publication_recovered = false);
     QCoro::Task<Result<void>> pause(TransferKey key, QUuid attempt, TransferPauseReason reason);
-    QCoro::Task<Result<void>> fail(TransferKey key, TransferFailureReason reason);
+    QCoro::Task<Result<void>> fail(TransferKey key, TransferFailureReason reason,
+                                  std::optional<QUuid> expected_attempt = {}, CancellationToken cancel = {});
     QCoro::Task<Result<void>> shutdown();
 
   private:

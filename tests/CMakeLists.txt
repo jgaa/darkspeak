@@ -12,7 +12,7 @@ target_compile_features(protocol_v3_test PRIVATE cxx_std_17)
 target_link_libraries(protocol_v3_test PRIVATE prot core Qt6::Core Qt6::Test)
 target_compile_definitions(protocol_v3_test PRIVATE DS_CHECKPOINT_WIRE_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 add_test(NAME protocol_v3 COMMAND protocol_v3_test)
-set_tests_properties(protocol_v3 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(protocol_v3 PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 add_executable(tor_address_test tor_address_test.cpp)
 target_compile_features(tor_address_test PRIVATE cxx_std_17)
@@ -81,6 +81,13 @@ target_include_directories(managed_storage_test PRIVATE ../dependencies/logfault
 target_compile_definitions(managed_storage_test PRIVATE DS_STORAGE_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 add_test(NAME managed_storage COMMAND managed_storage_test)
 set_tests_properties(managed_storage PROPERTIES TIMEOUT 180 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(checkpoint_restart_test checkpoint_restart_test.cpp)
+target_compile_features(checkpoint_restart_test PRIVATE cxx_std_20)
+target_include_directories(checkpoint_restart_test PRIVATE ../dependencies/logfault/include)
+target_link_libraries(checkpoint_restart_test PRIVATE models prot Qt6::Test)
+add_test(NAME checkpoint_restart COMMAND checkpoint_restart_test)
+set_tests_properties(checkpoint_restart PROPERTIES TIMEOUT 180 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 if(DARKSPEAK_WITH_MCP)
     add_executable(mcp_policy_test mcp_policy_test.cpp ../src/mcp/store.cpp)

@@ -179,7 +179,13 @@ protected:
     void prepareEncryption(stream_state_t& state, mview_t& header, mview_t& key);
     void prepareDecryption(stream_state_t& state, const mview_t& header, const mview_t& key);
     void decrypt(mview_t& data, const mview_t& ciphertext, bool& final);
-    quint32 createChannel(const core::File& file);
+    quint32 createChannel(const core::File& file, std::shared_ptr<core::FileTransferWork> work = {});
+    void retainCompletedIncoming(quint32 channel);
+    uint64_t sendFileOfferMetadata(const core::File& file, QUuid repeated_attempt = {});
+    uint64_t sendMessageWithAttempts(const core::Message& message,
+                                     const QVector<std::optional<dsfm::TransferAttempt>>& attempts);
+    QCoro::Task<void> restoreInitialReadiness(core::PeerFileOfferResponse response, core::File::ptr_t file,
+                                             std::shared_ptr<Peer> self);
     uint64_t startReceive(core::File& file);
     uint64_t startSend(core::File& file);
     void useConnection(ConnectionSocket *cc);
@@ -213,6 +219,15 @@ protected:
     // At most two completed receiver channels per connection, retained only
     // long enough to repeat a lost final checkpoint receipt / flow ACK.
     std::map<quint32, std::chrono::steady_clock::time_point> completed_incoming_;
+    std::map<QByteArray, dsfm::TransferAttempt> restoring_initial_readiness_;
+    struct InitialOffer {
+        QUuid attempt;
+        int file_db_id = 0;
+    };
+    std::map<QByteArray, InitialOffer> initial_offers_;
+    QMetaObject::Connection initial_offer_states_;
+    QMetaObject::Connection initial_offer_deletions_;
+    void forgetInitialOffer(const QByteArray &file_id);
     bool notificationsDisabled_ = false;
     bool capabilitiesReceived_ = false;
     quint32 advertised_checkpoint_interval_ = 0;
@@ -250,6 +265,9 @@ public:
                                 const QImage& avatar,
                                 bool authorized) override;
     uint64_t offerFile(const core::File& file) override;
+    uint64_t repeatCheckpointOffer(const core::File& file, QUuid attempt) override;
+    uint64_t repeatCheckpointPreviewOffer(const core::File& primary, const core::File& preview,
+                                          QUuid primary_attempt, QUuid preview_attempt) override;
     uint64_t startTransfer(core::File& file) override;
     uint64_t sendSome(core::File& file) override;
     void disableNotifications() override;

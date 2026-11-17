@@ -189,6 +189,39 @@ void lostConfirmationRecovery() {
     error(receiver.beginAttempt(description_receiver.key,QUuid::createUuid(),received.checkpoints.first(),4),ErrorCode::Conflict);
     get(sender.shutdown());get(receiver.shutdown());
 }
+void unstartedPauseCannotTouchAStartedAttempt() {
+    QTemporaryDir temp;
+    TransferProgressStore store(temp.path()); get(store.open());
+    const auto d = description(6); const auto initial = get(store.create(d));
+    get(store.pause(d.key, {}, TransferPauseReason::ResourceUnavailable));
+    CHECK(get(store.load(d.key)).pause == TransferPauseReason::ResourceUnavailable);
+    const auto attempt = QUuid::createUuid();
+    get(store.beginAttempt(d.key, attempt, initial.checkpoints.first()));
+    error(store.pause(d.key, {}, TransferPauseReason::Disconnected), ErrorCode::Conflict);
+    CHECK(get(store.load(d.key)).pause == TransferPauseReason::None);
+    get(store.shutdown());
+}
+void verifiedReceiverPublicationWinsPause() {
+    for (const auto side : {TransferSide::Sender, TransferSide::Receiver}) {
+        QTemporaryDir temp;
+        TransferProgressStore store(temp.path()); get(store.open());
+        auto d = description(6); d.side = side; d.key.side = side;
+        const auto initial = get(store.create(d)); const auto attempt = QUuid::createUuid();
+        get(store.beginAttempt(d.key, attempt, initial.checkpoints.first()));
+        const DurableCheckpoint final{1, 6, d.sha256, true};
+        get(store.record(d.key, attempt, final, CheckpointPhase::MutuallyConfirmed));
+        get(store.pause(d.key, attempt, TransferPauseReason::AuthorizationWithdrawn));
+        error(store.complete(d.key, attempt, true, true), ErrorCode::IncompleteContent);
+        error(store.complete(d.key, attempt, false, true, true), ErrorCode::IncompleteContent);
+        error(store.complete(d.key, attempt, true, false, true), ErrorCode::IncompleteContent);
+        if (side == TransferSide::Receiver) {
+            get(store.complete(d.key, attempt, true, true, true));
+            const auto saved = get(store.load(d.key));
+            CHECK(saved.complete && saved.pause == TransferPauseReason::None);
+        } else error(store.complete(d.key, attempt, true, true, true), ErrorCode::IncompleteContent);
+        get(store.shutdown());
+    }
+}
 void emptyCompletion() {
     QTemporaryDir temp;
     TransferProgressStore store(temp.path());
@@ -203,10 +236,39 @@ void emptyCompletion() {
     get(store.record(d.key, attempt, final, CheckpointPhase::Proposed));
     error(store.complete(d.key, attempt, true, true), ErrorCode::IncompleteContent);
     get(store.record(d.key, attempt, final, CheckpointPhase::SenderConfirmed));
+    CHECK(get(store.load(d.key)).accepted_checkpoints.contains(final));
+    CHECK(!get(store.load(d.key)).checkpoints.contains(final));
+    CHECK(get(store.selectResume(d.key, {final})) == final);
     error(store.complete(d.key, attempt, true, true), ErrorCode::IncompleteContent);
     get(store.record(d.key, attempt, final, CheckpointPhase::MutuallyConfirmed));
     get(store.complete(d.key, attempt, true, true));
     get(store.shutdown());
+}
+void emptyFinalAcceptanceSurvivesReopen() {
+    QTemporaryDir temp;
+    auto d = description(0); d.sha256 = digest({});
+    const DurableCheckpoint final{0, 0, d.sha256, true};
+    {
+        TransferProgressStore store(temp.path()); get(store.open());
+        auto saved = get(store.create(d));
+        error(store.selectResume(d.key, {final}), ErrorCode::IntegrityError);
+        const auto attempt = QUuid::createUuid();
+        get(store.beginAttempt(d.key, attempt, saved.checkpoints.first()));
+        get(store.record(d.key, attempt, final, CheckpointPhase::SenderConfirmed));
+        get(store.shutdown());
+    }
+    TransferProgressStore reopened(temp.path()); get(reopened.open());
+    const auto saved = get(reopened.load(d.key));
+    CHECK(saved.accepted_checkpoints.contains(final));
+    CHECK(!saved.checkpoints.contains(final) && !saved.complete);
+    CHECK(get(reopened.selectResume(d.key, {final})) == final);
+    const auto attempt = QUuid::createUuid();
+    get(reopened.beginAttempt(d.key, attempt, final, 1));
+    error(reopened.complete(d.key, attempt, true, true), ErrorCode::IncompleteContent);
+    get(reopened.record(d.key, attempt, final, CheckpointPhase::MutuallyConfirmed));
+    error(reopened.complete(d.key, attempt, true, false), ErrorCode::IncompleteContent);
+    get(reopened.complete(d.key, attempt, true, true));
+    get(reopened.shutdown());
 }
 void resumeCandidatesPreserveCheckpointIdentity() {
     for (const auto side : {TransferSide::Sender, TransferSide::Receiver}) {
@@ -316,6 +378,28 @@ void attemptPreflightIsReadOnlyAndRechecked() {
     CHECK(get(store.load(d.key)).attempt == original);
     get(store.shutdown());
 }
+void delayedFailuresAreAttemptBoundAndCancellable() {
+    QTemporaryDir dir;
+    TransferProgressStore store(dir.path());
+    get(store.open());
+    const auto d = description(default_checkpoint_interval);
+    const auto initial = get(store.create(d));
+    const auto old = QUuid::createUuid(), replacement = QUuid::createUuid();
+    get(store.beginAttempt(d.key, old, initial.checkpoints.first()));
+    get(store.beginAttempt(d.key, replacement, initial.checkpoints.first()));
+    error(store.fail(d.key, TransferFailureReason::UnsupportedVersion, old), ErrorCode::Conflict);
+    error(store.fail(d.key, TransferFailureReason::UnsupportedVersion, QUuid{}), ErrorCode::Conflict);
+    CancellationToken cancel;
+    cancel.cancel();
+    error(store.fail(d.key, TransferFailureReason::UnsupportedVersion, replacement, cancel), ErrorCode::Cancelled);
+    auto saved = get(store.load(d.key));
+    CHECK(saved.attempt == replacement && saved.failure == TransferFailureReason::None);
+    get(store.fail(d.key, TransferFailureReason::UnsupportedVersion, replacement));
+    saved = get(store.load(d.key));
+    CHECK(saved.failure == TransferFailureReason::UnsupportedVersion);
+    CHECK(saved.confirmed_offset == 0 && saved.verified_prefix == 0 && !saved.complete);
+    get(store.shutdown());
+}
 void boundedRetentionAndFailures() {
     QTemporaryDir temp;
     TransferProgressStore store(temp.path(), 1);
@@ -375,7 +459,7 @@ void verifiedPrefixSurvivesRewindAndRetention() {
 }
 void directionScopedKeys() {
     QTemporaryDir temp;
-    QFile fixture(QStringLiteral(DSFM_TEST_SOURCE_DIR) + "/fixtures/transfer-progress-v2.json");
+    QFile fixture(QStringLiteral(DSFM_TEST_SOURCE_DIR) + "/fixtures/transfer-progress-v3.json");
     CHECK(fixture.open(QIODevice::ReadOnly));
     const auto expected = QJsonDocument::fromJson(fixture.readAll()).object();
     const auto keys = expected["keyFixture"].toObject();
@@ -422,7 +506,7 @@ void directionScopedKeys() {
     CHECK(get(reopened.load(receiver.key)).pause == TransferPauseReason::SourceUnavailable);
     get(reopened.shutdown());
 }
-void seedVersionOneJournal(const QString &root, bool populated) {
+void seedEarlierJournal(const QString &root, bool populated, int version = 1) {
     CHECK(QDir().mkpath(root));
     CHECK(QFile::setPermissions(root, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
     {
@@ -430,7 +514,7 @@ void seedVersionOneJournal(const QString &root, bool populated) {
         db.setDatabaseName(root + "/catalog.db"); CHECK(db.open());
         QSqlQuery query(db);
         CHECK(query.exec("CREATE TABLE meta(version INTEGER NOT NULL)"));
-        CHECK(query.exec("INSERT INTO meta VALUES(1)"));
+        CHECK(query.exec(QString("INSERT INTO meta VALUES(%1)").arg(version)));
         CHECK(query.exec("CREATE TABLE transfers(key BLOB PRIMARY KEY,size INTEGER NOT NULL,sha BLOB NOT NULL,interval INTEGER NOT NULL,"
                          "attempt BLOB,confirmed INTEGER NOT NULL DEFAULT 0,complete INTEGER NOT NULL DEFAULT 0,"
                          "pause INTEGER NOT NULL DEFAULT 0,failure INTEGER NOT NULL DEFAULT 0,next_sequence INTEGER NOT NULL DEFAULT 1,"
@@ -438,23 +522,25 @@ void seedVersionOneJournal(const QString &root, bool populated) {
         CHECK(query.exec("CREATE TABLE checkpoints(key BLOB NOT NULL REFERENCES transfers(key),sequence INTEGER NOT NULL,"
                          "offset INTEGER NOT NULL,sha BLOB NOT NULL,final INTEGER NOT NULL,pause_boundary INTEGER NOT NULL,"
                          "phase INTEGER NOT NULL,PRIMARY KEY(key,sequence))"));
+        if (version == 2) CHECK(query.exec("ALTER TABLE transfers ADD COLUMN verified_prefix INTEGER NOT NULL DEFAULT 0"));
+        const auto key = QByteArray(48, 'k') + (version == 2 ? QByteArray(1, '\0') : QByteArray{});
         if (populated) {
             query.prepare("INSERT INTO transfers(key,size,sha,interval) VALUES(?,?,?,?)");
-            query.addBindValue(QByteArray(48, 'k')); query.addBindValue(6);
+            query.addBindValue(key); query.addBindValue(6);
             query.addBindValue(digest("legacy")); query.addBindValue(default_checkpoint_interval); CHECK(query.exec());
             query.prepare("INSERT INTO checkpoints VALUES(?,0,0,?,0,0,2)");
-            query.addBindValue(QByteArray(48, 'k')); query.addBindValue(digest({})); CHECK(query.exec());
+            query.addBindValue(key); query.addBindValue(digest({})); CHECK(query.exec());
         }
         db.close();
     }
     QSqlDatabase::removeDatabase("legacy-progress-fixture");
     CHECK(QFile::setPermissions(root + "/catalog.db", QFile::ReadOwner | QFile::WriteOwner));
 }
-void versionOneJournalsAreNeverSilentlyReinterpreted() {
-    for (const bool populated : {false, true}) {
+void earlierJournalsAreNeverSilentlyReinterpreted() {
+    for (const int version : {1, 2}) for (const bool populated : {false, true}) {
         QTemporaryDir temp;
         const auto root = temp.path() + "/legacy";
-        seedVersionOneJournal(root, populated);
+        seedEarlierJournal(root, populated, version);
         QFile sentinel(root + "/unrecognized-content");
         CHECK(sentinel.open(QIODevice::WriteOnly)); CHECK(sentinel.write("preserve") == 8); sentinel.close();
         TransferProgressStore store(root);
@@ -471,9 +557,9 @@ void versionOneJournalsAreNeverSilentlyReinterpreted() {
             db.setDatabaseName(root + "/catalog.db"); CHECK(db.open());
             QSqlQuery query(db);
             CHECK(query.exec("SELECT version FROM meta")); CHECK(query.next());
-            CHECK(query.value(0).toInt() == (populated ? 1 : 2));
+            CHECK(query.value(0).toInt() == (populated ? version : int(transfer_progress_format_version)));
             CHECK(query.exec("SELECT length(key),confirmed FROM transfers")); CHECK(query.next());
-            CHECK(query.value(0).toInt() == (populated ? 48 : 49)); CHECK(query.value(1).toInt() == 0);
+            CHECK(query.value(0).toInt() == (populated && version == 1 ? 48 : 49)); CHECK(query.value(1).toInt() == 0);
             CHECK(!query.next());
             db.close();
         }
@@ -481,7 +567,7 @@ void versionOneJournalsAreNeverSilentlyReinterpreted() {
     }
     QTemporaryDir interrupted;
     const auto root = interrupted.path() + "/legacy";
-    seedVersionOneJournal(root, false);
+    seedEarlierJournal(root, false);
     {
         TransferProgressStore store(root);
         qputenv("DSFM_FAIL_AT", "before_empty_transfer_journal_reinitialize_commit");
@@ -533,7 +619,9 @@ void corruptJournalMetadataFailsClosed() {
              "UPDATE transfers SET complete=1,verified_prefix=size",
              "UPDATE transfers SET complete=1,verified_prefix=size,confirmed=size,pause=1",
              "UPDATE transfers SET complete=1,verified_prefix=size,confirmed=size",
-             "UPDATE checkpoints SET pause_boundary=2"}) {
+             "UPDATE checkpoints SET pause_boundary=2",
+             "UPDATE transfers SET empty_final_accepted=1",
+             "UPDATE transfers SET empty_final_accepted=2"}) {
         QTemporaryDir temp;
         auto d = description(6);
         {
@@ -561,7 +649,7 @@ void schemaFixture() {
     TransferProgressStore store(temp.path());
     get(store.open());
     get(store.shutdown());
-    QFile fixture(QStringLiteral(DSFM_TEST_SOURCE_DIR) + "/fixtures/transfer-progress-v2.json");
+    QFile fixture(QStringLiteral(DSFM_TEST_SOURCE_DIR) + "/fixtures/transfer-progress-v3.json");
     CHECK(fixture.open(QIODevice::ReadOnly));
     const auto expected = QJsonDocument::fromJson(fixture.readAll()).object();
     CHECK(expected["version"].toInt() == transfer_progress_format_version);
@@ -613,13 +701,17 @@ int main(int argc, char **argv) {
         progressAndResume();
         lostConfirmationRecovery();
         emptyCompletion();
+        verifiedReceiverPublicationWinsPause();
+        unstartedPauseCannotTouchAStartedAttempt();
+        emptyFinalAcceptanceSurvivesReopen();
         resumeCandidatesPreserveCheckpointIdentity();
         emptyResumeRequiresFinalReference();
         attemptPreflightIsReadOnlyAndRechecked();
+        delayedFailuresAreAttemptBoundAndCancellable();
         boundedRetentionAndFailures();
         verifiedPrefixSurvivesRewindAndRetention();
         directionScopedKeys();
-        versionOneJournalsAreNeverSilentlyReinterpreted();
+        earlierJournalsAreNeverSilentlyReinterpreted();
         std::cout << "checkpoint tests passed\n";
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';

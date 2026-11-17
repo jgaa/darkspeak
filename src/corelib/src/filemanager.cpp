@@ -245,12 +245,27 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
                 return;
             }
             if (file->checkpointInterval() || offer.checkpoint_attempt) {
+                if (file->getState() == File::FS_DONE && offer.checkpoint_attempt && file->checkpointInterval() &&
+                    file->checkpointInterval() == offer.checkpoint_attempt->interval) {
+                    // This offer only triggers EOF recovery. Its nonce cannot
+                    // replace the published transfer's attempt or byte prefix.
+                    conversation.getFirstParticipant()->recoverCompletedFile(*file);
+                    return;
+                }
                 // Repeated initial offers cannot downgrade or reset a running,
                 // paused or completed checkpoint transfer. Recovery uses resume.
                 if (!offer.checkpoint_attempt || !file->checkpointInterval() ||
                     file->checkpointInterval() != offer.checkpoint_attempt->interval ||
-                    !file->checkpointAttempt() || *file->checkpointAttempt() != *offer.checkpoint_attempt)
+                    file->getState() == File::FS_REJECTED || file->getState() == File::FS_CANCELLED ||
+                    file->failureReason() != int(dsfm::TransferFailureReason::None))
                     offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
+                else if (file->isResumable() && !file->storageId().isNull())
+                    conversation.getFirstParticipant()->recoverPublishedFile(*file);
+                else if (file->getState() == File::FS_HASHING)
+                    conversation.getFirstParticipant()->deferCompletionHint(*file);
+                // A valid repeated offer is only a hint, even when its nonce
+                // differs after a resume. It cannot replace the live attempt,
+                // rewind bytes or accept an original while its preview recovers.
                 return;
             }
             if (file->getState() == File::FS_REJECTED) {
@@ -321,7 +336,10 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
     data->hash = offer.sha512;
     data->mime_type = offer.type;
     data->thumbnail_for = offer.thumbnail_for; data->manifest_id = offer.manifest_id;
-    if (offer.checkpoint_attempt) data->checkpoint_interval = offer.checkpoint_attempt->interval;
+    if (offer.checkpoint_attempt) {
+        data->checkpoint_interval = offer.checkpoint_attempt->interval;
+        data->offered_connection = offer.connectionId;
+    }
 
     auto file = addFile(move(data), offer.checkpoint_attempt);
     if (file) {

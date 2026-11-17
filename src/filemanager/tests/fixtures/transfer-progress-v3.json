@@ -1,0 +1,62 @@
+{
+  "version": 3,
+  "failureReasons": {
+    "None": 0,
+    "SourceIntegrityMismatch": 1,
+    "ReceiverCheckpointMismatch": 2,
+    "UnsupportedVersion": 3,
+    "UserAction": 4,
+    "RemoteSourceChanged": 5
+  },
+  "minimumInterval": 65536,
+  "defaultInterval": 1048576,
+  "maximumInterval": 16777216,
+  "tables": {
+    "meta": [
+      "version"
+    ],
+    "transfers": [
+      "key",
+      "size",
+      "sha",
+      "interval",
+      "attempt",
+      "confirmed",
+      "complete",
+      "pause",
+      "failure",
+      "next_sequence",
+      "side",
+      "verified_prefix",
+      "empty_final_accepted"
+    ],
+    "checkpoints": [
+      "key",
+      "sequence",
+      "offset",
+      "sha",
+      "final",
+      "pause_boundary",
+      "phase"
+    ]
+  },
+  "wireVersion": 1,
+  "keyBytes": 49,
+  "keyLayout": [
+    "local_scope:16",
+    "remote_scope:16",
+    "transfer:16",
+    "side:1"
+  ],
+  "keySides": {
+    "Sender": 0,
+    "Receiver": 1
+  },
+  "keyFixture": {
+    "localScope": "000102030405060708090a0b0c0d0e0f",
+    "remoteScope": "101112131415161718191a1b1c1d1e1f",
+    "transfer": "202122232425262728292a2b2c2d2e2f",
+    "senderKey": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00",
+    "receiverKey": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f01"
+  }
+}

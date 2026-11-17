@@ -112,8 +112,9 @@ class DatabaseRecoveryTest final : public QObject {
             for (const auto state : {File::FS_TRANSFERRING, File::FS_QUEUED, File::FS_OFFERED,
                                      File::FS_PAUSED, File::FS_WAITING_FOR_CREDIT, File::FS_PAUSED_INSUFFICIENT_CREDIT}) {
                 query.prepare("INSERT INTO file(id,file_id,state,direction,identity_id,contact_id,name,size,created_time,bytes_transferred) "
-                              "VALUES(?,?,?,0,1,1,'fixture',1048576,'fixture',65536)");
+                              "VALUES(?,?,?,0,1,1,'fixture',1048576,'fixture',?)");
                 query.addBindValue(int(state)); query.addBindValue(QByteArray(16, char(state))); query.addBindValue(int(state));
+                query.addBindValue(state == File::FS_OFFERED ? 0 : 65536);
                 QVERIFY(query.exec());
                 query.prepare("INSERT INTO file_transfer_v1(file_id,checkpoint_interval,pause_reason) VALUES(?,65536,?)");
                 query.addBindValue(int(state));
@@ -129,9 +130,9 @@ class DatabaseRecoveryTest final : public QObject {
         int count = 0;
         while (query.next()) {
             const auto before = File::State(query.value(0).toInt());
-            const auto interrupted = before == File::FS_TRANSFERRING || before == File::FS_QUEUED || before == File::FS_OFFERED;
+            const auto interrupted = before == File::FS_TRANSFERRING || before == File::FS_QUEUED;
             QCOMPARE(query.value(1).toInt(), interrupted ? int(File::FS_PAUSED) : int(before));
-            QCOMPARE(query.value(2).toLongLong(), 65536);
+            QCOMPARE(query.value(2).toLongLong(), before == File::FS_OFFERED ? 0 : 65536);
             QCOMPARE(query.value(3).toUInt(), dsfm::minimum_checkpoint_interval);
             const auto reason = before == File::FS_PAUSED ? dsfm::TransferPauseReason::SourceUnavailable
                 : interrupted ? dsfm::TransferPauseReason::Disconnected : dsfm::TransferPauseReason::None;

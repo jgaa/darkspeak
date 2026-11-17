@@ -2,6 +2,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QCryptographicHash>
+#include <QPointer>
+#include <QTcpServer>
 
 #include "ds/connectionsocket.h"
 #include "ds/peer.h"
@@ -15,8 +17,13 @@
 
 class EnvelopePeer final : public ds::prot::Peer {
   public:
-    EnvelopePeer() : Peer(std::make_shared<ds::prot::ConnectionSocket>(), {}) {}
+    explicit EnvelopePeer(ds::prot::ConnectionSocket::ptr_t socket = ds::prot::ConnectionSocket::create())
+        : Peer(std::move(socket), {}) {}
     using Peer::onReceivedEnvelope;
+    void enableCheckpointsForFixture() {
+        capabilitiesReceived_ = true;
+        advertised_checkpoint_interval_ = peer_checkpoint_interval_ = dsfm::minimum_checkpoint_interval;
+    }
     Direction getDirection() const noexcept override { return OUTGOING; }
 };
 
@@ -25,6 +32,108 @@ class ProtocolV3Test final : public QObject
     Q_OBJECT
 
 private slots:
+    void unversionedFileTrafficIsRejected_data() {
+        QTest::addColumn<int>("kind");
+        for (int kind = 0; kind != 6; ++kind) QTest::newRow(qPrintable(QString::number(kind))) << kind;
+    }
+    void unversionedFileTrafficIsRejected() {
+        QFETCH(int, kind);
+        auto peer = std::make_shared<EnvelopePeer>();
+        peer->enableCheckpointsForFixture();
+        ds::protocol::Envelope envelope;
+        envelope.setProtocolVersion(ds::prot::codec::protocolVersion);
+        ds::protocol::FileOffer offer;
+        offer.setFileId(QByteArray(16, 'f')); offer.setConversationId(QByteArray(32, 'c'));
+        offer.setName("file.bin"); offer.setSize(1); offer.setSha256(QByteArray(32, 'h'));
+        offer.setMimeType("application/octet-stream");
+        switch (kind) {
+        case 0: envelope.setFileOffer(offer); break;
+        case 1: {
+            ds::protocol::FileChunk chunk; chunk.setFileId(offer.fileId()); chunk.setData("a"); chunk.setFinal(true);
+            envelope.setFileChunk(chunk); break;
+        }
+        case 2: {
+            ds::protocol::FileAck ack; ack.setFileId(offer.fileId()); ack.setNextSequence(1); ack.setNextOffset(1); ack.setFinal(true);
+            envelope.setFileAck(ack); break;
+        }
+        case 3: {
+            ds::protocol::FileResume resume; resume.setFileId(offer.fileId()); resume.setSha256(offer.sha256()); resume.setFileSize(1);
+            envelope.setRequestId(1); envelope.setFileResume(resume); break;
+        }
+        case 4: {
+            ds::protocol::FileOfferResponse response;
+            response.setFileId(offer.fileId());
+            response.setStatus(ds::protocol::FileOfferResponse::Status::FILE_OFFER_ACCEPTED);
+            envelope.setFileOfferResponse(response); break;
+        }
+        case 5: {
+            ds::protocol::MessageAttachment attachment; attachment.setFileOffer(offer);
+            ds::protocol::Message message; message.setAttachments({attachment}); envelope.setMessage(message); break;
+        }
+        }
+        QSignalSpy offered(peer.get(), &ds::core::PeerConnection::receivedFileOffer);
+        QSignalSpy resumed(peer.get(), &ds::core::PeerConnection::receivedFileResume);
+        QSignalSpy messages(peer.get(), &ds::core::PeerConnection::receivedMessage);
+        try {
+            peer->onReceivedEnvelope(envelope);
+            QFAIL("Unversioned file traffic was accepted");
+        } catch (const std::exception &error) {
+            QCOMPARE(QString::fromUtf8(error.what()), kind == 5 ? QStringLiteral("Attachments require negotiated checkpoints")
+                : QStringLiteral("Unversioned file transfer is unsupported"));
+        }
+        QCOMPARE(offered.count(), 0); QCOMPARE(resumed.count(), 0); QCOMPARE(messages.count(), 0);
+    }
+
+    void socketSurvivesLastPeerReleaseDuringDisconnect()
+    {
+        auto socket = ds::prot::ConnectionSocket::create();
+        QPointer<ds::prot::ConnectionSocket> observed = socket.get();
+        auto peer = std::make_shared<EnvelopePeer>(socket);
+        std::weak_ptr<EnvelopePeer> weak = peer;
+        connect(peer.get(), &ds::prot::Peer::disconnectedFromPeer, this,
+                [&](const std::shared_ptr<ds::core::PeerConnection> &) { peer.reset(); });
+        auto *emitter = socket.get();
+        socket.reset(); // The peer is now the only socket owner.
+        emitter->disconnected();
+        QVERIFY(weak.expired());
+        QVERIFY2(observed, "The socket was deleted inside its disconnected signal");
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(observed.isNull());
+    }
+
+    void remoteDisconnectCanReleaseLastPeer_data()
+    {
+        QTest::addColumn<bool>("abort");
+        QTest::newRow("graceful") << false;
+        QTest::newRow("abort") << true;
+    }
+    void remoteDisconnectCanReleaseLastPeer()
+    {
+        QFETCH(bool, abort);
+        QTcpServer listener;
+        QVERIFY(listener.listen(QHostAddress::LocalHost, 0));
+        auto socket = ds::prot::ConnectionSocket::create();
+        QPointer<ds::prot::ConnectionSocket> observed = socket.get();
+        auto peer = std::make_shared<EnvelopePeer>(socket);
+        const std::weak_ptr<EnvelopePeer> weak = peer;
+        connect(peer.get(), &ds::prot::Peer::disconnectedFromPeer, this,
+                [&](const std::shared_ptr<ds::core::PeerConnection> &) { peer.reset(); });
+        bool delivered_after_release = false;
+        connect(socket.get(), &QAbstractSocket::disconnected, this, [&] {
+            delivered_after_release = weak.expired() && !observed.isNull();
+        });
+        socket->connectToHost(QHostAddress::LocalHost, listener.serverPort());
+        QTRY_VERIFY_WITH_TIMEOUT(listener.hasPendingConnections(), 2000);
+        auto *remote = listener.nextPendingConnection();
+        QVERIFY(remote);
+        socket.reset();
+        if (abort) remote->abort();
+        else remote->disconnectFromHost();
+        QTRY_VERIFY_WITH_TIMEOUT(weak.expired(), 2000);
+        QVERIFY(delivered_after_release);
+        QTRY_VERIFY_WITH_TIMEOUT(observed.isNull(), 2000);
+    }
+
     void recordConstants()
     {
         QCOMPARE(ds::prot::codec::protocolVersion, static_cast<quint32>(3));
@@ -104,13 +213,13 @@ private slots:
     }
     void outputQueueIsBounded()
     {
-        ds::prot::ConnectionSocket socket;
+        const auto socket = ds::prot::ConnectionSocket::create();
         const QByteArray frame(static_cast<int>(
                                     ds::prot::ConnectionSocket::maxOutgoingBytes()), '\0');
-        socket.write(frame);
-        QCOMPARE(socket.queuedBytes(),
+        socket->write(frame);
+        QCOMPARE(socket->queuedBytes(),
                  ds::prot::ConnectionSocket::maxOutgoingBytes());
-        QVERIFY_EXCEPTION_THROWN(socket.write(QByteArray(1, '\0')), std::runtime_error);
+        QVERIFY_EXCEPTION_THROWN(socket->write(QByteArray(1, '\0')), std::runtime_error);
     }
 
     void handshakeTimeoutsAreBounded()

@@ -74,7 +74,7 @@ core::PeerConnection::ptr_t
 TorServiceInterface::connectToService(const QByteArray &host, const uint16_t port,
                                       core::ConnectData cd)
 {
-    auto connection = make_shared<ConnectionSocket>(host, port);
+    auto connection = ConnectionSocket::create(host, port);
 
     LFLOG_DEBUG << "Connecting to "
                 << host << ":" << port

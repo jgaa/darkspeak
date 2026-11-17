@@ -707,7 +707,7 @@ tokens matching `[a-z0-9][a-z0-9._-]{0,63}`. A declaration may contain
 at most 32 capability entries and duplicate names are invalid. The
 protobuf schema documents these stable object-format constraints; the
 implementation still validates them before accepting the declaration.
-Protocol v3 defines no mandatory named capability. Unknown syntactically valid capability names are ignored. Unsupported protocol versions, malformed protobuf, and invalid capability declarations close the connection.
+Protocol v3 defines no globally mandatory named capability. File transfers specifically require bilateral `file-checkpoint-v1`; a peer without it may use other negotiated features, but cannot transfer files. Unknown syntactically valid capability names are ignored. Unsupported protocol versions, malformed protobuf, and invalid capability declarations close the connection.
 
 ### Application strings, encodings, and preferences
 
@@ -1037,7 +1037,7 @@ ordered stream already handles transport loss, and secretstream records
 cannot be replayed in place. A delayed acknowledgement does not by
 itself indicate that a chunk was lost.
 
-For checkpoint-enabled transfers, both sides require final hash verification and **mutual confirmation of the final durable checkpoint at `offset = file_size`** before declaring completion, in addition to the final cumulative `FileAck`. This includes empty files, whose final checkpoint covers the empty prefix. A final ordinary acknowledgement alone cannot complete a checkpoint-enabled transfer. Lost final checkpoint confirmations are retried idempotently or recovered through checkpoint negotiation; the generic durable transfer-progress record retains the final outcome independently of optional feature accounting. Keep terminal receiver acknowledgement state under a strict local count limit (initially two per connection) and a 30-second monotonic retry lifetime; duplicate final chunks cannot alter published bytes. Once this state expires, reconnect recovery uses the durable final outcome. A segregated legacy transfer retains its separately defined legacy completion rules.
+For checkpoint-enabled transfers, both sides require final hash verification and **mutual confirmation of the final durable checkpoint at `offset = file_size`** before declaring completion, in addition to the final cumulative `FileAck`. This includes empty files, whose final checkpoint covers the empty prefix. A final ordinary acknowledgement alone cannot complete a checkpoint-enabled transfer. Lost final checkpoint confirmations are retried idempotently or recovered through checkpoint negotiation; the generic durable transfer-progress record retains the final outcome independently of optional feature accounting. Keep terminal receiver acknowledgement state under a strict local count limit (initially two per connection) and a 30-second monotonic retry lifetime; duplicate final chunks cannot alter published bytes. Once this state expires, reconnect recovery uses the durable final outcome.
 
 Network acknowledgements and **durable verified checkpoints** are separate. Ordinary `FileAck` keeps the existing eight-chunk flow-control window moving without forcing `fsync()` or a hash computation per 8 KiB chunk. Checkpoint-enabled transfers default to **1 MiB checkpoint intervals**. Protocol bounds are **64 KiB through 16 MiB**, in multiples of 64 KiB; each endpoint configures its preferred interval locally within those bounds. Before payload transmission, negotiate and freeze a per-transfer interval no larger than either endpoint's locally selected interval (normally their minimum). Validate this value before allocating state or admitting work. Regular checkpoint boundaries are multiples of that interval from byte zero; final EOF and deliberately paused shorter prefixes may be additional explicitly agreed boundaries. Their count, rate and hash/synchronization work remain locally bounded.
 
@@ -1047,7 +1047,7 @@ At each agreed boundary (and on deliberate pause or completion), the receiver du
 
 The sender incrementally hashes logical source bytes in ascending order, exactly once per prefix, excluding retransmissions, and retains its prefix digest at each agreed boundary. An incorrect receiver-supplied prefix digest fails or rejects the checkpoint as `RECEIVER_CHECKPOINT_MISMATCH`; it does not advance progress and is **not proof of a source-integrity mismatch** or grounds for automatic credit refund. A sender's own digest mismatch against its trusted persisted checkpoint or original expected content is a distinct source-integrity failure. The sender's accepted checkpoint is its authoritative resume boundary; ordinary flow-control acknowledgements beyond it are not automatically durable/chargeable. Retain multiple checkpoints, including offset zero, under strict count/byte/age budgets. Recovery never trusts an implementation-specific serialized hash context without revalidating it against source bytes. Optional FileShare-only credit settlement is defined in `fileshare_authorization.md`; unrelated generic transfers need no ledger.
 
-Checkpoint-enabled resume is a **wire-protocol revision** and requires explicit negotiated support/versioning. Existing peers must not silently interpret the old receiver-chosen offset as a mutually verified checkpoint; use a clearly segregated legacy transfer mode where supported or reject resumption with a typed unsupported-version outcome. Credit-charged FileShare downloads require checkpoint-capable peers; never downgrade chargeable transfers to a legacy mode that bypasses accounting verification. Preserve ordinary message attachments and other existing generic transfers during migration.
+File transfer requires bilateral `file-checkpoint-v1` support and versioned attempt parameters for every generic transfer, including ordinary attachments and previews. If either endpoint lacks support, abort with a typed unsupported-version outcome before offering or admitting file data. Protocol-level backwards compatibility is not a goal: there is no legacy transfer or resume fallback. Unversioned offers, readiness, chunks, acknowledgements and resume requests are rejected before application dispatch, even on a checkpoint-capable connection. Text and unrelated features remain available when checkpoint support is absent.
 
 The version-one wire contract is defined in `proto/darkspeak.proto`, without renumbering existing fields:
 
@@ -1057,7 +1057,7 @@ The version-one wire contract is defined in `proto/darkspeak.proto`, without ren
 | `FileOffer.checkpoints` | 8 | Frozen version, interval, sender-chosen attempt ID and next checkpoint sequence. |
 | `FileOfferResponse.checkpoints`, `selected_checkpoint` | 3, 4 | Accepted readiness echoes the selected attempt and verified prefix. |
 | `FileChunk.attempt_id`, `FileAck.attempt_id` | 6, 5 | Reject data and ordinary acknowledgements from stale attempts before channel dispatch. |
-| `FileResume.available_checkpoints`, `checkpoint_version`, `checkpoint_interval_bytes` | 5–7 | At most 64 distinct retained references, including zero; legacy offset is advisory. |
+| `FileResume.available_checkpoints`, `checkpoint_version`, `checkpoint_interval_bytes` | 5–7 | At most 64 distinct retained references, including zero; offset is advisory only. |
 | `FileResumeResult.selected_checkpoint`, `checkpoints`, `pause_reason` | 5–7 | Sender-selected recovery or a typed persistent pause. |
 | `Envelope.file_checkpoint` | 30 | Distinct proposal, sender confirmation and receiver confirmation phases. |
 | `Envelope.file_pause` | 31 | Persistent generic pause; its advisory checkpoint cannot advance progress. |
@@ -1112,6 +1112,69 @@ message FileResume {
 `next_offset` in historical `FileResume` is advisory only on checkpoint-enabled sessions. The receiver can report its durable retained prefix and bounded checkpoint identifiers; the sender chooses a previously confirmed checkpoint at or below that prefix, never an arbitrary peer-proposed offset. Both parties validate the selected offset and prefix SHA-256. A receiver with more unconfirmed bytes discards its suffix; with fewer durable bytes, it can negotiate an earlier retained checkpoint in bounded rounds, or restart a new transfer at zero. The offered full-file SHA-256, size and transfer ID remain immutable.
 
 For recovery from a lost confirmation, the receiver may include a durably written proposal among its retained candidates. The sender may select it only if its own journal already contains the matching locally verified, durably accepted checkpoint. Selection alone never charges credits: the new handshake independently verifies the source and receiver prefixes before establishing the agreed resume position. Unaccepted peer candidates cannot advance the sender's position. An already completed receiver can verify its committed content and repeat an EOF-only completion handshake; it cannot silently restart an earlier portion of a completed charge identity.
+
+Completion recovery is automatic when an authenticated duplicate offer matches the
+receiver's completed transfer and immutable metadata. A sender interrupted after
+accepting its final checkpoint may repeat that offer after reconnecting, under
+local admission bounds. The offer only triggers recovery; it cannot install an
+attempt or reset a stream position. The receiver independently verifies its
+published object before readiness and accepts only the retained final EOF
+checkpoint. It keeps the file completed throughout, without a new partial writer,
+allocation or publication. Repeated offers coalesce under bounded retry limits;
+missing content, failed verification or withdrawn authorization cannot acknowledge
+completion. The EOF handshake carries no additional file bytes.
+
+After reconnect, a sender may repeat a bounded set of untouched initial offers.
+Its own journal must still contain only the implicit zero checkpoint, with no
+accepted final checkpoint, verified prefix or failure; only a disconnect pause is
+eligible. This includes an initial offer queue failure or a crash during preparation
+after the attempt was persisted. Source authorization
+and metadata are rechecked, then fresh attempt IDs are persisted before sending.
+Signed primary/preview manifests retain their original content identity and
+independent attempts. The receiver still decides acceptance; discovery never
+resumes an unpublished partial automatically. An explicit acceptance arriving
+during retry preparation waits for that I/O and reuses its reservation and
+original deadline. Initial readiness must match an offer actually emitted on
+the current connection, including after runtime file-cache eviction. Pending
+initial-offer identities have a hard per-connection count bound of 64 and are
+released on state changes away from Offered, deletion or its decision, including
+through a reloaded local File object. Cleanup must match the local row identity;
+another direction or contact using the same wire ID cannot release the entry.
+
+A matching hint received while the old receiver is verifying or publishing waits
+for that operation and its I/O reservation to finish. Deferred hints share the
+contact's bounded completion retry records and original deadline; duplicates do
+not extend it. The receiver rechecks authorization and connection scope before
+recovery. Disconnect retires the transport without cancelling local publication
+of fully received content; publication retains its own cancellation token.
+
+Preview completion recovery repeats the original signed primary/thumbnail manifest;
+transport attempt hints remain outside its signed content identity. Repeating a
+manifest cannot accept, rewind or replace the original transfer. A persisted
+unaccepted offer has no live readiness on a new connection: explicit receiver
+acceptance negotiates a fresh zero-prefix attempt through the bounded resume
+handshake. Duplicate metadata alone never authorizes receiving the original.
+
+If a persisted transfer reconnects without bilateral checkpoint support, explicit
+acceptance/resume and previously approved queued transfers receive a persistent
+unsupported-version outcome. Fresh ordinary attachments also abort locally, without
+sending an offer or any file bytes. No transfer falls back to an older protocol.
+An unstarted endpoint may record this outcome with its locally intended checkpoint
+interval but cannot create a stream attempt, partial writer or payload progress.
+Completed receiver content remains completed.
+
+Connection interval preferences apply when admitting new transfers. Recovery keeps
+the transfer's already frozen interval even if either endpoint lowers its preference
+before reconnecting. A repeated offer above the current negotiated preference is
+accepted only as a recovery hint when the receiver's own authenticated, scoped
+record matches that interval and the immutable offered content. An unknown or
+different transfer cannot use this exception to negotiate a larger interval.
+
+If storage publication committed before the generic/application completion update,
+recovery verifies the published object against both immutable metadata and the
+retained mutually confirmed final checkpoint, then completes forward. It cannot
+allocate a replacement partial or publish another object. A durable but unpublished
+final prefix remains an interrupted transfer and requires the normal resume action.
 
 The sender checks current feature-specific authorization and immutable file metadata, reopens the original source, and recomputes SHA-256 through the selected checkpoint offset. If this prefix differs from its persisted checkpoint, fail the original transfer with `SOURCE_CHANGED` and (for FileShare chargeable content) refund its settled debits idempotently. Do not silently switch source versions. The receiver independently recomputes its retained prefix and compares it with the sender-selected digest before signaling readiness. The existing `FileOfferResponse(ACCEPTED)` readiness message is retained only after the selected checkpoint has been mutually verified. Maintain the existing bound of two readiness waits per contact, each with a 30-second monotonic deadline. Unavailable sources must pause distinctly from proven source-integrity failures; metadata changes require revalidation as specified above.
 

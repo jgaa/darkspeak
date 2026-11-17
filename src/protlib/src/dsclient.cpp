@@ -184,10 +184,11 @@ void DsClient::startConnectRetryTimer()
     QTimer::singleShot(reconnectDelayMilliseconds_, this, [this]() {
         if (!notificationsDisabled_ && (connection_->state() == QAbstractSocket::ConnectingState
                                          || connection_->state() == QAbstractSocket::UnconnectedState)) {
-            auto connection = std::make_shared<ConnectionSocket>(connection_->getDefaultHost(),
-                                                                  connection_->getDefaultPort(),
-                                                                  getConnectionId());
+            auto connection = ConnectionSocket::create(connection_->getDefaultHost(),
+                                                        connection_->getDefaultPort(),
+                                                        getConnectionId());
             connection->setProxy(connection_->proxy());
+            QObject::disconnect(connection_.get(), nullptr, this, nullptr);
             connection_ = std::move(connection);
             useConnection(connection_.get());
             initConnections();

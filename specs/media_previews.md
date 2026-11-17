@@ -58,7 +58,12 @@ checks original media type, its local preview preference, `allow_files`, JPEG
 MIME permission and ordinary file/queue/storage quotas before admitting a
 thumbnail. Previews are limited to JPEG and 48 KiB before allocating transfer
 state. They use normal file acceptance, channels, integrity checks and storage
-publication. Rendering additionally requires a valid JPEG of at most 320 by
+publication. Recheck the scoped primary relationship and current local preview,
+file and JPEG permissions on resume and completion replay, including after
+asynchronous verification and before readiness. Withdrawing those permissions
+stops active checkpoint admission and queued writes immediately and persists an
+authorization-withdrawn pause; it does not undo already published content or
+accept the original. Rendering additionally requires a valid JPEG of at most 320 by
 320 pixels; authenticated peers remain untrusted.
 
 The conversation shows one card for the original, including its local preview

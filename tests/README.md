@@ -69,17 +69,82 @@ coverage rechecks accepted source prefixes before their boundaries are sent, inc
 short pause prefixes inside ordinary chunks. Known checkpoint mismatch, unsupported
 version and remote source-failure cancellations retain typed outcomes without producing
 local corruption/refund proof.
-Malformed retained candidates fail closed before legacy application dispatch;
+Malformed retained candidates fail closed before application dispatch;
 duplicate exact readiness coalesces while its journal commit is pending, and
 late offer rejection cannot rewrite a completed outcome. Shared contact work
 budgets remain occupied until cancelled asynchronous work actually returns.
-The format-two progress journal fixture covers direction-scoped key bytes and a
+The format-three progress journal fixture covers direction-scoped key bytes and a
 monotonic verified prefix through resume rewinds and checkpoint retention. Empty
-format-one catalogs can be reinitialized transactionally; populated catalogs
+format-one/two catalogs can be reinitialized transactionally; populated catalogs
 remain untouched and unsupported, including across an injected commit failure. Corrupt
 catalog scalar values, attempts, sequences and completion claims fail closed on load.
-Production capability advertisement stays disabled pending reconnect/restart and
-terminal replay coverage. `protocol_v3` rejects unilateral checkpoint capability
+EOF recovery cases drop the final checkpoint receipt or flow ACK, reconnect the
+actual peers and verify automatic sender state repair. Empty files, unavailable or
+corrupt published content, and attempted earlier-prefix selection are included. Repeated offers coalesce; a completed receiver keeps
+its state and published object, opens no pending writer and receives no payload bytes.
+The journal fixture separately retains explicit acceptance of an empty final checkpoint.
+Outgoing signed manifests reject missing or wrongly directed local transfer records
+before sending, preserving checkpoint-mode validation. Preview recovery repeats the
+same signed attachment manifest and keeps an unaccepted original unaccepted while
+its thumbnail's completion is repaired.
+
+`checkpoint_restart` uses fresh OS processes and isolated profiles for each stage.
+It terminates live authenticated loopback transfers after the initial offer, at a
+checkpoint, after a lost final receipt, and immediately before/after publication.
+Its twenty-four scenarios check explicit and offline acceptance after restart, retained-prefix
+reuse, automatic EOF repair, stable published-object identity and zero retransmitted
+bytes for EOF. Preview cases preserve the signed manifest and unaccepted original;
+they also exercise initial readiness after runtime cache eviction and reject a forged
+nonce before any payload or journal advancement. Preference-change cases retain
+the original frozen interval for standalone and preview recovery, then reject
+oversized-interval offers for unknown IDs or changed content before dispatch.
+Policy cases withdraw image-preview permission across restart and during a live
+multi-chunk JPEG; the latter retains a typed pause and resumes manually after
+permission is restored. Four unsupported-peer cases cover fresh acceptance,
+offline-approved queues, retained partials and waiting senders. They preserve the
+checkpoint mode and evidence, retain a typed failure across restart, then verify
+that a fresh ordinary attachment also aborts without an offer or payload.
+Protocol compatibility is not a test goal: every transfer requires checkpoints;
+unversioned wire offers, readiness, chunks, ACKs and resumes fail before dispatch.
+Storage/channel algorithm fixtures remain local and cannot emit unversioned wire
+traffic through the production send APIs. Retired-I/O tests suspend preparation
+and reads, destroy the active channel and prove its budget slot remains occupied
+until return; a native publication case also retains its reservation through its
+final completion. Source preparation retains its original deadline before payload.
+The seventeenth restart case fails a resumed readiness send once, then verifies
+that a manual retry can reclaim its request/work reservation and send only the
+remaining seven bytes.
+The eighteenth reconnects while the receiver is Hashing, delivers the completion
+hint before native publication starts, and verifies automatic sender completion
+without more payload, another writer or a different published object.
+Lost-offer cases suppress the original standalone offer or signed preview manifest,
+then verify fresh persisted attempts after restart, explicit original approval and
+an independently transferred preview. A forged old-connection readiness is rejected
+before it restores any runtime attempt or advances payload. A delayed source
+preparation exercises concurrent explicit acceptance using the same work reservation
+and original deadline.
+Two further cases fail the initial offer queue and crash after persisting its
+attempt while source preparation is still running. They recover the same transfer
+without treating zero progress as receiver approval.
+The managed-storage offer-budget regression fills all 64 pending slots, evicts
+the first File object, and cancels, fails or deletes a reloaded object. Each action
+must admit a new offer, while state/deletion events for a distinct incoming row
+with the same wire ID must leave the outgoing budget occupied.
+The store suite checks stale and cancelled failure transactions against a newer
+attempt. A cancellation regression keeps an unstarted receiver journal at zero
+with its own UserAction outcome despite a cached sender hint. The managed-storage
+policy matrix also separates image and video preferences, JPEG permission, original approval and contact state.
+The publication case commits through the storage participant API and terminates
+before the application can save its completion; it uses no production fault hook.
+Each child is bounded to 30 seconds and the complete CTest case to 180 seconds.
+The full runner discovers this new executable without extra flags or dependencies.
+`protocol_v3` also verifies socket lifetime when a disconnect handler releases
+its last peer reference, including graceful and abrupt loopback disconnects.
+Sockets use one factory with deferred Qt deletion so network callbacks finish
+before destruction; accepted, outgoing and retried connections share this policy.
+The protocol CTest registration has a 30-second timeout.
+Production capability advertisement stays disabled pending remaining restart and
+terminal recovery coverage. `protocol_v3` rejects unilateral checkpoint capability
 before application dispatch. The existing managed-storage CTest timeout is 180
 seconds for this expanded matrix; the full runner already honors it and needs no
 additional dependencies or flags. Set `DS_TEST_TRACE=1` for fixture trace logging.

@@ -28,7 +28,14 @@ struct FileTransferWork {
     QUuid operation = QUuid::createUuid();
     QDeadlineTimer deadline{30000};
     dsfm::CancellationToken cancel;
+    bool channel_owned = false;
+    bool preparing_initial_offer = false;
     bool current() const noexcept { return !cancel.cancelled() && !deadline.hasExpired(); }
+    bool beginPayload() noexcept {
+        if (!channel_owned || !current()) return false;
+        deadline = QDeadlineTimer{QDeadlineTimer::Forever};
+        return true;
+    }
 };
 
 struct PeerReq
@@ -132,6 +139,7 @@ struct PeerFileOfferResponse : public PeerReq
     QByteArray fileId;
     FileOfferResponseStatus status = FileOfferResponseStatus::Rejected;
     std::optional<dsfm::TransferAttempt> checkpoint_attempt;
+    std::shared_ptr<FileTransferWork> validation_work; // Local-only budget handoff after durable initial-offer validation.
 };
 
 struct PeerFileAck : public PeerReq
@@ -365,6 +373,12 @@ public:
                                         const QImage& avatar,
                                         bool authorized) = 0;
     virtual uint64_t offerFile(const File& file) = 0;
+    virtual uint64_t repeatCheckpointOffer(const File&, QUuid) {
+        throw std::runtime_error("Checkpoint offer recovery is unavailable");
+    }
+    virtual uint64_t repeatCheckpointPreviewOffer(const File&, const File&, QUuid, QUuid) {
+        throw std::runtime_error("Checkpoint preview recovery is unavailable");
+    }
     virtual uint64_t startTransfer(File& file) = 0;
     virtual uint64_t sendSome(File& file) = 0;
     virtual void disableNotifications() = 0;
