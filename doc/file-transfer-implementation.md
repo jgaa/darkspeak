@@ -14,7 +14,9 @@ This is a **remaining-work checklist**, not a development diary or a new feature
 - [x] Demonstrate existing wire/security/restart guarantees through deterministic targeted tests, including checkpoint resume, cancellation vs publication, lost confirmations, failure/revocation and bounded resource lifetimes. Update CTest runner registrations when changing tests. Evidence (2026-11-19): `managed_storage` 97 cases pass (103.4 s), all 24 `checkpoint_restart` scenarios pass (62.5 s), plus `transfer_session`, `protocol_v3`, `transfer_checkpoints`, `database_recovery` and 17 Python harness checks. Focused checks also verify negotiation pauses and immutable terminal failures after cancellation.
 - [ ] Enable production mandatory checkpoints and verify an actual two-instance attachment transfer and restart/resume; report completed test evidence and stop. Follow existing build restrictions; coordinate full application build with owner. Advertisement is enabled; owner build and private-Tor application tests remain unverified.
 
-**Pending owner decision, separate from this architectural refactor:** generic terminal-journal expiry/compaction (previous proposal: 30 days). Do not implement retention policy without approval. Preserve records needed by active recovery in the meantime; future FileShare accounting evidence belongs to the exchange milestone. This decision must not justify recreating autonomous recovery machinery or delaying a working production path without a demonstrated correctness blocker.
+**Owner decision resolved:** terminal generic transfer journal retention is configurable in Settings → Transfers, default **30 days**, bounded **1–3650**; see `specs/protocol.md`. Protect active/recoverable and unreconciled records and independently retained accounting evidence. This is an approved **separate implementation task**, not a new prerequisite for the two-instance generic-transfer acceptance gate.
+
+- [ ] Implement the persistent local retention-days setting, incremental safe terminal-journal expiry, and focused recovery/accounting-protection tests. **DEFER until explicitly scheduled**, after the current production-transfer release verification; no unrelated transfer-engine refactor.
 
 ### Ownership analysis and migration sequence
 
@@ -64,7 +66,7 @@ Current status: direction migrations, controller retirement and the relevant reg
 
 ## NEXT MILESTONES — NOT ACTIVE
 
-Order: **FileShare normal administration UI** (`specs/fileshare_ui.md`, including its storage/VFS/group/permission foundations) → **application metrics** (`specs/metrics.md`) → **remaining FTP queues, server, browser, uploads, credits** (specification discussions to continue) → **first-class dashboard last**. Wizard later. Sections 3–7 below are deferred requirements, **not** tasks to complete during the generic refactor. Do not implement unspecified features just to tick boxes.
+Order: **FileShare normal administration UI** (`specs/fileshare_ui.md`, including its storage/VFS/group/permission foundations) → **application metrics** (`specs/metrics.md`) → **application-wide transfer queue + UI** (`specs/transfer_queue.md`, `specs/transfer_queue_ui.md`) → **remaining FTP server, browser, uploads, credits** (specification discussions to continue) → **first-class dashboard last**. Wizard later. Sections 3–7 below are deferred requirements, **not** tasks to complete during the generic refactor. Do not implement unspecified features just to tick boxes.
 
 ## 3. Storage and VFS recovery audit — DEFERRED (UI prerequisites / later FTP)
 
