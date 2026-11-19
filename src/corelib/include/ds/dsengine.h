@@ -22,6 +22,7 @@
 #include "ds/messagemanager.h"
 #include "ds/filemanager.h"
 #include "ds/secretstore.h"
+#include "ds/transfermanager.h"
 
 class QSqlDatabase;
 
@@ -74,6 +75,8 @@ public:
     ConversationManager *getConversationManager();
     MessageManager *getMessageManager();
     FileManager *getFileManager();
+    TransferManager &transfers() { return *transfers_; }
+    QCoro::Task<void> waitForClose();
 
     QSettings& settings() noexcept { return *settings_; }
     ProtocolManager& getProtocolMgr(ProtocolManager::Transport transport);
@@ -125,6 +128,7 @@ signals:
     void statusMessage(const QString& message, StatusLevel level);
 
 protected:
+    QCoro::Task<void> closeTransfers();
     void initialize();
     void setState(State state);
     void tryMakeTransport(const QString& name, const QUuid& uuid);
@@ -142,6 +146,8 @@ protected:
     ConversationManager *conversationManager_ = {};
     MessageManager *messageManager_ = {};
     FileManager *fileManager_ = {};
+    TransferManager *transfers_ = {};
+    std::optional<QCoro::Task<void>> close_task_;
 };
 
 }} // namepsaces

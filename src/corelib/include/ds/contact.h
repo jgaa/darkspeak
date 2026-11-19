@@ -28,6 +28,8 @@ class Identity;
 class Conversation;
 struct ContactData;
 class File;
+enum class IncomingTransferStart;
+enum class OutgoingTransferStart;
 
 /*! Representation of a contact.
  *
@@ -192,15 +194,6 @@ public:
     void recoverPublishedFile(File& file, std::optional<QDeadlineTimer> deadline = {});
     void deferCompletionHint(File& file, std::optional<QDeadlineTimer> deadline = {});
     void acceptCheckpointFile(File& file);
-    dsfm::Result<std::shared_ptr<FileTransferWork>> acquireFileWork(const std::shared_ptr<File> &file);
-    dsfm::Result<std::shared_ptr<FileTransferWork>> handoffFileWork(const std::shared_ptr<File> &file,
-        std::shared_ptr<FileTransferWork> work = {});
-    bool ownsFileWork(const File &file, const std::shared_ptr<FileTransferWork> &work) const;
-    bool retryCheckpointSelection(const std::shared_ptr<File> &file, const dsfm::TransferAttempt &failed,
-                                  const std::shared_ptr<FileTransferWork> &work);
-    void checkpointSelectionReady(const File &file, const dsfm::TransferAttempt &attempt,
-                                  const std::shared_ptr<FileTransferWork> &work);
-
     /*! Add the new Identity to the database. */
     void addToDb();
 
@@ -260,7 +253,6 @@ private slots:
     void onReceivedFileResumeResult(const PeerFileResumeResult& result);
     bool procesMessageQueue();
     bool processFilesQueue();
-    bool processFileBlocks();
     void onReceivedMessage(const PeerMessage& msg);
     void onReceivedUserInfo(const PeerUserInfo& uinfo);
     void onReceivedBio(const PeerBio& bio);
@@ -272,33 +264,20 @@ private slots:
     void onOutputBufferEmptied();
 
 private:
+    void startIncomingFile(File &file, IncomingTransferStart start, std::optional<QDeadlineTimer> deadline = {});
+    void startOutgoingFile(File &file, OutgoingTransferStart start);
     bool avatar_edited_ = false;
-    QCoro::Task<void> processFileResume(PeerFileResume resume, Contact::ptr_t self);
-    QCoro::Task<void> processCheckpointResume(PeerFileResume resume, std::shared_ptr<File> file, Contact::ptr_t self);
-    QCoro::Task<void> requestCheckpointResume(std::shared_ptr<File> file, Contact::ptr_t self,
-                                             bool completed = false, bool accepting_offer = false,
-                                             std::optional<QDeadlineTimer> recovery_deadline = {});
     bool rejectUnsupportedCheckpoint(const std::shared_ptr<File> &file);
-    QCoro::Task<void> finishUnsupportedCheckpoint(std::shared_ptr<File> file, PeerConnection::ptr_t peer,
-        std::shared_ptr<FileTransferWork> work, Contact::ptr_t self);
-    void onCheckpointResumeResult(const PeerFileResumeResult &result, const std::shared_ptr<File> &file);
-    void trackTransfer(const std::shared_ptr<File> &file);
-    QCoro::Task<void> finishCheckpointReadiness(PeerFileOfferResponse response, std::shared_ptr<File> file,
-                                               std::shared_ptr<FileTransferWork> work, Contact::ptr_t self);
-    QCoro::Task<void> prepareCheckpointOffer(std::shared_ptr<File> file, PeerConnection::ptr_t peer, Contact::ptr_t self);
-    QCoro::Task<void> repeatInterruptedOffers(PeerConnection::ptr_t peer, Contact::ptr_t self);
+    void repeatInterruptedOffers(PeerConnection::ptr_t peer);
     void repeatRecoveryOffersIfReady();
-    QCoro::Task<void> reconcilePublishedFile(std::shared_ptr<File> file, PeerConnection::ptr_t peer, Contact::ptr_t self,
-        QDeadlineTimer deadline);
     void processDeferredCompletionHints();
     size_t fileWorkSlots() const;
-    void updateFileWorkTimer();
+    void updateCompletionTimer();
     static void bind(QSqlQuery& query, ContactData& data);
     void loadMessageQueue();
     void loadFileQueue();
     void requestQueuedConnection();
     void scheduleQueuedConnection();
-    void queueTransfer(const std::shared_ptr<File>& file);
     void clearFileQueues();
     void prepareForNewConnection();
     void scheduleProcessOnlineLater();
@@ -338,39 +317,13 @@ private:
     std::deque<Message::ptr_t> messageQueue_;
     std::deque<Message::ptr_t> unconfirmedMessageQueue_; // Waiting for ack
     std::deque<std::shared_ptr<File>> fileQueue_;
-    std::set<std::shared_ptr<File>> transferringFileQueue_; // Currently transferring, (we have slots)
-    std::weak_ptr<File> lastFileBlock_;
-
-    struct PendingResume {
-        std::shared_ptr<File> file;
-        QDeadlineTimer deadline{30000};
-        QUuid operation = QUuid::createUuid();
-        bool awaiting_readiness = false;
-        bool committing_readiness = false;
-        bool deadline_reported = false;
-        std::shared_ptr<FileTransferWork> work;
-        quint32 resume_rounds = 0;
-    };
-    std::map<QByteArray, PendingResume> pending_resume_receivers_;
-    std::map<int, std::weak_ptr<FileTransferWork>> file_work_;
-    struct CheckpointRequest {
-        std::shared_ptr<File> file;
-        PeerConnection::ptr_t peer;
-        std::shared_ptr<FileTransferWork> work;
-        quint64 request_id = 0;
-        QVector<dsfm::DurableCheckpoint> candidates;
-        int previous_state = 0;
-        std::optional<dsfm::TransferAttempt> selection;
-        quint32 rounds = 1;
-    };
-    std::map<QByteArray, CheckpointRequest> checkpoint_requests_;
     struct CompletionRetry {
         QDeadlineTimer deadline;
         std::optional<std::weak_ptr<File>> deferred;
     };
     std::map<QByteArray, CompletionRetry> completed_replay_requests_;
     bool recovery_offers_repeated_ = false;
-    QTimer resume_readiness_timer_;
+    QTimer completion_timer_;
     static constexpr size_t maxConcurrentTransfers_ = 2;
 };
 

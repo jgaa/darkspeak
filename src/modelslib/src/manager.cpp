@@ -856,6 +856,7 @@ void Manager::goOffline()
 
 QCoro::Task<dsfm::Result<void>> Manager::shutdownStorage()
 {
+    co_await engine_->waitForClose();
     co_return co_await engine_->getFileManager()->storage().shutdown();
 }
 

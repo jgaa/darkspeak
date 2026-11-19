@@ -1,6 +1,14 @@
 project(core LANGUAGES CXX)
 
 add_library(${PROJECT_NAME} STATIC
+    src/transfermanager.cpp
+    src/incomingtransfer.cpp
+    include/ds/incomingtransfer.h
+    src/outgoingtransfer.cpp
+    include/ds/outgoingtransfer.h
+    src/transfersession.cpp
+    include/ds/transfermanager.h
+    include/ds/transfersession.h
     src/eventjournal.cpp
     include/ds/eventjournal.h
     src/filemanager.cpp

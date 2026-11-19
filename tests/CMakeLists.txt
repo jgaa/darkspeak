@@ -1,3 +1,14 @@
+# Compile the session framework directly so this focused test does not require
+# building the application or unrelated core services.
+add_executable(transfer_session_test transfer_session_test.cpp
+    ../src/corelib/src/transfersession.cpp ../src/corelib/src/transfermanager.cpp
+    ../src/corelib/include/ds/transfersession.h ../src/corelib/include/ds/transfermanager.h)
+target_compile_features(transfer_session_test PRIVATE cxx_std_20)
+target_include_directories(transfer_session_test PRIVATE ../src/corelib/include ../src/filemanager/include)
+target_link_libraries(transfer_session_test PRIVATE Qt6::Core Qt6::Test QCoro6::Core)
+add_test(NAME transfer_session COMMAND transfer_session_test)
+set_tests_properties(transfer_session PROPERTIES TIMEOUT 30)
+
 add_executable(crypto_handshake_test
     crypto_handshake_test.cpp
 )

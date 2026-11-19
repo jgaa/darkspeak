@@ -318,9 +318,16 @@ void DsEngine::onTransportHandleError(const TransportHandleError &the)
 
 void DsEngine::close()
 {
+    if (state_ == State::CLOSING || state_ == State::TERMINATED) return;
     setState(State::CLOSING);
+    identityManager_->disconnectAll();
+    close_task_.emplace(closeTransfers());
+}
+
+QCoro::Task<void> DsEngine::closeTransfers()
+{
+    co_await transfers_->shutdown();
     if (tor_mgr_) {
-        identityManager_->disconnectAll();
         tor_mgr_->stop();
 
         try {
@@ -329,6 +336,12 @@ void DsEngine::close()
             LFLOG_ERROR << "Error when shutting down Tor Manager: " << ex.what();
         }
     }
+}
+
+QCoro::Task<void> DsEngine::waitForClose()
+{
+    if (!close_task_) close();
+    if (close_task_) co_await *close_task_;
 }
 
 void DsEngine::start()
@@ -536,6 +549,7 @@ void DsEngine::initialize()
     database_ = std::make_unique<Database>(*settings_);
     events_ = std::make_unique<EventJournal>(getDb(), *settings_);
 
+    transfers_ = new TransferManager(this);
     fileManager_ = new FileManager(*this, *settings_);
     identityManager_ = new IdentityManager(*this);
     contactManager_ = new ContactManager(*this);

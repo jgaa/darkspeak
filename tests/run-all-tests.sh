@@ -111,6 +111,7 @@ run cmake -S "$project_dir" -B "$test_build_dir" -DCMAKE_BUILD_TYPE=Debug "$@" \
 # Home-pane and ordinary-transfer integration is also in managed_storage.
 # protocol_v3 also checks deferred socket destruction during local disconnects.
 # transfer_checkpoints covers durable progress and accounting-independent backpressure.
+# transfer_session covers bounded owner events, shared admission and joined cancellation.
 # managed_storage also reclaims offer admission slots through reloaded File lifecycles.
 # checkpoint_restart kills and restarts isolated authenticated loopback fixtures,
 # including lost initial offers, acceptance races, partials, publication hints and unsupported peers.

@@ -6,7 +6,7 @@ import signal
 import time
 
 from harness import ASSETS, CheckFailure, wait_for
-from scenario import expect, FILE_DONE, FILE_OFFERED
+from scenario import expect, FILE_DONE, FILE_OFFERED, FILE_PAUSED
 
 
 async def setup(runtime, results, *, identities=1, private=False, previews=(False, False), video_previews=(False, False)):
@@ -84,9 +84,9 @@ async def completed(a, b, transfer, digest, size, *, resume=False):
     async def done():
         files = [await transfer_state(p, transfer) for p in (a, b)]
         # Resume admission completes before the remote peer processes the
-        # request. Its original FAILED state is expected until negotiation.
+        # request. Its original pause is expected until negotiation.
         # A nonzero observed resume offset proves that negotiation occurred.
-        if any(f and (f["state"] in (8, 9) or (f["state"] == 7 and
+        if any(f and (f["state"] in (8, 9) or (f["state"] in (7, FILE_PAUSED) and
                    (not resume or f.get("resumed_from", 0) > 0))) for f in files):
             raise CheckFailure("TransferFailed")
         return all(f and f["state"] == FILE_DONE for f in files)
@@ -214,7 +214,7 @@ async def partial(a, b, ac, bc):
             file = await transfer_state(b, transfer)
             if file and file["state"] == FILE_DONE:
                 raise CheckFailure("InterruptionMissedTransferCompleted")
-            return file if file and 0 < file["bytes"] < size else False
+            return file if file and 0 < file["confirmed_bytes"] < size else False
         progress = await wait_for(progressed, 45)
         os.kill(a.process.pid, signal.SIGSTOP)
         await acceptance
@@ -236,7 +236,7 @@ async def resume_crash(runtime, results, *, receiver_crash=False):
         os.kill(a.process.pid, signal.SIGCONT)
     async def failed():
         f = await transfer_state(a if receiver_crash else b, transfer)
-        return f if f and f["state"] == 7 else False
+        return f if f and f["state"] == FILE_PAUSED else False
     saved = await results.check("survivor_retains_resumable_record", lambda: wait_for(failed), fatal=True)
     if not receiver_crash:
         await results.assertion("receiver_keeps_nonzero_partial", 0 < saved["bytes"] < size)
@@ -255,7 +255,7 @@ async def resume_crash(runtime, results, *, receiver_crash=False):
             # Loading through the ordinary domain accessor performs recovery.
             files = (await b.approved("files", contact=bc))["items"]
             f = next(f for f in files if f["transfer"] == transfer)
-            expect(f["state"] == 7 and 0 < f["bytes"] < size)
+            expect(f["state"] == FILE_PAUSED and 0 < f["bytes"] < size)
         await results.check("receiver_restart_preserves_partial", restored_partial, fatal=True)
     await results.check("resume_existing_incoming_transfer", lambda: b.approved("file_resume", contact=bc, transfer=transfer), fatal=True)
     await results.check("resumed_file_full_sha256", lambda: completed(a, b, transfer, digest, size, resume=True))
@@ -292,7 +292,7 @@ async def delete_contacts(runtime, results, *, delete_sender=False):
     await results.check("delete_contact_during_active_transfer", remove_active)
     async def stopped():
         f = await transfer_state(survivor, transfer)
-        return f and f["state"] in (7, 8, 9)
+        return f and f["state"] in (7, 8, 9, FILE_PAUSED)
     await results.check("survivor_observes_deleted_peer_disconnect", lambda: wait_for(stopped))
     await results.check("other_identity_remains_usable", lambda: message(a, b, *second, 1, "Unaffected identity"))
     await results.check("delete_idle_contact", lambda: target.approved("contact_remove", identity=target.identities[1], contact=second[side]))

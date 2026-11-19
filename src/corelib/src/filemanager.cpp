@@ -268,14 +268,9 @@ void FileManager::receivedFileOffer(Conversation& conversation, const PeerFileOf
                 // rewind bytes or accept an original while its preview recovers.
                 return;
             }
-            if (file->getState() == File::FS_REJECTED) {
-                offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
-            } else if (file->getState() == File::FS_DONE) {
-            } else if (file->getState() == File::FS_QUEUED) {
-                file->queueForTransfer();
-            } else {
-                file->setState(File::FS_OFFERED);
-            }
+            // A local row without mandatory checkpoint metadata cannot be
+            // promoted to a running transfer by a repeated peer offer.
+            offer.peer->sendFileOfferResponse(offer.fileId, FileOfferResponseStatus::Rejected);
 
             return;
         }

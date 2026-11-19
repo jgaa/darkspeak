@@ -8,7 +8,8 @@ from harness import CheckFailure, FatalFailure, wait_for
 CONTACT_ACCEPTED = 2
 FILE_OFFERED = 3
 FILE_DONE = 6
-FILE_FAILURES = (7, 8, 9)
+FILE_PAUSED = 10
+FILE_FAILURES = (7, 8, 9, FILE_PAUSED)
 
 
 def expect(condition):

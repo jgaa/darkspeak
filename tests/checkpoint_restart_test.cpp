@@ -205,8 +205,8 @@ int child(const QString &root, const QString &scenario, bool recovering) {
     if (!recovering && scenario == "lost-offer-preparing") {
         check(bool(outgoing->setPreparedSource(sender->getUuid(), source_contact->getUuid(), [] { return true; },
             [&](dsfm::ReadPreparationOptions) -> QCoro::Task<dsfm::Result<dsfm::PreparedRead>> {
-                check(outgoing->getState() == File::FS_QUEUED && outgoing->checkpointAttempt(), "Missed pre-offer crash boundary");
-                state["outgoing"] = outgoing->getId(); state["attempt"] = outgoing->checkpointAttempt()->id.toString();
+                check(outgoing->getState() == File::FS_WAITING && !outgoing->checkpointAttempt(), "Missed source-preparation crash boundary");
+                state["outgoing"] = outgoing->getId(); state["attempt"] = QString{};
                 save(root, state); ::_exit(86);
                 co_return dsfm::Error{dsfm::ErrorCode::Cancelled};
             })), "Cannot bind pre-offer crash source");
@@ -265,6 +265,10 @@ int child(const QString &root, const QString &scenario, bool recovering) {
               !progress.verified_prefix && !outgoing->checkpointAttempt() && !client->payload,
               "Stale initial readiness changed authority or payload progress");
         source_contact->disconnectFromContact(true); target_contact->disconnectFromContact(true);
+        {
+            auto joined = engine->transfers().shutdown();
+            until([&] { return joined.isReady(); }, "Transfer owners did not join before storage shutdown");
+        }
         get(storage.shutdown()); return 0;
     }
     until([&] { return client->user_info && server && server->user_info && (unsupported && recovering
@@ -276,7 +280,7 @@ int child(const QString &root, const QString &scenario, bool recovering) {
         check(before.complete && !target_contact->canReceiveFile(*incoming), "Restart did not withdraw preview permission");
         target_contact->recoverCompletedFile(*incoming);
         {
-            const auto probe = target_contact->acquireFileWork(incoming);
+            const auto probe = engine->transfers().reserve(incoming->checkpointKey().value());
             check(bool(probe), "Withdrawn preview permission admitted recovery work");
         }
         until([&] { return server->manifest_seen; }, "No repeated preview manifest after restart");
@@ -288,6 +292,10 @@ int child(const QString &root, const QString &scenario, bool recovering) {
         const auto original = engine->getFileManager()->getFile(state["primary_incoming"].toInt());
         check(original->getState() == File::FS_OFFERED && original->storageId().isNull(), "Preview policy accepted its original");
         source_contact->disconnectFromContact(true); target_contact->disconnectFromContact(true);
+        {
+            auto joined = engine->transfers().shutdown();
+            until([&] { return joined.isReady(); }, "Transfer owners did not join before storage shutdown");
+        }
         get(storage.shutdown()); return 0;
     }
     if (!recovering) {
@@ -321,7 +329,8 @@ int child(const QString &root, const QString &scenario, bool recovering) {
             until([&] { return !socket->isOpen(); }, "Unknown readiness nonce was not rejected by the sender");
             const auto progress = get(storage.transferProgress().load(outgoing->checkpointKey().value()));
             check(progress.attempt == QUuid(state["attempt"].toString()) && progress.verified_prefix == 0 &&
-                  progress.failure == dsfm::TransferFailureReason::None && !outgoing->checkpointAttempt() && client->payload == 0,
+                  progress.failure == dsfm::TransferFailureReason::None && outgoing->checkpointAttempt() &&
+                  outgoing->checkpointAttempt()->id == progress.attempt && client->payload == 0,
                   "Unverified readiness changed the sender's authority or progress");
             ::_exit(86);
         }
@@ -380,7 +389,7 @@ int child(const QString &root, const QString &scenario, bool recovering) {
                     [&](const PeerUserInfo &) { client->user_info = true; });
                 QObject::connect(client.get(), &ds::prot::Peer::connectedToPeer, source_contact.get(), &Contact::onConnectedToPeer);
                 socket->connectToHost(QHostAddress::LocalHost, listener.serverPort());
-                // This nested fixture loop holds validateHash before commitIncoming
+                // This nested fixture loop holds the coroutine owner before commit
                 // starts. The real reconnect offer must arrive during Hashing.
                 until([&] { return client->user_info && server->user_info && server->hint_seen; },
                       "No recovery hint while publication was pending");
@@ -388,24 +397,38 @@ int child(const QString &root, const QString &scenario, bool recovering) {
                       "A hint changed the pending publication");
             });
         }
-        if (scenario == "published" || scenario == "final-partial") {
+        if (scenario == "published") {
+            // Construct the real storage/journal boundary without taking a
+            // writer away from an executing receiver owner.
+            const auto attempt = *incoming->checkpointAttempt();
+            get(incoming->prepareCheckpointProgress(attempt.interval));
+            get(incoming->prepareIncoming());
+            get(incoming->selectIncomingCheckpoint(attempt));
+            get(incoming->writeIncoming(0, bytes));
+            check(get(incoming->checkpointIncomingPrefix(bytes.size())) == incoming->getHash(), "Unverified publication fixture");
+            const dsfm::DurableCheckpoint prefix{1, attempt.interval,
+                QCryptographicHash::hash(bytes.first(attempt.interval), QCryptographicHash::Sha256), false, false};
+            get(outgoing->recordCheckpoint(attempt.id, prefix, dsfm::CheckpointPhase::MutuallyConfirmed));
+            get(incoming->recordCheckpoint(attempt.id, prefix, dsfm::CheckpointPhase::MutuallyConfirmed));
+            const dsfm::DurableCheckpoint final{2, quint64(bytes.size()), incoming->getHash(), true, false};
+            get(outgoing->recordCheckpoint(attempt.id, final, dsfm::CheckpointPhase::SenderConfirmed));
+            get(incoming->recordCheckpoint(attempt.id, final, dsfm::CheckpointPhase::MutuallyConfirmed));
+            incoming->setState(File::FS_HASHING);
+            get(incoming->suspendIncoming());
+            auto pending = get(storage.manager().openPending(incoming->storageNamespace(), incoming->pendingId()));
+            get(pending.writer->commit());
+            auto committed = get(storage.manager().stat(incoming->storageNamespace(), incoming->storageId()));
+            check(committed.id == incoming->storageId(), "Publication changed transfer content identity");
+            auto progress = get(storage.transferProgress().load(incoming->checkpointKey().value()));
+            check(!progress.complete && !incoming->pendingId().isNull(), "Missed publication crash boundary");
+            state["published"] = committed.id.toString(); save(root, state);
+            ::_exit(86);
+        }
+        if (scenario == "final-partial") {
             QObject::connect(incoming.get(), &File::stateChanged, incoming.get(), [&] {
                 if (incoming->getState() != File::FS_HASHING) return;
-                if (scenario == "final-partial") {
-                    state["published"] = incoming->storageId().toString(); save(root, state);
-                    ::_exit(86); // Final prefix is durable, but no publication has begun.
-                }
-                // Stop at the real cross-catalog boundary: publish with the
-                // participant API, then kill before File commits its outcome.
-                get(incoming->suspendIncoming());
-                auto pending = get(storage.manager().openPending(incoming->storageNamespace(), incoming->pendingId()));
-                get(pending.writer->commit());
-                auto committed = get(storage.manager().stat(incoming->storageNamespace(), incoming->storageId()));
-                check(committed.id == incoming->storageId(), "Publication changed transfer content identity");
-                auto progress = get(storage.transferProgress().load(incoming->checkpointKey().value()));
-                check(!progress.complete && !incoming->pendingId().isNull(), "Missed publication crash boundary");
-                state["published"] = committed.id.toString(); save(root, state);
-                ::_exit(86);
+                state["published"] = incoming->storageId().toString(); save(root, state);
+                ::_exit(86); // Final prefix is durable; publication has not begun.
             });
         }
         incoming->accept();
@@ -471,6 +494,10 @@ int child(const QString &root, const QString &scenario, bool recovering) {
               "Unsupported fresh transfer exposed an offer");
         check(client->legacy_payload == 0 && client->payload == 0, "Unsupported connection emitted file payload");
         source_contact->disconnectFromContact(true); target_contact->disconnectFromContact(true);
+        {
+            auto joined = engine->transfers().shutdown();
+            until([&] { return joined.isReady(); }, "Transfer owners did not join before storage shutdown");
+        }
         get(storage.shutdown()); return 0;
     }
     if (lost_offer) {
@@ -501,11 +528,11 @@ int child(const QString &root, const QString &scenario, bool recovering) {
             return incoming->getState() != File::FS_PAUSED;
         }, "Unpublished partial could not be manually resumed");
         if (scenario == "readiness-retry") {
-            until([&] { return incoming->getState() == File::FS_FAILED && server->readiness_failures == 0; },
+            until([&] { return incoming->getState() == File::FS_PAUSED && server->readiness_failures == 0; },
                   "Readiness transport failure was not exercised");
             until([&] {
-                if (incoming->getState() == File::FS_FAILED) incoming->resume();
-                return incoming->getState() != File::FS_FAILED;
+                if (incoming->getState() == File::FS_PAUSED) incoming->resume();
+                return incoming->getState() != File::FS_PAUSED;
             }, "Failed readiness retained its request or reservation and blocked retry");
         }
     }
@@ -573,7 +600,11 @@ int child(const QString &root, const QString &scenario, bool recovering) {
               "Invalid interval exception reached application dispatch or changed completion");
     }
     source_contact->disconnectFromContact(true); target_contact->disconnectFromContact(true);
-    get(storage.shutdown());
+    {
+            auto joined = engine->transfers().shutdown();
+            until([&] { return joined.isReady(); }, "Transfer owners did not join before storage shutdown");
+        }
+        get(storage.shutdown());
     return 0;
     } catch (const std::exception &error) {
         // Preserve the original diagnostic before destroying an engine with

@@ -94,14 +94,6 @@ TestSupport::TestSupport(DsEngine& engine, Service& service, QString input_root,
                 }
                 if (!approved) increment(stats->forbidden_frames);
             }, Qt::DirectConnection);
-    connect(engine_.getFileManager(), &FileManager::fileStateChanged, this,
-            [this](const File* file) {
-                // Observe the normal negotiated resume transition. Never alter it.
-                if (file->getState() == File::FS_QUEUED && file->getBytesTransferred() > 0 &&
-                    resumed_offsets_.size() < 64)
-                    resumed_offsets_.insert(QString::fromLatin1(file->getFileId().toHex()),
-                                            file->getBytesTransferred());
-            });
     // Explicit isolated controller is the test operator. Decisions still use
     // Service::decide, with the full production authorization checks.
     service_.setUiAvailable(true);
@@ -336,6 +328,11 @@ void TestSupport::submit(const QString& name, const QJsonObject& args, std::shar
         QSqlQuery files("SELECT file_id,state,direction,bytes_transferred,size,identity_id,contact_id,id FROM file ORDER BY id LIMIT 64", engine_.getDb());
         while (files.next()) {
             const auto file = previewFile(files.value(7).toInt());
+            // Observe the owner's selected checkpoint, independent of UI phases.
+            const auto transfer = QString::fromLatin1(file->getFileId().toHex());
+            if (file->checkpointAttempt() &&
+                (resumed_offsets_.contains(transfer) || resumed_offsets_.size() < 64))
+                resumed_offsets_.insert(transfer, qlonglong(file->checkpointAttempt()->selected.offset));
             transfers.append(
                 QJsonObject{{"transfer", QString::fromLatin1(files.value(0).toByteArray().toHex())},
                             {"state", files.value(1).toInt()},

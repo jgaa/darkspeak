@@ -21,22 +21,8 @@ namespace core {
 class PeerConnection;
 class Message;
 class File;
-
-// Owned by the complete asynchronous operation, including retired connections.
-// Contact retains a weak reference so cancellation never frees a live slot.
-struct FileTransferWork {
-    QUuid operation = QUuid::createUuid();
-    QDeadlineTimer deadline{30000};
-    dsfm::CancellationToken cancel;
-    bool channel_owned = false;
-    bool preparing_initial_offer = false;
-    bool current() const noexcept { return !cancel.cancelled() && !deadline.hasExpired(); }
-    bool beginPayload() noexcept {
-        if (!channel_owned || !current()) return false;
-        deadline = QDeadlineTimer{QDeadlineTimer::Forever};
-        return true;
-    }
-};
+class TransferReservation;
+class TransferSession;
 
 struct PeerReq
 {
@@ -139,7 +125,6 @@ struct PeerFileOfferResponse : public PeerReq
     QByteArray fileId;
     FileOfferResponseStatus status = FileOfferResponseStatus::Rejected;
     std::optional<dsfm::TransferAttempt> checkpoint_attempt;
-    std::shared_ptr<FileTransferWork> validation_work; // Local-only budget handoff after durable initial-offer validation.
 };
 
 struct PeerFileAck : public PeerReq
@@ -343,7 +328,7 @@ public:
     virtual uint64_t sendFileResume(const QByteArray& fileId, quint64 nextOffset,
                                     const QByteArray& sha256, quint64 fileSize) = 0;
     virtual uint64_t sendCheckpointResume(const QByteArray &, const QByteArray &, quint64, quint32,
-                                         QVector<dsfm::DurableCheckpoint>, std::shared_ptr<FileTransferWork>) {
+                                         QVector<dsfm::DurableCheckpoint>, QDeadlineTimer) {
         throw std::runtime_error("Checkpoint resume is unsupported");
     }
     virtual uint64_t sendCheckpointResumeResult(quint64, const QByteArray &, FileResumeStatus,
@@ -352,15 +337,30 @@ public:
                                                 FileCancelReason = FileCancelReason::UserAction) {
         throw std::runtime_error("Checkpoint resume results are unsupported");
     }
-    virtual uint64_t startCheckpointReceive(File &, dsfm::TransferAttempt, std::shared_ptr<FileTransferWork>) {
-        throw std::runtime_error("Checkpoint receive recovery is unsupported");
-    }
     virtual uint64_t sendFileResumeResult(quint64 responseToRequestId,
                                           const QByteArray& fileId,
                                           FileResumeStatus status,
                                           quint64 nextOffset,
                                           FileCancelReason error) = 0;
     virtual bool isConnected() const noexcept = 0;
+    virtual bool transferWritable() const noexcept { return isConnected(); }
+    virtual quint32 bindTransfer(File &, std::shared_ptr<TransferSession>) {
+        throw std::runtime_error("Transfer event routing is unavailable");
+    }
+    virtual void releaseTransfer(File &, bool, dsfm::DurableCheckpoint, quint64, quint64) {}
+    virtual uint64_t sendCheckpointChunk(const QByteArray &, QUuid, quint64, quint64, const QByteArray &, bool) {
+        throw std::runtime_error("Checkpoint chunks are unsupported");
+    }
+    virtual uint64_t sendCheckpointAck(const QByteArray &, QUuid, quint64, quint64, bool) {
+        throw std::runtime_error("Checkpoint acknowledgements are unsupported");
+    }
+    virtual uint64_t sendFileCheckpoint(const QByteArray &, const QByteArray &, const dsfm::TransferAttempt &,
+                                       dsfm::DurableCheckpoint, dsfm::CheckpointPhase) {
+        throw std::runtime_error("Checkpoints are unsupported");
+    }
+    virtual uint64_t sendFilePause(const QByteArray &, QUuid, dsfm::DurableCheckpoint, dsfm::TransferPauseReason) {
+        throw std::runtime_error("Checkpoint pauses are unsupported");
+    }
     virtual quint32 checkpointInterval() const noexcept { return 0; }
     virtual uint64_t sendUserInfo(const core::UserInfo &userInfo) = 0;
     virtual uint64_t requestBio() = 0;
@@ -379,8 +379,6 @@ public:
     virtual uint64_t repeatCheckpointPreviewOffer(const File&, const File&, QUuid, QUuid) {
         throw std::runtime_error("Checkpoint preview recovery is unavailable");
     }
-    virtual uint64_t startTransfer(File& file) = 0;
-    virtual uint64_t sendSome(File& file) = 0;
     virtual void disableNotifications() = 0;
 
 signals:

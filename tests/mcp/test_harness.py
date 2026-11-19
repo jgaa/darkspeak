@@ -96,9 +96,9 @@ class TransferPeer:
 
 
 @pytest.mark.asyncio
-async def test_resume_admission_waits_for_remote_failed_state_to_advance():
+async def test_resume_admission_waits_for_remote_pause_to_advance():
     from error_scenarios import completed
-    sender = TransferPeer([(7, 0), (5, 8192), (6, 8192)])
+    sender = TransferPeer([(10, 0), (5, 8192), (6, 8192)])
     receiver = TransferPeer([(5, 8192), (5, 8192), (6, 8192)])
     await completed(sender, receiver, "a" * 32, "d" * 64, 16384, resume=True)
     assert receiver.hashed
@@ -106,9 +106,10 @@ async def test_resume_admission_waits_for_remote_failed_state_to_advance():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("resume,offset", [(False, 0), (True, 8192)])
-async def test_real_transfer_failure_is_reported_immediately(resume, offset):
+@pytest.mark.parametrize("state", [7, 10])
+async def test_real_transfer_failure_is_reported_immediately(resume, offset, state):
     from error_scenarios import completed
-    sender = TransferPeer([(7, offset)])
+    sender = TransferPeer([(state, offset)])
     receiver = TransferPeer([(5, 8192)])
     with pytest.raises(CheckFailure, match="^TransferFailed$"):
         await completed(sender, receiver, "a" * 32, "d" * 64, 16384, resume=resume)

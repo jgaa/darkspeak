@@ -1,5 +1,12 @@
 # Running all tests
 
+`transfer_session` exercises the coroutine owner in isolation: shared contact
+admission, stale event rejection, bounded chunk/control queues, joined cancellation,
+deadline wakeup and disconnect versus local publication. It requires no profile,
+network or application binary and has a 30-second CTest timeout.
+The `managed_storage` coroutine receiver cases exercise empty/multi-checkpoint
+publication and cancellation with a withheld confirmation through the new owner.
+
 From any working directory, invoke the repository's test entry point:
 
 ```sh
@@ -112,8 +119,8 @@ and reads, destroy the active channel and prove its budget slot remains occupied
 until return; a native publication case also retains its reservation through its
 final completion. Source preparation retains its original deadline before payload.
 The seventeenth restart case fails a resumed readiness send once, then verifies
-that a manual retry can reclaim its request/work reservation and send only the
-remaining seven bytes.
+that a manual retry from its typed pause can reclaim admission and send only
+the remaining seven bytes. Negotiation pauses do not require a payload channel.
 The eighteenth reconnects while the receiver is Hashing, delivers the completion
 hint before native publication starts, and verifies automatic sender completion
 without more payload, another writer or a different published object.
@@ -123,8 +130,8 @@ an independently transferred preview. A forged old-connection readiness is rejec
 before it restores any runtime attempt or advances payload. A delayed source
 preparation exercises concurrent explicit acceptance using the same work reservation
 and original deadline.
-Two further cases fail the initial offer queue and crash after persisting its
-attempt while source preparation is still running. They recover the same transfer
+Two further cases fail the initial offer queue and crash during source
+preparation before installing its attempt. They recover the same transfer
 without treating zero progress as receiver approval.
 The managed-storage offer-budget regression fills all 64 pending slots, evicts
 the first File object, and cancels, fails or deletes a reloaded object. Each action
@@ -143,8 +150,8 @@ its last peer reference, including graceful and abrupt loopback disconnects.
 Sockets use one factory with deferred Qt deletion so network callbacks finish
 before destruction; accepted, outgoing and retried connections share this policy.
 The protocol CTest registration has a 30-second timeout.
-Production capability advertisement stays disabled pending remaining restart and
-terminal recovery coverage. `protocol_v3` rejects unilateral checkpoint capability
+Production advertises mandatory checkpoints at the default interval after the
+coroutine and restart regressions passed. `protocol_v3` rejects unilateral checkpoint capability
 before application dispatch. The existing managed-storage CTest timeout is 180
 seconds for this expanded matrix; the full runner already honors it and needs no
 additional dependencies or flags. Set `DS_TEST_TRACE=1` for fixture trace logging.
@@ -201,7 +208,9 @@ on disconnect. Readiness is bounded to two pending transfers per contact and
 
 The full runner also discovers `mcp_peer_file_decisions` and
 `mcp_peer_corrupt_partial`. Both use the same build flags and pinned dependencies;
-fault setup is restricted to stopped private test profiles. See
+fault setup is restricted to stopped private test profiles. Interruption waits
+for confirmed durable progress; resume observations use the selected checkpoint,
+and corrupted prefixes rewind before full-hash-verified publication. See
 [transfer-error scenarios](mcp/scenarios/003-file-decisions-and-corruption.md).
 
 

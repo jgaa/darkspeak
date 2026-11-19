@@ -1,17 +1,16 @@
 """Explicit transfer decisions and corruption of an isolated stopped receiver."""
-import asyncio
 from contextlib import closing
 import os
 from pathlib import Path
 import signal
 import sqlite3
 import stat
-import time
 import uuid
 
 from error_scenarios import (completed, connect, expect, message, offer,
                              partial, setup, transfer_state)
 from harness import CheckFailure, FatalFailure, wait_for
+from scenario import FILE_PAUSED
 
 
 async def storage(peer, transfer):
@@ -141,7 +140,7 @@ def damage_stopped_partial(peer, transfer):
 async def corrupt_partial(runtime, results):
     a, b = await setup(runtime, results)
     ac, bc = await results.check("accepted_pair", lambda: connect(a, b), fatal=True)
-    transfer, _, _ = await results.check("nonzero_durable_partial", lambda: partial(a, b, ac, bc), fatal=True)
+    transfer, digest, size = await results.check("nonzero_durable_partial", lambda: partial(a, b, ac, bc), fatal=True)
     await results.check("stop_receiver_before_external_fault", b.stop, fatal=True)
     try:
         async def damage():
@@ -151,7 +150,7 @@ async def corrupt_partial(runtime, results):
         os.kill(a.process.pid, signal.SIGCONT)
     async def sender_failed():
         file = await transfer_state(a, transfer)
-        return file and file["state"] == 7
+        return file and file["state"] == FILE_PAUSED
     await results.check("sender_retains_interrupted_record", lambda: wait_for(sender_failed), fatal=True)
     await results.check("restart_corrupted_receiver", b.start, fatal=True)
     await b.controller.call("controller_online")
@@ -163,23 +162,16 @@ async def corrupt_partial(runtime, results):
     await results.check("reconnect_after_external_fault", lambda: wait_for(connected, 90), fatal=True)
     await results.check("corrupted_partial_is_not_published", lambda: unpublished(b, transfer))
     await results.check("attempt_resume_with_original_metadata", lambda: b.approved("file_resume", contact=bc, transfer=transfer), fatal=True)
-    async def rejected_corruption():
-        deadline = time.monotonic() + 90
-        while time.monotonic() < deadline:
-            inspected = await storage(b, transfer)
-            expect(not inspected["published"] and inspected["state"] != 6)
-            file = await transfer_state(b, transfer)
-            if file and file["state"] in (7, 9) and file["resumed_from"] > 0:
-                return
-            await asyncio.sleep(0.2)
-        # A backend may detect a corrupted prefix before negotiating a channel.
-        # Observe it for the full bounded window and require a stable failed state.
+    await results.check("resume_revalidates_full_sha256_after_discarding_corruption",
+                        lambda: completed(a, b, transfer, digest, size, resume=True))
+    async def rewound():
         file = await transfer_state(b, transfer)
-        expect(file and file["state"] == 7 and file["resumed_from"] == 0)
-    await results.check("corruption_never_becomes_readable_during_resume", rejected_corruption)
-    await results.check("messaging_survives_integrity_failure", lambda: message(a, b, ac, bc, 0, "Message after rejected corruption"))
-    await results.check("restart_after_integrity_failure", b.restart, fatal=True)
-    await results.check("corrupted_file_stays_unpublished_after_restart", lambda: unpublished(b, transfer))
+        expect(file and file["resumed_from"] == 0)
+    await results.check("corrupted_checkpoint_is_not_selected", rewound)
+    await results.check("messaging_survives_prefix_revalidation", lambda: message(a, b, ac, bc, 0, "Message after prefix revalidation"))
+    await results.check("restart_after_prefix_revalidation", b.restart, fatal=True)
+    await results.check("verified_file_preserves_full_sha256_after_restart",
+                        lambda: completed(a, b, transfer, digest, size))
     await b.controller.call("controller_online")
     await results.check("reconnect_for_fresh_valid_file", lambda: wait_for(connected, 90), fatal=True)
     async def good_transfer():

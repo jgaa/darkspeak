@@ -19,7 +19,6 @@ namespace ds {
 namespace core {
 
 struct FileData;
-struct FileTransferWork;
 
 class File : public QObject, public std::enable_shared_from_this<File>
 {
@@ -141,7 +140,6 @@ public:
     void setChannel(quint32 channel);
     float getProgress() const noexcept;
     bool hasCatalogSource() const { return bool(catalog_source_); }
-    dsfm::CancellationToken outgoingCancellation() const { return storage_cancel_; }
     bool hasPreparedSource() const { return hasCatalogSource() || bool(source_prepare_); }
     using PrepareSource = std::function<QCoro::Task<dsfm::Result<dsfm::PreparedRead>>(dsfm::ReadPreparationOptions)>;
     dsfm::Result<void> setPreparedSource(QUuid identity,QUuid scope,std::function<bool()> current,PrepareSource prepare);
@@ -167,10 +165,7 @@ public:
     QCoro::Task<dsfm::Result<void>> pauseTransfer(QUuid attempt, dsfm::TransferPauseReason reason);
     QCoro::Task<dsfm::Result<void>> suspendIncoming();
     QCoro::Task<dsfm::Result<void>> abortIncoming();
-    QCoro::Task<dsfm::Result<void>> validateSourceSnapshot();
-    QCoro::Task<dsfm::Result<void>> verifyOutgoingCheckpoint(dsfm::DurableCheckpoint selected,
-                                                          dsfm::CancellationToken cancel,
-                                                          std::function<bool()> current);
+
     QCoro::Task<dsfm::Result<void>> beginOutgoingCheckpointAttempt(dsfm::TransferAttempt attempt,
                                                                 dsfm::CancellationToken cancel);
     QCoro::Task<dsfm::Result<void>> selectCompletedCheckpoint(dsfm::TransferAttempt attempt,
@@ -200,14 +195,9 @@ public:
     void queueForTransfer();
 
     void transferComplete();
-    void setTransferWork(const std::shared_ptr<FileTransferWork> &work);
+    void projectTransferOutcome(quint32 interval, dsfm::TransferPauseReason pause,
+                                dsfm::TransferFailureReason failure, State state);
     void transferFailed(const QString& reason, const State state = FS_CANCELLED);
-
-    // Asyncroneously hash he file and verify that it i cirrect.
-    // This is to validate received files before
-    // the state is changed to FS_DONE
-    void validateHash();
-
 
 signals:
     void durableCheckpointConfirmed(dsfm::DurableCheckpoint checkpoint);
@@ -224,11 +214,11 @@ signals:
     void previewChanged();
 
 private:
+    friend class IncomingTransfer;
     static QString getSelectStatement(const QString& where);
     static ptr_t load(QObject& parent, const std::function<void(QSqlQuery&)>& prepare);
     void flushBytesAdded();
     QCoro::Task<void> importSource(File::ptr_t self, hash_cb_t callback);
-    QCoro::Task<void> commitIncoming(File::ptr_t self);
     QCoro::Task<void> openExternal(File::ptr_t self, bool folder);
     void saveStorage();
     void observePreviewPolicy();
@@ -242,7 +232,6 @@ private:
     std::function<bool()> source_current_;
     PrepareSource source_prepare_;
     std::unique_ptr<dsfm::IFileWriter> writer_;
-    std::weak_ptr<FileTransferWork> transfer_work_;
     dsfm::CancellationToken storage_cancel_;
     bool storage_busy_ = false;
     bool preview_loading_ = false;
@@ -277,7 +266,7 @@ struct FileData {
     QString mime_type;
     QByteArray thumbnail_for;
     QByteArray manifest_id;
-    quint32 checkpoint_interval = 0; // Zero is the explicitly segregated legacy mode.
+    quint32 checkpoint_interval = 0; // Zero before mandatory checkpoint negotiation.
     QUuid offered_connection; // Runtime-only: an initial readiness belongs to this connection.
     dsfm::TransferPauseReason pause_reason = dsfm::TransferPauseReason::None;
     dsfm::TransferFailureReason failure_reason = dsfm::TransferFailureReason::None;

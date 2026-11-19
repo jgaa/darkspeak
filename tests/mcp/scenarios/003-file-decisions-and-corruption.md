@@ -32,12 +32,13 @@ nonsymlink directories; the leaf must be a singly linked owned regular file.
 Focused harness tests verify confinement and refusal for unsafe inputs.
 
 Restart and reconnect, then attempt ordinary resume using the original immutable
-file metadata. The corrupted file must never become published/readable. A backend
-may reject the prefix immediately or reject the complete checksum after resumed
-transfer. Observe for a bounded window, require failed state, and verify messaging
-still works. Restart again and require the corrupted file to remain unpublished.
-Reconnect and complete a new valid file transfer with full receiver SHA-256
-verification, proving subsequent transfers remain usable.
+file metadata. The corrupted retained checkpoint must not authorize payload or
+publication. Follow checkpoint negotiation back to the verified zero prefix,
+discard the corrupted suffix and transfer the original content again. Require
+completion with the original full SHA-256 and a zero selected resume offset.
+Messaging must still work. Restart again and verify the same published content's
+hash, then complete a fresh valid transfer. This follows the bounded earlier-prefix
+selection in the current protocol; corrupted bytes themselves never become readable.
 
 The authenticated controller's `controller_storage` inspects normal managed
 storage metadata without opening a writer or reading file contents. Its pending
