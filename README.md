@@ -24,6 +24,133 @@ Each peer run it's own Tor Hidden Service. This means that DarkSpeak will work a
 
 The protocol used by DarkSpeak does not depend on Tor. It is designed so that it can be used by alternative networks in the future, or even directly over TCP (if no anonymity is required). At the moment however, only Tor is used.
 
+# Building: system dependencies
+
+The native Linux build requires a C++20 compiler, CMake 3.24+, Git, pkg-config,
+libsodium, SQLite 3 and libsecret. Qt **6.10 or newer** is required, including
+Core, Gui, Widgets, Network, DBus, Sql, Svg, Qml, Quick, QuickControls2,
+LinguistTools, Protobuf and Test (QuickTest for the UI tests). The Qt Protobuf
+module and its generator tools are required even when MCP is disabled; the
+system `protoc` compiler alone does not provide Qt Protobuf.
+
+The commands below assume your repositories provide a sufficiently recent Qt.
+For example, Ubuntu 26.04 provides Qt 6.10; stock Ubuntu 24.04 and Debian 13
+have older Qt versions. On older distributions, use a complete matching Qt 6.10+
+SDK and point CMake at it with `-DCMAKE_PREFIX_PATH=/path/to/Qt/6.x/gcc_64`.
+Keep all Qt libraries, QML plugins and generator tools from that same Qt version.
+
+## Debian / Ubuntu
+
+```sh
+sudo apt update
+sudo apt install build-essential cmake ninja-build git ca-certificates pkg-config \
+    libsodium-dev libsqlite3-dev libsecret-1-dev libgl-dev protobuf-compiler \
+    qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-tools-dev qt6-l10n-tools \
+    qt6-grpc-dev qt6-grpc-tools
+
+# Runtime plugins for a system-Qt build:
+sudo apt install libqt6sql6-sqlite qt6-svg-plugins \
+    qml6-module-qtcore qml6-module-qtqml qml6-module-qtqml-models \
+    qml6-module-qtqml-workerscript qml6-module-qtquick qml6-module-qtquick-window \
+    qml6-module-qtquick-controls qml6-module-qtquick-templates \
+    qml6-module-qtquick-dialogs qml6-module-qtquick-layouts qml6-module-qtquick-effects
+```
+
+Qt Protobuf is packaged in
+[`qt6-grpc-dev`](https://packages.ubuntu.com/resolute/qt6-grpc-dev), despite the
+package's gRPC name. Ubuntu's Qt packages above require the Universe repository.
+
+## openSUSE / SUSE
+
+Use Tumbleweed or a SUSE release/repository supplying Qt 6.10+.
+
+```sh
+sudo zypper install gcc-c++ cmake ninja git ca-certificates pkgconf-pkg-config \
+    libsodium-devel sqlite3-devel libsecret-devel protobuf protobuf-devel \
+    qt6-core-devel qt6-gui-devel qt6-widgets-devel qt6-network-devel \
+    qt6-dbus-devel qt6-sql-devel qt6-test-devel qt6-svg-devel \
+    qt6-qml-devel qt6-quick-devel qt6-quickcontrols2-devel qt6-quickdialogs2-devel \
+    qt6-linguist-devel qt6-protobuf-devel qt6-declarative-imports qt6-sql-sqlite
+```
+
+SUSE splits Qt into individual development and import packages; the names above
+follow the [Tumbleweed package repository](https://download.opensuse.org/tumbleweed/repo/oss/x86_64/).
+
+## Arch Linux
+
+```sh
+sudo pacman -Syu --needed base-devel cmake ninja git ca-certificates pkgconf \
+    libsodium sqlite libsecret protobuf qt6-base qt6-declarative qt6-svg \
+    qt6-tools qt6-grpc
+```
+
+Arch's [`qt6-grpc`](https://archlinux.org/packages/extra/x86_64/qt6-grpc/)
+provides Qt Protobuf and its tools. Qt development files and QML plugins are
+included in the corresponding Qt packages.
+
+## Fedora
+
+```sh
+sudo dnf install gcc-c++ cmake ninja-build git ca-certificates pkgconf-pkg-config \
+    libsodium-devel sqlite-devel libsecret-devel protobuf-compiler \
+    qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
+    qt6-qttools-devel qt6-linguist qt6-qtgrpc-devel
+```
+
+Qt Protobuf development files come from
+[`qt6-qtgrpc-devel`](https://packages.fedoraproject.org/pkgs/qt6-qtgrpc/qt6-qtgrpc-devel/).
+The Qt SQLite driver is included in Fedora's
+[`qt6-qtbase`](https://packages.fedoraproject.org/pkgs/qt6-qtbase/qt6-qtbase/) package.
+
+## Optional MCP and KDE integration
+
+`-DDARKSPEAK_WITH_MCP=ON` also requires **Boost 1.81+** (program_options,
+coroutine, context, chrono, json and url), OpenSSL and zlib development files.
+These are system dependencies of the CMake-fetched yahat library:
+
+```sh
+# Debian / Ubuntu
+sudo apt install libboost-program-options-dev libboost-coroutine-dev \
+    libboost-context-dev libboost-chrono-dev libboost-json-dev libboost-url-dev \
+    libssl-dev zlib1g-dev
+
+# openSUSE / SUSE
+sudo zypper install libboost_program_options-devel libboost_coroutine-devel \
+    libboost_context-devel libboost_chrono-devel libboost_json-devel \
+    libboost_url-devel libopenssl-devel zlib-devel
+
+# Arch Linux
+sudo pacman -S --needed boost openssl zlib
+
+# Fedora
+sudo dnf install boost-devel openssl-devel zlib-devel
+```
+
+KDE native colors optionally use KF6 ColorScheme 6.6+ development files. CMake
+auto-detects this integration; `-DDARKSPEAK_KDE_COLOR_SCHEME=OFF` selects the Qt
+fallback. DarkSpeak disables SafeKeeping's optional KWallet backend, so KWallet
+development files are not required. A running Secret Service provider, such as
+GNOME Keyring or KeePassXC with Secret Service enabled, supplies the Linux system
+credential vault at runtime.
+
+## Dependencies supplied by CMake, runtime tools and tests
+
+CMake downloads SafeKeeping, Nayuki's QR-Code-generator and, when not installed,
+QCoro. logfault is available from the bundled source, with a CMake fallback.
+Enabling MCP additionally downloads yahat; enabling `DARKSPEAK_WITH_TEST_MCP`
+downloads the pinned Chutney test harness. Their system-library requirements are
+covered above; these fetched libraries do not need separate distro packages.
+Initial configuration needs network access unless their sources are supplied
+through CMake's offline source overrides.
+
+Tor is a runtime program, and video previews use the `ffmpeg` executable rather
+than FFmpeg development libraries. Install `tor` and `ffmpeg` with your package
+manager (`ffmpeg-free` on Fedora). The full test runner also needs `tor-gencert`
+(normally supplied by the Tor package), Python 3.12+ with pip/venv support, and
+FFmpeg. On Debian/Ubuntu install `python3-venv`; on Fedora install `python3-pip`
+if absent. The runner installs the pinned Python requirements in its own virtual
+environment. See [tests/README.md](tests/README.md) for the complete test workflow.
+
 # Running DarkSpeak
 
 DarkSpeak uses a system Tor process by default. Under Linux, it expect tor to be installed. It can use the system's instance, or 
