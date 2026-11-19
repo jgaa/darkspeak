@@ -1,6 +1,6 @@
 # DarkSpeak — Application-wide Content Transfer Queue
 
-**Status:** Initial architecture and implementation specification. **UI:** `transfer_queue_ui.md`. **Existing contracts:** `protocol.md` (checkpoints/limits), `file_manager.md` (storage), `fileshare_authorization.md` (authorization/credits), `fileshare_server.md` (remote FileShare), `media_previews.md` (preview policy). This is an application-wide feature, not an FTP-specific queue. Implementation is a later milestone and must not reopen the completed coroutine transfer refactor.
+**Status:** Initial architecture and implementation specification. **UI:** `transfer_queue_ui.md`. **Existing contracts:** `protocol.md` (checkpoints/limits), `file_manager.md` (storage), `ftp/fileshare_authorization.md` (authorization/credits), `ftp/fileshare_server.md` (remote FileShare), `media_previews.md` (preview policy). This is an application-wide feature, not an FTP-specific queue. Implementation is a later milestone and must not reopen the completed coroutine transfer refactor.
 
 ## 1. Goals and ownership
 
