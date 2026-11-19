@@ -66,7 +66,7 @@ Current status: direction migrations, controller retirement and the relevant reg
 
 ## NEXT MILESTONES — NOT ACTIVE
 
-Order: **FileShare normal administration UI** (`specs/fileshare_ui.md`, including its storage/VFS/group/permission foundations) → **application metrics** (`specs/metrics.md`) → **application-wide transfer queue + UI** (`specs/transfer_queue.md`, `specs/transfer_queue_ui.md`) → **remaining FTP server, browser, uploads, credits** (specification discussions to continue) → **first-class dashboard last**. Wizard later. Sections 3–7 below are deferred requirements, **not** tasks to complete during the generic refactor. Do not implement unspecified features just to tick boxes.
+Order: **FileShare normal administration UI** (`specs/ftp/fileshare_ui.md`, including its storage/VFS/group/permission foundations) → **application metrics** (`specs/metrics.md`) → **application-wide transfer queue + UI** (`specs/transfer_queue.md`, `specs/transfer_queue_ui.md`) → **remaining FTP server, browser, uploads, credits** (specification discussions to continue) → **first-class dashboard last**. Wizard later. Sections 3–7 below are deferred requirements, **not** tasks to complete during the generic refactor. Do not implement unspecified features just to tick boxes.
 
 ## 3. Storage and VFS recovery audit — DEFERRED (UI prerequisites / later FTP)
 
@@ -80,7 +80,7 @@ Acceptance: crash injection at intent/allocation/publication/cleanup boundaries,
 
 ## 4. Persistent FileShare authorization — DEFERRED (UI foundation)
 
-Implement persistent identity/group/contact configuration and provenance only when building `specs/fileshare_ui.md`. Existing policy code may be reused. **Remote FileShare server enforcement** is a later integration when its specification exists; do not build speculative server endpoints to satisfy this section.
+Implement persistent identity/group/contact configuration and provenance only when building `specs/ftp/fileshare_ui.md`. Existing policy code may be reused. **Remote FileShare server enforcement** is a later integration when its specification exists; do not build speculative server endpoints to satisfy this section.
 
 - [ ] Add versioned identity-scoped group membership and rule/policy storage, bounded async loading and atomic generations.
 - [ ] Use the existing policy evaluator for server enforcement and View as Contact; persist rule IDs and preserve complete contribution provenance.
@@ -100,7 +100,7 @@ Acceptance: duplicate races, every cross-database crash boundary, manual rejecti
 
 ## 6. Byte credit ledger and admission — DEFER until FTP exchange
 
-Do not implement byte-credit accounting in the generic transfer engine or block ordinary attachments on it. Credit administration controls in `fileshare_ui.md` must use the real feature service when available, or explicitly show unsupported/disabled state until the scheduled credit milestone.
+Do not implement byte-credit accounting in the generic transfer engine or block ordinary attachments on it. Credit administration controls in `specs/ftp/fileshare_ui.md` must use the real feature service when available, or explicitly show unsupported/disabled state until the scheduled credit milestone.
 
 - [ ] Persist immutable entitlements, policy-specific fractional remainders, manual adjustments, settled balance B and reservations R. Spendable balance is B-R; a transfer includes its own reservation when reevaluated. Negative B is legal; earned caps apply to B.
 - [ ] Advance fractional arithmetic only on first approval. Preserve the remainder through cap clipping; revoke/reapprove the original awarded whole amount without recalculation.
